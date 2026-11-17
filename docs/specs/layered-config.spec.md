@@ -1,6 +1,6 @@
 # Layered configuration: one user file, one project file, one resolver
 
-**Status**: Candidate; no execution authority.
+**Status**: Superseded by [ADR 0041](../adr/0041-simplified-configuration.md) (#564); kept as history. The current rules are in the [configuration reference](../reference/immune-brain-config.md).
 **Initiative**: `layered-config` (source issue #360), six Slices S1–S6.
 **Design risk**: High — it replaces four configuration sources that the runtime, the Parent and the Planner read today, moves a shipped-code boundary (the decision-model component enters the plugin runtime), and adds a user-level file outside the repository that every Host and every Lane reads. A wrong precedence rule silently changes Git integration, egress of sensitive input, or batch parallelism.
 **Design views**: data flow (user file + tracked project file + legacy sources → one resolver → `imm-kernel config --json`, the `status` projection, `decide()`, the Git integration reader, the Parent's Lane resolution and the Planner's carrier resolution).

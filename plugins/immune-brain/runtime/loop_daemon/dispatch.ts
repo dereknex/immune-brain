@@ -188,8 +188,7 @@ export function createDefaultRelayInputFactory(
 	},
 ): RelayInputFactory<unknown> {
 	const config = resolveConfig(root);
-	const activeProfile = config.lanes.active.value ? config.lanes.profiles.value[config.lanes.active.value] : undefined;
-	const parentHost: ExecutorHost = (activeProfile?.executor_host ?? (config.lanes.executor_host.value as ExecutorHost | undefined) ?? "claude-code");
+	const parentHost: ExecutorHost = config.agents.roles.executor?.host ?? "claude-code";
 	const pluginDir = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 	const supervisor = new LaneSupervisor();
 

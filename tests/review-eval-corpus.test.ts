@@ -105,16 +105,18 @@ test("model disagreement and uncertainty precede the weight rule", async () => {
 	expect(rows.every((row) => row.path === "model" && row.model === "clef")).toBe(true);
 });
 
-test("A1 registry and effective egress respect the project ceiling", () => {
+test("A1 registry and effective egress take the project list over the user list", () => {
 	const point = POINT_REGISTRY.a1_review_finding_prescreen!;
 	expect(point.input_category).toBe("finding"); expect(point.options).toEqual(["likely_true", "likely_false", "uncertain"]); expect(point.threshold_set).toEqual({ version: "a1/v0", values: null });
 	const user = join(tmp, "user.json");
-	for (const [requested, expected] of [["finding", ["finding"]], ["diff", []]] as const) {
-		writeFileSync(user, JSON.stringify({ contract: "immune_brain/user_config/v1", decision_models: { egress: { clef: [requested] } } }));
-		const config = resolveConfig(process.cwd(), { userConfigPath: user });
-		expect(config.decision_models.egress.clef.value).toEqual(expected);
+	const project = join(tmp, "project.json");
+	writeFileSync(user, JSON.stringify({ contract: "immune_brain/user_config/v2", decision_models: { egress: { clef: ["finding"] } } }));
+	for (const [projectEgress, expected, source] of [[undefined, ["finding"], "user"], [[], [], "project"]] as const) {
+		writeFileSync(project, JSON.stringify({ contract: "immune_brain/project_config/v2", ...(projectEgress === undefined ? {} : { decision_models: { egress: { clef: projectEgress } } }) }));
+		const config = resolveConfig(tmp, { userConfigPath: user, projectConfigPath: project });
+		expect(config.decision_models.egress.clef).toEqual({ value: expected, source });
 		expect(config.decision_models.egress.jev.value).toEqual([]); expect(config.decision_models.egress.fake.value).toEqual([]);
-		if (requested === "diff") expect(config.diagnostics.some((d) => d.code === "egress_beyond_project_ceiling")).toBe(true);
+		expect(config.diagnostics).toEqual([]);
 	}
 });
 

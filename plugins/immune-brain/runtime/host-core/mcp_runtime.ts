@@ -31,7 +31,7 @@ import {
 import { HostRuntime, type HostRuntimeOptions, type HostRuntimeProfile, type ToolMeta } from "./runtime";
 import { batchReason } from "../unattended/batch_reasons";
 import { parseLaneInstruction, parseLaneOffers, parseLaneSessionClose, parseMaxParallel, resolveLaneParallel } from "../unattended/batch_lanes";import { parseFinalVerification } from "../unattended/batch_final_verification";
-import { reviewProfileFromArgs } from "../unattended/batch_state";
+import { parseRequestedAgents } from "../unattended/agent_profiles";
 import type { ExecutorHost } from "../unattended/lane_supervisor";
 import type { InitiativeObservationReader } from "../unattended/types";
 import type { BatchRunnerKernelPort } from "../unattended/batch_runner";
@@ -167,12 +167,12 @@ export function listMcpTools() {
 							? {
 									task_id: { type: "string" },
 									stop: { type: "boolean" },
-									executor_host: { type: "string", enum: ["pi", "claude-code", "antigravity"] },
-									executor_model: { type: "string", minLength: 1 },
-									executor_effort: { type: "string", minLength: 1 },
-									review_host: { type: "string", enum: ["pi", "claude-code", "antigravity"] },
-									review_model: { type: "string", minLength: 1 },
-									review_effort: { type: "string", minLength: 1 },
+									agents: {
+										type: "object",
+										description: "Whole profile per role for this batch: a user profile name, host:model@effort, or { host, model?, effort? }.",
+										properties: { executor: { oneOf: [{ type: "string", minLength: 1 }, { type: "object", properties: { host: { type: "string", enum: ["pi", "claude-code", "antigravity"] }, model: { type: "string", minLength: 1 }, effort: { type: "string", minLength: 1 } }, required: ["host"], additionalProperties: false }] }, reviewer: { oneOf: [{ type: "string", minLength: 1 }, { type: "object", properties: { host: { type: "string", enum: ["pi", "claude-code", "antigravity"] }, model: { type: "string", minLength: 1 }, effort: { type: "string", minLength: 1 } }, required: ["host"], additionalProperties: false }] } },
+										additionalProperties: false,
+									},
 									max_parallel: { type: "integer", minimum: 1 },
 									lane_offers: {
 										type: "array",
@@ -451,8 +451,8 @@ export function createMcpRuntime(profile: McpHostProfile, options: McpRuntimeOpt
 				const initiative = typeof args.initiative_slug === "string" ? args.initiative_slug : "";
 				const task = typeof args.task_id === "string" ? args.task_id : "";
 				if (args.stop !== undefined && typeof args.stop !== "boolean") throw new Error("stop must be a boolean");
-				if (args.executor_host !== undefined && args.executor_host !== "pi" && args.executor_host !== "claude-code" && args.executor_host !== "antigravity") throw new Error("invalid executor_host");
-				for (const key of ["executor_model", "executor_effort"]) if (args[key] !== undefined && (typeof args[key] !== "string" || !args[key])) throw new Error(`invalid ${key}`);
+				for (const key of ["executor_host", "executor_model", "executor_effort", "review_host", "review_model", "review_effort"]) if (Object.hasOwn(args, key)) throw new Error(`unknown parameter: ${key} (use agents)`);
+				const requested = parseRequestedAgents(workspace, args.agents);
 				if (!!initiative === !!task) return batchReason("batch_entry_ambiguous");
 				const initiativeSlug = task || initiative;
 				refuseSuppliedAuthority(args);
@@ -463,19 +463,14 @@ export function createMcpRuntime(profile: McpHostProfile, options: McpRuntimeOpt
 				const laneSessionClose = parseLaneSessionClose(args.lane_session_close);
 				const maxParallel = task ? 1 : resolveLaneParallel(workspace, initiativeSlug, parseMaxParallel(args.max_parallel), laneOffers, laneInstruction);
 				const finalVerification = Array.isArray(args.final_verification) && args.final_verification.length === 0 ? undefined : parseFinalVerification(args.final_verification);
-				const reviewProfile = reviewProfileFromArgs(args);
 				return runtime.startUnattendedBatch(initiativeSlug, toolMeta, {
 					...(task ? { plan_source: "single_task" as const } : {}),
 					...(args.stop === true ? { stop: true } : {}),
-					executor: {
-						...(args.executor_host === "pi" || args.executor_host === "claude-code" || args.executor_host === "antigravity" ? { executor_host: args.executor_host } : {}),
-						...(typeof args.executor_model === "string" ? { executor_model: args.executor_model } : {}),
-						...(typeof args.executor_effort === "string" ? { executor_effort: args.executor_effort } : {}),
-					},
+					...(requested.executor ? { executor: requested.executor } : {}),
 					...(maxParallel !== undefined ? { max_parallel: maxParallel } : {}),
 					...(laneOffers !== undefined ? { lane_offers: laneOffers } : {}),
 					...(finalVerification !== undefined ? { final_verification: finalVerification } : {}),
-					...(reviewProfile !== undefined ? { review_profile: reviewProfile } : {}),
+					...(requested.reviewer ? { review_profile: requested.reviewer } : {}),
 					...(laneInstruction !== undefined ? { lane_instruction: laneInstruction } : {}),
 					...(laneSessionClose !== undefined ? { lane_session_close: laneSessionClose } : {}),
 				});

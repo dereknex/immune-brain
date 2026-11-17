@@ -38,7 +38,7 @@ function fixture(mode: "manual" | "auto") {
 	mkdirSync(join(dir, "docs/plans"), { recursive: true });
 	mkdirSync(join(dir, ".imm"), { recursive: true });
 	writeFileSync(join(dir, ".gitignore"), ".imm/state/\n");
-	writeFileSync(join(dir, ".imm/config.json"), JSON.stringify({ contract: "immune_brain/project_config/v1", git_integration: mode }));
+	writeFileSync(join(dir, ".imm/config.json"), JSON.stringify({ contract: "immune_brain/project_config/v2", git_integration: mode }));
 	writeFileSync(join(dir, "base.txt"), "base\n");
 	const verification = JSON.stringify({ contract: "assurance_kernel/verification_descriptor/v2",
 		command: { executable: "bun", argv: ["-e", "process.exit(0)"], cwd: ".", timeout_ms: 60000, max_output_bytes: 4096 },

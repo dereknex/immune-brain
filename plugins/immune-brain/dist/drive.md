@@ -167,15 +167,12 @@ from the [batch contract](drive-batch.md#unattended-batch-opt-in).
    without `stop_command` is a failure and the tab stays open for inspection.
    A session that stopped without writing the file returns
    `review_session_aborted` and releases the round. A `review_preparation_failed`
-   result with `review_profile_required` means no profile binds `code-review`:
-   set that role in the user `agents.profiles` / `agents.presets` table, then call
+   result with `review_profile_required` means no profile binds the `reviewer` role:
+   set `agents.reviewer` in the user or project configuration, then call
    `advance_assurance`; QA settlement is retained. The same result with
    `review_config_invalid` means the user `agents` table itself is invalid: its
    `reason` names the file and key path to fix, `recovery_action` names the same
-   value, and QA settlement is retained. A `review_ready` result carrying a
-   `warnings` entry of code `review_legacy_profile` means Review runs on the
-   deprecated `lanes` profile because the `agents` configuration is invalid:
-   relay the warning, and fix the named key to leave the fallback.
+   value, and QA settlement is retained.
    `review_transport_unavailable`
    means this Host is not inside Herdr: run the Lane inside Herdr, then call
    `advance_assurance`, which reuses the retained QA. On `verification_ready`
@@ -403,8 +400,7 @@ not written its file is not an error: `submit_review` retains the reservation. A
 blocked `submit_review` is recovered only through its returned `recovery_action`.
 Findings verification after a CLI Review is an explicit session too (ADR 0039):
 `verification_ready` returns `verification_session`, which opens one verifier
-session of the reviewer Host on the selected verifier model
-(`lanes.review_verifier_model` when set, so it differs from the reviewer's) and
+session of the reviewer Host on the reviewer's model and
 writes its JSON receipt to the reservation's `output_path`. `submit_verification`
 reads those bytes twice and binds them as the receipt; an invalid or missing
 verifier receipt keeps every finding. A verification that follows no CLI Review

@@ -632,37 +632,40 @@ sequenceDiagram
 
 ## 配置
 
-Immune-Brain 读取两个 JSON 文件，Pi 与 Claude Code 共用：
+Immune-Brain 读取两个 JSON 文件，Pi 与 Claude Code 共用（[ADR 0041](docs/adr/0041-simplified-configuration.md)）：
 
-- **用户文件** `~/.config/immune-brain/config.json`（设置了 `XDG_CONFIG_HOME` 时为 `$XDG_CONFIG_HOME/immune-brain/config.json`）：个人选择——Lane profile、决策模型 profile（只写凭据环境变量的*名字*），以及 `projects` 下按仓库的覆盖。
-- **项目文件** `.imm/config.json`，由 Git 跟踪：仓库事实与策略——`git_integration`、`initiative_carrier`、启用的决策点与 egress 上限、Lane 默认值和批次最终验证命令。
+- **用户文件** `~/.config/immune-brain/config.json`（设置了 `XDG_CONFIG_HOME` 时为 `$XDG_CONFIG_HOME/immune-brain/config.json`）：个人默认值、agent profile 和决策模型 profile（只写凭据环境变量的*名字*）。
+- **项目文件** 主 checkout 中的 `.imm/config.json`：按仓库的选择，只属于本地 checkout。无论 Git 是否跟踪都会读取；团队成员习惯不同时不要纳入版本管理。
+
+每个键按 **请求 > 项目文件 > 用户文件 > 默认值** 解析；权限类键取更严格的值：`git_integration`（`manual` 优先）、`loop.auto_enroll_max_risk`（风险较低者优先）、`loop.allowed_actors` / `loop.allowed_associations`（取交集）。
 
 ```json
 {
-  "contract": "immune_brain/user_config/v1",
-  "lanes": {
-    "active": "fast",
-    "profiles": {
-      "fast": { "max_parallel": 4, "executor_host": "claude-code", "executor_model": "<model id>", "executor_effort": "high" },
-      "cheap": { "max_parallel": 2, "executor_host": "pi", "executor_effort": "low" }
-    }
-  }
+  "contract": "immune_brain/user_config/v2",
+  "agents": {
+    "profiles": { "deepseek": { "host": "pi", "model": "auto/deepseek-v4.1-flash", "effort": "high" } },
+    "executor": "deepseek",
+    "reviewer": "claude-code:<model id>@medium"
+  },
+  "batch": { "max_parallel": 3 }
 }
 ```
 
 ```json
-{ "contract": "immune_brain/project_config/v1", "git_integration": "manual", "initiative_carrier": "github" }
+{ "contract": "immune_brain/project_config/v2", "agents": { "executor": "claude-code:<model id>" }, "git_integration": "manual", "initiative_carrier": "github" }
 ```
 
-| 偏好 | 文件 | 默认 | 说明 |
+| 偏好 | 位置 | 默认 | 说明 |
 |---|---|---|---|
 | 回复语言 | agent 指令文件（`AGENTS.md` / `CLAUDE.md`） | 仓库 `AGENTS.md` | 机器契约/路径/标识符保持原文 |
-| Initiative 载体 | 项目文件，其次用户文件 | 无默认，Planner 询问 | 仅当提案拆分为多个 TaskIntent 时生效 |
-| Git integration | 项目文件 | `manual` | `auto` 会提交已结算的交付 |
+| Agent（`executor`、`reviewer`、`planner`、`triage`） | 任一文件；profile 只在用户文件 | executor：Parent 自己的 Host；reviewer：无 | profile 名、简写 `host[:model][@effort]` 或 `{ host, model?, effort? }` |
+| Lane 并行数 | 任一文件的 `batch.max_parallel` | 1 | 请求中的 `max_parallel` 优先 |
+| Herdr tab | 顶层 `herdr` | `false` | 为 `true` 且 Parent 运行在 Herdr 中时，Lane Executor 在 Herdr tab 中运行 |
+| Initiative 载体 | 任一文件 | 无默认，Planner 询问 | 仅当提案拆分为多个 TaskIntent 时生效 |
+| Git integration | 任一文件 | `manual` | `auto` 会提交已结算的交付；任一处设为 `manual` 即生效 |
 | Advisory subagent | agent 指令文件 | 允许 | 受 Pi host 策略与用户显式指令约束 |
-| `lanes.active` / Lane profile | 用户文件 | 无默认，一次一个 Lane | 字段 `max_parallel`、`executor_host`（`claude-code` / `pi`）、`executor_model`、`executor_effort`；model 与 effort 只在同一层设置了 host 时生效 |
 
-个人值按 **当前消息 > 用户文件中的仓库覆盖 > 用户文件 > 项目默认值 > 内置默认** 解析；策略值（`git_integration`、启用的决策点、egress）以项目文件为准，用户文件只能收窄 egress。`imm-kernel config --json` 打印每个生效值及其来源，两个 Host 的 status Tool 也以 `config` 字段返回。某一节非法时只有该节 fail closed，并给出带名字的诊断。`.imm/lanes.local.json`、`.imm/decision-models.local.json`、`.imm/decision-bindings.json` 以及指令文件中的 `Initiative carrier default:` / `Git integration:` 行是已弃用的旧来源，在一个大版本内仍会读取并给出警告。
+批次会冻结解析出的 Executor 与 Review profile；`start_unattended_batch` 通过 `agents: { executor?, reviewer? }` 接收请求中的选择。`imm-kernel config --json` 打印每个生效值及其来源，两个 Host 的 status Tool 也以 `config` 字段返回。非法值视为未设置并报告错误；`agents`、`batch` 或 `herdr` 有错误时拒绝启动批次。`v1` 文件报告为 `config_invalid`：运行 `imm-kernel config migrate` 预览 v2 形式，加 `--write` 写入。
 
 详见 [`docs/reference/immune-brain-config.md`](docs/reference/immune-brain-config.md)。
 

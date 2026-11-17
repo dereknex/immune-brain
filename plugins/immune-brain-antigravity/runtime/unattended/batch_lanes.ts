@@ -26,6 +26,8 @@ import { buildBatchFinalReport, returnBatchToCoordinator } from "./batch_final_r
 import { deliverSingleTask } from "./checkout_delivery";
 import { cleanupSingleTaskLane, retainedLaneReason } from "./lane_cleanup";
 import { laneDecisionFacts } from "./lane_decision";
+import { frozenExecutorPreferences, frozenReviewProfile } from "./agent_profiles";
+import { resolveConfig } from "../config/layered_config";
 import { runGithubTrackerOperation } from "../github_issue_tracker";
 import { hasLocalInitiative } from "../local_initiative";
 import type { BatchTrackerPort, StartBatchInput } from "./batch_runner";
@@ -93,7 +95,8 @@ export function resolveLaneParallel(
 		throw new Error("batch_record_shape_retired: inspect the record, then use retire_stale_batch in the current Host");
 	if (laneOffers !== undefined && (!existing || (!existing.corrupt && isParentBranch(existing.record.branch))))
 		throw new Error("lane_offers_retired: new batches create their own Lanes");
-	return parseMaxParallel(maxParallel) ?? (existing && !existing.corrupt && isLaneBatchRecord(existing.record) ? existing.record.max_parallel : 1);
+	if (existing && !existing.corrupt && isLaneBatchRecord(existing.record)) return parseMaxParallel(maxParallel) ?? existing.record.max_parallel;
+	return parseMaxParallel(maxParallel) ?? (resolveConfig(root).batch.max_parallel.value as number);
 }
 
 /** A positive safe integer, or undefined when the parameter is absent. */
@@ -1000,6 +1003,10 @@ export async function runLaneBatch(
 			progress_mode: "parent_branch",
 		});
 		if (!preflight.ok) return refuse(input, null, preflight.reason, preflight.message || "Correct the preflight condition and re-confirm.");
+		// ADR 0041: a new batch freezes its resolved profiles; resume and every later generation read the record.
+		const frozenReview = frozenReviewProfile(input.root, input.review_profile);
+		const freeze = input.executor_freeze ?? input.supervision;
+		const frozenExecutor = frozenExecutorPreferences(input.root, freeze?.request, freeze?.parentHost);
 		record = prepareBatchLaneRunState({
 			plan_source: input.plan_source,
 			executor_mode: input.executor_mode,
@@ -1016,8 +1023,8 @@ export async function runLaneBatch(
 			max_parallel: limit,
 			now: input.now,
 			...(input.final_verification?.length ? { final_verification: input.final_verification } : {}),
-			...(input.review_profile ? { review_profile: input.review_profile } : {}),
-			...(input.supervision?.request ? { executor_preferences: input.supervision.request } : {}),
+			...(frozenReview ? { review_profile: frozenReview } : {}),
+			...(frozenExecutor ? { executor_preferences: frozenExecutor } : {}),
 		});
 	}
 
@@ -1554,6 +1561,11 @@ export async function runLaneBatch(
 			next_obligation: fresh.projection.next_obligation,
 			lane_branch: child.lane.branch,
 			lane_path: child.lane.path,
+			...(record.executor_preferences?.executor_host ? { executor: {
+				host: record.executor_preferences.executor_host,
+				...(record.executor_preferences.executor_model ? { model: record.executor_preferences.executor_model } : {}),
+				...(record.executor_preferences.executor_effort ? { effort: record.executor_preferences.executor_effort } : {}),
+			} } : {}),
 		});
 	}
 	handoffs.push(...releaseHandoffs(input, record, lanes));

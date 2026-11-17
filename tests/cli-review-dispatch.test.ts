@@ -22,7 +22,8 @@ import { digestOfReviewerBytes } from "../plugins/immune-brain/runtime/assurance
 import type { ReviewFacts } from "../plugins/immune-brain/runtime/assurance/review_evidence";
 import type { VerdictAuthority } from "../plugins/immune-brain/runtime/assurance/verdict_authority";
 import { writeTestReviewPacket } from "./helpers/review-packet-fixture";
-import { laneBatchReviewProfile, parseBatchReviewProfile, prepareBatchLaneRunState, reviewProfileFromArgs, writeBatchLaneRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
+import { laneBatchReviewProfile, parseBatchReviewProfile, prepareBatchLaneRunState, writeBatchLaneRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
+import { parseRequestedAgents } from "../plugins/immune-brain/runtime/unattended/agent_profiles";
 import { createLaneWorktree } from "../plugins/immune-brain/runtime/unattended/batch_worktrees";
 
 setDefaultTimeout(120_000);
@@ -56,16 +57,19 @@ beforeAll(() => {
 	process.env.XDG_CONFIG_HOME = scratchDir("xdg");
 });
 
-/** One real Git repository: the tree guard needs HEAD, an index and tracked bytes. */
-function reviewRepo(reviewHost: "pi" | "claude-code" | "antigravity" | null = "pi", lanes: Record<string, string> = {}): string {
+/**
+ * One real Git repository: the tree guard needs HEAD, an index and tracked bytes.
+ * `reviewer` is the project file's `agents.reviewer` value (`host[:model][@effort]`), or null for none.
+ */
+function reviewRepo(reviewer: string | null = "pi"): string {
 	const root = scratchDir("repo");
 	execFileSync("git", ["init", "-q"], { cwd: root });
 	execFileSync("git", ["config", "user.name", "test"], { cwd: root });
 	execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: root });
 	mkdirSync(join(root, ".imm"), { recursive: true });
 	writeFileSync(join(root, ".imm/config.json"), `${JSON.stringify({
-		contract: "immune_brain/project_config/v1",
-		...(reviewHost ? { lanes: { review_host: reviewHost, ...lanes } } : {}),
+		contract: "immune_brain/project_config/v2",
+		...(reviewer ? { agents: { reviewer } } : {}),
 	})}\n`);
 	writeFileSync(join(root, "src.ts"), "export const value = 1;\n");
 	execFileSync("git", ["add", "-A"], { cwd: root });
@@ -78,7 +82,7 @@ function homeAgents(agents: object): () => void {
 	const dir = join(process.env.XDG_CONFIG_HOME!, "immune-brain");
 	mkdirSync(dir, { recursive: true });
 	const path = join(dir, "config.json");
-	writeFileSync(path, JSON.stringify({ contract: "immune_brain/user_config/v1", agents }));
+	writeFileSync(path, JSON.stringify({ contract: "immune_brain/user_config/v2", agents }));
 	return () => rmSync(path, { force: true });
 }
 
@@ -530,7 +534,8 @@ describe("review profile required", () => {
 		const ready = await kernel.coordinator.advance(TASK, ctx(root));
 		expect(ready).toMatchObject({ state: "review_preparation_failed", code: "review_profile_required" });
 		const recovery = (ready as { recovery_action: string }).recovery_action;
-		expect(recovery).toContain("agents.profiles");
+		expect(recovery).toContain("agents.reviewer");
+		expect(recovery).not.toContain("presets");
 		expect(recovery).not.toContain("lanes.review_host");
 		expect(kernel.applied.filter((entry) => entry.role === "qa")).toHaveLength(1);
 		expect(reviewsOf(kernel)).toHaveLength(0);
@@ -564,9 +569,9 @@ describe("review profile required", () => {
 // --- review-config-invalid: an invalid `agents` table ----------------------
 
 const userConfigPath = () => join(process.env.XDG_CONFIG_HOME!, "immune-brain", "config.json");
-/** The S1-AC3 table shape, with one code-review host the user got wrong. */
-const invalidAgents = { profiles: { review: { host: "codex" } }, presets: { default: { roles: { "*": "review" } } } };
-const validAgents = { profiles: { review: { host: "pi" } }, presets: { default: { roles: { "*": "review" } } } };
+/** A user `agents` table binding the reviewer to a profile whose host the user got wrong. */
+const invalidAgents = { profiles: { review: { host: "codex" } }, reviewer: "review" };
+const validAgents = { profiles: { review: { host: "pi" } }, reviewer: "review" };
 
 describe("invalid agents configuration", () => {
 	test("an invalid user agents table names the file and key path instead of review_profile_required (RCI-A1)", async () => {
@@ -578,8 +583,8 @@ describe("invalid agents configuration", () => {
 			expect(ready).toMatchObject({ state: "review_preparation_failed", code: "review_config_invalid" });
 			const failure = ready as { reason: string; recovery_action: string };
 			expect(failure.reason).toContain(userConfigPath());
-			expect(failure.reason).toContain("agents.profiles.review.host");
-			expect(failure.recovery_action).toContain("agents.profiles.review.host");
+			expect(failure.reason).toContain("agents.profiles.review");
+			expect(failure.recovery_action).toContain("agents.profiles.review");
 			expect(failure.recovery_action).toContain("advance_assurance");
 			// QA stays earned: the same revision resumes once the table is fixed.
 			expect(kernel.applied.filter((entry) => entry.role === "qa")).toHaveLength(1);
@@ -600,29 +605,17 @@ describe("invalid agents configuration", () => {
 		} finally { cleanup(); }
 	});
 
-	test("the legacy lanes profile still reviews, and review_ready says why (RCI-A2)", async () => {
+	test("a project reviewer role still reviews when the user agents table is invalid", async () => {
 		const root = reviewRepo("pi");
 		const kernel = kernelFor(root);
 		onPath(fakeReviewer("exit 0"));
 		enterHerdr();
 		const cleanup = homeAgents(invalidAgents);
 		try {
+			// The invalid user value counts as unset; the project role resolves on its own.
 			const ready = await kernel.coordinator.advance(TASK, ctx(root));
 			expect(ready).toMatchObject({ state: "review_ready", review_profile: { host: "pi" } });
-			const warnings = (ready as { warnings: Array<{ code: string; paths: string[]; message: string }> }).warnings;
-			expect(warnings).toHaveLength(1);
-			expect(warnings[0]).toMatchObject({ code: "review_legacy_profile", paths: [userConfigPath()] });
-			expect(warnings[0]!.message).toContain("lanes");
-			expect(warnings[0]!.message).toContain("agents");
 		} finally { cleanup(); }
-	});
-
-	test("a legacy-only config reviews without a warning (RCI-A2 control)", async () => {
-		const root = reviewRepo("pi");
-		const kernel = kernelFor(root);
-		const ready = await kernel.coordinator.advance(TASK, ctx(root));
-		expect(ready).toMatchObject({ state: "review_ready", review_profile: { host: "pi" } });
-		expect(ready).not.toHaveProperty("warnings");
 	});
 });
 
@@ -684,34 +677,21 @@ describe("verification CLI stage", () => {
 		expect(reviewsOf(kernel).at(-1)!.verification).toMatchObject({ failure: "dispatch_failed", verifier_actor: null });
 	});
 
-	test("agents roles: the Review profile and the verifier model come from the resolved roles (S1-AC3)", async () => {
+	test("agents roles: the Review profile comes from the reviewer role and the verifier runs on its model", async () => {
 		const root = reviewRepo(null);
 		const cleanup = homeAgents({
-			profiles: { review: { host: "pi", model: "agent-reviewer-m" }, verify: { host: "pi", model: "agent-verifier-m" }, other: { host: "pi" } },
-			presets: { default: { roles: { "*": "other", "code-review": "review", "review-verifier": "verify" } } },
+			profiles: { review: { host: "pi", model: "agent-reviewer-m" }, other: { host: "pi", model: "other-m" } },
+			reviewer: "review", executor: "other",
 		});
 		try {
 			const { kernel, pending } = await reworkToVerification(root);
 			const session = pending.verification_session!;
-			expect(session.create_command).toContain("'--model' 'agent-verifier-m'");
+			expect(session.create_command).toContain("'--model' 'agent-reviewer-m'");
+			expect(session.create_command).not.toContain("other-m");
 			writeFileSync(session.output_path, verificationJsonFor(session));
 			await kernel.coordinator.submitVerification(TASK, ctx(root));
-			expect(reviewsOf(kernel).at(-1)!.verification).toMatchObject({ reviewer_model: "agent-reviewer-m", verifier_model: "agent-verifier-m", model_relation: "different" });
+			expect(reviewsOf(kernel).at(-1)!.verification).toMatchObject({ reviewer_model: "agent-reviewer-m", verifier_model: "agent-reviewer-m", model_relation: "same" });
 		} finally { cleanup(); }
-	});
-
-	test("a configured verifier model is offered and used, so the verifier runs on a different model (#284 D1)", async () => {
-		const root = reviewRepo("pi", { review_model: "reviewer-m", review_verifier_model: "verifier-m" });
-		const { kernel, pending } = await reworkToVerification(root);
-		const session = pending.verification_session!;
-		// The model reaches the session's Host arguments; the sentinel never does.
-		expect(session.create_command).toContain("'--model' 'verifier-m'");
-		writeFileSync(session.output_path, verificationJsonFor(session));
-		await kernel.coordinator.submitVerification(TASK, ctx(root));
-		expect(reviewsOf(kernel).at(-1)!.verification).toMatchObject({
-			reviewer_model: "reviewer-m", verifier_model: "verifier-m", model_relation: "different",
-			verifier_actor: expect.stringMatching(/^cli-verifier:/),
-		});
 	});
 
 	test("outside Herdr a Verification preparation fails closed instead of falling back to a process", async () => {
@@ -763,7 +743,7 @@ async function claudeAdvance(
 
 describe("default cli dispatch", () => {
 	test("an unset environment reserves the project's CLI reviewer as one explicit session", async () => {
-		const root = reviewRepo("pi", { review_model: "model-x" });
+		const root = reviewRepo("pi:model-x");
 		onPath(fakeReviewer("exit 0"));
 		const ready = await claudeAdvance(root, ROOT_ENV);
 
@@ -801,7 +781,7 @@ const antigravityAdvance = async (root: string, env: Record<string, string | und
 
 describe("cli only dispatch", () => {
 	test("the retired switch value leaves the CLI dispatch and no Agent parameters on every composition root", async () => {
-		const root = reviewRepo("pi", { review_model: "model-x" });
+		const root = reviewRepo("pi:model-x");
 		onPath(fakeReviewer("exit 0"));
 		const env = { ...ROOT_ENV, [RETIRED_SWITCH]: "subagent" };
 		for (const ready of [await piAdvance(root, env), await claudeAdvance(root, env), await antigravityAdvance(root, env)]) {
@@ -820,8 +800,8 @@ describe("default profile required", () => {
 
 		expect(ready).toMatchObject({ state: "review_preparation_failed", code: "review_profile_required" });
 		expect(typeof ready.recovery_action).toBe("string");
-		expect(ready.recovery_action).toContain("agents.profiles");
-		expect(ready.recovery_action).not.toContain("lanes.review_host");
+		expect(ready.recovery_action).toContain("agents.reviewer");
+		expect(ready.recovery_action).not.toContain("presets");
 	});
 
 	test("a routine task completes after QA without a profile", async () => {
@@ -852,7 +832,7 @@ describe("explicit review session", () => {
 	});
 
 	test("inside Herdr the reviewer runs as an explicit session whose result-slot JSON settles the Review", async () => {
-		const root = reviewRepo("pi", { review_transport: "herdr" });
+		const root = reviewRepo("pi");
 		const kernel = kernelFor(root);
 		const verdict = passVerdict(kernel.snapshot);
 		const state = enterHerdr();
@@ -899,7 +879,7 @@ describe("explicit review session", () => {
 	});
 
 	test("a failed round keeps the session open and runs no stop", async () => {
-		const root = reviewRepo("pi", { review_transport: "herdr" });
+		const root = reviewRepo("pi");
 		const kernel = kernelFor(root);
 		const state = enterHerdr();
 		onPath([fakeReviewer("exit 0"), join(__dirname, "fixtures/fake-herdr")].join(":"));
@@ -918,7 +898,7 @@ describe("explicit review session", () => {
 	});
 
 	test("after a consumed receipt the Parent's stop closes the single round", async () => {
-		const root = reviewRepo("pi", { review_transport: "herdr" });
+		const root = reviewRepo("pi");
 		const kernel = kernelFor(root);
 		const verdict = reworkVerdict(kernel.snapshot);
 		const state = enterHerdr();
@@ -937,7 +917,7 @@ describe("explicit review session", () => {
 	});
 
 	test("a session that stopped without writing its receipt ends the round instead of reading as still running", async () => {
-		const root = reviewRepo("pi", { review_transport: "herdr" });
+		const root = reviewRepo("pi");
 		const kernel = kernelFor(root);
 		const state = enterHerdr();
 		onPath([fakeReviewer("exit 0"), join(__dirname, "fixtures/fake-herdr")].join(":"));
@@ -960,7 +940,7 @@ describe("explicit review session", () => {
 	});
 
 	test("a session blocked on a dialog keeps the round open and points at the user instead of aborting", async () => {
-		const root = reviewRepo("pi", { review_transport: "herdr" });
+		const root = reviewRepo("pi");
 		const kernel = kernelFor(root);
 		enterHerdr();
 		onPath([fakeReviewer("exit 0"), join(__dirname, "fixtures/fake-herdr")].join(":"));
@@ -1023,10 +1003,9 @@ describe("explicit session launch arguments", () => {
 		expect(sessionHostArguments({ host: "claude-code" }, { outputPath: output, model: "host-default" })).not.toContain("--model");
 	});
 
-	test("the layered transport reaches the profile, and a Lane batch keeps it", () => {
-		expect(resolveReviewProfile(reviewRepo("pi", { review_transport: "herdr" }))).toMatchObject({ host: "pi", transport: "herdr" });
+	test("the configured reviewer runs on Herdr, and a Lane batch keeps its recorded profile", () => {
 		expect(resolveReviewProfile(reviewRepo("pi"))).toMatchObject({ host: "pi", transport: "herdr" });
-		const { lane } = laneBatch({ review_profile: { host: "pi", model: "model-x" }, lanes: { review_transport: "herdr" } });
+		const { lane } = laneBatch({ review_profile: { host: "pi", model: "model-x" } });
 		expect(resolveReviewProfile(lane)).toEqual({ host: "pi", model: "model-x", transport: "herdr" });
 		// A batch carries no transport of its own, so no recorded batch can select the retired process.
 		expect(resolveReviewProfile(laneBatch({ review_profile: { host: "pi" } }).lane)).toEqual({ host: "pi", transport: "herdr" });
@@ -1039,8 +1018,8 @@ describe("explicit session launch arguments", () => {
 const F14_TIME = "2026-11-12T00:00:00.000Z";
 
 /** A coordinator repo whose config names antigravity, one Lane, and a lane batch bound to it. */
-function laneBatch(options: { state?: string; review_profile?: { host: "pi" | "claude-code" | "antigravity"; model?: string }; batchId?: string; lane?: string; lanes?: Record<string, string> } = {}) {
-	const root = options.lane ? dirname(dirname(dirname(dirname(dirname(options.lane))))) : realpathSync(reviewRepo("antigravity", { review_model: "config-model", ...options.lanes }));
+function laneBatch(options: { state?: string; review_profile?: { host: "pi" | "claude-code" | "antigravity"; model?: string }; batchId?: string; lane?: string } = {}) {
+	const root = options.lane ? dirname(dirname(dirname(dirname(dirname(options.lane))))) : realpathSync(reviewRepo("antigravity:config-model"));
 	const head = execFileSync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
 	const lane = options.lane ?? createLaneWorktree(root, "f14", TASK, head);
 	const child = { task_id: TASK, slice_id: "S1", status: "enrollable" as const, reason: null, blocked_by: [],
@@ -1082,10 +1061,13 @@ describe("#426 F14 batch review profile", () => {
 	});
 
 	test("start arguments map to one profile and refuse a model without a host", () => {
-		expect(reviewProfileFromArgs({})).toBeUndefined();
-		expect(reviewProfileFromArgs({ review_host: "claude-code", review_model: "sonnet", review_effort: "low" }))
+		const root = reviewRepo(null);
+		expect(parseRequestedAgents(root, undefined)).toEqual({});
+		expect(parseRequestedAgents(root, { reviewer: "claude-code:sonnet@low" }).reviewer)
 			.toEqual({ host: "claude-code", model: "sonnet", effort: "low" });
-		expect(() => reviewProfileFromArgs({ review_model: "sonnet" })).toThrow("require review_host");
-		expect(() => reviewProfileFromArgs({ review_host: "codex" })).toThrow("invalid review_profile");
+		expect(parseRequestedAgents(root, { reviewer: { host: "claude-code", model: "sonnet", effort: "low" } }).reviewer)
+			.toEqual({ host: "claude-code", model: "sonnet", effort: "low" });
+		expect(() => parseRequestedAgents(root, { reviewer: { model: "sonnet" } })).toThrow("invalid agents.reviewer");
+		expect(() => parseRequestedAgents(root, { reviewer: "codex" })).toThrow("invalid agents.reviewer");
 	});
 });

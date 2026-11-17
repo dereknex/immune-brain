@@ -356,7 +356,10 @@ describe("settle commit under the Git integration preference (ADR 0024, SCN-4)",
 		mkdirSync(join(root, "docs/plans"), { recursive: true });
 		writeFileSync(join(root, intentPath), `${JSON.stringify(intent, null, 2)}\n`);
 		writeFileSync(join(root, ".gitignore"), ".imm/\n");
-		if (mode) writeFileSync(join(root, "AGENTS.md"), `# Agent Instructions\n\n- Git integration: ${mode}\n`);
+		if (mode) {
+			mkdirSync(join(root, ".imm"), { recursive: true });
+			writeFileSync(join(root, ".imm/config.json"), JSON.stringify({ contract: "immune_brain/project_config/v2", git_integration: mode }));
+		}
 		git(root, "add", "-A");
 		git(root, "commit", "-qm", "plan");
 		const base = git(root, "rev-parse", "HEAD");

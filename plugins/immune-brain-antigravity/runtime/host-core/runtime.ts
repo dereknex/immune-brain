@@ -16,7 +16,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { resolveConfig, type ReviewProfile } from "../config/layered_config";
+import { batchConfigErrors, resolveConfig, type ReviewProfile } from "../config/layered_config";
 import { LaneSupervisor, type ExecutorPreferences, type ExecutorHost } from "../unattended/lane_supervisor";
 import type { AssuranceHostPort } from "../assurance/host_port";
 
@@ -1134,7 +1134,8 @@ export class HostRuntime {
 			if (options.plan_source !== "single_task") return { state: "rejected", reason: "lane_stop_requires_task", recovery_action: "Specify a task_id in the current Host." };
 			return stopSingleTaskSupervisor(this.laneSupervisor, this.cwd, initiativeSlug, meta.signal);
 		}
-		if (options.plan_source && !resolveConfig(this.cwd).lanes.valid)
+		// ADR 0041: every new batch is refused on a configuration error; a reuse-only continuation runs on its frozen record.
+		if ((options.plan_source || !reuseOnly) && batchConfigErrors(resolveConfig(this.cwd)).length > 0)
 			return batchReason("lane_config_invalid");
 		// A reuse-only continuation never opens a gate, so it needs no confirmation port.
 		const interactive = meta.interactive ?? this.interactive;
@@ -1433,9 +1434,11 @@ export class HostRuntime {
 		});
 		let report = await startBatch({
 			plan_source: options.plan_source,
-			...(options.plan_source && this.env.HERDR_ENV === "1" ? { executor_mode: "interactive" as const } : {}),
+			// The `herdr` switch opts Executors into Herdr tabs; it takes effect only inside Herdr (ADR 0041).
+			...(options.plan_source && this.env.HERDR_ENV === "1" && resolveConfig(this.cwd).herdr.value === true ? { executor_mode: "interactive" as const } : {}),
 			...(options.plan_source ? { supervision: { supervisor: this.laneSupervisor, parentHost: this.parentHost, pluginDir: resolve(dirname(fileURLToPath(import.meta.url)), "../.."),
 				waitMs: laneWaitMs(this.env), signal: meta.signal, stop: options.stop, request: options.executor } } : {}),
+			executor_freeze: { ...(options.executor ? { request: options.executor } : {}), ...(this.parentHost ? { parentHost: this.parentHost } : {}) },
 			topology_digest: preflight.projection.topology_digest,
 			root: this.cwd,
 			batch_id: batchId,

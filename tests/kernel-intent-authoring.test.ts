@@ -126,9 +126,10 @@ for (const refused of [false, true]) {
 			writeFileSync(join(root, evidence), "baseline evidence\n");
 			writeFileSync(join(root, "notes.txt"), "baseline notes\n");
 			// The migration commit is Git integration: auto behavior (ADR 0024).
-			writeFileSync(join(root, "AGENTS.md"), "- Git integration: auto\n");
+			mkdirSync(join(root, ".imm"), { recursive: true });
+			writeFileSync(join(root, ".imm/config.json"), JSON.stringify({ contract: "immune_brain/project_config/v2", git_integration: "auto" }));
 			git(root, ["add", "-f", "--", evidence]);
-			git(root, ["add", "--", "notes.txt", "AGENTS.md"]);
+			git(root, ["add", "-f", "--", "notes.txt", ".imm/config.json"]);
 			git(root, ["commit", "-qm", "author migration baseline"]);
 			const inspectGit = (...args: string[]) => {
 				const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });

@@ -35,30 +35,14 @@ export function parseBatchReviewProfile(value: unknown): ReviewProfile | undefin
 	return { host: profile.host as ReviewProfile["host"], ...(profile.model ? { model: profile.model as string } : {}), ...(profile.effort ? { effort: profile.effort as string } : {}) };
 }
 
-/**
- * The Review profile carried by `start_unattended_batch`'s flat
- * `review_host` / `review_model` / `review_effort` arguments; undefined when
- * none is given. A model or effort without a host is refused (#426 F14).
- */
-export function reviewProfileFromArgs(args: Record<string, unknown>): ReviewProfile | undefined {
-	if (args.review_host === undefined) {
-		if (args.review_model !== undefined || args.review_effort !== undefined)
-			throw new Error("invalid review_profile: review_model and review_effort require review_host");
-		return undefined;
-	}
-	return parseBatchReviewProfile({ host: args.review_host,
-		...(args.review_model !== undefined ? { model: args.review_model } : {}),
-		...(args.review_effort !== undefined ? { effort: args.review_effort } : {}) });
-}
-
 const EXECUTOR_HOSTS: ReadonlySet<string> = new Set(["pi", "claude-code", "antigravity"]);
 
 /**
- * The Executor preferences a lane batch fixes when it starts (#426 F16): the
- * Parent resolves them from the request-selected Lane profile, so every Executor
- * generation, including one started after a Lane decision, runs on them instead
- * of whatever `lanes.active` names. Throws on a malformed value; returns
- * undefined when none is given.
+ * The Executor profile a lane batch freezes when it starts (ADR 0041): the
+ * runtime resolves it from the request's `agents.executor`, else the configured
+ * `executor` role, else the Parent's Host, so every Executor generation,
+ * including one started after a Lane decision, runs on it. Throws on a
+ * malformed value; returns undefined when none is given.
  */
 export function parseBatchExecutorPreferences(value: unknown): ExecutorPreferences | undefined {
 	if (value === undefined) return undefined;
@@ -1359,7 +1343,7 @@ export interface BatchLaneRunReport {
 	reason: string | null;
 	final_report?: import("./batch_final_report").BatchFinalReport;
 	handoffs: BatchLaneHandoff[];
-	lane_supervision?: { state: "running" | "exited" | "unobservable" | "stopped" | "unavailable"; generation: number | null; exit: import("./lane_supervisor").LaneExit | null; reason?: string; not_applied: string[] };
+	lane_supervision?: { state: "running" | "exited" | "unobservable" | "stopped" | "unavailable"; generation: number | null; exit: import("./lane_supervisor").LaneExit | null; reason?: string };
 	/** Offers refused at admission; a refused offer wrote nothing. */
 	lane_refusals?: Array<{ task_id: string; path: string; reason: string }>;
 	/** Spec drive-always-lanes D11: the single-task Lane waits on a literal-user decision answered at the Parent's native gate. */
@@ -1423,6 +1407,8 @@ export type BatchLaneHandoff =
 			lane_branch: string;
 			/** Where the Executor Host must be rooted; an observation, never authority. */
 			lane_path: string;
+			/** The batch's frozen Executor profile; an interactive Parent starts the Lane tab with exactly this Host, model and effort (#564). */
+			executor?: { host: NonNullable<ExecutorPreferences["executor_host"]>; model?: string; effort?: string };
 	  };
 
 type PersistableReport = Pick<BatchRunReport | BatchLaneRunReport, "contract" | "batch_id" | "batch_state">;

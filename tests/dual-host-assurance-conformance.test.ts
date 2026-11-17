@@ -165,8 +165,8 @@ function enrolledHostFixture(taskId: string, extraScope: string[] = []): string 
 	const root = mkdtempSync(join(tmpdir(), "imm-host-divergence-"));
 	mkdirSync(join(root, ".imm/state"), { recursive: true });
 	writeFileSync(join(root, ".imm/config.json"), JSON.stringify({
-		contract: "immune_brain/project_config/v1",
-		lanes: { review_host: "pi" },
+		contract: "immune_brain/project_config/v2",
+		agents: { reviewer: "pi" },
 	}) + "\n");
 	mkdirSync(join(root, "docs/plans"), { recursive: true });
 	mkdirSync(join(root, "docs/specs/archive"), { recursive: true });
@@ -283,9 +283,8 @@ test("layered config is identical on Claude and Pi status and errors appear as w
 	const taskId = "layered-config-status", root = enrolledHostFixture(taskId);
 	try {
 		const path = join(root, ".imm/config.json");
-		writeFileSync(path, JSON.stringify({ contract: "immune_brain/project_config/v1", initiative_carrier: "github" }));
-		writeFileSync(join(root, ".imm/lanes.local.json"), JSON.stringify({ active: "local", profiles: { local: { max_parallel: 3, token_env: "sk-live-123" } } }));
-		execFileSync("git", ["add", ".imm/config.json"], { cwd: root });
+		// An invalid batch key is an error diagnostic; its value must never leak.
+		writeFileSync(path, JSON.stringify({ contract: "immune_brain/project_config/v2", initiative_carrier: "github", batch: { max_parallel: 3, token_env: "sk-live-123" } }));
 		const claude = await new ClaudeRuntime({ cwd: root, env: HOST_ENV }).status(taskId);
 		const pi = await piCanaryTool({}).execute("config-status", { task_id: taskId, action: { op: "status" } }, undefined, undefined, piCanaryCtx(root)) as { content: Array<{ text: string }> };
 		const piStatus = JSON.parse(pi.content[0]!.text);
@@ -453,8 +452,8 @@ const ROOT = "/tmp/dual-host-assurance";
 // committed, so the CLI dispatcher can read the tree it guards (D5, D6).
 mkdirSync(join(ROOT, ".imm"), { recursive: true });
 writeFileSync(join(ROOT, ".imm/config.json"), JSON.stringify({
-	contract: "immune_brain/project_config/v1",
-	lanes: { review_host: "pi" },
+	contract: "immune_brain/project_config/v2",
+	agents: { reviewer: "pi" },
 }) + "\n");
 if (!existsSync(join(ROOT, ".git"))) {
 	execFileSync("git", ["init", "-q"], { cwd: ROOT });
@@ -674,8 +673,9 @@ function projectVerificationFixture(taskId: string, mode: "pass" | "prepare-fail
 	const root = mkdtempSync(join(tmpdir(), "imm-project-verification-"));
 	mkdirSync(join(root, ".imm/state"), { recursive: true });
 	writeFileSync(join(root, ".imm/config.json"), JSON.stringify({
-		contract: "immune_brain/project_config/v1",
-		lanes: { review_host: "pi" },
+		contract: "immune_brain/project_config/v2",
+		agents: { reviewer: "pi" },
+		...(options.gitIntegration ? { git_integration: options.gitIntegration } : {}),
 	}) + "\n");
 	mkdirSync(join(root, "docs/plans"), { recursive: true });
 	mkdirSync(join(root, "tools"), { recursive: true });
@@ -705,7 +705,8 @@ esac
 		scope_hint: [`docs/plans/${taskId}.intent.json`, "tools/future-pm", "tools/notes.txt"], risk: options.risk ?? "material", revision: 1,
 	};
 	writeFileSync(join(root, "docs/plans", `${taskId}.intent.json`), `${JSON.stringify(intent, null, 2)}\n`);
-	if (options.gitIntegration) writeFileSync(join(root, "AGENTS.md"), `- Git integration: ${options.gitIntegration}\n`);
+	// A tracked user file the routine-settle cases stage and edit as unrelated work.
+	if (options.gitIntegration) writeFileSync(join(root, "AGENTS.md"), "# Agent Instructions\n");
 	execFileSync("git", ["init", "-q"], { cwd: root });
 	execFileSync("git", ["add", "-A"], { cwd: root });
 	execFileSync("git", ["-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "-m", "fixture"], { cwd: root });
@@ -2591,7 +2592,7 @@ function cliReviewRoot(): string {
 	execFileSync("git", ["config", "user.name", "test"], { cwd: root });
 	execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: root });
 	mkdirSync(join(root, ".imm"), { recursive: true });
-	writeFileSync(join(root, ".imm/config.json"), JSON.stringify({ contract: "immune_brain/project_config/v1", lanes: { review_host: "pi" } }) + "\n");
+	writeFileSync(join(root, ".imm/config.json"), JSON.stringify({ contract: "immune_brain/project_config/v2", agents: { reviewer: "pi" } }) + "\n");
 	writeFileSync(join(root, "src.ts"), "export const value = 1;\n");
 	execFileSync("git", ["add", "-A"], { cwd: root });
 	execFileSync("git", ["commit", "-qm", "fixture"], { cwd: root });
@@ -3313,7 +3314,7 @@ describe("runtime composition", () => {
 		writeFileSync(join(root, ".gitignore"), ".imm/state/\n");
 		// D11: the Review CLI dispatcher needs a resolved review profile, exactly as
 		// the project-owned-verification fixture does.
-		writeFileSync(join(root, ".imm/config.json"), `${JSON.stringify({ contract: "immune_brain/project_config/v1", lanes: { review_host: "pi" } })}\n`);
+		writeFileSync(join(root, ".imm/config.json"), `${JSON.stringify({ contract: "immune_brain/project_config/v2", agents: { reviewer: "pi" } })}\n`);
 		execFileSync("git", ["init", "-q"], { cwd: root });
 		execFileSync("git", ["add", "-A"], { cwd: root });
 		execFileSync("git", ["-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "-m", "fixture"], { cwd: root });

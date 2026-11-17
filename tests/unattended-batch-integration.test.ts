@@ -447,7 +447,8 @@ function hiddenFixture(scripts: Record<string, string>, mode: "manual" | "auto")
 	mkdirSync(repo);
 	git(repo, "init", "-q", "-b", "main");
 	writeFileSync(join(repo, ".gitignore"), ".imm/\nnode_modules/\n");
-	writeFileSync(join(repo, "AGENTS.md"), `# Agent Instructions\n\n## Immune-Brain Preferences\n\n- Git integration: ${mode}\n`);
+	mkdirSync(join(repo, ".imm"), { recursive: true });
+	writeFileSync(join(repo, ".imm/config.json"), JSON.stringify({ contract: "immune_brain/project_config/v2", git_integration: mode }));
 	writeFileSync(join(repo, "base.txt"), "base\n");
 	writeFileSync(join(repo, "shared.txt"), "shared\n");
 	mkdirSync(join(repo, "docs/plans"), { recursive: true });

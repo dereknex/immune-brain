@@ -632,37 +632,40 @@ sequenceDiagram
 
 ## Configuration
 
-Immune-Brain reads two JSON files, the same on Pi and Claude Code:
+Immune-Brain reads two JSON files, the same on Pi and Claude Code ([ADR 0041](docs/adr/0041-simplified-configuration.md)):
 
-- **User file** `~/.config/immune-brain/config.json` (`$XDG_CONFIG_HOME/immune-brain/config.json` when set): personal choices — Lane profiles, decision-model profiles (credential environment-variable *names* only), and per-repository overrides under `projects`.
-- **Project file** `.imm/config.json`, tracked in Git: repository facts and policy — `git_integration`, `initiative_carrier`, enabled decision points and the egress ceiling, Lane defaults and batch final verification.
+- **User file** `~/.config/immune-brain/config.json` (`$XDG_CONFIG_HOME/immune-brain/config.json` when set): your defaults, agent profiles and decision-model profiles (credential environment-variable *names* only).
+- **Project file** `.imm/config.json` in the main checkout: per-repository choices, local to your checkout. It is read whether or not Git tracks it, so keep it out of version control when teammates' habits differ.
+
+Every key resolves **request > project file > user file > default**, except permission keys, which take the stricter value: `git_integration` (`manual` wins), `loop.auto_enroll_max_risk` (lower risk wins) and `loop.allowed_actors` / `loop.allowed_associations` (intersection).
 
 ```json
 {
-  "contract": "immune_brain/user_config/v1",
-  "lanes": {
-    "active": "fast",
-    "profiles": {
-      "fast": { "max_parallel": 4, "executor_host": "claude-code", "executor_model": "<model id>", "executor_effort": "high" },
-      "cheap": { "max_parallel": 2, "executor_host": "pi", "executor_effort": "low" }
-    }
-  }
+  "contract": "immune_brain/user_config/v2",
+  "agents": {
+    "profiles": { "deepseek": { "host": "pi", "model": "auto/deepseek-v4.1-flash", "effort": "high" } },
+    "executor": "deepseek",
+    "reviewer": "claude-code:<model id>@medium"
+  },
+  "batch": { "max_parallel": 3 }
 }
 ```
 
 ```json
-{ "contract": "immune_brain/project_config/v1", "git_integration": "manual", "initiative_carrier": "github" }
+{ "contract": "immune_brain/project_config/v2", "agents": { "executor": "claude-code:<model id>" }, "git_integration": "manual", "initiative_carrier": "github" }
 ```
 
-| Preference | File | Default | Notes |
+| Preference | Where | Default | Notes |
 |---|---|---|---|
 | Reply language | agent instruction file (`AGENTS.md` / `CLAUDE.md`) | repo `AGENTS.md` | Machine contracts / paths stay literal |
-| Initiative carrier | project, else user | none — Planner asks | Only matters when a proposal splits across multiple TaskIntents |
-| Git integration | project | `manual` | `auto` commits settled deliveries |
+| Agents (`executor`, `reviewer`, `planner`, `triage`) | either file; profiles in the user file | executor: the Parent's Host; reviewer: none | A profile name, shorthand `host[:model][@effort]` or `{ host, model?, effort? }` |
+| Lane capacity | `batch.max_parallel` in either file | 1 | A request's `max_parallel` wins |
+| Herdr tabs | top-level `herdr` | `false` | `true` runs Lane Executors in Herdr tabs when the Parent runs in Herdr |
+| Initiative carrier | either file | none — Planner asks | Only matters when a proposal splits across multiple TaskIntents |
+| Git integration | either file | `manual` | `auto` commits settled deliveries; `manual` wins wherever it is set |
 | Advisory subagents | agent instruction file | allowed | Respects Pi host policy + explicit user instruction |
-| `lanes.active` / Lane profiles | user | none — one Lane at a time | `max_parallel`, `executor_host` (`claude-code` / `pi`), `executor_model`, `executor_effort`; model and effort apply only with a host from the same layer |
 
-Personal values resolve **current message > user per-repository override > user file > project default > built-in default**; policy values (`git_integration`, enabled decision points, egress) come from the project file, and the user file may only narrow egress. `imm-kernel config --json` prints every effective value with its source, and both Hosts' status Tool carries it as `config`. An invalid section fails closed with a named diagnostic. `.imm/lanes.local.json`, `.imm/decision-models.local.json`, `.imm/decision-bindings.json` and the `Initiative carrier default:` / `Git integration:` instruction-file lines are deprecated legacy sources, still read for one major version with a warning.
+A batch freezes the Executor and Review profiles it resolved; `start_unattended_batch` takes a request's choice as `agents: { executor?, reviewer? }`. `imm-kernel config --json` prints every effective value with its source, and both Hosts' status Tool carries it as `config`. An invalid value counts as unset and is reported as an error; a batch is refused while `agents`, `batch` or `herdr` has one. A `v1` file is reported as `config_invalid`: run `imm-kernel config migrate` to preview its v2 form and `--write` to apply it.
 
 See [`docs/reference/immune-brain-config.md`](docs/reference/immune-brain-config.md) for details.
 

@@ -42,7 +42,7 @@ Rules:
 Configure a profile and default binding in `~/.config/immune-brain/config.json` (or `$XDG_CONFIG_HOME/immune-brain/config.json`), for example:
 
 ```json
-{ "contract": "immune_brain/user_config/v1", "decision_models": { "default_profile": "default", "profiles": { "default": { "kind": "clef", "model": "clef", "account_id_env": "CLOUDFLARE_ACCOUNT_ID", "token_env": "CLOUDFLARE_AUTH_TOKEN" } } } }
+{ "contract": "immune_brain/user_config/v2", "decision_models": { "default_profile": "default", "profiles": { "default": { "kind": "clef", "model": "clef", "account_id_env": "CLOUDFLARE_ACCOUNT_ID", "token_env": "CLOUDFLARE_AUTH_TOKEN" } } } }
 ```
 
 Then run `bun scripts/decision-eval/a14/run.ts --corpus <corpus.jsonl> --out <dir>`.
@@ -51,7 +51,7 @@ PR comments are a non-sensitive input category, so no `egress` entry is needed.
 ### Jev (TypeSafe System One) profile
 
 ```json
-{ "contract": "immune_brain/user_config/v1", "decision_models": { "default_profile": "default", "profiles": { "default": { "kind": "jev", "api_key_env": "TYPESAFE_API_KEY" } } } }
+{ "contract": "immune_brain/user_config/v2", "decision_models": { "default_profile": "default", "profiles": { "default": { "kind": "jev", "api_key_env": "TYPESAFE_API_KEY" } } } }
 ```
 
 Optional fields: `base_url` (default `https://api.typesafe.ai`), `timeout_ms` (1000-120000,

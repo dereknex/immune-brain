@@ -14,7 +14,7 @@ function fixture(mode: "manual" | "auto") {
 	const root = mkdtempSync(join(tmpdir(), "single-delivery-")); roots.push(root);
 	git(root, "init", "-q", "-b", "main");
 	mkdirSync(join(root, ".imm"), { recursive: true });
-	writeFileSync(join(root, ".imm/config.json"), JSON.stringify({ contract: "immune_brain/project_config/v1", git_integration: mode }));
+	writeFileSync(join(root, ".imm/config.json"), JSON.stringify({ contract: "immune_brain/project_config/v2", git_integration: mode }));
 	for (const file of ["changed", "renamed", "unrelated"]) writeFileSync(join(root, file), `base ${file}\n`);
 	git(root, "add", "."); git(root, "commit", "-qm", "base");
 	const base = git(root, "rev-parse", "HEAD");

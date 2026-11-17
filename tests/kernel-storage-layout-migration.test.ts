@@ -27,8 +27,8 @@ import {
 const roots: string[] = [];
 
 /**
- * A repository with one initial commit. `gitIntegration` commits a root
- * AGENTS.md declaring that preference in it (ADR 0024); without one the
+ * A repository with one initial commit. `gitIntegration` commits a project
+ * `.imm/config.json` declaring that preference (ADR 0024, ADR 0041); without one the
  * repository resolves to `manual`, which never commits a migration.
  */
 function tempRoot(initGit = true, gitIntegration?: "auto" | "manual"): string {
@@ -37,8 +37,9 @@ function tempRoot(initGit = true, gitIntegration?: "auto" | "manual"): string {
 	if (initGit) {
 		execFileSync("git", ["-C", root, "init", "-q"]);
 		if (gitIntegration) {
-			writeFileSync(join(root, "AGENTS.md"), `# Agent Instructions\n\n- Git integration: ${gitIntegration}\n`);
-			execFileSync("git", ["-C", root, "add", "--", "AGENTS.md"]);
+			mkdirSync(join(root, ".imm"), { recursive: true });
+			writeFileSync(join(root, ".imm/config.json"), JSON.stringify({ contract: "immune_brain/project_config/v2", git_integration: gitIntegration }));
+			execFileSync("git", ["-C", root, "add", "-f", "--", ".imm/config.json"]);
 		}
 		execFileSync("git", [
 			"-C", root, "-c", "user.email=test@example.com",

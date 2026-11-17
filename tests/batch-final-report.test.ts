@@ -20,9 +20,9 @@ function fixture(mode = "manual", routineClasses?: Array<{ id: string; paths: st
 	const root = realpathSync(mkdtempSync(join(tmpdir(), "imm-final-report-")));
 	roots.push(root);
 	git(root, "init", "-q", "-b", "main");
-	writeFileSync(join(root, "AGENTS.md"), `- Git integration: ${mode}\n`);
 	writeFileSync(join(root, "value.txt"), "base\n");
 	mkdirSync(join(root, ".imm"));
+	writeFileSync(join(root, ".imm/config.json"), JSON.stringify({ contract: "immune_brain/project_config/v2", git_integration: mode }));
 	writeFileSync(join(root, ".imm/risk-floor.json"), JSON.stringify({ contract: "assurance_kernel/risk_floor/v1", critical: { changed_only: ["extra.txt"] } }));
 	if (routineClasses) writeFileSync(join(root, ".imm/routine-classes.json"), JSON.stringify({ contract: "assurance_kernel/routine_classes/v1", classes: routineClasses }));
 	git(root, "add", ".");

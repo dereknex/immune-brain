@@ -67,7 +67,7 @@ function checkout(loopConfig?: unknown): string {
 	if (loopConfig !== undefined)
 		writeFileSync(
 			join(root, ".imm/config.json"),
-			JSON.stringify({ contract: "immune_brain/project_config/v1", loop: loopConfig }),
+			JSON.stringify({ contract: "immune_brain/project_config/v2", loop: loopConfig }),
 		);
 	git(root, "init", "-q", "-b", "main");
 	git(root, "add", "-A");

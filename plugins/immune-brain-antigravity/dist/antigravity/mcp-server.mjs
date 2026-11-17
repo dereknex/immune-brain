@@ -6539,18 +6539,6 @@ function parseBatchReviewProfile(value) {
     throw new Error("invalid review_profile: expected { host: pi | claude-code | antigravity, model?, effort? }");
   return { host: profile.host, ...profile.model ? { model: profile.model } : {}, ...profile.effort ? { effort: profile.effort } : {} };
 }
-function reviewProfileFromArgs(args) {
-  if (args.review_host === undefined) {
-    if (args.review_model !== undefined || args.review_effort !== undefined)
-      throw new Error("invalid review_profile: review_model and review_effort require review_host");
-    return;
-  }
-  return parseBatchReviewProfile({
-    host: args.review_host,
-    ...args.review_model !== undefined ? { model: args.review_model } : {},
-    ...args.review_effort !== undefined ? { effort: args.review_effort } : {}
-  });
-}
 function parseBatchExecutorPreferences(value) {
   if (value === undefined)
     return;
@@ -7836,222 +7824,97 @@ var init_batch_final_verification = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/config/agent_roles.ts
-function readTable(agents, file, errors) {
-  const err = (code, key_path, message) => errors.push({ code, file, key_path, message });
-  for (const key of Object.keys(agents))
-    if (!["profiles", "presets", "active"].includes(key))
-      err("config_invalid", `agents.${key}`, "unknown key");
+function parseAgentShorthand(value) {
+  let rest = value.trim(), effort;
+  const at = rest.lastIndexOf("@");
+  if (at > 0 && AGENT_EFFORTS.includes(rest.slice(at + 1))) {
+    effort = rest.slice(at + 1);
+    rest = rest.slice(0, at);
+  }
+  const colon = rest.indexOf(":");
+  const host = colon < 0 ? rest : rest.slice(0, colon), model = colon < 0 ? undefined : rest.slice(colon + 1);
+  if (!AGENT_HOSTS.includes(host) || model !== undefined && !text(model))
+    return null;
+  return { host, ...model ? { model } : {}, ...effort ? { effort } : {} };
+}
+function parseAgentObject(value) {
+  if (!isObject2(value))
+    return "expected an object";
+  for (const key of Object.keys(value))
+    if (!["host", "model", "effort"].includes(key))
+      return `unknown key ${key}`;
+  if (!AGENT_HOSTS.includes(value.host))
+    return `expected host ${AGENT_HOSTS.join(", ")}`;
+  if (value.model !== undefined && !text(value.model))
+    return "expected a non-empty model";
+  if (value.effort !== undefined && !text(value.effort))
+    return "expected a non-empty effort";
+  return { host: value.host, ...value.model ? { model: value.model } : {}, ...value.effort ? { effort: value.effort } : {} };
+}
+function parseAgentValue(value, profiles) {
+  if (typeof value === "string") {
+    if (Object.hasOwn(profiles, value))
+      return { ok: true, profile: profiles[value] };
+    const parsed = parseAgentShorthand(value);
+    return parsed ? { ok: true, profile: parsed } : { ok: false, code: "unknown_profile", message: `${JSON.stringify(value)} is neither a profile name nor host:model@effort` };
+  }
+  const parsed = parseAgentObject(value);
+  return typeof parsed === "string" ? { ok: false, code: "config_invalid", message: parsed } : { ok: true, profile: parsed };
+}
+function resolveAgents(layers) {
+  const errors = [];
+  const err = (code, file, key_path, message) => errors.push({ code, file, key_path, message });
+  const section = (value, file, keys) => {
+    if (value === null || value === undefined)
+      return {};
+    if (!isObject2(value)) {
+      err("config_invalid", file, "agents", "expected object");
+      return {};
+    }
+    for (const key of Object.keys(value))
+      if (!keys.includes(key))
+        err("config_invalid", file, `agents.${key}`, key === "profiles" ? "profiles are defined only in the user file" : "unknown key");
+    return value;
+  };
+  const user = section(layers.user, layers.files.user, ["profiles", ...AGENT_ROLES]);
+  const project = section(layers.project, layers.files.project, AGENT_ROLES);
   const profiles = {};
-  if (agents.profiles !== undefined) {
-    if (!isObject2(agents.profiles))
-      err("config_invalid", "agents.profiles", "expected object");
+  if (user.profiles !== undefined) {
+    if (!isObject2(user.profiles))
+      err("config_invalid", layers.files.user, "agents.profiles", "expected object");
     else
-      for (const [name, value] of Object.entries(agents.profiles)) {
-        const path = `agents.profiles.${name}`;
-        if (!isObject2(value)) {
-          err("config_invalid", path, "expected object");
-          continue;
-        }
-        for (const key of Object.keys(value))
-          if (!PROFILE_KEYS.includes(key))
-            err("config_invalid", `${path}.${key}`, "unknown key");
-        if (!AGENT_HOSTS.includes(value.host)) {
-          err("config_invalid", `${path}.host`, `expected ${AGENT_HOSTS.join(", ")}`);
-          continue;
-        }
-        if (value.model !== undefined && !text(value.model)) {
-          err("config_invalid", `${path}.model`, "expected a non-empty string");
-          continue;
-        }
-        if (value.effort !== undefined && !text(value.effort)) {
-          err("config_invalid", `${path}.effort`, "expected a non-empty string");
-          continue;
-        }
-        if (value.transport !== undefined && !AGENT_TRANSPORTS.includes(value.transport)) {
-          err("config_invalid", `${path}.transport`, `expected ${AGENT_TRANSPORTS.join(", ")}`);
-          continue;
-        }
-        profiles[name] = { host: value.host, ...value.model ? { model: value.model } : {}, ...value.effort ? { effort: value.effort } : {}, ...value.transport ? { transport: value.transport } : {} };
+      for (const [name, value] of Object.entries(user.profiles)) {
+        const parsed = parseAgentObject(value);
+        if (typeof parsed === "string")
+          err("config_invalid", layers.files.user, `agents.profiles.${name}`, parsed);
+        else
+          profiles[name] = parsed;
       }
   }
-  const presets = {};
-  if (agents.presets !== undefined) {
-    if (!isObject2(agents.presets))
-      err("config_invalid", "agents.presets", "expected object");
-    else
-      for (const [name, value] of Object.entries(agents.presets)) {
-        const path = `agents.presets.${name}`;
-        if (!isObject2(value)) {
-          err("config_invalid", path, "expected object");
-          continue;
-        }
-        for (const key of Object.keys(value))
-          if (!PRESET_KEYS.includes(key))
-            err("config_invalid", `${path}.${key}`, "unknown key");
-        if (value.max_parallel !== undefined && !(Number.isSafeInteger(value.max_parallel) && value.max_parallel >= AGENT_MAX_PARALLEL.min && value.max_parallel <= AGENT_MAX_PARALLEL.max)) {
-          err("config_invalid", `${path}.max_parallel`, `expected an integer between ${AGENT_MAX_PARALLEL.min} and ${AGENT_MAX_PARALLEL.max}`);
-          continue;
-        }
-        const roles = {};
-        let ok = true;
-        if (value.roles !== undefined) {
-          if (!isObject2(value.roles)) {
-            err("config_invalid", `${path}.roles`, "expected object");
-            ok = false;
-          } else
-            for (const [role, profile] of Object.entries(value.roles)) {
-              if (role !== "*" && !AGENT_ROLES.includes(role)) {
-                err("config_invalid", `${path}.roles.${role}`, `expected one of ${[...AGENT_ROLES, "*"].join(", ")}`);
-                ok = false;
-                continue;
-              }
-              if (!text(profile)) {
-                err("config_invalid", `${path}.roles.${role}`, "expected a profile name");
-                ok = false;
-                continue;
-              }
-              roles[role] = profile;
-            }
-        }
-        if (ok)
-          presets[name] = { ...value.max_parallel !== undefined ? { max_parallel: value.max_parallel } : {}, ...Object.keys(roles).length ? { roles } : {} };
-      }
-  }
-  let active;
-  if (agents.active !== undefined) {
-    if (text(agents.active))
-      active = agents.active;
-    else
-      err("config_invalid", "agents.active", "expected preset name");
-  }
-  return { table: { profiles, presets, active: { value: active ?? "default", source: active ? "user" : "default" }, layer: "user" }, present: Object.keys(agents).length > 0 };
-}
-function resolveTable(table, options) {
-  const errors = [];
-  const file = options.file;
-  const err = (code, key_path, message) => {
-    if (options.strict && file)
-      errors.push({ code, file, key_path, message });
-  };
-  const preset = (name) => Object.hasOwn(table.presets, name) ? table.presets[name] : undefined;
-  const fallbackName = table.default_preset === undefined ? "default" : table.default_preset;
-  const activePreset = preset(table.active.value), defaultPreset = fallbackName === null ? undefined : preset(fallbackName);
-  if (table.active.source !== "default" && !activePreset)
-    err("unknown_preset", "agents.active", "unknown preset");
-  if (defaultPreset && fallbackName === "default" && !text(defaultPreset.roles?.["*"]))
-    err("preset_incomplete", "agents.presets.default.roles", 'a default preset must bind "*"');
-  const rolesOf = (p) => p && isObject2(p.roles) ? p.roles : {};
-  const roles = unsetRoles();
+  const roles = {};
   for (const role of AGENT_ROLES) {
-    const fallback = fallbackName ?? "";
-    const order = [[table.active.value, activePreset, role], [fallback, defaultPreset, role], [table.active.value, activePreset, "*"], [fallback, defaultPreset, "*"]];
-    let pick;
-    for (const [name, item, key] of order) {
-      const profile = rolesOf(item)[key];
-      if (text(profile)) {
-        pick = { preset: name, profile, key };
-        break;
+    roles[role] = null;
+    for (const [layer, values, file] of [["project", project, layers.files.project], ["user", user, layers.files.user]]) {
+      if (values[role] === undefined)
+        continue;
+      const parsed = parseAgentValue(values[role], profiles);
+      if (!parsed.ok) {
+        err(parsed.code, file, `agents.${role}`, parsed.message);
+        continue;
       }
+      roles[role] ??= { host: parsed.profile.host, model: parsed.profile.model ?? null, effort: parsed.profile.effort ?? null, source: layer };
     }
-    if (!pick)
-      continue;
-    const profile = Object.hasOwn(table.profiles, pick.profile) ? table.profiles[pick.profile] : undefined;
-    if (!profile) {
-      err("unknown_profile", `agents.presets.${pick.preset}.roles.${pick.key}`, `unknown profile ${pick.profile}`);
-      continue;
-    }
-    const transport = profile.transport ?? ROLE_TRANSPORTS[role][0];
-    if (!ROLE_TRANSPORTS[role].includes(transport))
-      err("transport_invalid_for_role", `agents.profiles.${pick.profile}.transport`, `${role} runs only on ${ROLE_TRANSPORTS[role].join(" or ")}`);
-    roles[role] = { host: profile.host ?? null, model: profile.model ?? null, effort: profile.effort ?? null, transport, preset: pick.preset, layer: table.layer };
   }
-  const review = roles["code-review"], verifier = roles["review-verifier"];
-  if (review.host && verifier.host && review.host !== verifier.host)
-    err("review_verifier_host_mismatch", `agents.presets.${verifier.preset}.roles.review-verifier`, `review-verifier must run on code-review's host ${review.host}`);
-  const maxOf = (p) => typeof p?.max_parallel === "number" ? p.max_parallel : undefined;
-  const activeMax = maxOf(activePreset), defaultMax = maxOf(defaultPreset);
-  const projectMax = typeof options.projectMaxParallel === "number" ? options.projectMaxParallel : undefined;
-  const max_parallel = activeMax !== undefined ? { value: activeMax, source: table.active.source } : defaultMax !== undefined ? { value: defaultMax, source: "default" } : projectMax !== undefined ? { value: projectMax, source: "project" } : { value: AGENT_MAX_PARALLEL.default, source: "default" };
-  return { roles, max_parallel, errors };
+  return { agents: { valid: errors.length === 0, profiles: { value: profiles, source: user.profiles !== undefined ? "user" : "default" }, roles }, errors };
 }
-function validateRefs(table, file, errors) {
-  for (const [preset, value] of Object.entries(table.presets))
-    for (const [role, profile] of Object.entries(value.roles ?? {}))
-      if (!Object.hasOwn(table.profiles, profile))
-        errors.push({ code: "unknown_profile", file, key_path: `agents.presets.${preset}.roles.${role}`, message: `unknown profile ${profile}` });
+function agentRole(agents, role) {
+  return agents.roles[role] ?? null;
 }
-function agentRole(agents, role, preset) {
-  const resolved = preset === undefined || preset === agents.active.value ? agents.roles[role] : resolveTable({
-    profiles: agents.profiles.value,
-    presets: agents.presets.value,
-    active: { value: preset, source: "request" },
-    layer: "request",
-    ...agents.source.value === "legacy" ? { default_preset: null } : {}
-  }, { strict: false }).roles[role];
-  return resolved !== undefined && resolved.preset !== null ? resolved : null;
-}
-function resolveAgentRoles(layers) {
-  const errors = [];
-  const read = layers.user === null ? null : readTable(layers.user, layers.file.user, errors);
-  if (layers.user === null)
-    errors.push({ code: "config_invalid", file: layers.file.user, key_path: "agents", message: "the user file is unreadable" });
-  for (const key of Object.keys(layers.project))
-    if (key !== "active")
-      errors.push({ code: "config_invalid", file: layers.file.project, key_path: `agents.${key}`, message: "only `active` may be set in the project file" });
-  const name = (value, file, key_path) => {
-    if (value === undefined)
-      return;
-    if (text(value))
-      return value;
-    errors.push({ code: "config_invalid", file, key_path, message: "expected preset name" });
-    return;
-  };
-  const overrideActive = name(layers.override.active, layers.file.override, "agents.active");
-  const projectActive = name(layers.project.active, layers.file.project, "agents.active");
-  const configured = read?.present ? {
-    profiles: read.table.profiles,
-    presets: read.table.presets,
-    active: overrideActive ? { value: overrideActive, source: "user:project" } : projectActive ? { value: projectActive, source: "project" } : read.table.active,
-    layer: "user"
-  } : null;
-  if (configured) {
-    validateRefs(configured, layers.file.user, errors);
-    errors.push(...resolveTable(configured, { strict: true, file: layers.file.user, projectMaxParallel: layers.projectMaxParallel }).errors);
-  }
-  const table = configured && errors.length === 0 ? configured : layers.legacy;
-  const resolved = table ? resolveTable(table, { strict: false, projectMaxParallel: layers.projectMaxParallel }) : null;
-  const maxOf = typeof layers.projectMaxParallel === "number" ? { value: layers.projectMaxParallel, source: "project" } : { value: AGENT_MAX_PARALLEL.default, source: "default" };
-  return {
-    agents: {
-      valid: errors.length === 0,
-      source: { value: table === null ? "default" : table === configured ? "agents" : "legacy", source: table?.layer ?? "default" },
-      active: table?.active ?? { value: "default", source: "default" },
-      profiles: { value: table?.profiles ?? {}, source: table?.layer ?? "default" },
-      presets: { value: table?.presets ?? {}, source: table?.layer ?? "default" },
-      roles: resolved?.roles ?? unsetRoles(),
-      max_parallel: resolved?.max_parallel ?? maxOf
-    },
-    errors
-  };
-}
-var isObject2 = (v) => v !== null && typeof v === "object" && !Array.isArray(v), AGENT_ROLES, AGENT_HOSTS, AGENT_TRANSPORTS, ROLE_TRANSPORTS, AGENT_MAX_PARALLEL, PROFILE_KEYS, PRESET_KEYS, text = (v) => typeof v === "string" && v.trim().length > 0, unsetRoles = () => Object.fromEntries(AGENT_ROLES.map((role) => [role, { host: null, model: null, effort: null, transport: null, preset: null, layer: "unset" }]));
+var isObject2 = (v) => v !== null && typeof v === "object" && !Array.isArray(v), text = (v) => typeof v === "string" && v.trim().length > 0, AGENT_ROLES, AGENT_HOSTS, AGENT_EFFORTS;
 var init_agent_roles = __esm(() => {
-  AGENT_ROLES = ["executor", "code-review", "review-verifier", "advisory-reviewer", "judging", "clarify", "plan", "repair"];
+  AGENT_ROLES = ["executor", "reviewer", "planner", "triage"];
   AGENT_HOSTS = ["claude-code", "pi", "antigravity"];
-  AGENT_TRANSPORTS = ["process", "herdr", "subagent"];
-  ROLE_TRANSPORTS = {
-    executor: ["process", "herdr"],
-    "code-review": ["herdr"],
-    "review-verifier": ["herdr"],
-    "advisory-reviewer": ["subagent", "herdr"],
-    judging: ["process"],
-    clarify: ["process"],
-    plan: ["process"],
-    repair: ["process"]
-  };
-  AGENT_MAX_PARALLEL = { min: 1, max: 8, default: 1 };
-  PROFILE_KEYS = ["host", "model", "effort", "transport"];
-  PRESET_KEYS = ["max_parallel", "roles"];
+  AGENT_EFFORTS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 });
 
 // plugins/immune-brain/runtime/decision_model/thresholds.ts
@@ -8234,22 +8097,15 @@ var init_thresholds = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/decision_model/contract.ts
-function isSensitiveCategory(value) {
-  return SENSITIVE_CATEGORIES.includes(value);
-}
-function isNonSensitiveCategory(value) {
-  return NON_SENSITIVE_CATEGORIES.includes(value);
-}
 function isProviderKind(value) {
   return typeof value === "string" && PROVIDER_KINDS.includes(value);
 }
 function unavailable(reason, detail) {
   return { status: "unavailable", reason, detail };
 }
-var NON_SENSITIVE_CATEGORIES, SENSITIVE_CATEGORIES, PROVIDER_KINDS;
+var SENSITIVE_CATEGORIES, PROVIDER_KINDS;
 var init_contract = __esm(() => {
   init_thresholds();
-  NON_SENSITIVE_CATEGORIES = ["pr_comment", "issue_text", "command_text", "session_event"];
   SENSITIVE_CATEGORIES = ["finding", "diff", "goal_scope", "spec_source"];
   PROVIDER_KINDS = ["clef", "fake", "jev"];
 });
@@ -8267,54 +8123,8 @@ function unknownKey(obj, allowed) {
       return key;
   return null;
 }
-function parseBindings(raw, registry) {
-  const file = BINDINGS_PATH;
-  if (!isObject3(raw))
-    return invalid(file, "top level must be an object");
-  const extra = unknownKey(raw, ["contract", "default_profile", "bindings", "egress"]);
-  if (extra !== null)
-    return invalid(file, `unknown key "${extra}"`);
-  if (raw.contract !== BINDINGS_CONTRACT)
-    return invalid(file, `contract must be "${BINDINGS_CONTRACT}"`);
-  const defaultProfile = raw.default_profile;
-  if (defaultProfile !== null && !nonEmptyString2(defaultProfile))
-    return invalid(file, "default_profile must be a profile name or null");
-  if (!isObject3(raw.bindings))
-    return invalid(file, "bindings must be an object");
-  const bindings = {};
-  for (const [point, profile] of Object.entries(raw.bindings)) {
-    if (!Object.hasOwn(registry, point))
-      return invalid(file, `unknown application point "${point}"`);
-    if (profile !== null && !nonEmptyString2(profile))
-      return invalid(file, `bindings.${point} must be a profile name or null`);
-    bindings[point] = profile;
-  }
-  if (!isObject3(raw.egress))
-    return invalid(file, "egress must be an object");
-  const egress = {};
-  for (const [kind, categories] of Object.entries(raw.egress)) {
-    if (!isProviderKind(kind))
-      return invalid(file, `unknown provider kind "${kind}" in egress`);
-    if (!Array.isArray(categories))
-      return invalid(file, `egress.${kind} must be an array`);
-    const seen = [];
-    for (const category of categories) {
-      if (typeof category !== "string")
-        return invalid(file, `egress.${kind} entries must be strings`);
-      if (isNonSensitiveCategory(category))
-        return invalid(file, `egress.${kind} lists non-sensitive category "${category}", which is always allowed`);
-      if (!isSensitiveCategory(category))
-        return invalid(file, `unknown input category "${category}" in egress.${kind}`);
-      if (seen.includes(category))
-        return invalid(file, `egress.${kind} lists "${category}" twice`);
-      seen.push(category);
-    }
-    egress[kind] = seen;
-  }
-  return { ok: true, value: { default_profile: defaultProfile, bindings, egress } };
-}
 function parseProfiles(raw) {
-  const file = LOCAL_CONFIG_PATH;
+  const file = PROFILES_LABEL;
   if (!isObject3(raw))
     return invalid(file, "top level must be an object");
   const extra = unknownKey(raw, ["profiles"]);
@@ -8332,7 +8142,7 @@ function parseProfiles(raw) {
   return { ok: true, value: profiles };
 }
 function parseProfile(name, raw) {
-  const file = LOCAL_CONFIG_PATH;
+  const file = PROFILES_LABEL;
   const where = `profiles.${name}`;
   if (!isObject3(raw))
     return invalid(file, `${where} must be an object`);
@@ -8348,7 +8158,7 @@ function parseProfile(name, raw) {
   }
 }
 function parseClefProfile(where, raw) {
-  const file = LOCAL_CONFIG_PATH;
+  const file = PROFILES_LABEL;
   const extra = unknownKey(raw, ["kind", "model", "account_id_env", "token_env", "context_window", "timeout_ms"]);
   if (extra !== null)
     return invalid(file, `${where}: unknown key "${extra}"`);
@@ -8373,7 +8183,7 @@ function parseClefProfile(where, raw) {
   return { ok: true, value: profile };
 }
 function parseJevProfile(where, raw) {
-  const file = LOCAL_CONFIG_PATH;
+  const file = PROFILES_LABEL;
   const extra = unknownKey(raw, ["kind", "api_key_env", "base_url", "context_window", "timeout_ms"]);
   if (extra !== null)
     return invalid(file, `${where}: unknown key "${extra}"`);
@@ -8418,7 +8228,7 @@ function parseProbabilityMap(value) {
   return out;
 }
 function parseFakeProfile(where, raw) {
-  const file = LOCAL_CONFIG_PATH;
+  const file = PROFILES_LABEL;
   const extra = unknownKey(raw, ["kind", "answers", "default"]);
   if (extra !== null)
     return invalid(file, `${where}: unknown key "${extra}"`);
@@ -8440,52 +8250,30 @@ function parseFakeProfile(where, raw) {
   }
   return { ok: true, value: profile };
 }
-var BINDINGS_PATH = ".imm/decision-bindings.json", LOCAL_CONFIG_PATH = ".imm/decision-models.local.json", BINDINGS_CONTRACT = "immune_brain/decision_bindings/v1", nonEmptyString2 = (value) => typeof value === "string" && value.length > 0;
+var PROFILES_LABEL = "decision_models.profiles", nonEmptyString2 = (value) => typeof value === "string" && value.length > 0;
 var init_config = __esm(() => {
   init_contract();
 });
 
-// plugins/immune-brain/runtime/config/project_identity.ts
-import { execFileSync as execFileSync5 } from "node:child_process";
-import { realpathSync as realpathSync10 } from "node:fs";
-import { dirname as dirname8 } from "node:path";
-function git3(root, ...args) {
-  try {
-    return execFileSync5("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
-  } catch {
-    return null;
-  }
-}
-function projectIdentity(root) {
-  const origin = git3(root, "remote", "get-url", "origin");
-  if (origin) {
-    let host;
-    let path;
-    try {
-      const url = new URL(origin);
-      host = url.hostname.toLowerCase();
-      path = url.pathname;
-      if (!host)
-        throw new Error("missing host");
-    } catch {
-      const match = /^(?:[^@/]+@)?([^:/]+):(.+)$/.exec(origin);
-      if (!match)
-        throw new Error("origin URL is not supported");
-      host = match[1].toLowerCase();
-      path = match[2];
-    }
-    return `${host}/${path.replace(/^\/+|\/+$/g, "").replace(/\.git$/, "")}`;
-  }
-  const common = git3(root, "rev-parse", "--path-format=absolute", "--git-common-dir");
-  return realpathSync10(common ? dirname8(common) : root);
-}
-var init_project_identity = () => {};
-
 // plugins/immune-brain/runtime/config/layered_config.ts
-import { execFileSync as execFileSync6 } from "node:child_process";
+import { execFileSync as execFileSync5 } from "node:child_process";
 import { existsSync as existsSync7, readFileSync as readFileSync10 } from "node:fs";
 import { homedir } from "node:os";
-import { isAbsolute as isAbsolute5, join as join12 } from "node:path";
+import { basename as basename2, dirname as dirname8, isAbsolute as isAbsolute5, join as join12 } from "node:path";
+function defaultUserConfigPath() {
+  return join12(process.env.XDG_CONFIG_HOME && isAbsolute5(process.env.XDG_CONFIG_HOME) ? process.env.XDG_CONFIG_HOME : join12(homedir(), ".config"), "immune-brain/config.json");
+}
+function mainCheckoutRoot(root) {
+  try {
+    const common = execFileSync5("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    return basename2(common) === ".git" ? dirname8(common) : root;
+  } catch {
+    return root;
+  }
+}
+function projectConfigPath(root) {
+  return join12(mainCheckoutRoot(root), ".imm/config.json");
+}
 function resolveConfig(root, options = {}) {
   const registry = options.registry ?? POINT_REGISTRY;
   const diagnostics = [];
@@ -8493,470 +8281,211 @@ function resolveConfig(root, options = {}) {
     diagnostics.push({ code, severity, file, key_path, message: `${file}: ${key_path}: ${message}` });
   };
   const invalid = (file, key, message) => diag("config_invalid", "error", file, key, message);
-  const userPath = options.userConfigPath ?? join12(process.env.XDG_CONFIG_HOME && isAbsolute5(process.env.XDG_CONFIG_HOME) ? process.env.XDG_CONFIG_HOME : join12(homedir(), ".config"), "immune-brain/config.json");
-  const projectPath = ".imm/config.json";
-  const tracked = (path) => {
-    try {
-      execFileSync6("git", ["ls-files", "--error-unmatch", "--", path], { cwd: root, stdio: "ignore" });
-      return true;
-    } catch {
-      return false;
-    }
-  };
-  const read = (path, label, contract) => {
+  const userPath = options.userConfigPath ?? defaultUserConfigPath();
+  const projectPath = options.projectConfigPath ?? projectConfigPath(root);
+  const read = (path, contract) => {
     if (!existsSync7(path))
-      return {};
+      return null;
     try {
       const data = JSON.parse(readFileSync10(path, "utf8"));
       if (!object3(data)) {
-        invalid(label, "$", "expected object");
+        invalid(path, "$", "expected object");
         return null;
       }
-      if (contract && data.contract !== contract) {
-        invalid(label, "contract", "invalid contract");
+      if (data.contract !== contract) {
+        invalid(path, "contract", typeof data.contract === "string" && data.contract.endsWith("/v1") ? `${data.contract} is retired; run \`imm-kernel config migrate\` to rewrite it as ${contract}` : `expected ${contract}`);
         return null;
       }
+      for (const key of Object.keys(data))
+        if (!FILE_KEYS.includes(key))
+          invalid(path, key, "unknown key");
       return data;
     } catch {
-      invalid(label, "$", "unreadable or malformed JSON");
+      invalid(path, "$", "unreadable or malformed JSON");
       return null;
     }
   };
-  let projectKey;
-  try {
-    projectKey = projectIdentity(root);
-  } catch {
-    projectKey = "";
-    invalid(root, "project_key", "cannot determine project identity");
-  }
-  const user = read(userPath, userPath, "immune_brain/user_config/v1");
-  const project = tracked(projectPath) ? read(join12(root, projectPath), projectPath, "immune_brain/project_config/v1") : {};
-  const failed = new Set;
-  const validKeys = (o, keys, file, path, section) => {
-    for (const key of Object.keys(o))
-      if (!keys.includes(key)) {
-        invalid(file, path ? `${path}.${key}` : key, "unknown key");
-        failed.add(section);
-      }
-  };
-  const section = (value, file, path, name) => {
+  const user = read(userPath, USER_CONFIG_CONTRACT);
+  const project = read(projectPath, PROJECT_CONFIG_CONTRACT);
+  const layers = [["project", project, projectPath], ["user", user, userPath]];
+  const part = (o, file, path) => {
+    let value = o;
+    for (const key of path.split(".")) {
+      if (!object3(value))
+        return {};
+      value = value[key];
+    }
     if (value === undefined)
       return {};
     if (!object3(value)) {
       invalid(file, path, "expected object");
-      failed.add(name);
       return {};
     }
     return value;
   };
-  if (user === null)
-    for (const s of ["decision_models", "lanes", "initiative_carrier", "git_integration"])
-      failed.add(s);
-  if (project === null)
-    for (const s of ["decision_models", "lanes", "git_integration", "initiative_carrier", "batch", "loop", "review_verifier"])
-      failed.add(s);
-  if (user)
-    validKeys(user, ["contract", "agents", "decision_models", "lanes", "initiative_carrier", "git_integration", "projects"], userPath, "", "user_file");
-  if (project)
-    validKeys(project, ["contract", "agents", "decision_models", "lanes", "initiative_carrier", "git_integration", "batch", "loop", "review_verifier"], projectPath, "", "project_file");
-  const projects = section(user?.projects, userPath, "projects", "user_file");
-  for (const [key, value] of Object.entries(projects))
-    if (!object3(value)) {
-      invalid(userPath, `projects.${key}`, "expected object");
-      failed.add("user_file");
-    }
-  const override = section(projects[projectKey], userPath, `projects.${projectKey}`, "user_file");
-  validKeys(override, ["agents", "decision_models", "lanes", "initiative_carrier"], userPath, `projects.${projectKey}`, "user_file");
-  const overrideAgents = section(override.agents, userPath, `projects.${projectKey}.agents`, "agents");
-  validKeys(overrideAgents, ["active"], userPath, `projects.${projectKey}.agents`, "agents");
-  const projectAgents = section(project?.agents, projectPath, "agents", "agents");
-  const ud = section(user?.decision_models, userPath, "decision_models", "decision_models");
-  const od = section(override.decision_models, userPath, `projects.${projectKey}.decision_models`, "decision_models");
-  const pd = section(project?.decision_models, projectPath, "decision_models", "decision_models");
-  const ul = section(user?.lanes, userPath, "lanes", "lanes");
-  const ol = section(override.lanes, userPath, `projects.${projectKey}.lanes`, "lanes");
-  const pl = section(project?.lanes, projectPath, "lanes", "lanes");
-  const batch = section(project?.batch, projectPath, "batch", "batch");
-  const loop = section(project?.loop, projectPath, "loop", "loop");
-  const loopBudget = section(loop.budget, projectPath, "loop.budget", "loop");
-  const loopInteraction = section(loop.interaction, projectPath, "loop.interaction", "loop");
-  validKeys(ud, ["profiles", "default_profile", "bindings", "egress"], userPath, "decision_models", "decision_models");
-  validKeys(od, ["default_profile", "bindings", "egress"], userPath, `projects.${projectKey}.decision_models`, "decision_models");
-  validKeys(pd, ["enabled_points", "egress"], projectPath, "decision_models", "decision_models");
-  validKeys(ul, ["profiles", "active"], userPath, "lanes", "lanes");
-  validKeys(ol, ["active"], userPath, `projects.${projectKey}.lanes`, "lanes");
-  const laneKeys = ["max_parallel", "executor_host", "executor_model", "executor_effort", "review_host", "review_model", "review_effort", "review_transport", "advisory_transport", "review_verifier_model"];
-  validKeys(pl, laneKeys, projectPath, "lanes", "lanes");
-  validKeys(batch, ["final_verification"], projectPath, "batch", "batch");
-  const validateLane = (o, file, path) => {
-    validKeys(o, laneKeys, file, path, "lanes");
-    for (const [k, v] of Object.entries(o)) {
-      const ok = k === "max_parallel" ? Number.isSafeInteger(v) && v > 0 : k.endsWith("_host") ? v === "pi" || v === "claude-code" || v === "antigravity" : k.endsWith("_model") || k.endsWith("_effort") ? typeof v === "string" && v.length > 0 : k === "review_transport" ? v === "herdr" : k === "advisory_transport" ? v === "subagent" || v === "herdr" : true;
-      if (!ok) {
-        invalid(file, `${path}.${k}`, "invalid value");
-        failed.add("lanes");
-      }
-    }
+  const knownKeys = (o, keys, file, path) => {
+    for (const key of Object.keys(o))
+      if (!keys.includes(key))
+        invalid(file, `${path}.${key}`, "unknown key");
   };
-  validateLane(pl, projectPath, "lanes");
-  const laneProfiles = section(ul.profiles, userPath, "lanes.profiles", "lanes");
-  for (const [name, profile] of Object.entries(laneProfiles))
-    validateLane(section(profile, userPath, `lanes.profiles.${name}`, "lanes"), userPath, `lanes.profiles.${name}`);
-  for (const [o, file, path] of [[ul, userPath, "lanes"], [ol, userPath, `projects.${projectKey}.lanes`]])
-    if (has(o, "active") && (typeof o.active !== "string" || !o.active)) {
-      invalid(file, `${path}.active`, "expected profile name");
-      failed.add("lanes");
+  const pick = (get, key, ok, message, fallback = null) => {
+    for (const [layer, o, file] of layers) {
+      const value = o ? get(o) : undefined;
+      if (value === undefined)
+        continue;
+      if (ok(value))
+        return leaf(value, layer);
+      invalid(file, key, message);
     }
-  if (has(ud, "profiles")) {
-    const profiles = section(ud.profiles, userPath, "decision_models.profiles", "decision_models");
-    for (const [name, profile] of Object.entries(profiles))
+    return leaf(fallback, "default");
+  };
+  const valid = (get, key, ok, message) => {
+    const out = [];
+    for (const [layer, o, file] of layers) {
+      const value = o ? get(o) : undefined;
+      if (value === undefined)
+        continue;
+      if (ok(value))
+        out.push({ value, source: layer });
+      else
+        invalid(file, key, message);
+    }
+    return out;
+  };
+  const errorsUnder = (prefix) => diagnostics.some((d) => d.severity === "error" && (d.key_path === prefix || d.key_path.startsWith(`${prefix}.`)));
+  const integerWithin = (v, min, max = Number.MAX_SAFE_INTEGER) => Number.isSafeInteger(v) && v >= min && v <= max;
+  const oneOf = (values) => (v) => values.includes(v);
+  const agentLayers = resolveAgents({ user: user ? user.agents ?? null : null, project: project ? project.agents ?? null : null, files: { user: userPath, project: projectPath } });
+  for (const error of agentLayers.errors)
+    diag(error.code, "error", error.file, error.key_path, error.message);
+  const agents = agentLayers.agents;
+  const herdr = pick((o) => o.herdr, "herdr", (v) => typeof v === "boolean", "expected true or false", false);
+  for (const [, o, file] of layers)
+    knownKeys(part(o, file, "batch"), ["max_parallel", "final_verification"], file, "batch");
+  const maxParallel = pick((o) => o.batch?.max_parallel, "batch.max_parallel", (v) => integerWithin(v, BATCH_MAX_PARALLEL.min, BATCH_MAX_PARALLEL.max), `expected an integer between ${BATCH_MAX_PARALLEL.min} and ${BATCH_MAX_PARALLEL.max}`, BATCH_MAX_PARALLEL.default);
+  const finalVerification = pick((o) => o.batch?.final_verification, "batch.final_verification", (v) => Array.isArray(v) && v.length <= 8 && v.every((c) => typeof c === "string" && c.length > 0), "expected at most eight command strings");
+  const reviewVerifier = pick((o) => o.review_verifier, "review_verifier", oneOf(["off", "on"]), "expected off or on", "off");
+  const carrier = pick((o) => o.initiative_carrier, "initiative_carrier", oneOf(["github", "local"]), "expected github or local");
+  const git = valid((o) => o.git_integration, "git_integration", oneOf(["manual", "auto"]), "expected manual or auto");
+  const gitBroken = diagnostics.find((d) => d.severity === "error" && ["git_integration", "$", "contract"].includes(d.key_path));
+  const gitIntegration = gitBroken ? { value: "manual", source: gitBroken.file === projectPath ? "project" : "user" } : git.find((g) => g.value === "manual") ?? git[0] ?? { value: "manual", source: "default" };
+  const loopKeys = ["mode", "interval_seconds", "max_concurrent", "max_ready_buffer", "max_pr_buffer", "auto_enroll_max_risk", "allowed_actors", "allowed_associations", "interaction", "budget"];
+  for (const [, o, file] of layers) {
+    knownKeys(part(o, file, "loop"), loopKeys, file, "loop");
+    knownKeys(part(o, file, "loop.budget"), ["max_ticks_per_day", "max_dispatches_per_day"], file, "loop.budget");
+    knownKeys(part(o, file, "loop.interaction"), ["channel"], file, "loop.interaction");
+  }
+  const distinct = (v) => Array.isArray(v) && v.every((item) => typeof item === "string" && item.trim().length > 0) && new Set(v).size === v.length;
+  const loopPick = (key, ok, message) => pick((o) => o.loop?.[key], `loop.${key}`, ok, message, DEFAULT_LOOP_CONFIG[key]).value;
+  const intersect = (key, ok, message) => {
+    const values = valid((o) => o.loop?.[key], `loop.${key}`, ok, message);
+    if (!values.length)
+      return DEFAULT_LOOP_CONFIG[key];
+    return values.map((v) => v.value).reduce((a, b) => a.filter((item) => b.includes(item)));
+  };
+  const risks = valid((o) => o.loop?.auto_enroll_max_risk, "loop.auto_enroll_max_risk", oneOf(LOOP_AUTO_ENROLL_MAX_RISKS), "expected none or routine; material and critical require tracker_approval");
+  const budgetPick = (key) => pick((o) => o.loop?.budget?.[key], `loop.budget.${key}`, (v) => integerWithin(v, 1), "expected a positive integer", null).value;
+  const resolvedLoop = {
+    mode: loopPick("mode", oneOf(LOOP_MODES), `expected one of ${LOOP_MODES.join(", ")}`),
+    interval_seconds: loopPick("interval_seconds", (v) => integerWithin(v, 15), "expected an integer of at least 15"),
+    max_concurrent: loopPick("max_concurrent", (v) => integerWithin(v, 1, 8), "expected an integer between 1 and 8"),
+    max_ready_buffer: loopPick("max_ready_buffer", (v) => integerWithin(v, 1, 20), "expected an integer between 1 and 20"),
+    max_pr_buffer: loopPick("max_pr_buffer", (v) => integerWithin(v, 1, 20), "expected an integer between 1 and 20"),
+    auto_enroll_max_risk: risks.length ? risks.some((r) => r.value === "none") ? "none" : "routine" : DEFAULT_LOOP_CONFIG.auto_enroll_max_risk,
+    allowed_actors: intersect("allowed_actors", distinct, "expected distinct non-empty GitHub logins"),
+    allowed_associations: intersect("allowed_associations", (v) => distinct(v) && v.length > 0 && v.every((a) => LOOP_ASSOCIATIONS.includes(a)), `expected a subset of ${LOOP_ASSOCIATIONS.join(", ")}`),
+    interaction: { channel: pick((o) => o.loop?.interaction?.channel, "loop.interaction.channel", oneOf(LOOP_INTERACTION_CHANNELS), `expected one of ${LOOP_INTERACTION_CHANNELS.join(", ")}`, "github").value },
+    budget: { max_ticks_per_day: budgetPick("max_ticks_per_day"), max_dispatches_per_day: budgetPick("max_dispatches_per_day") }
+  };
+  for (const [layer, o, file] of layers)
+    knownKeys(part(o, file, "decision_models"), layer === "user" ? ["profiles", "default_profile", "bindings", "egress"] : ["default_profile", "bindings", "egress"], file, "decision_models");
+  let profiles = {};
+  const rawProfiles = part(user, userPath, "decision_models.profiles");
+  if (has(user?.decision_models, "profiles")) {
+    let ok = true;
+    for (const [name, profile] of Object.entries(rawProfiles))
       if (object3(profile)) {
         for (const [key, value] of Object.entries(profile))
           if (key.endsWith("_env") && (typeof value !== "string" || !envName.test(value))) {
             invalid(userPath, `decision_models.profiles.${name}.${key}`, "expected environment variable name");
-            failed.add("decision_models");
+            ok = false;
           }
       }
-    const parsed = parseProfiles({ profiles });
+    const parsed = parseProfiles({ profiles: rawProfiles });
     if (!parsed.ok) {
       invalid(userPath, "decision_models.profiles", parsed.error.detail.replace(/^.*?: /, ""));
-      failed.add("decision_models");
+      ok = false;
     }
+    if (ok)
+      profiles = rawProfiles;
   }
-  const validateDecision = (o, file, path) => {
-    if (has(o, "default_profile") && (typeof o.default_profile !== "string" || !o.default_profile)) {
-      invalid(file, `${path}.default_profile`, "expected profile name");
-      failed.add("decision_models");
-    }
-    const bindings = section(o.bindings, file, `${path}.bindings`, "decision_models");
-    for (const [point, value] of Object.entries(bindings))
-      if (!Object.hasOwn(registry, point) || typeof value !== "string" || !value) {
-        invalid(file, `${path}.bindings.${point}`, "invalid binding");
-        failed.add("decision_models");
+  const profileRef = (get, key, allowOff) => {
+    for (const [layer, o, file] of layers) {
+      const value = o ? get(o) : undefined;
+      if (value === undefined)
+        continue;
+      if (typeof value !== "string" || !value) {
+        invalid(file, key, "expected profile name");
+        continue;
       }
-    const egress = section(o.egress, file, `${path}.egress`, "decision_models");
-    for (const [kind, value] of Object.entries(egress))
-      if (!PROVIDER_KINDS.includes(kind) || !Array.isArray(value) || value.some((v) => !SENSITIVE_CATEGORIES.includes(v)) || new Set(value).size !== value.length) {
-        invalid(file, `${path}.egress.${kind}`, "invalid egress list");
-        failed.add("decision_models");
+      if (allowOff && value === "off")
+        return leaf(value, layer);
+      if (!Object.hasOwn(profiles, value)) {
+        diag("unknown_profile", "error", file, key, `unknown profile ${value}`);
+        continue;
       }
+      return leaf(value, layer);
+    }
+    return leaf(null, "default");
   };
-  validateDecision(ud, userPath, "decision_models");
-  validateDecision(od, userPath, `projects.${projectKey}.decision_models`);
-  validateDecision(pd, projectPath, "decision_models");
-  if (has(pd, "enabled_points") && (!Array.isArray(pd.enabled_points) || pd.enabled_points.some((p) => typeof p !== "string" || !Object.hasOwn(registry, p)) || new Set(pd.enabled_points).size !== pd.enabled_points.length)) {
-    invalid(projectPath, "decision_models.enabled_points", "invalid point list");
-    failed.add("decision_models");
-  }
-  for (const [o, file, path] of [[user, userPath, "initiative_carrier"], [override, userPath, `projects.${projectKey}.initiative_carrier`], [project, projectPath, "initiative_carrier"]])
-    if (o && has(o, "initiative_carrier") && o.initiative_carrier !== "github" && o.initiative_carrier !== "local") {
-      invalid(file, path, "expected github or local");
-      failed.add("initiative_carrier");
-    }
-  for (const [o, file, path] of [[user, userPath, "git_integration"], [project, projectPath, "git_integration"]])
-    if (o && has(o, "git_integration") && o.git_integration !== "manual" && o.git_integration !== "auto") {
-      invalid(file, path, "expected manual or auto");
-      failed.add("git_integration");
-    }
-  if (project && has(project, "review_verifier") && project.review_verifier !== "off" && project.review_verifier !== "on") {
-    invalid(projectPath, "review_verifier", "expected off or on");
-    failed.add("review_verifier");
-  }
-  if (has(batch, "final_verification") && (!Array.isArray(batch.final_verification) || batch.final_verification.length > 8 || batch.final_verification.some((v) => typeof v !== "string" || !v))) {
-    invalid(projectPath, "batch.final_verification", "expected at most eight command strings");
-    failed.add("batch");
-  }
-  const integerWithin = (v, min, max = Number.MAX_SAFE_INTEGER) => Number.isSafeInteger(v) && v >= min && v <= max;
-  const distinctLogins = (v) => Array.isArray(v) && v.every((item) => typeof item === "string" && item.trim().length > 0) && new Set(v).size === v.length;
-  validKeys(loop, ["mode", "interval_seconds", "max_concurrent", "max_ready_buffer", "max_pr_buffer", "auto_enroll_max_risk", "allowed_actors", "allowed_associations", "interaction", "budget"], projectPath, "loop", "loop");
-  validKeys(loopBudget, ["max_ticks_per_day", "max_dispatches_per_day"], projectPath, "loop.budget", "loop");
-  validKeys(loopInteraction, ["channel"], projectPath, "loop.interaction", "loop");
-  const loopChecks = [
-    ["mode", !has(loop, "mode") || LOOP_MODES.includes(loop.mode), `expected one of ${LOOP_MODES.join(", ")}`],
-    ["interval_seconds", !has(loop, "interval_seconds") || integerWithin(loop.interval_seconds, 15), "expected an integer of at least 15"],
-    ["max_concurrent", !has(loop, "max_concurrent") || integerWithin(loop.max_concurrent, 1, 8), "expected an integer between 1 and 8"],
-    ["max_ready_buffer", !has(loop, "max_ready_buffer") || integerWithin(loop.max_ready_buffer, 1, 20), "expected an integer between 1 and 20"],
-    ["max_pr_buffer", !has(loop, "max_pr_buffer") || integerWithin(loop.max_pr_buffer, 1, 20), "expected an integer between 1 and 20"],
-    ["auto_enroll_max_risk", !has(loop, "auto_enroll_max_risk") || LOOP_AUTO_ENROLL_MAX_RISKS.includes(loop.auto_enroll_max_risk), "expected none or routine; material and critical require tracker_approval"],
-    ["allowed_actors", !has(loop, "allowed_actors") || distinctLogins(loop.allowed_actors), "expected distinct non-empty GitHub logins"],
-    ["allowed_associations", !has(loop, "allowed_associations") || distinctLogins(loop.allowed_associations) && loop.allowed_associations.length > 0 && loop.allowed_associations.every((v) => LOOP_ASSOCIATIONS.includes(v)), `expected a subset of ${LOOP_ASSOCIATIONS.join(", ")}`],
-    ["interaction.channel", !has(loopInteraction, "channel") || LOOP_INTERACTION_CHANNELS.includes(loopInteraction.channel), `expected one of ${LOOP_INTERACTION_CHANNELS.join(", ")}`]
-  ];
-  for (const [key, value] of Object.entries(loopBudget))
-    loopChecks.push([`budget.${key}`, integerWithin(value, 1), "expected a positive integer"]);
-  for (const [key, ok, message] of loopChecks)
-    if (!ok) {
-      invalid(projectPath, `loop.${key}`, message);
-      failed.add("loop");
-    }
-  for (const [key, entry] of Object.entries(projects)) {
-    if (key === projectKey || !object3(entry))
-      continue;
-    const base = `projects.${key}`;
-    validKeys(entry, ["decision_models", "lanes", "initiative_carrier", "agents"], userPath, base, "user_file");
-    const entryAgents = section(entry.agents, userPath, `${base}.agents`, "agents");
-    validKeys(entryAgents, ["active"], userPath, `${base}.agents`, "agents");
-    if (has(entryAgents, "active") && (typeof entryAgents.active !== "string" || !entryAgents.active))
-      invalid(userPath, `${base}.agents.active`, "expected preset name");
-    const decision = section(entry.decision_models, userPath, `${base}.decision_models`, "decision_models");
-    validKeys(decision, ["default_profile", "bindings", "egress"], userPath, `${base}.decision_models`, "decision_models");
-    validateDecision(decision, userPath, `${base}.decision_models`);
-    const lanes = section(entry.lanes, userPath, `${base}.lanes`, "lanes");
-    validKeys(lanes, ["active"], userPath, `${base}.lanes`, "lanes");
-    if (has(lanes, "active") && (typeof lanes.active !== "string" || !lanes.active)) {
-      invalid(userPath, `${base}.lanes.active`, "expected profile name");
-      failed.add("lanes");
-    }
-    if (has(entry, "initiative_carrier") && entry.initiative_carrier !== "github" && entry.initiative_carrier !== "local") {
-      invalid(userPath, `${base}.initiative_carrier`, "expected github or local");
-      failed.add("initiative_carrier");
-    }
-  }
-  if (failed.has("user_file"))
-    for (const s of ["decision_models", "lanes", "initiative_carrier", "git_integration"])
-      failed.add(s);
-  if (failed.has("project_file"))
-    for (const s of ["decision_models", "lanes", "git_integration", "initiative_carrier", "batch", "loop", "review_verifier"])
-      failed.add(s);
-  if (failed.has("decision_models"))
-    for (const o of [ud, od, pd])
-      for (const key of Object.keys(o))
-        delete o[key];
-  if (failed.has("lanes"))
-    for (const o of [ul, ol, pl, laneProfiles])
-      for (const key of Object.keys(o))
-        delete o[key];
-  const legacy = (path, targets, used) => {
-    if (!existsSync7(join12(root, path)) || path === ".imm/decision-bindings.json" && !tracked(path))
-      return false;
-    const where = targets.map((t) => `${t.layer} \`${t.key}\` in ${t.layer === "user" ? userPath : projectPath}`).join(" and ");
-    diag(used ? "deprecated_config_source" : "legacy_source_ignored", "warning", path, targets[0].key, used ? `deprecated; move to ${where}` : `ignored because a newer layer sets this section; its replacement is ${where}`);
-    return true;
-  };
-  let legacyLane = {}, legacyProfiles = {}, legacyBindings = {};
-  const useLegacyLane = !has(ul, "profiles") && !has(ul, "active") && !has(ol, "active") && !Object.keys(pl).length && !failed.has("lanes");
-  const useLegacyProfiles = !has(ud, "profiles") && !failed.has("decision_models");
-  const useLegacyBindings = !failed.has("decision_models") && !has(ud, "default_profile") && !has(ud, "bindings") && !has(od, "default_profile") && !has(od, "bindings") && !has(pd, "egress");
-  const readLegacy = (path, name) => {
-    const value = read(join12(root, path), path);
-    if (value === null) {
-      failed.add(name);
-      return {};
-    }
-    return value;
-  };
-  if (legacy(".imm/lanes.local.json", [{ layer: "user", key: "lanes" }], useLegacyLane) && useLegacyLane)
-    legacyLane = readLegacy(".imm/lanes.local.json", "lanes");
-  if (legacy(".imm/decision-models.local.json", [{ layer: "user", key: "decision_models.profiles" }], useLegacyProfiles) && useLegacyProfiles)
-    legacyProfiles = readLegacy(".imm/decision-models.local.json", "decision_models");
-  if (legacy(".imm/decision-bindings.json", [{ layer: "user", key: "decision_models" }, { layer: "project", key: "decision_models.egress" }], useLegacyBindings) && useLegacyBindings)
-    legacyBindings = readLegacy(".imm/decision-bindings.json", "decision_models");
-  if (object3(legacyProfiles.profiles)) {
-    for (const [name, profile] of Object.entries(legacyProfiles.profiles))
-      if (object3(profile)) {
-        for (const [key, value] of Object.entries(profile))
-          if (key.endsWith("_env") && (typeof value !== "string" || !envName.test(value))) {
-            invalid(".imm/decision-models.local.json", `profiles.${name}.${key}`, "expected environment variable name");
-            failed.add("decision_models");
-            legacyProfiles = {};
-          }
-      }
-  }
-  if (Object.keys(legacyProfiles).length && !parseProfiles(legacyProfiles).ok) {
-    invalid(".imm/decision-models.local.json", "profiles", "invalid profiles");
-    failed.add("decision_models");
-    legacyProfiles = {};
-  }
-  if (Object.keys(legacyBindings).length && !parseBindings(legacyBindings, registry).ok) {
-    invalid(".imm/decision-bindings.json", "decision_models", "invalid bindings");
-    failed.add("decision_models");
-    legacyBindings = {};
-  }
-  if (legacyLane.active !== undefined && (typeof legacyLane.active !== "string" || !legacyLane.active)) {
-    invalid(".imm/lanes.local.json", "lanes.active", "expected profile name");
-    failed.add("lanes");
-    legacyLane = {};
-  }
-  if (legacyLane.profiles !== undefined && !object3(legacyLane.profiles)) {
-    invalid(".imm/lanes.local.json", "lanes.profiles", "expected object");
-    failed.add("lanes");
-    legacyLane = {};
-  }
-  validKeys(legacyLane, ["active", "profiles"], ".imm/lanes.local.json", "lanes", "lanes");
-  for (const [name, profile] of Object.entries(legacyLane.profiles ?? {}))
-    validateLane(section(profile, ".imm/lanes.local.json", `lanes.profiles.${name}`, "lanes"), ".imm/lanes.local.json", `lanes.profiles.${name}`);
-  const choose = (...items) => {
-    const item = items.find(([v]) => v !== undefined);
-    return item ? leaf(item[0], item[1]) : leaf(null, "default");
-  };
-  const profiles = has(ud, "profiles") ? ud.profiles : legacyProfiles.profiles ?? {};
-  const active = choose([ol.active, "user:project"], [ul.active, "user"], [legacyLane.active, "legacy:.imm/lanes.local.json"]);
-  const profileName = active.value;
-  const laneProfile = profileName && (has(laneProfiles, profileName) ? laneProfiles[profileName] : has(legacyLane.profiles, profileName) ? legacyLane.profiles[profileName] : undefined);
-  if (active.value && !laneProfile) {
-    diag("unknown_profile", "error", active.source.startsWith("legacy:") ? ".imm/lanes.local.json" : userPath, "lanes.active", "unknown profile");
-    failed.add("lanes");
-  }
-  if (laneProfile && active.source.startsWith("legacy:") && !object3(laneProfile)) {
-    invalid(".imm/lanes.local.json", `lanes.profiles.${active.value}`, "expected object");
-    failed.add("lanes");
-  }
-  const resolvedLaneProfiles = choose([has(ul, "profiles") ? laneProfiles : undefined, "user"], [legacyLane.profiles, "legacy:.imm/lanes.local.json"], [{}, "default"]);
-  const lanes = { valid: !failed.has("lanes"), active, profiles: resolvedLaneProfiles, project_defaults: leaf(pl, Object.keys(pl).length ? "project" : "default") };
-  for (const key of laneKeys) {
-    const hostKey = key.startsWith("review_") ? "review_host" : "executor_host";
-    const dependent = key.endsWith("_model") || key.endsWith("_effort");
-    const userValue = laneProfile?.[key];
-    let projectValue = pl[key];
-    if (dependent && projectValue !== undefined && laneProfile?.[hostKey] !== undefined) {
-      diag("not_applied", "warning", projectPath, `lanes.${key}`, "host overridden by higher layer");
-      projectValue = undefined;
-    }
-    if (dependent && userValue !== undefined && laneProfile?.[hostKey] === undefined) {
-      diag("not_applied", "warning", userPath, `lanes.${key}`, "host must be set in the same layer");
-    }
-    if (dependent && projectValue !== undefined && pl[hostKey] === undefined) {
-      diag("not_applied", "warning", projectPath, `lanes.${key}`, "host must be set in the same layer");
-      projectValue = undefined;
-    }
-    lanes[key] = choose([dependent && laneProfile?.[hostKey] === undefined ? undefined : userValue, active.source], [projectValue, "project"], [LANE_DEFAULTS[key], "default"]);
-  }
-  if (failed.has("lanes")) {
-    lanes.active = leaf(null, "default");
-    lanes.profiles = leaf({}, "default");
-    lanes.project_defaults = leaf({}, "default");
-    for (const key of laneKeys)
-      lanes[key] = leaf(LANE_DEFAULTS[key] ?? null, "default");
-  }
-  const laneTable = () => {
-    if (failed.has("lanes"))
-      return null;
-    const names = has(ul, "profiles") ? laneProfiles : object3(legacyLane.profiles) ? legacyLane.profiles : {};
-    const roleProfiles = {}, presets = {};
-    const laneRoles = (name, source) => {
-      const roles = {};
-      const bind = (role, profile) => {
-        if (profile) {
-          roleProfiles[`lanes.${name}.${role}`] = profile;
-          roles[role] = `lanes.${name}.${role}`;
-        }
-      };
-      const group = (kind) => {
-        const holder = typeof source[`${kind}_host`] === "string" && source[`${kind}_host`] ? source : pl;
-        const host = holder[`${kind}_host`];
-        if (typeof host !== "string" || !host)
-          return null;
-        return { holder, profile: { host, ...holder[`${kind}_model`] ? { model: holder[`${kind}_model`] } : {}, ...holder[`${kind}_effort`] ? { effort: holder[`${kind}_effort`] } : {} } };
-      };
-      const transportOf = (key) => source[key] !== undefined ? source[key] : pl[key];
-      const executor = group("executor"), review = group("review");
-      bind("executor", executor?.profile ?? null);
-      bind("repair", executor?.profile ?? null);
-      bind("code-review", review ? { ...review.profile, ...typeof transportOf("review_transport") === "string" && transportOf("review_transport") ? { transport: transportOf("review_transport") } : {} } : null);
-      if (review && review.holder.review_verifier_model)
-        bind("review-verifier", { host: review.profile.host, model: review.holder.review_verifier_model });
-      const reviewTransport = transportOf("review_transport"), advisory = transportOf("advisory_transport");
-      if (!review && typeof reviewTransport === "string" && reviewTransport)
-        bind("code-review", { transport: reviewTransport });
-      const advisoryHost = review?.profile.host ?? executor?.profile.host;
-      if (typeof advisory === "string" && advisory)
-        bind("advisory-reviewer", { ...advisoryHost ? { host: advisoryHost } : {}, transport: advisory });
-      return roles;
-    };
-    presets.project = { ...pl.max_parallel !== undefined ? { max_parallel: pl.max_parallel } : {}, roles: laneRoles("project", {}) };
-    for (const [name, value] of Object.entries(names))
-      if (object3(value))
-        presets[name] = { ...value.max_parallel !== undefined ? { max_parallel: value.max_parallel } : pl.max_parallel !== undefined ? { max_parallel: pl.max_parallel } : {}, roles: laneRoles(name, value) };
-    if (!Object.values(presets).some((preset) => Object.keys(preset.roles ?? {}).length))
-      return null;
-    const layer = lanes.active.source !== "default" ? lanes.active.source : Object.keys(pl).length ? "project" : "user";
-    return { profiles: roleProfiles, presets, active: { value: lanes.active.value ?? "project", source: lanes.active.source }, layer, default_preset: null };
-  };
-  const agentLayers = resolveAgentRoles({
-    file: { user: userPath, project: projectPath, override: `projects.${projectKey}` },
-    user: user === null || failed.has("user_file") ? null : section(user.agents, userPath, "agents", "agents"),
-    project: projectAgents,
-    override: overrideAgents,
-    legacy: laneTable(),
-    projectMaxParallel: pl.max_parallel
-  });
-  for (const error of agentLayers.errors)
-    diag(error.code, "error", error.file, error.key_path, error.message);
-  const agents = agentLayers.agents;
-  const laneSources = [[ul, userPath], [ol, userPath], [pl, projectPath]];
-  if (agents.source.value === "agents") {
-    for (const [source, file] of laneSources)
-      if (Object.keys(source).length)
-        diag("legacy_source_ignored", "warning", file, "lanes", `ignored because \`agents\` sets the role table; its replacement is user \`agents\` in ${userPath}`);
-  } else if (agents.source.value === "legacy") {
-    const file = agents.source.source === "project" ? projectPath : agents.source.source.startsWith("legacy:") ? null : userPath;
-    if (file)
-      diag("deprecated_config_source", "warning", file, "lanes", `deprecated; move the role table to user \`agents\` in ${userPath}`);
-  }
-  const defaultProfile = choose([od.default_profile, "user:project"], [ud.default_profile, "user"], [legacyBindings.default_profile ?? undefined, "legacy:.imm/decision-bindings.json"]);
+  const defaultProfile = profileRef((o) => o.decision_models?.default_profile, "decision_models.default_profile", false);
   const bindings = {};
-  for (const key of new Set([...Object.keys(legacyBindings.bindings ?? {}), ...Object.keys(ud.bindings ?? {}), ...Object.keys(od.bindings ?? {})]))
-    bindings[key] = choose([od.bindings?.[key], "user:project"], [ud.bindings?.[key], "user"], [legacyBindings.bindings?.[key], "legacy:.imm/decision-bindings.json"]);
-  for (const [key, item] of [["default_profile", defaultProfile], ...Object.entries(bindings)])
-    if (item.value && !Object.hasOwn(profiles, item.value)) {
-      diag("unknown_profile", "error", item.source.startsWith("legacy:") ? ".imm/decision-bindings.json" : userPath, `decision_models.${key}`, "unknown profile");
-      failed.add("decision_models");
+  const points = new Set;
+  for (const [, o, file] of layers)
+    for (const point of Object.keys(part(o, file, "decision_models.bindings"))) {
+      if (Object.hasOwn(registry, point))
+        points.add(point);
+      else
+        invalid(file, `decision_models.bindings.${point}`, "unknown application point");
     }
+  for (const point of [...points].sort())
+    bindings[point] = profileRef((o) => o.decision_models?.bindings?.[point], `decision_models.bindings.${point}`, true);
+  for (const [, o, file] of layers)
+    for (const kind of Object.keys(part(o, file, "decision_models.egress")))
+      if (!PROVIDER_KINDS.includes(kind))
+        invalid(file, `decision_models.egress.${kind}`, "unknown provider kind");
   const egress = {};
-  for (const kind of PROVIDER_KINDS) {
-    const ceiling = pd.egress?.[kind] ?? legacyBindings.egress?.[kind] ?? [];
-    const requested = od.egress?.[kind] ?? ud.egress?.[kind];
-    if (requested) {
-      for (const category of requested)
-        if (!ceiling.includes(category))
-          diag("egress_beyond_project_ceiling", "warning", userPath, `decision_models.egress.${kind}.${category}`, "outside project ceiling");
-    }
-    egress[kind] = leaf(requested ? ceiling.filter((v) => requested.includes(v)) : ceiling, requested ? has(od.egress, kind) ? "user:project" : "user" : has(pd.egress, kind) ? "project" : has(legacyBindings.egress, kind) ? "legacy:.imm/decision-bindings.json" : "default");
-  }
-  const directive = (regex) => {
-    for (const file of ["AGENTS.md", "CLAUDE.md"])
-      if (tracked(file)) {
-        try {
-          for (const line of readFileSync10(join12(root, file), "utf8").split(/\r?\n/)) {
-            const match = regex.exec(line);
-            if (match)
-              return { value: match[1].trim().replace(/^`|`$/g, ""), file };
-          }
-        } catch {
-          invalid(file, "$", "unreadable instruction file");
-        }
-      }
-  };
-  const gitLegacy = directive(/^\s*[-*]\s+Git integration:\s*(.*?)\s*$/i);
-  const carrierLegacy = directive(/^\s*[-*]\s+Initiative carrier default:\s*(.*?)\s*$/i);
-  const gitExplicitlySet = has(user ?? undefined, "git_integration") || has(project ?? undefined, "git_integration");
-  if (gitLegacy)
-    legacy(gitLegacy.file, [{ layer: "project", key: "git_integration" }], !gitExplicitlySet);
-  if (carrierLegacy)
-    legacy(carrierLegacy.file, [{ layer: "project", key: "initiative_carrier" }], !has(project ?? undefined, "initiative_carrier") && !has(override, "initiative_carrier") && !has(user ?? undefined, "initiative_carrier"));
-  if (gitLegacy && !gitExplicitlySet && !["manual", "auto"].includes(gitLegacy.value)) {
-    invalid(gitLegacy.file, "git_integration", "invalid legacy directive");
-    failed.add("git_integration");
-  }
-  if (carrierLegacy && !has(project ?? undefined, "initiative_carrier") && !has(override, "initiative_carrier") && !has(user ?? undefined, "initiative_carrier") && !["github", "local"].includes(carrierLegacy.value)) {
-    invalid(carrierLegacy.file, "initiative_carrier", "invalid legacy directive");
-    failed.add("initiative_carrier");
-  }
-  const decisionModels = { valid: !failed.has("decision_models"), profiles: leaf(profiles, has(ud, "profiles") ? "user" : Object.keys(legacyProfiles).length ? "legacy:.imm/decision-models.local.json" : "default"), default_profile: defaultProfile, bindings, egress, enabled_points: choose([pd.enabled_points, "project"], [Object.keys(registry), "default"]) };
+  for (const kind of PROVIDER_KINDS)
+    egress[kind] = pick((o) => o.decision_models?.egress?.[kind], `decision_models.egress.${kind}`, (v) => Array.isArray(v) && v.every((c) => SENSITIVE_CATEGORIES.includes(c)) && new Set(v).size === v.length, "invalid egress list", []);
+  const decisionModels = { valid: !errorsUnder("decision_models"), profiles: leaf(profiles, Object.keys(profiles).length ? "user" : "default"), default_profile: defaultProfile, bindings, egress };
   if (options.checkEnv)
     decisionModels.environment = Object.fromEntries(Object.entries(profiles).map(([name, profile]) => [name, object3(profile) ? Object.fromEntries(Object.entries(profile).filter(([k, v]) => k.endsWith("_env") && typeof v === "string" && envName.test(v)).map(([k, v]) => [k, process.env[v] !== undefined ? "set" : "unset"])) : {}]));
-  const resolvedLoop = { ...DEFAULT_LOOP_CONFIG, ...loop, interaction: { ...DEFAULT_LOOP_CONFIG.interaction, ...loopInteraction }, budget: { ...DEFAULT_LOOP_CONFIG.budget, ...loopBudget } };
-  return { contract: "immune_brain/effective_config/v1", project_key: projectKey, files: { user: userPath, project: projectPath }, agents, decision_models: decisionModels, lanes, git_integration: failed.has("git_integration") ? leaf("manual", "default") : choose([user?.git_integration, "user"], [project?.git_integration, "project"], [gitLegacy?.value, `legacy:${gitLegacy?.file}`], ["manual", "default"]), initiative_carrier: failed.has("initiative_carrier") ? leaf(null, "default") : choose([project?.initiative_carrier, "project"], [override.initiative_carrier, "user:project"], [user?.initiative_carrier, "user"], [carrierLegacy?.value, `legacy:${carrierLegacy?.file}`]), batch: { final_verification: failed.has("batch") ? leaf(null, "default") : choose([batch.final_verification, "project"]) }, loop: failed.has("loop") ? { valid: false, ...leaf(null, "default") } : { valid: true, ...leaf(resolvedLoop, has(project ?? undefined, "loop") ? "project" : "default") }, review_verifier: failed.has("review_verifier") ? leaf(null, "default") : choose([project?.review_verifier, "project"], ["off", "default"]), diagnostics };
+  const loopSource = has(project, "loop") ? "project" : has(user, "loop") ? "user" : "default";
+  return {
+    contract: "immune_brain/effective_config/v2",
+    files: { user: userPath, project: projectPath },
+    agents,
+    herdr,
+    batch: { valid: !errorsUnder("batch"), max_parallel: maxParallel, final_verification: finalVerification },
+    decision_models: decisionModels,
+    git_integration: leaf(gitIntegration.value, gitIntegration.source),
+    initiative_carrier: carrier,
+    loop: { valid: !errorsUnder("loop"), ...leaf(resolvedLoop, loopSource) },
+    review_verifier: reviewVerifier,
+    diagnostics
+  };
 }
-var object3 = (v) => v !== null && typeof v === "object" && !Array.isArray(v), leaf = (value, source) => ({ value, source }), has = (o, k) => !!o && Object.hasOwn(o, k), envName, LANE_DEFAULTS, LOOP_MODES, LOOP_AUTO_ENROLL_MAX_RISKS, LOOP_ASSOCIATIONS, LOOP_INTERACTION_CHANNELS, DEFAULT_LOOP_CONFIG;
+function batchConfigErrors(config) {
+  return config.diagnostics.filter((d) => d.severity === "error" && (/^(agents|batch|herdr)(\.|$)/.test(d.key_path) || d.key_path === "$" || d.key_path === "contract"));
+}
+var object3 = (v) => v !== null && typeof v === "object" && !Array.isArray(v), leaf = (value, source) => ({ value, source }), has = (o, k) => !!o && Object.hasOwn(o, k), envName, USER_CONFIG_CONTRACT = "immune_brain/user_config/v2", PROJECT_CONFIG_CONTRACT = "immune_brain/project_config/v2", BATCH_MAX_PARALLEL, LOOP_MODES, LOOP_AUTO_ENROLL_MAX_RISKS, LOOP_ASSOCIATIONS, LOOP_INTERACTION_CHANNELS, DEFAULT_LOOP_CONFIG, FILE_KEYS;
 var init_layered_config = __esm(() => {
   init_agent_roles();
   init_config();
   init_contract();
   init_thresholds();
-  init_project_identity();
   envName = /^[A-Z_][A-Z0-9_]*$/;
-  LANE_DEFAULTS = { max_parallel: 1, review_transport: "herdr", advisory_transport: "subagent" };
+  BATCH_MAX_PARALLEL = { min: 1, max: 8, default: 1 };
   LOOP_MODES = ["off", "observe", "assist", "autonomous"];
   LOOP_AUTO_ENROLL_MAX_RISKS = ["none", "routine"];
   LOOP_ASSOCIATIONS = ["OWNER", "MEMBER", "COLLABORATOR"];
@@ -8973,19 +8502,20 @@ var init_layered_config = __esm(() => {
     interaction: { channel: "github" },
     budget: { max_ticks_per_day: null, max_dispatches_per_day: null }
   };
+  FILE_KEYS = ["contract", "agents", "herdr", "decision_models", "git_integration", "initiative_carrier", "batch", "loop", "review_verifier"];
 });
 
 // plugins/immune-brain/runtime/git_integration_preference.ts
 function readGitIntegrationPreference(root) {
   const config = resolveConfig(root);
-  const userFile = config.files.user;
-  const error = config.diagnostics.find((d) => d.severity === "error" && (d.file === userFile && (d.key_path === "git_integration" || ["$", "contract"].includes(d.key_path) || d.key_path === "projects" && d.message.endsWith(": expected object") || !d.key_path.includes(".") && d.message.endsWith(": unknown key") || d.key_path.startsWith("projects.") && !/\.(decision_models|lanes)(\.|$)/.test(d.key_path) && (d.message.endsWith(": expected object") || d.message.endsWith(": unknown key"))) || d.file === ".imm/config.json" && (d.key_path === "git_integration" || ["$", "contract"].includes(d.key_path) || !d.key_path.includes(".") && d.message.endsWith("unknown key")) || (d.file === "AGENTS.md" || d.file === "CLAUDE.md") && d.key_path === "git_integration"));
-  const legacy = config.git_integration.source.startsWith("legacy:") ? config.git_integration.source.slice(7) : null;
-  const source = error?.file === userFile || !error && config.git_integration.source === "user" ? userFile : error?.file === ".imm/config.json" || config.git_integration.source === "project" ? ".imm/config.json" : error?.file === "AGENTS.md" || legacy === "AGENTS.md" ? "AGENTS.md" : error?.file === "CLAUDE.md" || legacy === "CLAUDE.md" ? "CLAUDE.md" : null;
+  const { user, project } = config.files;
+  const error = config.diagnostics.find((d) => d.severity === "error" && (d.file === user || d.file === project) && ["git_integration", "$", "contract"].includes(d.key_path));
+  const name = (file) => file === project ? ".imm/config.json" : file;
+  const resolved = config.git_integration.source === "user" ? user : config.git_integration.source === "project" ? project : null;
   return {
     mode: config.git_integration.value,
-    source,
-    diagnostic: error ? `${error.message}; using manual` : legacy ? `${legacy}: Git integration is deprecated; use git_integration in .imm/config.json` : null
+    source: error ? name(error.file) : resolved && name(resolved),
+    diagnostic: error ? `${error.message}; using manual` : null
   };
 }
 var init_git_integration_preference = __esm(() => {
@@ -8995,7 +8525,7 @@ var init_git_integration_preference = __esm(() => {
 // plugins/immune-brain/runtime/github_issue_tracker.ts
 import { spawn as spawn2 } from "node:child_process";
 import { existsSync as existsSync8, readFileSync as readFileSync11 } from "node:fs";
-import { basename as basename2, relative as relative4, resolve as resolve9, sep as sep5 } from "node:path";
+import { basename as basename3, relative as relative4, resolve as resolve9, sep as sep5 } from "node:path";
 function countLiteral(value, needle) {
   if (!needle)
     return 0;
@@ -10591,9 +10121,9 @@ function withTempDirectory(prefix, fn) {
 var init_temp_directory = () => {};
 
 // plugins/immune-brain/runtime/assurance/delivery_workspace.ts
-import { execFileSync as execFileSync7 } from "node:child_process";
+import { execFileSync as execFileSync6 } from "node:child_process";
 import { createHash as createHash13 } from "node:crypto";
-import { chmodSync as chmodSync2, lstatSync as lstatSync13, mkdirSync as mkdirSync7, mkdtempSync as mkdtempSync4, readdirSync as readdirSync5, readFileSync as readFileSync13, readlinkSync as readlinkSync3, realpathSync as realpathSync11, rmSync as rmSync6 } from "node:fs";
+import { chmodSync as chmodSync2, lstatSync as lstatSync13, mkdirSync as mkdirSync7, mkdtempSync as mkdtempSync4, readdirSync as readdirSync5, readFileSync as readFileSync13, readlinkSync as readlinkSync3, realpathSync as realpathSync10, rmSync as rmSync6 } from "node:fs";
 import { tmpdir as tmpdir3 } from "node:os";
 import { dirname as dirname9, isAbsolute as isAbsolute6, join as join14, parse, relative as relative5, resolve as resolve11, sep as sep6 } from "node:path";
 function removeTaskOwnedTree(root) {
@@ -10630,8 +10160,8 @@ function isolatedGitEnv(extra = {}) {
     ...extra
   };
 }
-function git4(cwd, args, extra = {}) {
-  return execFileSync7("git", ["-c", "maintenance.auto=false", ...args], {
+function git3(cwd, args, extra = {}) {
+  return execFileSync6("git", ["-c", "maintenance.auto=false", ...args], {
     cwd,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
@@ -10681,7 +10211,7 @@ function resolvedSymlinkTarget(path) {
   return current;
 }
 function assertNoEscapingSymlinks(root, dir = root) {
-  const realRoot = realpathSync11(root);
+  const realRoot = realpathSync10(root);
   for (const name of readdirSync5(dir)) {
     const path = join14(dir, name);
     const stat = lstatSync13(path);
@@ -10693,26 +10223,26 @@ function assertNoEscapingSymlinks(root, dir = root) {
   }
 }
 function writeDeliveryTree(sourceRoot, snapshot) {
-  const indexDirectory = mkdtempSync4(join14(git4(sourceRoot, ["rev-parse", "--absolute-git-dir"]), "imm-delivery-index-"));
+  const indexDirectory = mkdtempSync4(join14(git3(sourceRoot, ["rev-parse", "--absolute-git-dir"]), "imm-delivery-index-"));
   try {
-    git4(sourceRoot, ["read-tree", snapshot.base_tree], {
+    git3(sourceRoot, ["read-tree", snapshot.base_tree], {
       GIT_INDEX_FILE: join14(indexDirectory, "index"),
       GIT_DIR: join14(sourceRoot, ".git")
     });
     for (const [path, entry] of Object.entries(snapshot.changed_paths)) {
       if (entry.oid && entry.mode) {
-        git4(sourceRoot, ["update-index", "--add", "--cacheinfo", `${entry.mode},${entry.oid},${path}`], {
+        git3(sourceRoot, ["update-index", "--add", "--cacheinfo", `${entry.mode},${entry.oid},${path}`], {
           GIT_INDEX_FILE: join14(indexDirectory, "index"),
           GIT_DIR: join14(sourceRoot, ".git")
         });
       } else {
-        git4(sourceRoot, ["update-index", "--force-remove", "--", path], {
+        git3(sourceRoot, ["update-index", "--force-remove", "--", path], {
           GIT_INDEX_FILE: join14(indexDirectory, "index"),
           GIT_DIR: join14(sourceRoot, ".git")
         });
       }
     }
-    const next = git4(sourceRoot, ["write-tree"], {
+    const next = git3(sourceRoot, ["write-tree"], {
       GIT_INDEX_FILE: join14(indexDirectory, "index"),
       GIT_DIR: join14(sourceRoot, ".git")
     });
@@ -10746,9 +10276,9 @@ function workspaceSeal(root) {
 function assertDeliveryClean(root, tree, seal, writablePaths = []) {
   assertTree(tree);
   if (seal === undefined) {
-    if (git4(root, ["status", "--porcelain", "--untracked-files=all", "--ignored=matching"]))
+    if (git3(root, ["status", "--porcelain", "--untracked-files=all", "--ignored=matching"]))
       throw new DeliveryWorkspaceError("delivery workspace was contaminated");
-    if (git4(root, ["rev-parse", "HEAD^{tree}"]) !== tree)
+    if (git3(root, ["rev-parse", "HEAD^{tree}"]) !== tree)
       throw new DeliveryWorkspaceError("delivery workspace tree drifted from the frozen identity");
     return;
   }
@@ -10776,7 +10306,7 @@ function assertDeliveryClean(root, tree, seal, writablePaths = []) {
     if (!permitted)
       throw new DeliveryWorkspaceError("delivery undeclared output was contaminated");
     if (bytes.startsWith("link:")) {
-      assertInside(realpathSync11(root), resolvedSymlinkTarget(join14(root, path)), "generated symlink");
+      assertInside(realpathSync10(root), resolvedSymlinkTarget(join14(root, path)), "generated symlink");
     }
   }
 }
@@ -10786,7 +10316,7 @@ function materializeDeliveryWorkspace(sourceRoot, tree, parent = tmpdir3()) {
   const cleanup = () => removeTaskOwnedTree(dest);
   try {
     mkdirSync7(dest, { recursive: true });
-    const commit = git4(sourceRoot, ["commit-tree", tree, "-m", `delivery ${tree}`], {
+    const commit = git3(sourceRoot, ["commit-tree", tree, "-m", `delivery ${tree}`], {
       GIT_DIR: join14(sourceRoot, ".git"),
       GIT_AUTHOR_NAME: "Immune-Brain Assurance",
       GIT_AUTHOR_EMAIL: "assurance@immune-brain.local",
@@ -10797,10 +10327,10 @@ function materializeDeliveryWorkspace(sourceRoot, tree, parent = tmpdir3()) {
     });
     if (!GIT_OBJECT_ID4.test(commit))
       throw new DeliveryWorkspaceError("delivery commit write failed");
-    git4(dest, ["init", "-q"]);
-    git4(dest, ["fetch", "--depth=1", `file://${resolve11(sourceRoot)}`, `${commit}:refs/heads/delivery`]);
-    git4(dest, ["checkout", "-q", "delivery"]);
-    const got = git4(dest, ["rev-parse", "HEAD^{tree}"]);
+    git3(dest, ["init", "-q"]);
+    git3(dest, ["fetch", "--depth=1", `file://${resolve11(sourceRoot)}`, `${commit}:refs/heads/delivery`]);
+    git3(dest, ["checkout", "-q", "delivery"]);
+    const got = git3(dest, ["rev-parse", "HEAD^{tree}"]);
     if (got !== tree)
       throw new DeliveryWorkspaceError("delivery materialization does not match the frozen tree");
     assertNoEscapingSymlinks(dest);
@@ -10857,12 +10387,12 @@ function acceptanceRepeatSeries(findings, latestRound) {
 
 // plugins/immune-brain/runtime/assurance/verification.ts
 import { createHash as createHash14, randomBytes } from "node:crypto";
-import { execFileSync as execFileSync8, spawn as spawn3 } from "node:child_process";
-import { accessSync, constants as constants4, readFileSync as readFileSync14, readdirSync as readdirSync6, realpathSync as realpathSync12, statSync as statSync3 } from "node:fs";
+import { execFileSync as execFileSync7, spawn as spawn3 } from "node:child_process";
+import { accessSync, constants as constants4, readFileSync as readFileSync14, readdirSync as readdirSync6, realpathSync as realpathSync11, statSync as statSync3 } from "node:fs";
 import { delimiter as delimiter3, isAbsolute as isAbsolute7, join as join15, relative as relative6, resolve as resolve12, sep as sep7 } from "node:path";
 function insideVerificationRoot(root, candidate) {
-  const realRoot = realpathSync12(root);
-  const real = realpathSync12(candidate);
+  const realRoot = realpathSync11(root);
+  const real = realpathSync11(candidate);
   const rel = relative6(realRoot, real);
   if (rel === ".." || rel.startsWith(`..${sep7}`) || isAbsolute7(rel))
     throw new VerificationDescriptorError("verification path escapes the materialization");
@@ -10891,7 +10421,7 @@ function toolPath(name, path) {
 }
 function identity(path) {
   try {
-    const real = realpathSync12(path);
+    const real = realpathSync11(path);
     accessSync(real, constants4.X_OK);
     const stat = statSync3(real);
     if (!stat.isFile())
@@ -11000,7 +10530,7 @@ async function runFixedVerification(root, command, frozen, options) {
         }
         if (processScanner === null || JSON.stringify(identity(processScanner.invocation_path)) !== JSON.stringify(processScanner))
           throw new Error("process scanner identity changed");
-        for (const line of execFileSync8(processScanner.invocation_path, ["eww", "-axo", "pid=,command="], {
+        for (const line of execFileSync7(processScanner.invocation_path, ["eww", "-axo", "pid=,command="], {
           encoding: "utf8",
           maxBuffer: 16 * 1024 * 1024,
           timeout: 5000
@@ -11125,7 +10655,7 @@ function baselineGit(root, args) {
   for (const [name, value] of Object.entries(process.env))
     if (value !== undefined && !GIT_REPOSITORY_BINDINGS2.has(name))
       env[name] = value;
-  return execFileSync8("git", ["-C", root, ...args], {
+  return execFileSync7("git", ["-C", root, ...args], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
     maxBuffer: QA_BASELINE_MAX_BYTES * 2,
@@ -12469,13 +11999,13 @@ var init_session_result_slot = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/assurance/review_evidence.ts
-import { execFileSync as execFileSync9 } from "node:child_process";
+import { execFileSync as execFileSync8 } from "node:child_process";
 import { createHash as createHash18, randomUUID as randomUUID5 } from "node:crypto";
-import { mkdtempSync as mkdtempSync5, realpathSync as realpathSync13, rmSync as rmSync8, writeFileSync as writeFileSync8 } from "node:fs";
+import { mkdtempSync as mkdtempSync5, realpathSync as realpathSync12, rmSync as rmSync8, writeFileSync as writeFileSync8 } from "node:fs";
 import { tmpdir as tmpdir4 } from "node:os";
 import { join as join18 } from "node:path";
 function gitEvidenceBytes(root, args, extraEnv = {}) {
-  return execFileSync9("git", args, {
+  return execFileSync8("git", args, {
     cwd: root,
     encoding: "buffer",
     stdio: ["ignore", "pipe", "pipe"],
@@ -12521,7 +12051,7 @@ function reviewRefTaskSegment(taskId) {
   return `_${Buffer.from(taskId, "utf8").toString("base64url")}`;
 }
 function workspaceRefSegment(root) {
-  return createHash18("sha256").update(realpathSync13(root)).digest("hex").slice(0, 16);
+  return createHash18("sha256").update(realpathSync12(root)).digest("hex").slice(0, 16);
 }
 function reviewRef(root, taskId, reviewCommit) {
   const taskSegment = reviewRefTaskSegment(taskId);
@@ -12661,7 +12191,7 @@ var init_review_evidence = __esm(() => {
 
 // plugins/immune-brain/runtime/assurance/verdict_authority.ts
 import { randomUUID as randomUUID6 } from "node:crypto";
-import { execFileSync as execFileSync10 } from "node:child_process";
+import { execFileSync as execFileSync9 } from "node:child_process";
 import { existsSync as existsSync11 } from "node:fs";
 import { join as join19, resolve as resolve13 } from "node:path";
 function buildSnapshot(input) {
@@ -12698,7 +12228,7 @@ function reviewDelta(root, record, reviewCommit) {
   if (!priorCommit || !GIT_OBJECT_ID.test(priorCommit))
     return { round, prior_review_commit: null };
   try {
-    const output = execFileSync10("git", ["diff", "--no-renames", "--name-only", "-z", priorCommit, reviewCommit], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+    const output = execFileSync9("git", ["diff", "--no-renames", "--name-only", "-z", priorCommit, reviewCommit], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
     return { round, prior_review_commit: priorCommit, delta_paths: output.split("\x00").filter(Boolean).sort() };
   } catch {
     return { round, prior_review_commit: null };
@@ -12786,10 +12316,10 @@ function stagePlanningArtifactTransition(root, record) {
     intentArchive,
     ...specActive ? [specActive, specActive.replace("docs/specs/", "docs/specs/archive/")] : []
   ];
-  const paths = candidates.filter((path) => existsSync11(join19(root, path)) || execFileSync10("git", ["ls-files", "--cached", "--", path], { cwd: root, encoding: "utf8" }).trim().length > 0);
+  const paths = candidates.filter((path) => existsSync11(join19(root, path)) || execFileSync9("git", ["ls-files", "--cached", "--", path], { cwd: root, encoding: "utf8" }).trim().length > 0);
   if (paths.length === 0)
     return;
-  execFileSync10("git", ["add", "--", ...paths], {
+  execFileSync9("git", ["add", "--", ...paths], {
     cwd: root,
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -12991,8 +12521,8 @@ var init_verdict_authority = __esm(() => {
 
 // plugins/immune-brain/runtime/plugin_source_skew.ts
 import { createHash as createHash19 } from "node:crypto";
-import { execFileSync as execFileSync11, spawnSync as spawnSync9 } from "node:child_process";
-import { existsSync as existsSync12, readFileSync as readFileSync18, realpathSync as realpathSync14, statSync as statSync4 } from "node:fs";
+import { execFileSync as execFileSync10, spawnSync as spawnSync9 } from "node:child_process";
+import { existsSync as existsSync12, readFileSync as readFileSync18, realpathSync as realpathSync13, statSync as statSync4 } from "node:fs";
 import { dirname as dirname11, join as join20, sep as sep8 } from "node:path";
 function pluginRootAbove(dir) {
   let current = dir;
@@ -13008,7 +12538,7 @@ function pluginRootAbove(dir) {
 }
 function runtimeClaudePluginDir(start = runningRuntimeSource()) {
   const root = pluginRootAbove(start);
-  return root ? realpathSync14(root) : null;
+  return root ? realpathSync13(root) : null;
 }
 function sameBuild(a, b) {
   const left = join20(a, BUILD_PROXY), right = join20(b, BUILD_PROXY);
@@ -13026,13 +12556,13 @@ function pluginSourceSkewWarning(root, loadedFrom = runningRuntimeSource()) {
     const loaded = pluginRootAbove(loadedFrom);
     if (!loaded)
       return null;
-    const workspaceReal = realpathSync14(workspace), loadedReal = realpathSync14(loaded);
+    const workspaceReal = realpathSync13(workspace), loadedReal = realpathSync13(loaded);
     if (workspaceReal === loadedReal || sameBuild(loadedReal, workspaceReal))
       return null;
     let lane = false;
     try {
-      const common = realpathSync14(execFileSync11("git", ["-C", root, "rev-parse", "--path-format=absolute", "--git-common-dir"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim());
-      lane = realpathSync14(root).startsWith(`${join20(common, "imm", "worktrees")}${sep8}`);
+      const common = realpathSync13(execFileSync10("git", ["-C", root, "rev-parse", "--path-format=absolute", "--git-common-dir"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim());
+      lane = realpathSync13(root).startsWith(`${join20(common, "imm", "worktrees")}${sep8}`);
     } catch {}
     return {
       code: "loaded_plugin_differs_from_workspace",
@@ -13124,8 +12654,8 @@ var init_host_port = __esm(() => {
 
 // plugins/immune-brain/runtime/unattended/lane_workspace.ts
 import { spawnSync as spawnSync10 } from "node:child_process";
-import { realpathSync as realpathSync15 } from "node:fs";
-import { basename as basename3, dirname as dirname12, isAbsolute as isAbsolute9, join as join21, relative as relative7, resolve as resolve14, sep as sep9 } from "node:path";
+import { realpathSync as realpathSync14 } from "node:fs";
+import { basename as basename4, dirname as dirname12, isAbsolute as isAbsolute9, join as join21, relative as relative7, resolve as resolve14, sep as sep9 } from "node:path";
 function laneTaskOfWorkspace(root) {
   const branch = spawnSync10("git", ["-C", root, "symbolic-ref", "--quiet", "--short", "HEAD"], {
     encoding: "utf8",
@@ -13143,12 +12673,12 @@ function realpathOfNearest(path) {
   const suffix = [];
   for (;; ) {
     try {
-      return join21(realpathSync15(current), ...suffix.reverse());
+      return join21(realpathSync14(current), ...suffix.reverse());
     } catch {
       const parent = dirname12(current);
       if (parent === current)
         return path;
-      suffix.push(basename3(current));
+      suffix.push(basename4(current));
       current = parent;
     }
   }
@@ -13175,7 +12705,7 @@ var init_lane_workspace = __esm(() => {
 
 // plugins/immune-brain/runtime/assurance/coordinator.ts
 import { createHash as createHash20, randomUUID as randomUUID7 } from "node:crypto";
-import { execFileSync as execFileSync12 } from "node:child_process";
+import { execFileSync as execFileSync11 } from "node:child_process";
 function deriveGithubTerminalProjectionInput(taskId, projection, tombstone) {
   if (projection.error || projection.claim !== null || projection.projection.lifecycle !== "done" && projection.projection.lifecycle !== "stopped" || tombstone?.task_id !== taskId || tombstone.lifecycle_status !== "terminal" || tombstone.terminal_lifecycle !== projection.projection.lifecycle)
     return null;
@@ -13302,7 +12832,7 @@ async function projectTaskStatus(root, taskId, loadedFrom) {
     warnings.push(skew);
   const preference = readGitIntegrationPreference(root);
   if (preference.diagnostic)
-    warnings.push({ code: preference.diagnostic.includes("deprecated;") ? "deprecated_git_integration" : "invalid_git_integration", paths: preference.source ? [preference.source] : [], message: preference.diagnostic });
+    warnings.push({ code: "invalid_git_integration", paths: preference.source ? [preference.source] : [], message: preference.diagnostic });
   const git_integration = { mode: preference.mode, source: preference.source };
   let batch = findExistingActiveBatch(root, taskId);
   if (batch === null) {
@@ -13455,7 +12985,7 @@ function reviewSecurityBoundarySources(snapshot, verdict, intent) {
   if (paths.length !== 1 || !snapshot.review_revision || !GIT_OBJECT_ID.test(snapshot.review_revision.review_commit))
     throw new Error("security boundary requires an immutable bound Spec");
   const path = paths[0];
-  const lines = execFileSync12("git", ["show", `${snapshot.review_revision.review_commit}:${path}`], { cwd: snapshot.root, encoding: "utf8", maxBuffer: 4 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] }).split(/\r?\n/);
+  const lines = execFileSync11("git", ["show", `${snapshot.review_revision.review_commit}:${path}`], { cwd: snapshot.root, encoding: "utf8", maxBuffer: 4 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] }).split(/\r?\n/);
   const marker = lines.findIndex((line) => /threat[ -]model/i.test(line));
   if (marker < 0)
     throw new Error("bound Spec has no threat-model line");
@@ -13604,13 +13134,13 @@ function parseReviewVerification(input, packet, root) {
       if (!GIT_OBJECT_ID.test(revision.review_commit))
         return kept();
       try {
-        execFileSync12("git", ["rev-parse", "--verify", `${revision.review_commit}^{commit}`], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+        execFileSync11("git", ["rev-parse", "--verify", `${revision.review_commit}^{commit}`], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
         let present = citations.some((citation) => {
           const path = citation.replace(/^[\s`('"\[]+/, "");
           if (path.split("/").some((part) => part === "." || part === ".."))
             return false;
           try {
-            return execFileSync12("git", ["cat-file", "-t", `${revision.review_commit}:${path}`], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim() === "blob";
+            return execFileSync11("git", ["cat-file", "-t", `${revision.review_commit}:${path}`], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim() === "blob";
           } catch {
             return false;
           }
@@ -13620,7 +13150,7 @@ function parseReviewVerification(input, packet, root) {
           const paths = [...new Set(finding.evidence.caller_chain.map(callerChainPath))].filter((path) => path.includes("/") && !path.split("/").some((part) => part === "." || part === ".."));
           present = paths.some((path) => {
             try {
-              const source = execFileSync12("git", ["show", `${revision.review_commit}:${path}`], { cwd: root, encoding: "utf8", maxBuffer: 4 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] });
+              const source = execFileSync11("git", ["show", `${revision.review_commit}:${path}`], { cwd: root, encoding: "utf8", maxBuffer: 4 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] });
               return symbols.some((symbol) => new RegExp(`\\b(?:function|class|const|let|var|interface|type|enum|def|fn|struct)\\s+${symbol.replace(/\$/g, "\\$")}\\b`).test(source));
             } catch {
               return false;
@@ -15006,7 +14536,7 @@ var init_qa_findings = () => {};
 
 // plugins/immune-brain/runtime/assurance/qa.ts
 import { createHash as createHash21 } from "node:crypto";
-import { execFileSync as execFileSync13 } from "node:child_process";
+import { execFileSync as execFileSync12 } from "node:child_process";
 function recordForSnapshot(snapshot) {
   const record = readTaskRecordRaw(snapshot.root, snapshot.task_id).record;
   if (!record || record.contract !== "assurance_kernel/task_record/v4" || !record.git_base_head)
@@ -15017,7 +14547,7 @@ function deliveryTreeForSnapshot(snapshot) {
   const commit = snapshot.review_revision?.review_commit;
   if (commit) {
     try {
-      return execFileSync13("git", ["rev-parse", "--verify", `${commit}^{tree}`], { cwd: snapshot.root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+      return execFileSync12("git", ["rev-parse", "--verify", `${commit}^{tree}`], { cwd: snapshot.root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
     } catch {
       throw new Error(`the reviewed commit ${commit} has no readable tree`);
     }
@@ -15310,8 +14840,8 @@ var init_qa = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/assurance/workflow_autocommit.ts
-import { execFileSync as execFileSync14, spawnSync as spawnSync11 } from "node:child_process";
-import { accessSync as accessSync2, chmodSync as chmodSync3, constants as constants5, lstatSync as lstatSync14, mkdirSync as mkdirSync9, mkdtempSync as mkdtempSync6, readdirSync as readdirSync7, realpathSync as realpathSync16, rmSync as rmSync9, writeFileSync as writeFileSync9 } from "node:fs";
+import { execFileSync as execFileSync13, spawnSync as spawnSync11 } from "node:child_process";
+import { accessSync as accessSync2, chmodSync as chmodSync3, constants as constants5, lstatSync as lstatSync14, mkdirSync as mkdirSync9, mkdtempSync as mkdtempSync6, readdirSync as readdirSync7, realpathSync as realpathSync15, rmSync as rmSync9, writeFileSync as writeFileSync9 } from "node:fs";
 import { tmpdir as tmpdir5 } from "node:os";
 import { isAbsolute as isAbsolute10, join as join22, resolve as resolve15 } from "node:path";
 function identityEnv(root) {
@@ -15339,9 +14869,9 @@ function gitFailure(args, error) {
   const detail = output("stderr") || output("stdout") || (error instanceof Error ? error.message : String(error));
   return new Error(`git ${args[0] === "-c" ? args[2] : args[0]} failed: ${detail}`);
 }
-function git5(root, args, env = process.env) {
+function git4(root, args, env = process.env) {
   try {
-    return execFileSync14("git", args, {
+    return execFileSync13("git", args, {
       cwd: root,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
@@ -15369,11 +14899,11 @@ function assertListedPath(root, path) {
   }
 }
 function commitWithPathGuard(root, dirty, before, subject) {
-  const version = git5(root, ["--version"]).match(/git version (\d+)\.(\d+)/);
+  const version = git4(root, ["--version"]).match(/git version (\d+)\.(\d+)/);
   if (!version || Number(version[1]) < 2 || Number(version[1]) === 2 && Number(version[2]) < 29)
     throw new Error("automatic commit requires Git 2.29 or newer for its ref transaction guard");
-  const targetRef = git5(root, ["rev-parse", "--symbolic-full-name", "HEAD"]).trim();
-  const originalHooks = resolve15(root, git5(root, ["rev-parse", "--git-path", "hooks"]).trim());
+  const targetRef = git4(root, ["rev-parse", "--symbolic-full-name", "HEAD"]).trim();
+  const originalHooks = resolve15(root, git4(root, ["rev-parse", "--git-path", "hooks"]).trim());
   const temporary = mkdtempSync6(join22(tmpdir5(), "imm-commit-hooks-"));
   const hooks = join22(temporary, "hooks");
   try {
@@ -15458,13 +14988,13 @@ if (process.argv[2] === "prepared") {
 exec ${quote(process.execPath)} ${quote(guard)} "$@"
 `);
     chmodSync3(hook, 493);
-    git5(root, ["-c", `core.hooksPath=${hooks}`, "commit", "--quiet", "--only", "-m", subject, "--", ...dirty], identityEnv(root));
+    git4(root, ["-c", `core.hooksPath=${hooks}`, "commit", "--quiet", "--only", "-m", subject, "--", ...dirty], identityEnv(root));
   } finally {
     rmSync9(temporary, { recursive: true, force: true });
   }
 }
 function commitWorkflowPaths(projectRoot, input) {
-  const root = realpathSync16(resolve15(projectRoot));
+  const root = realpathSync15(resolve15(projectRoot));
   const listed = [...new Set(input.paths)].sort();
   if (listed.length === 0)
     return { committed: false };
@@ -15473,17 +15003,17 @@ function commitWorkflowPaths(projectRoot, input) {
   if (!/^[^\r\n]+$/.test(input.subject))
     throw new Error("automatic commit requires a one-line subject");
   input.signal?.throwIfAborted();
-  const toplevel = git5(root, ["rev-parse", "--show-toplevel"]).trim();
-  if (realpathSync16(resolve15(toplevel)) !== root)
+  const toplevel = git4(root, ["rev-parse", "--show-toplevel"]).trim();
+  if (realpathSync15(resolve15(toplevel)) !== root)
     throw new Error("automatic commit requires the repository root as the project root");
-  git5(root, ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]);
-  if (splitNull2(git5(root, ["ls-files", "--unmerged", "-z"])).length > 0)
+  git4(root, ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]);
+  if (splitNull2(git4(root, ["ls-files", "--unmerged", "-z"])).length > 0)
     throw new Error("automatic commit refuses an unmerged index; resolve the merge first");
-  const flagged = splitNull2(git5(root, ["ls-files", "-v", "-z", "--", ...listed])).filter((entry) => /^[a-zS] /.test(entry)).map((entry) => entry.slice(2));
+  const flagged = splitNull2(git4(root, ["ls-files", "-v", "-z", "--", ...listed])).filter((entry) => /^[a-zS] /.test(entry)).map((entry) => entry.slice(2));
   if (flagged.length > 0)
     throw new Error(`automatic commit refuses assume-unchanged or skip-worktree paths: ${flagged.join(", ")}`);
-  const status = splitNull2(git5(root, ["status", "--porcelain=v1", "-z", "--no-renames", "--untracked-files=all", "--", ...listed]));
-  const worktreeChanges = new Set(splitNull2(git5(root, ["diff", "--no-renames", "--name-only", "-z", "HEAD", "--", ...listed])));
+  const status = splitNull2(git4(root, ["status", "--porcelain=v1", "-z", "--no-renames", "--untracked-files=all", "--", ...listed]));
+  const worktreeChanges = new Set(splitNull2(git4(root, ["diff", "--no-renames", "--name-only", "-z", "HEAD", "--", ...listed])));
   const wanted = new Set(listed);
   const dirty = [];
   const untracked = [];
@@ -15502,20 +15032,20 @@ function commitWorkflowPaths(projectRoot, input) {
     return { committed: false };
   dirty.sort();
   input.signal?.throwIfAborted();
-  const before = git5(root, ["rev-parse", "HEAD"]).trim();
+  const before = git4(root, ["rev-parse", "HEAD"]).trim();
   if (untracked.length > 0)
-    git5(root, ["add", "--", ...untracked]);
+    git4(root, ["add", "--", ...untracked]);
   try {
     commitWithPathGuard(root, dirty, before, input.subject);
   } catch (error) {
-    if (untracked.length > 0 && git5(root, ["rev-parse", "HEAD"]).trim() === before) {
+    if (untracked.length > 0 && git4(root, ["rev-parse", "HEAD"]).trim() === before) {
       try {
-        git5(root, ["reset", "--quiet", "HEAD", "--", ...untracked]);
+        git4(root, ["reset", "--quiet", "HEAD", "--", ...untracked]);
       } catch {}
     }
     throw error;
   }
-  return { committed: true, commit: git5(root, ["rev-parse", "HEAD"]).trim(), paths: dirty };
+  return { committed: true, commit: git4(root, ["rev-parse", "HEAD"]).trim(), paths: dirty };
 }
 function settleCommitSubject(taskId) {
   return `imm(${taskId}): settled delivery`;
@@ -15523,7 +15053,7 @@ function settleCommitSubject(taskId) {
 function commitSettledDelivery(projectRoot, taskId, signal) {
   let root;
   try {
-    root = realpathSync16(resolve15(projectRoot));
+    root = realpathSync15(resolve15(projectRoot));
     if (readGitIntegrationPreference(root).mode !== "auto")
       return null;
   } catch {
@@ -15569,7 +15099,7 @@ var init_workflow_autocommit = __esm(() => {
 // plugins/immune-brain/runtime/unattended/batch_integration.ts
 import { spawnSync as spawnSync12 } from "node:child_process";
 import { join as join23 } from "node:path";
-function git6(root, args, extra = {}) {
+function git5(root, args, extra = {}) {
   const result = spawnSync12("git", ["-C", root, "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", ...args], {
     encoding: "utf8",
     stdio: ["pipe", "pipe", "pipe"],
@@ -15579,7 +15109,7 @@ function git6(root, args, extra = {}) {
   return { status: result.status, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
 }
 function gitOut(root, args, what) {
-  const result = git6(root, args);
+  const result = git5(root, args);
   if (result.status !== 0)
     throw new Error(`${what}: ${result.stderr.trim() || "git failed"}`);
   return result.stdout;
@@ -15616,7 +15146,7 @@ function singleParent(root, commit) {
   return parents[0];
 }
 function isAncestor(root, ancestor, descendant) {
-  return git6(root, ["merge-base", "--is-ancestor", ancestor, descendant]).status === 0;
+  return git5(root, ["merge-base", "--is-ancestor", ancestor, descendant]).status === 0;
 }
 function sourceMatches(path, pattern) {
   const expression = pattern.split(/(\*\*\/|\*\*|\*|\?)/).map((part) => {
@@ -15638,7 +15168,7 @@ function changedDerivedEntries(root, base, laneCommit, entries) {
 }
 function mergeDerivedDeclaration(root, base, head, lane) {
   const texts = [base, head, lane].map((commit) => {
-    const shown = git6(root, ["cat-file", "blob", `${commit}:${DERIVED_FILES_PATH}`]);
+    const shown = git5(root, ["cat-file", "blob", `${commit}:${DERIVED_FILES_PATH}`]);
     return shown.status === 0 ? shown.stdout : null;
   });
   if (texts.some((text) => text === null))
@@ -15672,13 +15202,13 @@ function mergeDerivedDeclaration(root, base, head, lane) {
 }
 function withDeclaration(root, tree, text) {
   const mode = gitOut(root, ["ls-tree", tree, "--", DERIVED_FILES_PATH], "read declaration mode").split(" ")[0];
-  const blob = git6(root, ["hash-object", "-w", "--stdin"], { input: text });
+  const blob = git5(root, ["hash-object", "-w", "--stdin"], { input: text });
   if (blob.status !== 0 || !mode)
     throw new Error("write merged derived-files declaration failed");
   return withTempDirectory("imm-batch-declaration-", (directory) => {
     const env = { GIT_INDEX_FILE: join23(directory, "index") };
     const step = (args) => {
-      const result = git6(root, args, { env });
+      const result = git5(root, args, { env });
       if (result.status !== 0)
         throw new Error(`merge derived-files declaration: ${result.stderr.trim() || "git failed"}`);
       return result.stdout;
@@ -15692,7 +15222,7 @@ function buildCandidate(input) {
   const { root, batch_head: head, lane_base: base, lane_commit: laneCommit } = input;
   const entries = readDerivedFilesAt(root, input.declaration_head ?? base);
   const touched = changedDerivedEntries(root, base, laneCommit, entries);
-  const merged = head === base ? null : git6(root, ["merge-tree", "--write-tree", "--name-only", "-z", `--merge-base=${base}`, head, laneCommit]);
+  const merged = head === base ? null : git5(root, ["merge-tree", "--write-tree", "--name-only", "-z", `--merge-base=${base}`, head, laneCommit]);
   if (merged && merged.status !== 0 && merged.status !== 1)
     throw new Error(`failed to build integration candidate: ${merged.stderr.trim() || "git merge-tree failed"}`);
   let tree = merged ? merged.stdout.split("\x00")[0]?.trim() : gitOut(root, ["rev-parse", `${laneCommit}^{tree}`], "read lane tree").trim();
@@ -15742,7 +15272,7 @@ function buildCandidate(input) {
       if ([...changeIdentity(delivery.root, tree, generatedTree).keys()].some((path) => !outputs.has(path)))
         throw new Error("generate changed an undeclared tree entry");
       tree = generatedTree;
-      const commit = git6(delivery.root, ["commit-tree", tree, "-m", "regenerated integration"], {
+      const commit = git5(delivery.root, ["commit-tree", tree, "-m", "regenerated integration"], {
         env: { GIT_AUTHOR_NAME: COMMITTER_ENV.GIT_COMMITTER_NAME, GIT_AUTHOR_EMAIL: COMMITTER_ENV.GIT_COMMITTER_EMAIL }
       });
       if (commit.status !== 0)
@@ -15759,7 +15289,7 @@ function buildCandidate(input) {
     return laneCommit;
   const message = gitOut(root, ["log", "-n", "1", "--format=%B", laneCommit], "failed to read lane commit message");
   const author = gitOut(root, ["log", "-n", "1", "--format=%an%x00%ae%x00%aI", laneCommit], "failed to read lane commit author").trim().split("\x00");
-  const created = git6(root, ["commit-tree", tree, "-p", head, "-F", "-"], {
+  const created = git5(root, ["commit-tree", tree, "-p", head, "-F", "-"], {
     input: message,
     env: {
       GIT_AUTHOR_NAME: author[0] ?? COMMITTER_ENV.GIT_COMMITTER_NAME,
@@ -15780,7 +15310,7 @@ function laneCandidateMatches(input) {
     const entries = readDerivedFilesAt(root, input.declaration_head ?? lane_base);
     if (!changedDerivedEntries(root, lane_base, lane_commit, entries).length && identitiesEqual(changeIdentity(root, lane_base, lane_commit), changeIdentity(root, batch_head, candidate)))
       return true;
-    const merged = git6(root, ["merge-tree", "--write-tree", `--merge-base=${lane_base}`, batch_head, lane_commit]);
+    const merged = git5(root, ["merge-tree", "--write-tree", `--merge-base=${lane_base}`, batch_head, lane_commit]);
     if (merged.status !== 0 && merged.status !== 1)
       return false;
     const expected = buildCandidate({ root, lane_base, lane_commit, batch_head, declaration_head: input.declaration_head });
@@ -15797,10 +15327,10 @@ function prepareLaneCandidate(input) {
     if (tip !== head)
       throw new BatchIntegrationError("batch_head_lineage_broken", `batch_head_lineage_broken: ${branch} is at ${tip ?? "nothing"}, expected batch head ${head}`);
   } else {
-    const currentBranch = git6(root, ["symbolic-ref", "--short", "HEAD"]);
+    const currentBranch = git5(root, ["symbolic-ref", "--short", "HEAD"]);
     if (currentBranch.status !== 0 || currentBranch.stdout.trim() !== branch)
       throw new BatchIntegrationError("batch_head_lineage_broken", `batch_head_lineage_broken: current branch ${currentBranch.stdout.trim()} does not match expected branch ${branch}`);
-    const currentHead = git6(root, ["rev-parse", "HEAD"]).stdout.trim();
+    const currentHead = git5(root, ["rev-parse", "HEAD"]).stdout.trim();
     if (currentHead !== head)
       throw new BatchIntegrationError("batch_head_lineage_broken", `batch_head_lineage_broken: current HEAD ${currentHead} does not match expected batch head ${head}`);
   }
@@ -15834,10 +15364,10 @@ function fastForwardToCandidate(root, candidate, hidden) {
     }
     return { commit: candidate, applied: delta.applied };
   }
-  const moved = git6(root, ["merge", "--ff-only", "--quiet", candidate]);
+  const moved = git5(root, ["merge", "--ff-only", "--quiet", candidate]);
   if (moved.status !== 0)
     throw new BatchIntegrationError("batch_integration_conflict", `batch_integration_conflict: batch branch could not fast-forward to ${candidate}: ${moved.stderr.trim() || "git merge failed"}`);
-  const landed = git6(root, ["rev-parse", "HEAD"]).stdout.trim();
+  const landed = git5(root, ["rev-parse", "HEAD"]).stdout.trim();
   if (landed !== candidate)
     throw new Error(`batch branch landed on ${landed}, expected ${candidate}`);
   return { commit: candidate };
@@ -15848,7 +15378,7 @@ function commitsBetween(root, from, to) {
 function readFrozenAcceptance(root, commit, check) {
   if (!check.intent_path)
     throw new BatchIntegrationError("batch_integration_check_failed", `batch_integration_check_failed: ${check.task_id} has no intent to rerun`);
-  const shown = git6(root, ["show", `${commit}:${check.intent_path}`]);
+  const shown = git5(root, ["show", `${commit}:${check.intent_path}`]);
   if (shown.status !== 0)
     throw new BatchIntegrationError("batch_integration_check_failed", `batch_integration_check_failed: intent ${check.intent_path} of ${check.task_id} is absent from frozen delivery ${commit}`);
   try {
@@ -15938,7 +15468,7 @@ function commitAppliedDelta(root, taskId, applied) {
 function findIntegratedCandidate(input) {
   const { root, task_id: taskId, batch_id: batchId, from_head: from, lane_base: base, lane_commit: laneCommit } = input;
   const tip = isProgressRef(input.branch) ? input.branch : "HEAD";
-  const listed = git6(root, [
+  const listed = git5(root, [
     "log",
     "--fixed-strings",
     `--grep=imm(${taskId}):`,
@@ -15951,7 +15481,7 @@ function findIntegratedCandidate(input) {
     const [commit, trailer, subject] = record.split("\x00");
     if (!commit || trailer?.trim() !== batchId || !subject?.trim().startsWith(`imm(${taskId}):`))
       continue;
-    const parent = git6(root, ["rev-parse", `${commit}^`]).stdout.trim();
+    const parent = git5(root, ["rev-parse", `${commit}^`]).stdout.trim();
     if (parent && laneCandidateMatches({ root, lane_base: base, lane_commit: laneCommit, batch_head: parent, candidate: commit, declaration_head: input.declaration_head }))
       return commit;
   }
@@ -16095,7 +15625,7 @@ import {
   lstatSync as lstatSync16,
   mkdirSync as mkdirSync10,
   openSync as openSync6,
-  realpathSync as realpathSync17,
+  realpathSync as realpathSync16,
   readdirSync as readdirSync8,
   renameSync as renameSync4,
   rmSync as rmSync10,
@@ -16127,8 +15657,8 @@ function runBatchGitPreflight(input) {
   let realToplevel;
   let realRoot;
   try {
-    realToplevel = realpathSync17(toplevelResult.stdout.trim());
-    realRoot = realpathSync17(root);
+    realToplevel = realpathSync16(toplevelResult.stdout.trim());
+    realRoot = realpathSync16(root);
   } catch {
     return {
       ok: false,
@@ -16600,7 +16130,7 @@ async function lookupBatchCommit(input) {
       const result = spawnSync14("git", ["-C", path, "rev-parse", "--path-format=absolute", "--git-common-dir"], { encoding: "utf8" });
       if (result.status !== 0)
         throw new Error("batch_head_lineage_broken: unreadable Lane repository");
-      return realpathSync17(result.stdout.trim());
+      return realpathSync16(result.stdout.trim());
     };
     const sourceParent = spawnSync14("git", ["-C", root, "rev-parse", `${lane.lane_commit}^@`], { encoding: "utf8" });
     const candidateParent = spawnSync14("git", ["-C", root, "rev-parse", `${lane.integrated_commit}^@`], { encoding: "utf8" });
@@ -17130,7 +16660,7 @@ var init_intent_readiness = __esm(() => {
 import { spawnSync as spawnSync15 } from "node:child_process";
 import { copyFileSync as copyFileSync2, existsSync as existsSync14, mkdirSync as mkdirSync11, renameSync as renameSync5, writeFileSync as writeFileSync11 } from "node:fs";
 import { dirname as dirname14, join as join26 } from "node:path";
-function git7(root, args) {
+function git6(root, args) {
   const result = spawnSync15("git", ["-C", root, ...args], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
@@ -17139,11 +16669,11 @@ function git7(root, args) {
   return { status: result.status, stdout: result.stdout ?? "" };
 }
 function blobOfFile(root, file) {
-  const hashed = git7(root, ["hash-object", "--no-filters", "--", file]);
+  const hashed = git6(root, ["hash-object", "--no-filters", "--", file]);
   return hashed.status === 0 ? hashed.stdout.trim() : null;
 }
 function blobAt(root, commit, path) {
-  const blob = git7(root, ["rev-parse", "--verify", "--quiet", `${commit}:${path}`]);
+  const blob = git6(root, ["rev-parse", "--verify", "--quiet", `${commit}:${path}`]);
   return blob.status === 0 ? blob.stdout.trim() : null;
 }
 function laneOrigin(root, record, path, blob) {
@@ -17157,7 +16687,7 @@ function laneOrigin(root, record, path, blob) {
       continue;
     if (existsSync14(join26(lane.path, path)) && blobOfFile(lane.path, join26(lane.path, path)) === blob)
       return child.task_id;
-    const commits = git7(root, ["rev-list", `${lane.base_head}..${lane.branch}`]);
+    const commits = git6(root, ["rev-list", `${lane.base_head}..${lane.branch}`]);
     if (commits.status !== 0)
       continue;
     for (const commit of commits.stdout.split(`
@@ -17198,7 +16728,7 @@ function restoreProvableLaneLeaks(root, record, entries, now) {
   mkdirSync11(join26(backupRoot, "files"), { recursive: true });
   const tracked = planned.filter((p) => p.kind === "modified").map((p) => p.path);
   if (tracked.length > 0) {
-    const diff = git7(root, ["diff", "--binary", "HEAD", "--", ...tracked]);
+    const diff = git6(root, ["diff", "--binary", "HEAD", "--", ...tracked]);
     writeFileSync11(join26(backupRoot, "restore.patch"), diff.stdout);
   }
   for (const { path, kind } of planned) {
@@ -17217,7 +16747,7 @@ function restoreProvableLaneLeaks(root, record, entries, now) {
       renameSync5(join26(root, path), join26(backupRoot, "files", path));
       continue;
     }
-    const restored = git7(root, ["restore", "--source=HEAD", "--worktree", "--", path]);
+    const restored = git6(root, ["restore", "--source=HEAD", "--worktree", "--", path]);
     if (restored.status !== 0)
       throw new Error(`failed to restore ${path} from HEAD; its bytes are backed up under ${backup}`);
   }
@@ -18052,7 +17582,7 @@ var init_batch_preflight = __esm(() => {
 
 // plugins/immune-brain/runtime/unattended/batch_final_report.ts
 import { spawnSync as spawnSync17 } from "node:child_process";
-function git8(root, ...argv) {
+function git7(root, ...argv) {
   return spawnSync17("git", ["--no-optional-locks", "-C", root, ...argv], { encoding: "utf8" });
 }
 function returnBatchToCoordinator(root, head, final) {
@@ -18062,17 +17592,17 @@ function returnBatchToCoordinator(root, head, final) {
   const blocked = (reason) => ({ mode, status: "blocked", reason });
   if (!final?.passed || final.head !== head)
     return blocked("final_verification_not_passed");
-  const branch = git8(root, "symbolic-ref", "--quiet", "HEAD");
+  const branch = git7(root, "symbolic-ref", "--quiet", "HEAD");
   if (branch.status !== 0)
     return blocked("coordinator_branch_unavailable");
-  const status = git8(root, "status", "--porcelain", "--untracked-files=all");
+  const status = git7(root, "status", "--porcelain", "--untracked-files=all");
   if (status.status !== 0)
     return blocked("coordinator_status_unreadable");
   if (status.stdout.length)
     return blocked("coordinator_working_tree_dirty");
-  if (git8(root, "merge-base", "--is-ancestor", "HEAD", head).status !== 0)
+  if (git7(root, "merge-base", "--is-ancestor", "HEAD", head).status !== 0)
     return blocked("coordinator_head_diverged");
-  const merge = git8(root, "merge", "--ff-only", "--no-edit", head);
+  const merge = git7(root, "merge", "--ff-only", "--no-edit", head);
   if (merge.status !== 0)
     return blocked(`coordinator_fast_forward_failed: ${merge.stderr.trim()}`);
   return { mode, status: "fast_forwarded", reason: null };
@@ -18102,7 +17632,7 @@ async function buildBatchFinalReport(root, record) {
         intent = planning.intent;
       }
       const qa = audit && "attestations" in audit.record ? [...audit.record.attestations].reverse().find((item) => item.kind === "qa" && item.task_revision === intent.revision && item.intent_content_hash === audit.record.intent_ref.content_hash) : undefined;
-      const parent = child.commit ? git8(path, "rev-parse", `${child.commit}^`) : null;
+      const parent = child.commit ? git7(path, "rev-parse", `${child.commit}^`) : null;
       if (parent && parent.status !== 0)
         throw new Error(`final report unreadable integration: ${child.task_id}`);
       const paths = child.commit ? taskCommitRevisionIdentity(path, ["**"], parent.stdout.trim(), child.commit).changed_paths : null;
@@ -18147,7 +17677,7 @@ import { fileURLToPath as fileURLToPath6 } from "node:url";
 
 // plugins/immune-brain/runtime/host-core/mcp_runtime.ts
 import { randomUUID as randomUUID11 } from "node:crypto";
-import { realpathSync as realpathSync19 } from "node:fs";
+import { realpathSync as realpathSync18 } from "node:fs";
 import { isAbsolute as isAbsolute12 } from "node:path";
 import { fileURLToPath as fileURLToPath3 } from "node:url";
 import { stdin, stdout } from "node:process";
@@ -18366,7 +17896,7 @@ init_batch_final_report();
 init_checkout_delivery();
 import { spawnSync as spawnSync19 } from "node:child_process";
 import { createHash as createHash23 } from "node:crypto";
-import { existsSync as existsSync17, realpathSync as realpathSync18 } from "node:fs";
+import { existsSync as existsSync17, realpathSync as realpathSync17 } from "node:fs";
 import { isAbsolute as isAbsolute11, join as join30 } from "node:path";
 import { readFileSync as readFileSync21 } from "node:fs";
 
@@ -18391,7 +17921,7 @@ function exitProofCondition(generation, observation) {
     return `Executor generation ${generation.generation} did not exit normally (${exit.signal ? `signal ${exit.signal}` : `code ${exit.code}`})`;
   return null;
 }
-function git9(cwd, ...args) {
+function git8(cwd, ...args) {
   return spawnSync18("git", ["--no-optional-locks", "-C", cwd, ...args], { encoding: "utf8" });
 }
 function retainedLaneReason(condition) {
@@ -18403,7 +17933,7 @@ function cleanupSingleTaskLane(input) {
   if (proof)
     return retain(proof);
   const exit = input.observation ?? input.generation.exit;
-  const status = git9(input.lanePath, "status", "--porcelain", "--untracked-files=all");
+  const status = git8(input.lanePath, "status", "--porcelain", "--untracked-files=all");
   if (status.status !== 0)
     return retain("the Lane status is unreadable");
   if (status.stdout.trim()) {
@@ -18412,23 +17942,23 @@ function cleanupSingleTaskLane(input) {
     return retain(`the Lane has tracked modifications or untracked files: ${paths.join(", ")}`);
   }
   const laneRef = `refs/heads/${input.laneBranch}`;
-  const laneTip = git9(input.root, "rev-parse", "--verify", "--quiet", `${laneRef}^{commit}`);
-  const parentTip = git9(input.root, "rev-parse", "--verify", "--quiet", `${input.parentRef}^{commit}`);
+  const laneTip = git8(input.root, "rev-parse", "--verify", "--quiet", `${laneRef}^{commit}`);
+  const parentTip = git8(input.root, "rev-parse", "--verify", "--quiet", `${input.parentRef}^{commit}`);
   if (laneTip.status !== 0 || parentTip.status !== 0)
     return retain("a Lane branch is unreadable");
-  if (git9(input.root, "merge-base", "--is-ancestor", laneTip.stdout.trim(), parentTip.stdout.trim()).status !== 0)
+  if (git8(input.root, "merge-base", "--is-ancestor", laneTip.stdout.trim(), parentTip.stdout.trim()).status !== 0)
     return retain(`the Lane branch carries commits that ${input.parentRef.replace("refs/heads/", "")} does not`);
-  const listed = git9(input.root, "worktree", "list", "--porcelain");
+  const listed = git8(input.root, "worktree", "list", "--porcelain");
   if (listed.status !== 0)
     return retain("the worktree list is unreadable");
   if (listed.stdout.split(`
 `).includes(`branch ${input.parentRef}`))
     return retain(`${input.parentRef.replace("refs/heads/", "")} is checked out in a worktree`);
-  const removed = git9(input.root, "worktree", "remove", input.lanePath);
+  const removed = git8(input.root, "worktree", "remove", input.lanePath);
   if (removed.status !== 0)
     return retain(`the Lane worktree could not be removed: ${removed.stderr.trim()}`);
   for (const [ref, tip] of [[laneRef, laneTip.stdout.trim()], [input.parentRef, parentTip.stdout.trim()]]) {
-    const deleted = git9(input.root, "update-ref", "-d", ref, tip);
+    const deleted = git8(input.root, "update-ref", "-d", ref, tip);
     if (deleted.status !== 0)
       return retain(`${ref.replace("refs/heads/", "")} could not be removed: ${deleted.stderr.trim()}`);
   }
@@ -18486,19 +18016,13 @@ function clearLaneDecisionRequest(lanePath) {
 
 // plugins/immune-brain/runtime/unattended/lane_supervisor.ts
 function chooseExecutor(layers, fallback) {
-  const hostLayer = layers.findIndex((layer) => layer.executor_host !== undefined);
-  const host = hostLayer < 0 ? fallback : layers[hostLayer].executor_host;
-  const selected = hostLayer < 0 ? {} : layers[hostLayer];
-  const not_applied = [];
-  for (const key of ["executor_model", "executor_effort"]) {
-    if (layers.some((layer, i) => i !== hostLayer && layer[key] !== undefined))
-      not_applied.push(key);
-  }
+  const selected = layers.find((layer) => layer.executor_host !== undefined);
+  if (!selected)
+    return { host: fallback };
   return {
-    host,
+    host: selected.executor_host,
     ...selected.executor_model ? { model: selected.executor_model } : {},
-    ...selected.executor_effort ? { effort: selected.executor_effort } : {},
-    not_applied
+    ...selected.executor_effort ? { effort: selected.executor_effort } : {}
   };
 }
 function executorArguments(choice, pluginDir, taskId) {
@@ -18730,7 +18254,67 @@ async function superviseLane(supervisor, input) {
 init_batch_preflight();
 init_batch_state();
 init_layered_config();
+
+// plugins/immune-brain/runtime/unattended/agent_profiles.ts
 init_agent_roles();
+init_layered_config();
+var executorPreferences = (profile) => ({
+  executor_host: profile.host,
+  ...profile.model ? { executor_model: profile.model } : {},
+  ...profile.effort ? { executor_effort: profile.effort } : {}
+});
+function parseRequestedAgents(root, value) {
+  if (value === undefined)
+    return {};
+  if (value === null || typeof value !== "object" || Array.isArray(value))
+    throw new Error("invalid agents: expected { executor?, reviewer? }");
+  const unknown = Object.keys(value).filter((key) => key !== "executor" && key !== "reviewer");
+  if (unknown.length)
+    throw new Error(`invalid agents: unknown role ${unknown.join(", ")}`);
+  const profiles = resolveConfig(root).agents.profiles.value;
+  const out = {};
+  for (const role of ["executor", "reviewer"]) {
+    const raw = value[role];
+    if (raw === undefined)
+      continue;
+    const parsed = parseAgentValue(raw, profiles);
+    if (!parsed.ok)
+      throw new Error(`invalid agents.${role}: ${parsed.message}`);
+    if (role === "executor")
+      out.executor = executorPreferences(parsed.profile);
+    else
+      out.reviewer = { host: parsed.profile.host, ...parsed.profile.model ? { model: parsed.profile.model } : {}, ...parsed.profile.effort ? { effort: parsed.profile.effort } : {} };
+  }
+  return out;
+}
+function laneExecutorChoice(root, preferences, parentHost) {
+  if (preferences?.executor_host)
+    return chooseExecutor([preferences], parentHost);
+  const config = resolveConfig(root);
+  if (batchConfigErrors(config).length)
+    return null;
+  const role = agentRole(config.agents, "executor");
+  return chooseExecutor(role ? [executorPreferences(role)] : [], parentHost);
+}
+function frozenExecutorPreferences(root, request, parentHost) {
+  if (request?.executor_host)
+    return request;
+  const config = resolveConfig(root);
+  if (batchConfigErrors(config).length)
+    return;
+  const role = agentRole(config.agents, "executor");
+  if (role)
+    return executorPreferences(role);
+  return parentHost ? { executor_host: parentHost } : undefined;
+}
+function frozenReviewProfile(root, request) {
+  if (request)
+    return request;
+  const role = agentRole(resolveConfig(root).agents, "reviewer");
+  return role ? { host: role.host, ...role.model ? { model: role.model } : {}, ...role.effort ? { effort: role.effort } : {} } : undefined;
+}
+// plugins/immune-brain/runtime/unattended/batch_runner.ts
+init_layered_config();
 init_backend_claim();
 init_batch_plan();
 init_batch_git();
@@ -18801,7 +18385,7 @@ async function stopSingleTaskSupervisor(supervisor, root, taskId, signal) {
     repository: root,
     lanePath: lane.path,
     taskId,
-    choice: { host: "pi", not_applied: [] },
+    choice: { host: "pi" },
     pluginDir: "",
     store: laneGenerationStore(root, record.batch_id),
     baseline: "",
@@ -18816,7 +18400,7 @@ async function stopSingleTaskSupervisor(supervisor, root, taskId, signal) {
   return { state: "started", batch_id: record.batch_id, report: {
     ...reportFromLane(parked),
     ...condition ? { lane_refusals: [{ task_id: taskId, path: lane.path, reason: retainedLaneReason(condition) }] } : {},
-    lane_supervision: { ...observation, not_applied: [] }
+    lane_supervision: observation
   } };
 }
 function reportFromLane(record) {
@@ -18843,17 +18427,6 @@ function afterExecutorExit(advanced, observed) {
     next_action: decision ? observed.next_action : advanced.handoffs.some((h) => h.role === "executor") ? "Call start_unattended_batch again to continue the Lane." : advanced.next_action,
     lane_supervision: observed.lane_supervision
   };
-}
-function laneExecutorChoice(root, preferences, parentHost) {
-  const config = resolveConfig(root);
-  if (!config.lanes.valid)
-    return null;
-  const project = config.lanes.project_defaults.value;
-  if (preferences?.executor_host)
-    return chooseExecutor([preferences, project], parentHost);
-  const role = agentRole(config.agents, "executor");
-  const resolved = role?.host ? { executor_host: role.host, ...role.model ? { executor_model: role.model } : {}, ...role.effort ? { executor_effort: role.effort } : {} } : {};
-  return chooseExecutor([preferences ?? {}, resolved, project], parentHost);
 }
 async function superviseSingle(input, report) {
   const options = input.supervision;
@@ -18901,7 +18474,7 @@ async function superviseSingle(input, report) {
       ...report,
       reason: tui.reason,
       next_action: tui.recovery_action.replaceAll("<task_id>", child.task_id),
-      lane_supervision: { ...observation, not_applied: choice.not_applied }
+      lane_supervision: observation
     };
   }
   let decision = null;
@@ -18918,15 +18491,21 @@ async function superviseSingle(input, report) {
     ...kept && condition ? { lane_refusals: [{ task_id: child.task_id, path: child.lane.path, reason: retainedLaneReason(condition) }] } : {},
     ...decision ? { lane_decision_required: decision } : {},
     next_action: decision?.requested ? `The Lane Executor asks for a breaking intent revision (record ${decision.record_revision}). Call approve_breaking_intent_revision for ${decision.task_id} in the current Host with record_revision ${decision.record_revision} and lane_decision_required.requested.next_intent as next_intent; it opens the native gate and continues the Lane.` : decision ? `The Lane waits on a user decision (record ${decision.record_revision}). Call request_authorization for ${decision.task_id} in the current Host with record_revision ${decision.record_revision}; it opens the native gate and continues the Lane.` : observation.state === "running" ? "Call start_unattended_batch again to continue supervising this generation." : observation.state === "unobservable" ? batchReason("lane_executor_unobservable").recovery_action : observation.state === "unavailable" ? batchReason("lane_executor_unavailable").recovery_action : report.next_action,
-    lane_supervision: { ...observation, not_applied: choice.not_applied }
+    lane_supervision: observation
   };
 }
 async function startBatch(input) {
   const recorded = readAnyBatchRunState(input.root, input.batch_id);
   const interactive = recorded ? isLaneBatchRecord(recorded) && recorded.executor_mode === "interactive" : input.executor_mode === "interactive";
   if (interactive)
-    input = { ...input, executor_mode: "interactive", supervision: undefined, lane_exit_observation: null };
-  if (input.plan_source === "single_task" && input.supervision && !input.supervision.stop && !resolveConfig(input.root).lanes.valid) {
+    input = {
+      ...input,
+      executor_mode: "interactive",
+      supervision: undefined,
+      lane_exit_observation: null,
+      executor_freeze: input.executor_freeze ?? (input.supervision ? { request: input.supervision.request, parentHost: input.supervision.parentHost } : undefined)
+    };
+  if (input.plan_source === "single_task" && input.supervision && !input.supervision.stop && batchConfigErrors(resolveConfig(input.root)).length > 0) {
     const report = recorded && isLaneBatchRecord(recorded) ? reportFromLane(recorded) : null;
     if (!report)
       throw new Error("lane_config_invalid");
@@ -19135,11 +18714,12 @@ async function relayLaneDecision(input) {
     operation: input.operation,
     applied: true,
     rebound,
-    lane_supervision: { ...observation, not_applied: choice.not_applied }
+    lane_supervision: observation
   } };
 }
 
 // plugins/immune-brain/runtime/unattended/batch_lanes.ts
+init_layered_config();
 init_github_issue_tracker();
 init_local_initiative();
 init_batch_integration();
@@ -19163,7 +18743,9 @@ function resolveLaneParallel(root, initiativeSlug, maxParallel, laneOffers, _lan
     throw new Error("batch_record_shape_retired: inspect the record, then use retire_stale_batch in the current Host");
   if (laneOffers !== undefined && (!existing || !existing.corrupt && isParentBranch(existing.record.branch)))
     throw new Error("lane_offers_retired: new batches create their own Lanes");
-  return parseMaxParallel(maxParallel) ?? (existing && !existing.corrupt && isLaneBatchRecord(existing.record) ? existing.record.max_parallel : 1);
+  if (existing && !existing.corrupt && isLaneBatchRecord(existing.record))
+    return parseMaxParallel(maxParallel) ?? existing.record.max_parallel;
+  return parseMaxParallel(maxParallel) ?? resolveConfig(root).batch.max_parallel.value;
 }
 function parseMaxParallel(value) {
   if (value === undefined || value === null)
@@ -19338,14 +18920,14 @@ function commonDir(root) {
   if (result.status !== 0 || !result.stdout)
     return null;
   try {
-    return realpathSync18(result.stdout);
+    return realpathSync17(result.stdout);
   } catch {
     return null;
   }
 }
 function resolveRealPath(path) {
   try {
-    return realpathSync18(path);
+    return realpathSync17(path);
   } catch {
     return null;
   }
@@ -19840,6 +19422,9 @@ async function runLaneBatch(input, persisted) {
     });
     if (!preflight.ok)
       return refuse2(input, null, preflight.reason, preflight.message || "Correct the preflight condition and re-confirm.");
+    const frozenReview = frozenReviewProfile(input.root, input.review_profile);
+    const freeze = input.executor_freeze ?? input.supervision;
+    const frozenExecutor = frozenExecutorPreferences(input.root, freeze?.request, freeze?.parentHost);
     record = prepareBatchLaneRunState({
       plan_source: input.plan_source,
       executor_mode: input.executor_mode,
@@ -19856,8 +19441,8 @@ async function runLaneBatch(input, persisted) {
       max_parallel: limit,
       now: input.now,
       ...input.final_verification?.length ? { final_verification: input.final_verification } : {},
-      ...input.review_profile ? { review_profile: input.review_profile } : {},
-      ...input.supervision?.request ? { executor_preferences: input.supervision.request } : {}
+      ...frozenReview ? { review_profile: frozenReview } : {},
+      ...frozenExecutor ? { executor_preferences: frozenExecutor } : {}
     });
   }
   const persist = () => {
@@ -20337,7 +19922,12 @@ async function runLaneBatch(input, persisted) {
       record_revision: fresh.projection.record_revision,
       next_obligation: fresh.projection.next_obligation,
       lane_branch: child.lane.branch,
-      lane_path: child.lane.path
+      lane_path: child.lane.path,
+      ...record.executor_preferences?.executor_host ? { executor: {
+        host: record.executor_preferences.executor_host,
+        ...record.executor_preferences.executor_model ? { model: record.executor_preferences.executor_model } : {},
+        ...record.executor_preferences.executor_effort ? { effort: record.executor_preferences.executor_effort } : {}
+      } } : {}
     });
   }
   handoffs.push(...releaseHandoffs(input, record, lanes));
@@ -20383,7 +19973,6 @@ async function runLaneBatch(input, persisted) {
 
 // plugins/immune-brain/runtime/host-core/mcp_runtime.ts
 init_batch_final_verification();
-init_batch_state();
 init_coordinator();
 init_storage();
 init_plugin_source_skew();
@@ -20418,12 +20007,12 @@ function listMcpTools() {
           ...tool.name === "start_unattended_batch" ? {
             task_id: { type: "string" },
             stop: { type: "boolean" },
-            executor_host: { type: "string", enum: ["pi", "claude-code", "antigravity"] },
-            executor_model: { type: "string", minLength: 1 },
-            executor_effort: { type: "string", minLength: 1 },
-            review_host: { type: "string", enum: ["pi", "claude-code", "antigravity"] },
-            review_model: { type: "string", minLength: 1 },
-            review_effort: { type: "string", minLength: 1 },
+            agents: {
+              type: "object",
+              description: "Whole profile per role for this batch: a user profile name, host:model@effort, or { host, model?, effort? }.",
+              properties: { executor: { oneOf: [{ type: "string", minLength: 1 }, { type: "object", properties: { host: { type: "string", enum: ["pi", "claude-code", "antigravity"] }, model: { type: "string", minLength: 1 }, effort: { type: "string", minLength: 1 } }, required: ["host"], additionalProperties: false }] }, reviewer: { oneOf: [{ type: "string", minLength: 1 }, { type: "object", properties: { host: { type: "string", enum: ["pi", "claude-code", "antigravity"] }, model: { type: "string", minLength: 1 }, effort: { type: "string", minLength: 1 } }, required: ["host"], additionalProperties: false }] } },
+              additionalProperties: false
+            },
             max_parallel: { type: "integer", minimum: 1 },
             lane_offers: {
               type: "array",
@@ -20556,7 +20145,7 @@ function createMcpRuntime(profile, options = {}) {
       return;
     let current = null;
     try {
-      current = realpathSync19(workspace);
+      current = realpathSync18(workspace);
     } catch {}
     if (!current || grant.workspace !== current)
       throw new NativeAuthorityError("run_entry_required", `${operation} runs in a workspace other than the one drive was entered in`);
@@ -20624,11 +20213,10 @@ function createMcpRuntime(profile, options = {}) {
         const task = typeof args.task_id === "string" ? args.task_id : "";
         if (args.stop !== undefined && typeof args.stop !== "boolean")
           throw new Error("stop must be a boolean");
-        if (args.executor_host !== undefined && args.executor_host !== "pi" && args.executor_host !== "claude-code" && args.executor_host !== "antigravity")
-          throw new Error("invalid executor_host");
-        for (const key of ["executor_model", "executor_effort"])
-          if (args[key] !== undefined && (typeof args[key] !== "string" || !args[key]))
-            throw new Error(`invalid ${key}`);
+        for (const key of ["executor_host", "executor_model", "executor_effort", "review_host", "review_model", "review_effort"])
+          if (Object.hasOwn(args, key))
+            throw new Error(`unknown parameter: ${key} (use agents)`);
+        const requested = parseRequestedAgents(workspace, args.agents);
         if (!!initiative === !!task)
           return batchReason("batch_entry_ambiguous");
         const initiativeSlug = task || initiative;
@@ -20639,19 +20227,14 @@ function createMcpRuntime(profile, options = {}) {
         const laneSessionClose = parseLaneSessionClose(args.lane_session_close);
         const maxParallel = task ? 1 : resolveLaneParallel(workspace, initiativeSlug, parseMaxParallel(args.max_parallel), laneOffers, laneInstruction);
         const finalVerification = Array.isArray(args.final_verification) && args.final_verification.length === 0 ? undefined : parseFinalVerification(args.final_verification);
-        const reviewProfile = reviewProfileFromArgs(args);
         return runtime.startUnattendedBatch(initiativeSlug, toolMeta, {
           ...task ? { plan_source: "single_task" } : {},
           ...args.stop === true ? { stop: true } : {},
-          executor: {
-            ...args.executor_host === "pi" || args.executor_host === "claude-code" || args.executor_host === "antigravity" ? { executor_host: args.executor_host } : {},
-            ...typeof args.executor_model === "string" ? { executor_model: args.executor_model } : {},
-            ...typeof args.executor_effort === "string" ? { executor_effort: args.executor_effort } : {}
-          },
+          ...requested.executor ? { executor: requested.executor } : {},
           ...maxParallel !== undefined ? { max_parallel: maxParallel } : {},
           ...laneOffers !== undefined ? { lane_offers: laneOffers } : {},
           ...finalVerification !== undefined ? { final_verification: finalVerification } : {},
-          ...reviewProfile !== undefined ? { review_profile: reviewProfile } : {},
+          ...requested.reviewer ? { review_profile: requested.reviewer } : {},
           ...laneInstruction !== undefined ? { lane_instruction: laneInstruction } : {},
           ...laneSessionClose !== undefined ? { lane_session_close: laneSessionClose } : {}
         });
@@ -21370,7 +20953,7 @@ function runMcpEntry(profile, entrySuffixes) {
 // plugins/immune-brain/runtime/antigravity/review_host.ts
 import { constants as constants9, closeSync as closeSync8, fstatSync as fstatSync5, lstatSync as lstatSync19, openSync as openSync8, readdirSync as readdirSync11, readSync as readSync2 } from "node:fs";
 import { tmpdir as tmpdir7 } from "node:os";
-import { basename as basename4, join as join33, resolve as resolve16 } from "node:path";
+import { basename as basename5, join as join33, resolve as resolve16 } from "node:path";
 
 // plugins/immune-brain/runtime/host-core/hook_event_log.ts
 import { lstatSync as lstatSync18, readdirSync as readdirSync10, rmSync as rmSync13 } from "node:fs";
@@ -21841,7 +21424,7 @@ function resolveValidatedSystemDir(artifactDirectoryPath, conversationId) {
   if (typeof artifactDirectoryPath !== "string" || !artifactDirectoryPath || !conversationId)
     return null;
   const normalized = resolve16(artifactDirectoryPath);
-  if (basename4(normalized) !== conversationId)
+  if (basename5(normalized) !== conversationId)
     return null;
   if (!isOwnedNonSymlinkDir(normalized))
     return null;
@@ -22029,7 +21612,7 @@ class AntigravityReviewHost {
 
 // plugins/immune-brain/runtime/antigravity/lane_guard.ts
 init_lane_workspace();
-import { existsSync as existsSync23, lstatSync as lstatSync21, readdirSync as readdirSync13, realpathSync as realpathSync22 } from "node:fs";
+import { existsSync as existsSync23, lstatSync as lstatSync21, readdirSync as readdirSync13, realpathSync as realpathSync21 } from "node:fs";
 import { randomUUID as randomUUID13 } from "node:crypto";
 import { homedir as homedir3, tmpdir as tmpdir9 } from "node:os";
 import { join as join42 } from "node:path";
@@ -22445,7 +22028,7 @@ function isAbsent(error) {
 init_verdict_authority();
 init_layered_config();
 import { existsSync as existsSync21, readFileSync as readFileSync25, writeFileSync as writeFileSync15 } from "node:fs";
-import { execFileSync as execFileSync17 } from "node:child_process";
+import { execFileSync as execFileSync16 } from "node:child_process";
 import { dirname as dirname19, join as join39, resolve as resolve17 } from "node:path";
 import { fileURLToPath as fileURLToPath5 } from "node:url";
 init_coordinator();
@@ -22606,14 +22189,14 @@ init_role_prompt_bridge();
 init_actor_identity();
 
 // plugins/immune-brain/runtime/staged_intent.ts
-import { execFileSync as execFileSync15 } from "node:child_process";
+import { execFileSync as execFileSync14 } from "node:child_process";
 import { readFileSync as readFileSync22, writeFileSync as writeFileSync13 } from "node:fs";
 import { join as join35 } from "node:path";
 function captureStagedIntent(root, relativePath) {
   return {
     path: relativePath,
     bytes: readFileSync22(join35(root, relativePath)),
-    index_state: execFileSync15("git", ["ls-files", "--stage", "-z", "--", relativePath], {
+    index_state: execFileSync14("git", ["ls-files", "--stage", "-z", "--", relativePath], {
       cwd: root,
       stdio: ["ignore", "pipe", "pipe"]
     })
@@ -22621,12 +22204,12 @@ function captureStagedIntent(root, relativePath) {
 }
 function restoreStagedIntent(root, snapshot) {
   writeFileSync13(join35(root, snapshot.path), snapshot.bytes);
-  execFileSync15("git", ["update-index", "--force-remove", "--", snapshot.path], {
+  execFileSync14("git", ["update-index", "--force-remove", "--", snapshot.path], {
     cwd: root,
     stdio: ["ignore", "pipe", "pipe"]
   });
   if (snapshot.index_state.length > 0) {
-    execFileSync15("git", ["update-index", "-z", "--index-info"], {
+    execFileSync14("git", ["update-index", "-z", "--index-info"], {
       cwd: root,
       input: snapshot.index_state,
       stdio: ["pipe", "ignore", "pipe"]
@@ -22636,11 +22219,11 @@ function restoreStagedIntent(root, snapshot) {
   if (!restoredBytes.equals(snapshot.bytes)) {
     throw new Error("failed to restore prior intent bytes");
   }
-  execFileSync15("git", ["update-index", "-q", "--refresh"], {
+  execFileSync14("git", ["update-index", "-q", "--refresh"], {
     cwd: root,
     stdio: ["ignore", "pipe", "pipe"]
   });
-  const restoredIndex = execFileSync15("git", ["ls-files", "--stage", "-z", "--", snapshot.path], {
+  const restoredIndex = execFileSync14("git", ["ls-files", "--stage", "-z", "--", snapshot.path], {
     cwd: root,
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -23363,12 +22946,12 @@ init_plugin_source_skew();
 init_batch_state();
 init_session_result_slot();
 init_host_port();
-import { execFileSync as execFileSync16 } from "node:child_process";
+import { execFileSync as execFileSync15 } from "node:child_process";
 import { accessSync as accessSync4, constants as constants11, existsSync as existsSync20, readFileSync as readFileSync24 } from "node:fs";
 import { createHash as createHash26 } from "node:crypto";
 import { delimiter as delimiter5, dirname as dirname18, join as join38 } from "node:path";
 import { fileURLToPath as fileURLToPath4 } from "node:url";
-var REVIEW_PROFILE_RECOVERY = "Set the `code-review` role on a profile in the user `agents.profiles` / `agents.presets` table, then call `advance_assurance`";
+var REVIEW_PROFILE_RECOVERY = "Set `agents.reviewer` (a user `agents.profiles` name, `host[:model][@effort]` or { host, model?, effort? }) in the user or project configuration, then call `advance_assurance`";
 var REVIEW_BINARY = {
   "claude-code": "claude",
   pi: "pi",
@@ -23435,24 +23018,24 @@ function reviewSessionRunner(env = process.env) {
   }
   throw new ReviewPreparationError("review_transport_unavailable", "imm-session is not shipped beside this runtime", "Reinstall the plugin, then call `advance_assurance`");
 }
-function git10(root, argv) {
-  return execFileSync16("git", argv, { cwd: root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] });
+function git9(root, argv) {
+  return execFileSync15("git", argv, { cwd: root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] });
 }
 function digest2(bytes) {
   return `sha256:${createHash26("sha256").update(bytes).digest("hex")}`;
 }
 function reviewTreeState(root) {
   return {
-    head: git10(root, ["rev-parse", "HEAD"]).trim(),
-    index: digest2(git10(root, ["ls-files", "-s"])),
-    worktree: digest2(git10(root, ["diff", "--binary", "HEAD"]))
+    head: git9(root, ["rev-parse", "HEAD"]).trim(),
+    index: digest2(git9(root, ["ls-files", "-s"])),
+    worktree: digest2(git9(root, ["diff", "--binary", "HEAD"]))
   };
 }
 function treeChanged(root, recorded) {
   const current = reviewTreeState(root);
   if (current.head === recorded.head && current.index === recorded.index && current.worktree === recorded.worktree)
     return [];
-  const listed = (argv) => git10(root, argv).split(`
+  const listed = (argv) => git9(root, argv).split(`
 `).filter(Boolean);
   return [...new Set([
     ...listed(["diff", "--name-only", recorded.head]),
@@ -23463,13 +23046,13 @@ function shellQuote(value) {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 function agentReviewProfile(agents) {
-  const role = agentRole(agents, "code-review");
-  if (!role?.host)
+  const role = agentRole(agents, "reviewer");
+  if (!role)
     return null;
   return { host: role.host, ...role.model ? { model: role.model } : {}, ...role.effort ? { effort: role.effort } : {}, transport: "herdr" };
 }
 function isAgentKeyPath(keyPath) {
-  return keyPath === "agents" || keyPath.startsWith("agents.") || /^projects\.[^.]+\.agents(\.|$)/.test(keyPath);
+  return keyPath === "agents" || keyPath.startsWith("agents.");
 }
 function withSlot(slot, build) {
   try {
@@ -23664,12 +23247,7 @@ ${writeToOutput(slot.result)}`,
       dispatch: { review_session: session, review_profile: profile },
       review_session: session,
       review_profile: profile,
-      review_actor_id: actorId,
-      ...configured && !config.agents.valid && config.agents.source.value === "legacy" ? { warnings: [{
-        code: "review_legacy_profile",
-        paths: [...new Set(agentErrors.map((item) => item.file))],
-        message: `Review uses the legacy \`lanes\` profile because the \`agents\` configuration is invalid: ${agentErrors[0]?.key_path ?? "agents"}`
-      }] } : {}
+      review_actor_id: actorId
     };
   }
   inspectReview(taskId) {
@@ -23701,16 +23279,7 @@ ${writeToOutput(slot.result)}`,
     }
     if (!strictJsonObject(bytes))
       return { ok: false, release: true, reason: "review_output_invalid: the reviewer's receipt is not one strict JSON object" };
-    const verifierModel = agentRole(resolveConfig(reservation.root).agents, "review-verifier")?.model ?? null;
-    return {
-      ok: true,
-      receipt: {
-        actorId: reservation.actorId,
-        result: bytes,
-        model: reservation.profile.model ?? HOST_DEFAULT_MODEL,
-        ...verifierModel ? { offered_models: [verifierModel] } : {}
-      }
-    };
+    return { ok: true, receipt: { actorId: reservation.actorId, result: bytes, model: reservation.profile.model ?? HOST_DEFAULT_MODEL } };
   }
   inspectReviewForTask(taskId) {
     return this.inspectReview(taskId);
@@ -23850,7 +23419,7 @@ async function executeOrdinaryKernelOperation(input) {
     if (priorBytes) {
       writeFileSync15(sidecar, `${JSON.stringify(operation.next_intent, null, 2)}
 `);
-      execFileSync17("git", ["add", "--", priorIntent.intent_ref.path], { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
+      execFileSync16("git", ["add", "--", priorIntent.intent_ref.path], { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
     }
     const result = await app.execute({
       root,
@@ -24090,7 +23659,7 @@ class HostRuntime {
       if (!this.profile.selectedParent(meta.toolCallId, this.cwd, slug))
         return result;
       if (existsSync21(join39(this.cwd, ".imm", "audit", taskId)))
-        execFileSync17("git", ["-C", this.cwd, "add", "--", `.imm/audit/${taskId}`], { stdio: "ignore" });
+        execFileSync16("git", ["-C", this.cwd, "add", "--", `.imm/audit/${taskId}`], { stdio: "ignore" });
       const batch = await this.startUnattendedBatch(slug, meta, { reuseOnly: true });
       return { ...result, batch, ...batch.state === "started" && batch.report?.tracker ? { tracker: batch.report.tracker } : {} };
     } catch (error) {
@@ -24348,7 +23917,7 @@ class HostRuntime {
           throw new Error("approve_breaking_intent_revision requires a breaking revision");
         writeFileSync15(sidecar, `${JSON.stringify(nextIntent, null, 2)}
 `);
-        execFileSync17("git", ["add", "--", priorIntent.intent_ref.path], { cwd: this.cwd, stdio: ["ignore", "pipe", "pipe"] });
+        execFileSync16("git", ["add", "--", priorIntent.intent_ref.path], { cwd: this.cwd, stdio: ["ignore", "pipe", "pipe"] });
         const preparedRecord = await readTaskRecordRaw(this.cwd, taskId);
         if (!preparedRecord.record) {
           throw new NativeAuthorityError("workspace_changed", "TaskRecord changed before the breaking revision digest");
@@ -24523,7 +24092,7 @@ class HostRuntime {
         return { state: "rejected", reason: "lane_stop_requires_task", recovery_action: "Specify a task_id in the current Host." };
       return stopSingleTaskSupervisor(this.laneSupervisor, this.cwd, initiativeSlug, meta.signal);
     }
-    if (options.plan_source && !resolveConfig(this.cwd).lanes.valid)
+    if ((options.plan_source || !reuseOnly) && batchConfigErrors(resolveConfig(this.cwd)).length > 0)
       return batchReason("lane_config_invalid");
     const interactive = meta.interactive ?? this.interactive;
     if (!reuseOnly && !interactive)
@@ -24809,7 +24378,7 @@ class HostRuntime {
     });
     let report = await startBatch({
       plan_source: options.plan_source,
-      ...options.plan_source && this.env.HERDR_ENV === "1" ? { executor_mode: "interactive" } : {},
+      ...options.plan_source && this.env.HERDR_ENV === "1" && resolveConfig(this.cwd).herdr.value === true ? { executor_mode: "interactive" } : {},
       ...options.plan_source ? { supervision: {
         supervisor: this.laneSupervisor,
         parentHost: this.parentHost,
@@ -24819,6 +24388,7 @@ class HostRuntime {
         stop: options.stop,
         request: options.executor
       } } : {},
+      executor_freeze: { ...options.executor ? { request: options.executor } : {}, ...this.parentHost ? { parentHost: this.parentHost } : {} },
       topology_digest: preflight.projection.topology_digest,
       root: this.cwd,
       batch_id: batchId,
@@ -25101,14 +24671,14 @@ var ANTIGRAVITY_CAPABILITY = validateHostCapabilityDeclaration({
 });
 
 // plugins/immune-brain/runtime/antigravity/run_continuation.ts
-import { closeSync as closeSync10, fstatSync as fstatSync7, openSync as openSync10, readSync as readSync4, realpathSync as realpathSync21 } from "node:fs";
+import { closeSync as closeSync10, fstatSync as fstatSync7, openSync as openSync10, readSync as readSync4, realpathSync as realpathSync20 } from "node:fs";
 import { tmpdir as tmpdir8 } from "node:os";
 
 // plugins/immune-brain/runtime/host-core/run_continuation_session.ts
 init_coordinator();
 init_storage();
 init_batch_state();
-import { existsSync as existsSync22, lstatSync as lstatSync20, realpathSync as realpathSync20, renameSync as renameSync6, rmSync as rmSync15 } from "node:fs";
+import { existsSync as existsSync22, lstatSync as lstatSync20, realpathSync as realpathSync19, renameSync as renameSync6, rmSync as rmSync15 } from "node:fs";
 import { randomUUID as randomUUID12 } from "node:crypto";
 import { join as join40 } from "node:path";
 var NATIVE_OPERATIONS = new Set(["start_unattended_batch", "retire_stale_batch", "request_authorization", "approve_breaking_intent_revision", "request_stop", "stop"]);
@@ -25206,13 +24776,13 @@ async function observeNativeFailure(host, metadata, correlation, root, reason) {
 }
 function readSessionToolCall(host, root, toolId, operation, workspace) {
   const record = readLast(callPath(host, toolId, root), cacheDir(root, host.cache_name));
-  if (!record || record.operation !== operation || record.tool_use_id !== toolId || record.workspace !== realpathSync20(workspace) || typeof record.session_id !== "string" || !record.session_id || !host.entry_state(record.session_id)?.run_live)
+  if (!record || record.operation !== operation || record.tool_use_id !== toolId || record.workspace !== realpathSync19(workspace) || typeof record.session_id !== "string" || !record.session_id || !host.entry_state(record.session_id)?.run_live)
     return null;
   return record.session_id;
 }
 function selectedParentSession(host, root, toolId, workspace, slug) {
   const call = readLast(callPath(host, toolId, root), cacheDir(root, host.cache_name));
-  if (!call || call.workspace !== realpathSync20(workspace) || !["advance_assurance", "submit_review"].includes(call.operation) || !host.entry_state(call.session_id)?.run_live)
+  if (!call || call.workspace !== realpathSync19(workspace) || !["advance_assurance", "submit_review"].includes(call.operation) || !host.entry_state(call.session_id)?.run_live)
     return false;
   const state = readMetadata(host, call.session_id, root).state;
   return state?.binding.kind === "parent" && state.binding.workspace === call.workspace && state.binding.initiative_slug === slug;
@@ -25563,7 +25133,7 @@ async function antigravityRunContinuationPreToolUse(payload, root = tmpdir8()) {
     return null;
   let workspace;
   try {
-    workspace = realpathSync21(payload.workspacePaths?.[0] ?? process.cwd());
+    workspace = realpathSync20(payload.workspacePaths?.[0] ?? process.cwd());
   } catch {
     workspace = payload.workspacePaths?.[0] ?? process.cwd();
   }
@@ -25601,7 +25171,7 @@ async function antigravityRunContinuationPostToolUse(payload, root = tmpdir8()) 
     return;
   let workspace;
   try {
-    workspace = realpathSync21(payload.workspacePaths?.[0] ?? process.cwd());
+    workspace = realpathSync20(payload.workspacePaths?.[0] ?? process.cwd());
   } catch {
     workspace = payload.workspacePaths?.[0] ?? process.cwd();
   }
@@ -25624,7 +25194,7 @@ async function antigravityRunContinuationHook(payload, root = tmpdir8()) {
     return {};
   let workspace;
   try {
-    workspace = realpathSync21(payload.workspacePaths?.[0] ?? process.cwd());
+    workspace = realpathSync20(payload.workspacePaths?.[0] ?? process.cwd());
   } catch {
     workspace = payload.workspacePaths?.[0] ?? process.cwd();
   }
@@ -26053,7 +25623,7 @@ function recordPhaseEntryPrompt(conversationId, prompt, cwd, locations = {}) {
   let workspace = null;
   if (entry === "run") {
     try {
-      workspace = realpathSync22(cwd);
+      workspace = realpathSync21(cwd);
     } catch {}
   }
   const line = phaseEntryLogLine(entry, workspace ? { token: randomUUID13(), workspace } : undefined);
@@ -26147,7 +25717,7 @@ async function consumeNativeConfirmation(input, root = tmpdir9()) {
   let currentWorkspace = null;
   try {
     if (input.workspace)
-      currentWorkspace = realpathSync22(input.workspace);
+      currentWorkspace = realpathSync21(input.workspace);
   } catch {}
   if (!currentWorkspace || grant.workspace !== currentWorkspace) {
     throw new NativeAuthorityError("workspace_changed", "workspace changed after PreToolUse native confirmation");
@@ -26237,7 +25807,7 @@ function evaluatePreToolUseSync(payload, locations = {}) {
     let workspace;
     if (declared !== undefined) {
       try {
-        workspace = realpathSync22(declared);
+        workspace = realpathSync21(declared);
       } catch {
         workspace = null;
       }
@@ -26308,18 +25878,13 @@ async function prepareBatchConfirmation(conversationId, sync, locations) {
     return { decision: "allow" };
   if (opArgs.stop === true)
     return { decision: "allow" };
-  if (opArgs.executor_host !== undefined && opArgs.executor_host !== "pi" && opArgs.executor_host !== "claude-code" && opArgs.executor_host !== "antigravity") {
+  if (opArgs.agents !== undefined && (opArgs.agents === null || typeof opArgs.agents !== "object" || Array.isArray(opArgs.agents)))
     return { decision: "allow" };
-  }
-  for (const key of ["executor_model", "executor_effort"]) {
-    if (opArgs[key] !== undefined && (typeof opArgs[key] !== "string" || !opArgs[key]))
-      return { decision: "allow" };
-  }
   if (!!initiative === !!task || "native_decision" in opArgs || "entry_token" in opArgs)
     return { decision: "allow" };
   let workspaceRealpath;
   try {
-    workspaceRealpath = realpathSync22(cwd);
+    workspaceRealpath = realpathSync21(cwd);
   } catch {
     return { decision: "allow" };
   }
@@ -26361,7 +25926,7 @@ async function prepareRetireConfirmation(conversationId, sync, locations) {
   }
   let workspaceRealpath;
   try {
-    workspaceRealpath = realpathSync22(cwd);
+    workspaceRealpath = realpathSync21(cwd);
   } catch {
     return { decision: "allow" };
   }
@@ -26388,7 +25953,7 @@ async function prepareTaskAuthorityConfirmation(conversationId, sync, locations)
     return { decision: "allow" };
   let workspaceRealpath;
   try {
-    workspaceRealpath = realpathSync22(cwd);
+    workspaceRealpath = realpathSync21(cwd);
   } catch {
     return { decision: "allow" };
   }

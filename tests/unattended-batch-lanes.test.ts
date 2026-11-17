@@ -922,6 +922,35 @@ describe("lane integration", () => {
 });
 
 describe("max_parallel 1 end to end through a real second worktree", () => {
+	// #564: the runtime alone resolves the Executor profile, freezes it, and hands it to the Parent
+	// with every Executor handoff so an interactive Lane tab starts on the frozen Host, model and effort.
+	const freezeCases: Array<[string, StartBatchInput["executor_freeze"], string | null, object]> = [
+		["the request", { request: { executor_host: "pi", executor_model: "req-model", executor_effort: "high" }, parentHost: "claude-code" },
+			"claude-code:project-model", { host: "pi", model: "req-model", effort: "high" }],
+		["the project executor role", { parentHost: "claude-code" }, "pi:project-model@low", { host: "pi", model: "project-model", effort: "low" }],
+		["the Parent Host", { parentHost: "antigravity" }, null, { host: "antigravity" }],
+	];
+	for (const [name, freeze, projectRole, expected] of freezeCases) it(`freezes the Executor profile from ${name} and hands it to the Parent`, async () => {
+		const fx = fixture();
+		try {
+			if (projectRole) {
+				mkdirSync(join(fx.repo, ".imm"), { recursive: true });
+				writeFileSync(join(fx.repo, ".imm/config.json"), JSON.stringify({ contract: "immune_brain/project_config/v2", agents: { executor: projectRole } }));
+			}
+			const args = { ...request(fx, [child("task-a", "S1")], laneKernel()), executor_freeze: freeze };
+			lanes(await startBatch(args));
+			const executorPreferences = { executor_host: (expected as { host: string }).host,
+				...((expected as { model?: string }).model ? { executor_model: (expected as { model: string }).model } : {}),
+				...((expected as { effort?: string }).effort ? { executor_effort: (expected as { effort: string }).effort } : {}) };
+			expect(readAnyBatchRunState(fx.repo, BATCH_ID)).toMatchObject({ executor_preferences: executorPreferences });
+			// A later tick reads the frozen record, not a changed request.
+			const second = lanes(await startBatch({ ...args, executor_freeze: { request: { executor_host: "claude-code" } }, lane_offers: [{ task_id: "task-a", path: fx.lane("task-a") }] }));
+			expect(second.handoffs).toMatchObject([{ role: "executor", task_id: "task-a", executor: expected }]);
+		} finally {
+			fx.cleanup();
+		}
+	});
+
 	it("provisions, enrolls, commits on the lane, integrates and completes two dependent children", async () => {
 		const fx = fixture();
 		try {

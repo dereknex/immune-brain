@@ -5,7 +5,7 @@
 // no retry and no second profile.
 
 import { resolveConfig } from "../config/layered_config.ts";
-import { type Bindings, parseProfiles } from "./config.ts";
+import { type Egress, parseProfiles } from "./config.ts";
 import {
 	type AdapterResult,
 	type ApplicationPoint,
@@ -39,7 +39,7 @@ export interface ResolvedProfile {
 	point: ApplicationPoint;
 	profile_name: string;
 	profile: Profile;
-	egress: Bindings["egress"];
+	egress: Egress;
 }
 
 /** Steps 1-2 of the decide path: binding, then the named local profile. */
@@ -54,22 +54,33 @@ export function resolveProfile(
 	const config = resolveConfig(deps.root, { registry, userConfigPath: deps.userConfigPath });
 	const models = config.decision_models;
 	const errors = config.diagnostics.filter((d) => d.severity === "error");
-	const bound = Object.hasOwn(models.bindings, pointId) ? models.bindings[pointId].value : models.default_profile.value;
-	if (!models.valid) {
-		if (errors.every((d) => d.code === "unknown_profile")) {
+	const usesBinding = Object.hasOwn(models.bindings, pointId);
+	const ownKey = usesBinding ? `decision_models.bindings.${pointId}` : "decision_models.default_profile";
+	const bound = usesBinding ? models.bindings[pointId].value : models.default_profile.value;
+	// ADR 0041 failure rule: an error voids this point only when it touches a whole file, the
+	// profile table, egress, an unknown point, or the key naming this point's profile; another known point's error does not.
+	const relevant = errors.filter((d) => d.key_path === "$" || d.key_path === "contract"
+		|| ((d.key_path === "decision_models" || d.key_path.startsWith("decision_models."))
+			&& !(d.key_path.startsWith("decision_models.bindings.") && d.key_path !== ownKey
+				&& Object.hasOwn(registry, d.key_path.slice("decision_models.bindings.".length)))
+			&& !(usesBinding && d.key_path === "decision_models.default_profile")));
+	if (relevant.length) {
+		const unknownOwn = relevant.every((d) => d.code === "unknown_profile" && d.key_path === ownKey);
+		if (!unknownOwn) return { ok: false, error: unavailable("config_invalid", relevant.map((d) => d.message).join("; ")) };
+		// An unknown name counts as unset; a lower layer's valid name still applies.
+		if (bound === null || bound === undefined) {
 			if (models.profiles.source === "default") return { ok: false, error: unavailable("no_local_config", "no profiles configured in ~/.config/immune-brain/config.json") };
-			if (bound && !Object.hasOwn(models.profiles.value, bound)) return { ok: false, error: unavailable("unknown_profile", `profile "${bound}" is not defined in ~/.config/immune-brain/config.json`) };
+			return { ok: false, error: unavailable("unknown_profile", relevant.map((d) => d.message).join("; ")) };
 		}
-		return { ok: false, error: unavailable("config_invalid", errors.map((d) => d.message).join("; ")) };
 	}
-	if (!models.enabled_points.value.includes(pointId)) return { ok: false, error: unavailable("point_disabled", `application point ${pointId} is disabled`) };
+	if (bound === "off") return { ok: false, error: unavailable("point_disabled", `application point ${pointId} is disabled by decision_models.bindings`) };
 	if (models.profiles.source === "default") return { ok: false, error: unavailable("no_local_config", "no profiles configured in ~/.config/immune-brain/config.json") };
 	if (bound === null || bound === undefined) return { ok: false, error: unavailable("no_binding", `no profile is bound to ${pointId}`) };
 	const profiles = parseProfiles({ profiles: models.profiles.value });
 	if (!profiles.ok) return profiles;
 	const profile = Object.hasOwn(profiles.value, bound) ? profiles.value[bound] : undefined;
 	if (profile === undefined) return { ok: false, error: unavailable("unknown_profile", `profile "${bound}" is not defined in ~/.config/immune-brain/config.json`) };
-	const egress = Object.fromEntries(Object.entries(models.egress).map(([kind, entry]) => [kind, (entry as { value: unknown }).value])) as Bindings["egress"];
+	const egress = Object.fromEntries(Object.entries(models.egress).map(([kind, entry]) => [kind, (entry as { value: unknown }).value])) as Egress;
 	return { ok: true, value: { point, profile_name: bound, profile, egress } };
 }
 
