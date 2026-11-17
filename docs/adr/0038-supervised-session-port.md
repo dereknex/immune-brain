@@ -152,3 +152,34 @@ with `lanes.review_transport: herdr` that process then runs through
 `imm-session run` in a `verify <task_id>` tab, its completion signal being the
 script's exit status. A pilot needs `review_verifier: on` in the repository that
 runs it; nothing in this repository enables it.
+
+
+## Addendum: #565 result slot (2026-11-17)
+
+A Review or verification session no longer gets its packet and receipt through
+a fresh `$TMPDIR` directory passed with `--add-dir`. An interactive Claude Code
+session asks the user to trust every such directory, and the name changed each
+round, so every round stopped on a trust dialog.
+
+The transport is now a **result slot** (`runtime/session_result_slot.ts`): one
+directory at `<cwd>/.imm/state/sessions/<id>/` inside the session's own working
+directory, holding the brief the caller writes and the single result file the
+agent writes. `.imm/state/sessions/.gitignore` is `*`, so the slot is outside
+`git status`, the Lane park and cleanup checks (both run without `--ignored`)
+and the Review tree guard. The slot is transport, not authority: the caller
+reads the result bytes after the session is idle or done and validates them
+itself; bytes that do not parse are an incomplete or invalid result, with no
+rename or partial-write protocol. Release removes the directory.
+
+The slot is a helper beside the port, not a port capability, and no provider
+changes: `runtime/assurance` still imports nothing from `runtime/session`.
+A `readResult(handle)` capability was rejected: the runtime never calls the
+port in-process (the Parent runs the session commands), handles are opaque and
+not persisted (Decision 4), so a provider could find the slot only by encoding
+assurance paths into its handle, and every provider would implement the same
+file read in the session's `cwd`. The port is session lifecycle only; results
+are a file contract between the caller and the agent.
+
+The reserved `structuredResult` slot from Decision 1 is removed. It held room
+for an in-band result channel this addendum decides against; a provider no
+longer needs to leave it unfilled to be admitted.

@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { captureReviewManifest } from "../plugins/immune-brain/runtime/assurance/review_evidence";
+import { captureReviewFacts } from "../plugins/immune-brain/runtime/assurance/review_evidence";
 import { readBackendClaim } from "../plugins/immune-brain/runtime/kernel/backend_claim";
 import { enrollCanaryTask, enrollmentScopeDisclosure, runEnrollmentRehearsal } from "../plugins/immune-brain/runtime/kernel/enrollment";
 import {
@@ -266,13 +266,6 @@ describe("Review revision publication", () => {
 			baseHead,
 			scopeHint: SCOPE,
 			expectedDiffHash: taskRevisionDiffHash(root, SCOPE, baseHead),
-			intentRevision: 1,
-			intentContentHash: `sha256:${"1".repeat(64)}`,
-			recordRevision: `r:${"2".repeat(64)}`,
-			workspaceRevision: `w:${"3".repeat(64)}`,
-			lifecycle: "active",
-			artifactState: "frozen",
-			risk: "material",
 			outcomes: { "acc-1": { status: "passed" as const, summary: "verified" } },
 		};
 	}
@@ -281,16 +274,16 @@ describe("Review revision publication", () => {
 		const root = repo();
 		try {
 			const baseHead = git(root, ["rev-parse", "HEAD"]);
-			expect(() => captureReviewManifest(root, manifestInput(root, baseHead))).toThrow(
+			expect(() => captureReviewFacts(root, manifestInput(root, baseHead))).toThrow(
 				/review revision carries no task change/,
 			);
 			expect(git(root, ["for-each-ref", "refs/immune-brain"])).toBe("");
 
 			writeFileSync(join(root, "src", "task.ts"), "export const task = 'work';\n");
 			git(root, ["add", "src/task.ts"]);
-			const manifest = captureReviewManifest(root, manifestInput(root, baseHead));
-			expect(Object.keys(manifest.changed_paths)).toEqual(["src/task.ts"]);
-			expect(manifest.review_tree).not.toBe(git(root, ["rev-parse", `${baseHead}^{tree}`]));
+			const facts = captureReviewFacts(root, manifestInput(root, baseHead));
+			expect(facts.changed_paths).toEqual(["src/task.ts"]);
+			expect(facts.revision.review_tree).not.toBe(git(root, ["rev-parse", `${baseHead}^{tree}`]));
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}

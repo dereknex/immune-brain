@@ -44,7 +44,7 @@ A missing optional capability takes its degrade path, and the degrade is stated 
 | `attachSession` | No effect on Parent scheduling; `imm-session attach` refuses with `provider_unavailable` |
 | `runCommand` | A command (not an agent) runs in a new watched session and returns its exit status once finished. Without it, a caller runs the command as a plain process; `imm-session run` refuses with `provider_unavailable` |
 
-`structuredResult` is reserved and unfilled: verdicts return through the file protocol, and a provider that fills it is refused.
+The port carries no result. A caller that needs one from a session uses the result slot (`runtime/session_result_slot.ts`, ADR 0038 addendum #565): `<cwd>/.imm/state/sessions/<id>/` inside the session's own working directory, ignored by its own `*` file, holding the caller's brief and the one result file the agent writes. The caller reads the result after the session is idle or done and validates it; release removes the slot. The slot is not a port capability and no provider implements it: the Parent runs the session commands, handles are opaque and never persisted, and every provider's session already runs in its `cwd`, so reading a file there needs no provider.
 
 ### Refusal codes
 
@@ -123,7 +123,7 @@ A role is admitted per provider, not globally. The close rule is a Kernel fact o
 | Role | Needs | `herdr` | `herdr-core` |
 | --- | --- | --- | --- |
 | executor | create, await, observe, stop, close | Admitted for `claude-code`, `pi` and `antigravity`; the sign-in dialog is the one G3 gap (below, #496) | Executor Host at least Claude Code 2.1.295, Pi 1.1.0 or Antigravity CLI 1.4.0, which report OSC 7501 natively after a feature probe core answers; admitted only after a live run shows `blocked` for every dialog kind (permission, workspace trust, sign-in). An older Host has no state on core. No Immune-Brain integration is needed; should a Host drop native support, one would live in the herdr-core adapter |
-| authority | create, await with a reliable completion signal, file-protocol verdict | The authority Review is an explicit session created through `runCommand` (#426 S4): its completion signal is the reviewer agent writing the out-of-tree JSON receipt. So does findings verification after a CLI Review (#426 S3, ADR 0039), in a `verify <task_id>` tab; whether it runs at all stays `review_verifier`. `herdr` is the only admitted transport: outside Herdr Review and Verification preparation fail closed with `review_transport_unavailable` | Only if the verifier self-reports `done`; `exited` is not a completion signal |
+| authority | create, await with a reliable completion signal, file-protocol verdict | The authority Review is an explicit session created through `runCommand` (#426 S4): its completion signal is the reviewer agent writing the JSON receipt into its result slot. So does findings verification after a CLI Review (#426 S3, ADR 0039), in a `verify <task_id>` tab; whether it runs at all stays `review_verifier`. `herdr` is the only admitted transport: outside Herdr Review and Verification preparation fail closed with `review_transport_unavailable` | Only if the verifier self-reports `done`; `exited` is not a completion signal |
 | advisory | create, send, read (scrollback with `--extract advisory`), observe, stop | Admitted when `lanes.advisory_transport: herdr` (#426 S2; `subagent-dispatch-protocol.md` "Advisory Child In A Supervised Session"); experimental, opt-in | Same OSC 7501 condition as executor |
 
 Measured 2026-11-10 to 2026-11-13 (`docs/reports/issue-426-herdr-provider-probe.md`). On `herdr-core` no Executor Host is admitted yet (#495): Claude Code 2.1.322 shows the workspace trust and sign-in dialogs without reporting any status for 30 s, so `create` keeps the terminal and returns `entry_submitted: false` with `unknown` and an `attention` text, never `blocked`; the permission dialog does report `blocked` (`status.kind = permission`). Pi 1.5.2 and Antigravity CLI 1.5.5 have not been observed there on the permission or sign-in dialog. Both roles on `herdr-core` stay unadmitted until a live run reports `blocked` for every dialog kind.
@@ -153,7 +153,7 @@ The Herdr adapter creates tabs in the Parent's own workspace, starts Host proces
 3. State model and source: vocabulary, provenance, how often `unknown` occurs.
 4. Wait semantics: event-driven or polled; a wait on a session that is not working; what a timeout returns.
 5. Instruction delivery: when it refuses, and what a refusal leaves sent.
-6. Structured results: none means the file protocol.
+6. Structured results: none means the file protocol (the result slot in the session cwd).
 7. Event durability: how loss is detected and what reconciles it.
 8. Ownership: which sessions it may close; a rule that the user's own sessions are never closed.
 9. Worktrees: none means the Lane's own provisioning.

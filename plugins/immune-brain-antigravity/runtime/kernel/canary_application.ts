@@ -40,8 +40,10 @@ import {
 	withKernelStoreLock,
 } from "./storage";
 import { KernelInvariantError } from "./validation";
+import { REVIEW_REVISION_IDENTITY_CONTRACT_V1 } from "./types";
 import type {
-	ReviewRevisionIdentityV1,
+	ReviewRevisionIdentity,
+	ReviewRevisionIdentityV2,
 	ReviewVerificationHistoryV1,
 	ReviewVerifierDisputeV1,
 	ReviewObservationFacts,
@@ -68,7 +70,7 @@ export type CanaryOperation =
 			findings: TaskFinding[];
 			actor_id: string;
 			/** Review-authored rework: the immutable revision Review analyzed. */
-			review_revision?: ReviewRevisionIdentityV1;
+			review_revision?: ReviewRevisionIdentityV2;
 			verification?: ReviewVerificationHistoryV1;
 			review_observation?: ReviewObservationFacts;
 	  }
@@ -137,14 +139,16 @@ export function beginDrainCapabilityAction(taskId: string, at: string): TaskActi
  * "begin-drain" delegates to the canonical begin_drain action.
  */
 /** Fixed key order so the minted digest equals the parsed action's digest. */
-function canonicalReviewRevision(revision: ReviewRevisionIdentityV1): ReviewRevisionIdentityV1 {
-	return {
-		contract: revision.contract,
-		base_head: revision.base_head,
-		review_commit: revision.review_commit,
-		review_tree: revision.review_tree,
-		manifest_digest: revision.manifest_digest,
-	};
+function canonicalReviewRevision<T extends ReviewRevisionIdentity>(revision: T): T {
+	if (revision.contract === REVIEW_REVISION_IDENTITY_CONTRACT_V1)
+		return {
+			contract: revision.contract,
+			base_head: revision.base_head,
+			review_commit: revision.review_commit,
+			review_tree: revision.review_tree,
+			manifest_digest: revision.manifest_digest,
+		} as T;
+	return { contract: revision.contract, base_head: revision.base_head, review_commit: revision.review_commit } as T;
 }
 
 function canonicalReviewVerification(value: ReviewVerificationHistoryV1): ReviewVerificationHistoryV1 {
@@ -177,7 +181,7 @@ export function capabilityActionFor(input: {
 	next_intent_ref?: unknown;
 	finding_id?: string;
 	resolution?: unknown;
-	review_revision?: ReviewRevisionIdentityV1;
+	review_revision?: ReviewRevisionIdentity;
 	verification?: ReviewVerificationHistoryV1;
 	dispute?: ReviewVerifierDisputeV1;
 	review_observation?: ReviewObservationFacts;

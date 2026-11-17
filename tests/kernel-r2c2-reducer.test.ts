@@ -148,11 +148,9 @@ function approval(kind: "qa" | "review" | "user", id = `ap-${kind}`) {
 		...(kind === "review"
 			? {
 				review_revision: {
-					contract: "assurance_kernel/review_revision_identity/v1",
+					contract: "assurance_kernel/review_revision_identity/v2",
 					base_head: GIT_BASE_HEAD,
 					review_commit: "b".repeat(40),
-					review_tree: "c".repeat(40),
-					manifest_digest: `sha256:${"d".repeat(64)}`,
 				},
 			}
 			: {}),

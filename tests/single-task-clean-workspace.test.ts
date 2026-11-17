@@ -7,7 +7,7 @@ import { completionDecision } from "../plugins/immune-brain/runtime/kernel/compl
 import { enrollCanaryTask } from "../plugins/immune-brain/runtime/kernel/enrollment";
 import { createEnrollmentAuthorityRegistry } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
 import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
-import { captureReviewManifest } from "../plugins/immune-brain/runtime/assurance/review_evidence";
+import { captureReviewFacts } from "../plugins/immune-brain/runtime/assurance/review_evidence";
 import { buildSnapshot } from "../plugins/immune-brain/runtime/assurance/verdict_authority";
 import { runDeterministicQa } from "../plugins/immune-brain/runtime/assurance/qa";
 import { parseVerificationDescriptor } from "../plugins/immune-brain/runtime/verification_descriptor";
@@ -84,11 +84,11 @@ describe("D23 clean single-task enrollment and delivery", () => {
 			expect(identity.changed_paths).toEqual(["added.txt", "deleted.txt", "outside.txt"]);
 			expect(identity.diff_hash).not.toBe(stagedHash);
 			expect(taskDiffHash(fx.root, record.intent_snapshot.scope_hint, "task")).toBe(identity.diff_hash);
-			const manifest = captureReviewManifest(fx.root, { taskId: "task", baseHead: record.git_base_head,
-				scopeHint: record.intent_snapshot.scope_hint, expectedDiffHash: identity.diff_hash, intentRevision: 1,
-				intentContentHash: record.intent_ref.content_hash, recordRevision: "record", workspaceRevision: "workspace",
-				lifecycle: "active", artifactState: "frozen", risk: "material", outcomes: {} });
-			expect(manifest.beyond_estimate).toEqual(identity.changed_paths);
+			const facts = captureReviewFacts(fx.root, { taskId: "task", baseHead: record.git_base_head,
+				scopeHint: record.intent_snapshot.scope_hint, expectedDiffHash: identity.diff_hash, outcomes: {} });
+			expect(facts.changed_paths).toEqual(identity.changed_paths);
+			expect(facts.beyond_estimate).toEqual(identity.changed_paths);
+			const manifest = facts.revision;
 			const snapshot = buildSnapshot({ root: fx.root, task_id: "task", role: "qa", record_revision: "record", workspace_revision: "workspace",
 				intent_revision: 1, intent_content_hash: record.intent_ref.content_hash, diff_hash: identity.diff_hash,
 				lifecycle: "active", artifact_state: "frozen", acceptance: record.intent_snapshot.acceptance,
@@ -97,8 +97,8 @@ describe("D23 clean single-task enrollment and delivery", () => {
 			const approved = { ...record, artifact_state: "frozen" as const, attestations: (["qa", "review"] as const).map(kind => ({
 				id: kind, kind, authority_role: kind === "review" ? "reviewer" as const : "qa" as const, task_revision: 1, intent_content_hash: record.intent_ref.content_hash,
 				diff_hash: identity.diff_hash, actor_id: kind, summary: "passed", acceptance_results: kind === "qa" ? [{ acceptance_id: "AC1", status: "passed" as const, summary: "passed" }] : [],
-				...(kind === "review" ? { review_revision: { contract: "assurance_kernel/review_revision_identity/v1" as const,
-					base_head: manifest.base_head, review_commit: manifest.review_commit, review_tree: manifest.review_tree, manifest_digest: manifest.manifest_digest } } : {}),
+				...(kind === "review" ? { review_revision: { contract: "assurance_kernel/review_revision_identity/v2" as const,
+					base_head: manifest.base_head, review_commit: manifest.review_commit } } : {}),
 			})) };
 			expect(completionDecision(record.intent_snapshot, approved, identity.diff_hash, record.intent_ref.content_hash, identity.changed_paths).complete).toBe(true);
 			const mutating = parseVerificationDescriptor(fx.verification);

@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
-import { currentReviewContractHash } from "../plugins/immune-brain/runtime/role_prompt_bridge";
 import { resolve } from "node:path";
 import {
 	buildReviewPrompt,
@@ -20,6 +19,8 @@ import {
 	snapshot,
 } from "./helpers/pi-canary-assurance-harness.ts";
 import { runReservedReview } from "./helpers/cli-reviewer";
+
+const REVIEW_FACTS = { beyond_estimate: [], outside_routine_allowlist: [], outcomes: { A1: { status: "passed", summary: "fresh" } } } as never;
 
 
 /** Advance, run the reserved reviewer with these bytes, then submit the relayed verdict. */
@@ -50,11 +51,11 @@ describe("foreground assurance progression", () => {
 		expect(result).not.toHaveProperty("review_command");
 		expect(result).not.toHaveProperty("agent_params");
 		// The packet carries the complete prompt: role contract plus every static rule.
-		const packetPath = /authority-review (\S*\/packet\.md)/.exec(session!.create_command)![1]!;
-		const prompt = readFileSync(packetPath, "utf8");
-		// The skill carries the role contract and the static rules; the packet
-		// carries the contract stamp and this dispatch's snapshot facts (D12).
-		expect(prompt).toContain(`review_contract_hash: ${currentReviewContractHash()}`);
+		const briefPath = /authority-review (\S*\/brief\.md)/.exec(session!.create_command)![1]!;
+		const prompt = readFileSync(briefPath, "utf8");
+		// The skill carries the role contract and the static rules; the brief
+		// carries only this dispatch's snapshot facts (#565: no contract stamp).
+		expect(prompt).not.toContain("review_contract_hash:");
 		expect(prompt).toContain("A1: the contract holds");
 		const skill = readFileSync("plugins/immune-brain/skills/authority-review/SKILL.md", "utf8");
 		expect(skill).toContain("imm-code-review");
@@ -427,27 +428,17 @@ describe("foreground assurance progression", () => {
 });
 
 test("native Review reservations inject the internal Code Review role contract", () => {
-	const prompt = buildReviewPrompt(snapshot("review"), "/tmp/evidence.json");
+	const prompt = buildReviewPrompt(snapshot("review"), REVIEW_FACTS);
 	expect(prompt).toContain("internal role: code-review");
 	expect(prompt).toContain("imm-code-review");
 	expect(prompt).toContain("do not discover or load Pi Skills");
 });
 
 test("native v4 Review prompt reads the synthetic Git revision", () => {
-	const s = {
-		...snapshot("review"),
-		review_revision: {
-			contract: "assurance_kernel/review_revision_identity/v1" as const,
-			base_head: "a".repeat(40),
-			review_commit: "b".repeat(40),
-			review_tree: "c".repeat(40),
-			manifest_digest: `sha256:${"d".repeat(64)}`,
-		},
-	};
-	const prompt = buildReviewPrompt(s, "/tmp/evidence.json");
-	expect(prompt).toContain("assurance_kernel/review_manifest/v5");
-	expect(prompt).toContain("git diff");
-	expect(prompt).toContain("immutable Git objects");
+	const prompt = buildReviewPrompt(snapshot("review"), REVIEW_FACTS);
+	expect(prompt).not.toContain("assurance_kernel/review_manifest/v5");
+	expect(prompt).toContain(`git diff ${"a".repeat(40)} ${"b".repeat(40)}`);
+	expect(prompt).toContain("git object reads are the only source of truth");
 	expect(prompt).not.toContain("neighborhood_files");
 	expect(prompt).not.toContain("current_content");
 });

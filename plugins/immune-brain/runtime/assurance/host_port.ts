@@ -8,8 +8,8 @@ export type ConfirmationReferenceSource = (input: {
 	now: string;
 }) => string;
 
-export interface ReviewEvidence {
-	path: string;
+/** Where an in-process verifier Host writes its packets; never handed to a CLI reviewer. */
+export interface ReviewPacketWriter {
 	writePacket(name: string, content: string): ReviewPacket;
 	remove(): void;
 }
@@ -17,18 +17,16 @@ export interface ReviewEvidence {
 export interface ReviewRequest {
 	taskId: string;
 	operationId: string;
-	/** The task's working directory; set by the coordinator for a Host that writes reviewer files. */
+	/** The task's working directory; the reviewer session runs and keeps its result slot there. */
 	root?: string;
 	/** The request-selected Lane Review profile; resolved from the layered config when absent. */
 	profile?: ReviewProfile;
 	/**
-	 * The per-dispatch facts alone: internal role contract references, the snapshot,
-	 * the evidence file and the turn budget. Static instructions stay generated from
+	 * The per-dispatch brief alone: the revision to diff, acceptance, QA outcomes,
+	 * the turn budget and the verdict shapes. Static instructions stay generated from
 	 * one source in the role definition instead of being sent a second time.
 	 */
 	snapshotPrompt: string;
-	evidencePath: string;
-	writePacket: ReviewEvidence["writePacket"];
 	/** Requested budget, also stated in the prompt for Hosts without a native turn-cap parameter. */
 	maxTurns: number;
 }
@@ -53,7 +51,7 @@ export interface HostReviewReservation {
  */
 export interface ReviewSessionSpec {
 	transport: "herdr";
-	/** The out-of-tree JSON file the session writes its result to; its bytes are the receipt. */
+	/** The result-slot file inside the session cwd the session writes; its bytes are the receipt. */
 	output_path: string;
 	/** Launch it; the printed JSON names the `handle` the other verbs take. */
 	create_command: string;
@@ -88,7 +86,7 @@ export interface VerificationRequest {
 	operationId: string;
 	prompt: string;
 	model: string;
-	writePacket: ReviewEvidence["writePacket"];
+	writePacket: ReviewPacketWriter["writePacket"];
 	/** The Lane Review profile the verification inherits from its Review round. */
 	profile?: ReviewProfile;
 }

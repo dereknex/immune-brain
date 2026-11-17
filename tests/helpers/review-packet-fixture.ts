@@ -1,12 +1,20 @@
 import { afterAll } from "bun:test";
-import { writeNativeReviewEvidence } from "../../plugins/immune-brain/runtime/assurance/review_evidence";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createReviewPacketWriter, type ReviewPacketWriter } from "../../plugins/immune-brain/runtime/assurance/review_evidence";
 
-const artifacts: ReturnType<typeof writeNativeReviewEvidence>[] = [];
-afterAll(() => { for (const artifact of artifacts) artifact.remove(); });
+const writers: ReviewPacketWriter[] = [];
+let root: string | null = null;
+afterAll(() => {
+	for (const writer of writers) writer.remove();
+	if (root) rmSync(root, { recursive: true, force: true });
+});
 
 /** Synthetic host fixtures still dispatch real, readable packets. */
 export function writeTestReviewPacket(name: string, content: string) {
-	const evidence = writeNativeReviewEvidence({ fixture: true });
-	artifacts.push(evidence);
-	return evidence.writePacket(name, content);
+	root ??= mkdtempSync(join(tmpdir(), "imm-test-packets-"));
+	const writer = createReviewPacketWriter(root);
+	writers.push(writer);
+	return writer.writePacket(name, content);
 }

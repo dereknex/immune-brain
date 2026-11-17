@@ -62,6 +62,8 @@ export const FILE_STORE_OBSERVATIONS_RELATIVE = ".imm/state/observations";
 export const BATCH_STATE_RELATIVE = ".imm/state/batches";
 /** Generation records of single-task Lane Executors (Spec drive-always-lanes D4); owned by unattended/batch_state. */
 export const LANE_SUPERVISOR_STATE_RELATIVE = ".imm/state/lane-supervisors";
+/** Session result slots (ADR 0038 addendum #565): transport, never authority. */
+export const SESSION_RESULT_SLOTS_RELATIVE = ".imm/state/sessions";
 
 /** Inert file-store entries that carry no authority after the cutover. */
 export const FILE_STORE_INERT_FILES = [
@@ -655,6 +657,7 @@ function inspectFileStoreLayout(root: string): FileStoreFacts {
 						FILE_STORE_OBSERVATIONS_RELATIVE,
 						BATCH_STATE_RELATIVE,
 						LANE_SUPERVISOR_STATE_RELATIVE,
+						SESSION_RESULT_SLOTS_RELATIVE,
 					].includes(full)
 				)
 					throw new Error(`unknown directory under ${STATE_RELATIVE}: ${entry}`);

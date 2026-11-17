@@ -108,10 +108,12 @@ function snapshot(overrides: Partial<SnapshotDescriptor> = {}): SnapshotDescript
 		stale_attestation_ids: [],
 		acceptance: [{ id: "A1", assertion: "artifact exists", verification: "descriptor" }],
 		dirty_files: ["src/new.ts"],
-		review_bundle_digest: "sha256:" + "e".repeat(64),
+		review_revision: { contract: "assurance_kernel/review_revision_identity/v2", base_head: "1".repeat(40), review_commit: "2".repeat(40) },
 		...overrides,
 	});
 }
+
+const REVIEW_FACTS = { beyond_estimate: [], outside_routine_allowlist: [], outcomes: { A1: { status: "passed", summary: "fresh" } } } as never;
 
 const REVIEW_EVIDENCE = {
 	trigger: "the empty caller chain reaches the defect",
@@ -162,21 +164,19 @@ describe("canary assurance authority", () => {
 		expect(snapshotDigest(s)).toMatch(/^sha256:[a-f0-9]{64}$/);
 		expect(snapshotDigest(buildSnapshot({ ...s, artifact_state: "active" }))).not.toBe(snapshotDigest(s));
 		expect(snapshotDigest(buildSnapshot({ ...s, dirty_files: ["src/other.ts"] }))).not.toBe(snapshotDigest(s));
-		expect(snapshotDigest(buildSnapshot({ ...s, review_bundle_digest: "sha256:" + "f".repeat(64) }))).not.toBe(snapshotDigest(s));
-		const prompt = buildReviewPrompt(s);
+		expect(snapshotDigest(buildSnapshot({ ...s, review_revision: { ...s.review_revision!, review_commit: "3".repeat(40) } }))).not.toBe(snapshotDigest(s));
+		const prompt = buildReviewPrompt(s, REVIEW_FACTS);
 		expect(prompt).toContain(snapshotDigest(s));
 		expect(prompt).toContain("read-only code review");
-		expect(prompt).toContain("Read that file first");
-	expect(prompt).toContain("Verify immutable bundle provenance before analyzing findings");
-	expect(prompt).toContain("Limit repository inspection to the acceptance assertions and dirty_files contents in the immutable bundle");
-	expect(prompt).toContain("Do not explore unrelated repository paths");
-	expect(prompt).toContain("Reserve the final turn for exactly one strict JSON verdict");
-		expect(prompt).toContain("verify that git rev-parse HEAD in the isolated reviewer worktree equals bundle.head");
-		expect(prompt).toContain("base_oid");
-		expect(prompt).toContain("Do not inspect or depend on live task bytes outside the immutable bundle");
+		expect(prompt).toContain(`git diff ${"1".repeat(40)} ${"2".repeat(40)}`);
+		expect(prompt).toContain("Repository-wide exploration is out of scope");
+		expect(prompt).toContain("Reserve the final turn for exactly one strict JSON verdict");
+		expect(prompt).toContain("Do not read working-tree files as evidence");
+		expect(prompt).toContain('Settled QA outcomes (deterministic, already run; do not rerun them): {"A1":{"status":"passed","summary":"fresh"}}');
 		expect(prompt).toContain('"authority_role":"reviewer"');
 		expect(prompt).toContain('do not emit "approval": null');
-		expect(() => buildReviewPrompt(snapshot({ role: "qa" }))).toThrow(/review role/i);
+		expect(() => buildReviewPrompt(snapshot({ role: "qa" }), REVIEW_FACTS)).toThrow(/review role/i);
+		expect(() => buildReviewPrompt(snapshot({ review_revision: undefined }), REVIEW_FACTS)).toThrow(/immutable review revision/i);
 	});
 
 	test("strict verdict parsing binds role, task, snapshot, and host findings digest", () => {
@@ -265,7 +265,7 @@ describe("canary assurance authority", () => {
 	});
 
 	test("buildReviewPrompt states the evidence contract without disclosing prior findings", () => {
-		const prompt = buildReviewPrompt(snapshot());
+		const prompt = buildReviewPrompt(snapshot(), REVIEW_FACTS);
 		expect(prompt).toContain("evidence.trigger");
 		expect(prompt).toContain("caller_chain");
 		expect(prompt).toContain("security_boundary");

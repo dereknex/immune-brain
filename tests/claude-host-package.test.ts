@@ -457,11 +457,12 @@ describe("claude host package", () => {
 });
 
 describe("authority-review skill", () => {
-	it("ships the generated body, its contract stamp and the mismatch line", () => {
+	it("ships the generated body without a contract stamp or mismatch line", () => {
 		const generated = generateAuthorityReviewSkill(ROOT);
 		expect(readFileSync(resolve(PLUGIN_ROOT, "skills/authority-review/SKILL.md"), "utf8")).toBe(generated);
-		expect(generated).toContain(currentReviewContractHash());
-		expect(generated).toContain("REVIEW_CONTRACT_MISMATCH");
+		expect(generated).not.toContain(currentReviewContractHash());
+		expect(generated).not.toContain("Review contract hash:");
+		expect(generated).not.toContain("REVIEW_CONTRACT_MISMATCH");
 		expect(authorityReviewSkillDrift(ROOT)).toBeNull();
 	});
 

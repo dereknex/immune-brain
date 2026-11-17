@@ -25,7 +25,8 @@ import {
 	type TaskFinding,
 	type TaskHistoryEntryV3,
 	type TaskIntentV1,
-	type ReviewRevisionIdentityV1,
+	type ReviewRevisionIdentity,
+	REVIEW_REVISION_IDENTITY_CONTRACT_V1,
 	type TaskRecord,
 	type TaskRecordV3,
 	type TaskRecordV4,
@@ -33,7 +34,7 @@ import {
 import { canonicalIntentHash, parseTaskIntentV1 } from "./intent";
 import { refutationIdentity, refutationIsLive, anchorForEvidence, isFreshPassingQaAttestation } from "./refutation";
 
-const GIT_OBJECT_ID = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
+export const GIT_OBJECT_ID = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
 
 export class KernelValidationError extends Error {
 	readonly code = "kernel_schema_invalid";
@@ -500,28 +501,50 @@ function parseAdvisoryFinding(value: unknown, path: string, violations: string[]
 	};
 }
 
+/**
+ * A persisted identity is v1 (written before #565, with the reviewed tree and the
+ * retired manifest digest) or v2 (base and commit alone). A new action writes v2.
+ */
 function parseReviewRevisionIdentity(
 	value: unknown,
 	path: string,
 	violations: string[],
-): ReviewRevisionIdentityV1 {
+): ReviewRevisionIdentity {
 	const item = objectAt(value, path, violations);
-	rejectUnknown(item, ["contract", "base_head", "review_commit", "review_tree", "manifest_digest"], path, violations);
+	if (item.contract === REVIEW_REVISION_IDENTITY_CONTRACT_V1) {
+		rejectUnknown(item, ["contract", "base_head", "review_commit", "review_tree", "manifest_digest"], path, violations);
+		const identity = {
+			contract: REVIEW_REVISION_IDENTITY_CONTRACT_V1,
+			base_head: stringAt(item.base_head, `${path}.base_head`, violations),
+			review_commit: stringAt(item.review_commit, `${path}.review_commit`, violations),
+			review_tree: stringAt(item.review_tree, `${path}.review_tree`, violations),
+			manifest_digest: stringAt(item.manifest_digest, `${path}.manifest_digest`, violations),
+		};
+		for (const field of ["base_head", "review_commit", "review_tree"] as const)
+			if (!GIT_OBJECT_ID.test(identity[field]))
+				violations.push(`${path}.${field} must be a lowercase Git object id`);
+		if (!SHA256_HEX.test(identity.manifest_digest))
+			violations.push(`${path}.manifest_digest must be sha256:<64 hex>`);
+		return identity;
+	}
+	rejectUnknown(item, ["contract", "base_head", "review_commit"], path, violations);
 	if (item.contract !== REVIEW_REVISION_IDENTITY_CONTRACT)
 		violations.push(`${path}.contract must equal ${REVIEW_REVISION_IDENTITY_CONTRACT}`);
 	const identity = {
 		contract: REVIEW_REVISION_IDENTITY_CONTRACT,
 		base_head: stringAt(item.base_head, `${path}.base_head`, violations),
 		review_commit: stringAt(item.review_commit, `${path}.review_commit`, violations),
-		review_tree: stringAt(item.review_tree, `${path}.review_tree`, violations),
-		manifest_digest: stringAt(item.manifest_digest, `${path}.manifest_digest`, violations),
 	};
-	for (const field of ["base_head", "review_commit", "review_tree"] as const)
+	for (const field of ["base_head", "review_commit"] as const)
 		if (!GIT_OBJECT_ID.test(identity[field]))
 			violations.push(`${path}.${field} must be a lowercase Git object id`);
-	if (!SHA256_HEX.test(identity.manifest_digest))
-		violations.push(`${path}.manifest_digest must be sha256:<64 hex>`);
 	return identity;
+}
+
+/** A Review action writes only the current identity; v1 stays readable in history. */
+function requireCurrentReviewRevision(revision: ReviewRevisionIdentity | undefined, path: string, violations: string[]): void {
+	if (revision && revision.contract !== REVIEW_REVISION_IDENTITY_CONTRACT)
+		violations.push(`${path}.contract must equal ${REVIEW_REVISION_IDENTITY_CONTRACT}`);
 }
 
 function parseAttestationV3(
@@ -1009,6 +1032,7 @@ export function parseTaskAction(raw: unknown): TaskAction {
 				violations,
 			);
 			const approval = parseApprovalV2(value.approval, 0, violations, true);
+			requireCurrentReviewRevision(approval.review_revision, "action.approval.review_revision", violations);
 			if (approval.review_revision && approval.kind !== "review")
 				violations.push("action.approval.review_revision is only valid on review approvals");
 			action = {
@@ -1109,12 +1133,13 @@ export function parseTaskAction(raw: unknown): TaskAction {
 			const reviewRevision = value.review_revision === undefined
 				? undefined
 				: parseReviewRevisionIdentity(value.review_revision, "action.review_revision", violations);
+			requireCurrentReviewRevision(reviewRevision, "action.review_revision", violations);
 			const verification = value.verification === undefined ? undefined : parseReviewVerificationHistory(value.verification, "action.verification", violations);
 			action = {
 				...base,
 				type: "request_rework",
 				findings,
-				...(reviewRevision ? { review_revision: reviewRevision } : {}),
+				...(reviewRevision?.contract === REVIEW_REVISION_IDENTITY_CONTRACT ? { review_revision: reviewRevision } : {}),
 				...(verification ? { verification } : {}),
 				...(value.review_observation === undefined ? {} : { review_observation: parseReviewObservation(value.review_observation, "action.review_observation", violations) }),
 			};

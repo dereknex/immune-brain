@@ -1,8 +1,8 @@
 import { afterAll, describe, expect, mock, test } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
 	ClaudeRuntime,
 	diffSnapshotOf,
@@ -34,9 +34,9 @@ const {
 
 /**
  * The submit-time Review identity check re-derives the revision and compares
- * `base_head`, `review_commit`, `review_tree` and `manifest_digest` against the
- * reservation. A host adapter that publishes only the commit identity compares a
- * real digest against `undefined`, so every TaskRecord v4 submission failed with
+ * `base_head` and `review_commit` against the reservation. A host adapter that
+ * published a different identity shape than the reservation bound made every
+ * TaskRecord v4 submission fail with
  * "Review revision changed before submission" — an unfalsifiable stop, because
  * the revision it names had not moved at all.
  *
@@ -191,12 +191,13 @@ describe("Review revision identity conformance", () => {
 		expect(projection.projection.missing_approval_kinds).toEqual(["review"]);
 	});
 
-	test("the Claude adapter publishes the manifest digest, not only the commit", async () => {
+	test("the Claude adapter publishes the commit identity the submit check compares", async () => {
 		const root = makeReviewReadyRoot();
 		const projection = await projectAssurance(root, TASK, diffSnapshotOf);
 		const revision = await ensureClaudeReviewRevision(root, TASK, projection);
-		expect(revision).not.toBeNull();
-		expect(revision?.manifest_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
+		expect(revision.base_head).toBe(execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim());
+		expect(revision.review_commit).toMatch(/^[0-9a-f]{40}$/);
+		expect(revision).not.toHaveProperty("manifest_digest");
 	});
 
 	test("the published identity is the one the Review reservation binds", async () => {
@@ -204,12 +205,14 @@ describe("Review revision identity conformance", () => {
 		const runtime = new ClaudeRuntime({ cwd: root, interactive: false });
 		const advanced = await runtime.coordinator.advance(TASK, { cwd: root });
 		expect(advanced.state).toBe("review_ready");
-		const bound = (advanced as { review_bundle_digest: string }).review_bundle_digest;
+		const outputPath = (advanced as { review_session?: { output_path: string } }).review_session?.output_path;
+		if (!outputPath) throw new Error("review_ready carried no review session");
+		const brief = readFileSync(join(dirname(outputPath), "brief.md"), "utf8");
 		const projection = await projectAssurance(root, TASK, diffSnapshotOf);
 		const revision = await ensureClaudeReviewRevision(root, TASK, projection);
-		// `review_bundle_digest` is the reserved manifest digest verbatim, so an
-		// adapter that agrees with it here also agrees inside submitReview.
-		expect(revision?.manifest_digest).toBe(bound);
+		// The reserved brief names the immutable revision verbatim, so an adapter
+		// that agrees with it here also agrees inside submitReview.
+		expect(brief).toContain(`git diff ${revision.base_head} ${revision.review_commit}`);
 	});
 
 	test("an unchanged revision survives submission", async () => {

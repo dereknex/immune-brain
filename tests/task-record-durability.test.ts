@@ -5,6 +5,8 @@ import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { allocateResultSlot, releaseResultSlot } from "../plugins/immune-brain/runtime/session_result_slot";
+import { SESSION_RESULT_SLOTS_RELATIVE } from "../plugins/immune-brain/runtime/kernel/storage_paths";
 
 import {
 	KernelStoreConflictError,
@@ -1112,6 +1114,21 @@ describe("SQLite authority store durability", () => {
       );
       // A registered mutation still commits with that state present.
       expect(storeEnrollFixture(root, "durability-u").state).toBe("active");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("a session result slot left under .imm/state does not block Kernel mutations", () => {
+    const root = storeRoot();
+    try {
+      // A Review round allocates its result slot under .imm/state/sessions and
+      // leaves the directory's ignore file behind after release.
+      const slot = allocateResultSlot(root, "review-op-1", "brief");
+      releaseResultSlot(slot);
+      expect(existsSync(join(root, SESSION_RESULT_SLOTS_RELATIVE, ".gitignore"))).toBe(true);
+      expect(inspectStorageLayout(root).layout).toBe("ready");
+      expect(storeEnrollFixture(root, "durability-slot").state).toBe("active");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

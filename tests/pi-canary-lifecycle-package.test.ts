@@ -202,11 +202,10 @@ describe("pi canary lifecycle package composition", () => {
 						stale_attestation_ids: current.projection.stale_attestation_ids,
 						acceptance: ACCEPTANCE,
 						dirty_files: [],
-						review_bundle_digest: null,
 						root: rootPath,
 					},
 					descriptors: new Map(),
-					reviewBundle: null,
+					reviewFacts: null,
 				}),
 				runQa: async (snapshot: Record<string, unknown>) => ({
 					contract: "assurance_kernel/assurance_verdict/v2",

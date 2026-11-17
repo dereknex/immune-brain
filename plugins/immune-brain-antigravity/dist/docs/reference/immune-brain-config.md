@@ -289,7 +289,7 @@ no allowlist, an untrusted file makes every task `critical`, and
 
 `imm-kernel inspect --json` reports the declared class ids as
 `risk.routine_classes` and the paths that raised a `routine` task as
-`risk.outside_routine_allowlist`; the Review manifest and each child of a batch
+`risk.outside_routine_allowlist`; the Review brief and each child of a batch
 final report list the same paths as `outside_routine_allowlist` next to
 `beyond_estimate` when there are any. ADR 0038 records the decision.
 

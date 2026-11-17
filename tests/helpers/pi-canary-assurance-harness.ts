@@ -22,7 +22,7 @@ import {
 } from "../../plugins/immune-brain/runtime/assurance/coordinator";
 import { withSettleCommit } from "../../plugins/immune-brain/runtime/assurance/workflow_autocommit";
 import type { AssuranceProjectionResult } from "../../plugins/immune-brain/runtime/kernel/assurance_projection";
-import type { ReviewBundle } from "../../plugins/immune-brain/.pi-extension/pi-canary-review-bundle.ts";
+import type { ReviewFacts } from "../../plugins/immune-brain/.pi-extension/pi-canary-review-bundle.ts";
 
 // These fixtures reserve the CLI reviewer (Spec review-cli-stage D11), so the
 // fixture root is a real repository with a review profile and the reviewer
@@ -108,22 +108,33 @@ export function snapshot(role: "qa" | "review"): SnapshotDescriptor {
 		stale_attestation_ids: [],
 		acceptance: [{ id: "A1", assertion: "the contract holds", verification: "{}" }],
 		dirty_files: ["src/change.ts"],
-		review_bundle_digest: role === "review" ? "sha256:bundle" : null,
+		...(role === "review" ? { review_revision: REVIEW_REVISION } : {}),
 		root: ROOT,
 	};
 }
 
-function reviewBundle(): ReviewBundle {
+/** The fixture's immutable Review revision identity (#565). */
+export const REVIEW_REVISION = {
+	contract: "assurance_kernel/review_revision_identity/v2" as const,
+	base_head: "a".repeat(40),
+	review_commit: "b".repeat(40),
+};
+
+function reviewFacts(): ReviewFacts {
 	return {
-		contract: "assurance_kernel/review_bundle/v4",
-		root: ROOT,
-		head: "a".repeat(40),
-		scope: ["src/change.ts"],
-		diff_hash: "sha256:diff",
-		dirty_files: {},
+		revision: {
+			contract: "assurance_kernel/review_revision/v1",
+			base_head: REVIEW_REVISION.base_head,
+			review_tree: "c".repeat(40),
+			review_commit: REVIEW_REVISION.review_commit,
+			review_ref: `refs/imm/review/${TASK}`,
+			diff_hash: "sha256:diff",
+		},
+		changed_paths: ["src/change.ts"],
+		beyond_estimate: [],
+		outside_routine_allowlist: [],
 		outcomes: { A1: { status: "passed", summary: "fresh" } },
-		bundle_digest: "sha256:bundle",
-	} as unknown as ReviewBundle;
+	} as unknown as ReviewFacts;
 }
 
 export function passVerdict(s: SnapshotDescriptor): AssuranceVerdict & { approval?: Record<string, unknown> } {
@@ -194,7 +205,7 @@ export function makeAssuranceHarness(overrides: Partial<{
 	risk: "routine" | "material" | "critical";
 	runQa: AssuranceProgressionPorts["runQa"];
 	project: AssuranceProgressionPorts["projectTask"];
-	writeReviewEvidence: AssuranceProgressionPorts["writeReviewEvidence"];
+	reviewPackets: NonNullable<AssuranceProgressionPorts["reviewPackets"]>;
 	applyVerdict: VerdictAuthority["applyVerdict"];
 	applyOrdinaryOperation: AssuranceProgressionPorts["applyOrdinaryOperation"];
 }> = {}) {
@@ -216,15 +227,16 @@ export function makeAssuranceHarness(overrides: Partial<{
 				"A1",
 				{ contract: "assurance_kernel/verification_descriptor/v2", command: { executable: "bun", argv: ["test"], cwd: ".", timeout_ms: 1000, max_output_bytes: 1024 }, environment: { prepare: null, writable_paths: [] } },
 			]] as never),
-			reviewBundle: role === "review" ? reviewBundle() : null,
+			reviewFacts: role === "review" ? reviewFacts() : null,
 		}),
+		ensureReviewRevision: async () => reviewFacts().revision,
 		runQa: overrides.runQa ?? (async (s, _descriptors, options) => {
 			options.onProgress?.({ index: 1, total: 1, acceptance_id: "A1", phase: "passed", elapsed_ms: 1 });
 			return passVerdict(s);
 		}),
-		writeReviewEvidence: overrides.writeReviewEvidence ?? (() => {
+		reviewPackets: overrides.reviewPackets ?? (() => {
 			evidenceCount += 1;
-			return { writePacket: writeTestReviewPacket, path: `${ROOT}/review-${evidenceCount}.json`, remove: () => { removeCount += 1; } };
+			return { writePacket: writeTestReviewPacket, remove: () => { removeCount += 1; } };
 		}),
 		applyVerdict: overrides.applyVerdict ?? (async (_ctx, input) => {
 			applyCount += 1;
@@ -257,7 +269,7 @@ export function makeAssuranceHarness(overrides: Partial<{
 		readTaskRecord: (root, taskId) => ports.readTaskRecord(root, taskId),
 		readTaskIntent: (root, taskId) => ports.readTaskIntent(root, taskId),
 		runQa: (s, d, o) => ports.runQa(s, d, o),
-		writeReviewEvidence: (input) => ports.writeReviewEvidence(input),
+		reviewPackets: (root) => ports.reviewPackets!(root),
 		applyOrdinaryOperation: (ctx, input) => ports.applyOrdinaryOperation(ctx, input),
 		onReworkApplied: (ctx, taskId, count) => ports.onReworkApplied?.(ctx, taskId, count),
 		advanceBeforeProjection: () => ports.advanceBeforeProjection?.(),

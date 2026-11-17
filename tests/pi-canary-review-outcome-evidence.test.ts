@@ -4,13 +4,13 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-	captureReviewBundle,
+	captureReviewFacts,
 } from "../plugins/immune-brain/.pi-extension/pi-canary-review-bundle.ts";
 import { buildReviewPrompt, reviewTurnBudget, type SnapshotDescriptor } from "../plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts";
 import { submitMediatedReview } from "../plugins/immune-brain/runtime/assurance/review_mediation";
 import { reviewIncompleteFixture } from "./fixtures/review-incomplete-fixture";
-import { classifyReviewWorkload, reviewChangedPathCount } from "../plugins/immune-brain/runtime/assurance/coordinator.ts";
-import { taskDiffHash } from "../plugins/immune-brain/runtime/workspace_scope.ts";
+import { buildReviewBrief, classifyReviewWorkload } from "../plugins/immune-brain/runtime/assurance/coordinator.ts";
+import { taskRevisionDiffHash } from "../plugins/immune-brain/runtime/workspace_scope.ts";
 
 function repo(): string {
 	const root = mkdtempSync(join(tmpdir(), "canary-outcome-root-"));
@@ -40,7 +40,7 @@ function snapshot(overrides: Partial<SnapshotDescriptor> = {}): SnapshotDescript
 		stale_attestation_ids: [],
 		acceptance: [{ id: "acc-1", assertion: "suite passes", verification: "{}" }],
 		dirty_files: ["tracked.ts"],
-		review_bundle_digest: "sha256:" + "e".repeat(64),
+		review_revision: { contract: "assurance_kernel/review_revision_identity/v2", base_head: "1".repeat(40), review_commit: "2".repeat(40) },
 		root: "/tmp",
 		...overrides,
 	};
@@ -65,20 +65,20 @@ describe("review contract outcome evidence", () => {
 			expect((await c.advance(f.taskId, f.ctx)).state).toBe("review_ready");
 		} finally { f.cleanup(); }
 	}, 60_000);
-	test("bundle v4 embeds per-acceptance outcomes and freezes them against later mutation", () => {
+	test("Review facts carry per-acceptance outcomes and freeze them against later mutation", () => {
 		const root = repo();
 		try {
+			const baseHead = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
 			writeFileSync(join(root, "tracked.ts"), "export const value = 'captured';\n");
 			execFileSync("git", ["add", "tracked.ts"], { cwd: root });
 			const scope = ["tracked.ts"];
-			const hash = taskDiffHash(root, scope);
+			const hash = taskRevisionDiffHash(root, scope, baseHead);
 			const outcomes = { "acc-1": { status: "passed" as const, summary: "941 pass" } };
-			const bundle = captureReviewBundle(root, scope, hash, outcomes);
-			expect(bundle.contract).toBe("assurance_kernel/review_bundle/v4");
-			expect(bundle.outcomes).toEqual({ "acc-1": { status: "passed", summary: "941 pass" } });
-			// Defensive copy: mutating the caller's map after capture must not alter the frozen bundle.
+			const facts = captureReviewFacts(root, { taskId: "outcome-task", baseHead, scopeHint: scope, expectedDiffHash: hash, outcomes });
+			expect(facts.outcomes).toEqual({ "acc-1": { status: "passed", summary: "941 pass" } });
+			// Defensive copy: mutating the caller's map after capture must not alter the captured facts.
 			outcomes["acc-1"] = { status: "failed", summary: "tampered" };
-			expect(bundle.outcomes["acc-1"]).toEqual({ status: "passed", summary: "941 pass" });
+			expect(facts.outcomes["acc-1"]).toEqual({ status: "passed", summary: "941 pass" });
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
@@ -87,10 +87,11 @@ describe("review contract outcome evidence", () => {
 	test("capture without outcomes fails closed", () => {
 		const root = repo();
 		try {
+			const baseHead = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
 			writeFileSync(join(root, "tracked.ts"), "export const value = 'captured';\n");
 			execFileSync("git", ["add", "tracked.ts"], { cwd: root });
-			const hash = taskDiffHash(root, ["tracked.ts"]);
-			expect(() => captureReviewBundle(root, ["tracked.ts"], hash, undefined as never))
+			const hash = taskRevisionDiffHash(root, ["tracked.ts"], baseHead);
+			expect(() => captureReviewFacts(root, { taskId: "outcome-task", baseHead, scopeHint: ["tracked.ts"], expectedDiffHash: hash, outcomes: undefined as never }))
 				.toThrow();
 		} finally {
 			rmSync(root, { recursive: true, force: true });
@@ -98,14 +99,17 @@ describe("review contract outcome evidence", () => {
 	});
 
 	test("reserved Review prompt states QA/Review division of labor", () => {
-		const prompt = buildReviewPrompt(snapshot());
+		const outcomes = { "acc-1": { status: "passed" as const, summary: "941 pass" } };
+		const prompt = buildReviewPrompt(snapshot(), { beyond_estimate: [], outside_routine_allowlist: [], outcomes });
 		expect(prompt).toContain("verified deterministically by the Kernel QA layer");
-		expect(prompt).toContain("embedded in this bundle under outcomes");
+		expect(prompt).toContain("stated in the brief as settled QA outcomes");
+		expect(prompt).toContain(`Settled QA outcomes (deterministic, already run; do not rerun them): ${JSON.stringify(outcomes)}`);
 		expect(prompt).toContain("do not re-execute descriptors");
 		expect(prompt).toContain("do not treat the absence of local test runs as a finding");
-		expect(prompt).toContain("Analyze code exclusively from those bundle bytes");
-		expect(prompt).toContain("Review authority is bound only to the bundle dirty_files current_content bytes");
+		expect(prompt).toContain("Read only the immutable Review revision identified in the brief, through read-only Git commands");
 		expect(prompt).toContain("Focus on correctness, regressions, security, and missing tests");
+		expect(prompt).not.toContain("bundle dirty_files");
+		expect(prompt).not.toContain("manifest");
 	});
 
 	test("Review turn budget scales with workload", () => {
@@ -115,16 +119,11 @@ describe("review contract outcome evidence", () => {
 	});
 
 	test("Review workload counts changed paths, so a wide change gets the heavy budget", () => {
-		const entry = { status: "modified", mode: "100644", oid: "e".repeat(40), base_mode: "100644", base_oid: "f".repeat(40) };
-		const paths = (count: number) => Object.fromEntries(Array.from({ length: count }, (_, i) => [`src/file-${i}.ts`, entry]));
-		const manifest = (count: number) => ({ changed_paths: paths(count) }) as never;
-		const bundle = (count: number) => ({ dirty_files: paths(count) }) as never;
+		const manifest = (count: number) => ({ changed_paths: Array.from({ length: count }, (_, i) => `src/file-${i}.ts`), outcomes: {} });
 		const acceptance = (count: number) => Array.from({ length: count }, (_, i) => ({ id: `AC${i + 1}`, assertion: "holds", verification: "{}" }));
 		const material = { risk: "material", acceptance: acceptance(3) };
 		expect(classifyReviewWorkload(material, manifest(12))).toBe("heavy");
-		expect(classifyReviewWorkload(material, bundle(12))).toBe("heavy");
 		expect(classifyReviewWorkload(material, manifest(11))).toBe("standard");
-		expect(classifyReviewWorkload(material, bundle(11))).toBe("standard");
 		// The other heavy and quick rules are unchanged.
 		expect(classifyReviewWorkload({ risk: "critical", acceptance: acceptance(1) }, manifest(1))).toBe("heavy");
 		expect(classifyReviewWorkload({ risk: "material", acceptance: acceptance(9) }, manifest(1))).toBe("heavy");
@@ -134,31 +133,32 @@ describe("review contract outcome evidence", () => {
 	});
 
 	test("Heavy Review turn budget grows with changed paths between 24 and 48", () => {
-		const entry = { status: "modified", mode: "100644", oid: "e".repeat(40), base_mode: "100644", base_oid: "f".repeat(40) };
-		const paths = (count: number) => Object.fromEntries(Array.from({ length: count }, (_, i) => [`src/file-${i}.ts`, entry]));
 		const acceptance = Array.from({ length: 3 }, (_, i) => ({ id: `AC${i + 1}`, assertion: "holds", verification: "{}" }));
-		const budget = (evidence: never, risk = "material") => {
-			const workload = classifyReviewWorkload({ risk, acceptance } as never, evidence);
-			return reviewTurnBudget(workload, reviewChangedPathCount(evidence));
+		const budget = (count: number, risk = "material") => {
+			const facts = { changed_paths: Array.from({ length: count }, (_, i) => `src/file-${i}.ts`), outcomes: {} };
+			const workload = classifyReviewWorkload({ risk, acceptance } as never, facts);
+			return reviewTurnBudget(workload, facts.changed_paths.length);
 		};
-		for (const shape of [(n: number) => ({ changed_paths: paths(n) }) as never, (n: number) => ({ dirty_files: paths(n) }) as never]) {
-			expect(budget(shape(12))).toBe(24);
-			expect(budget(shape(29))).toBe(41);
-			expect(budget(shape(36))).toBe(48);
-			expect(budget(shape(80))).toBe(48);
-			expect(budget(shape(1), "critical")).toBe(24);
-		}
+		expect(budget(12)).toBe(24);
+		expect(budget(29)).toBe(41);
+		expect(budget(36)).toBe(48);
+		expect(budget(80)).toBe(48);
+		expect(budget(1, "critical")).toBe(24);
 		// Quick and standard budgets stay flat whatever the path count.
 		expect(reviewTurnBudget("quick", 40)).toBe(12);
 		expect(reviewTurnBudget("standard", 40)).toBe(16);
 	});
 
-	test("Review prompt still binds the immutable bundle digest and verdict shapes", () => {
-		const digest = "sha256:" + "e".repeat(64);
-		const prompt = buildReviewPrompt(snapshot({ review_bundle_digest: digest }));
-		expect(prompt).toContain(`review bundle ${digest}`);
+	test("Review brief binds the immutable revision and verdict shapes", () => {
+		const facts = { beyond_estimate: ["docs/extra.md"], outside_routine_allowlist: [], outcomes: {} };
+		const prompt = buildReviewBrief(snapshot(), facts);
+		expect(prompt).toContain(`git diff ${"1".repeat(40)} ${"2".repeat(40)}`);
+		expect(prompt).toContain("Delivered paths outside the TaskIntent estimate: docs/extra.md.");
+		expect(prompt).not.toContain("Delivered paths that keep the routine declaration from standing");
+		expect(() => buildReviewBrief(snapshot({ review_revision: undefined }), facts)).toThrow("Review requires an immutable review revision");
 		expect(prompt).toContain('"decision":"pass"');
 		expect(prompt).toContain('"decision":"rework"');
-		expect(prompt).toContain("Reserve the final turn for exactly one strict JSON verdict");
+		expect(prompt).toContain('"decision":"incomplete"');
+		expect(prompt).toContain("REWORK verdicts must omit the approval field entirely");
 	});
 });

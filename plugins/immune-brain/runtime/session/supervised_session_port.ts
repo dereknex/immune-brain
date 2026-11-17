@@ -159,8 +159,6 @@ export interface SupervisedSessionPort {
 	 * files are the result; the session's output is for people only.
 	 */
 	runCommand?(input: RunCommandInput): Promise<RunCommandResult>;
-	/** Reserved and unfilled: verdicts return through the file protocol. */
-	readonly structuredResult?: never;
 }
 
 export const REQUIRED_CAPABILITIES = [
@@ -199,7 +197,6 @@ export function admitSessionProvider(port: SupervisedSessionPort): { ok: true; m
 	const record = port as unknown as Record<string, unknown>;
 	const missing = REQUIRED_CAPABILITIES.filter(name => typeof record[name] !== "function");
 	if (missing.length > 0) return refuse("provider_unavailable", `provider ${port.provider} lacks required capabilities: ${missing.join(", ")}`);
-	if (record.structuredResult !== undefined) return refuse("protocol_mismatch", "structuredResult is reserved and must stay unfilled");
 	return { ok: true, missing_optional: OPTIONAL_CAPABILITIES.filter(name => typeof record[name] !== "function") };
 }
 

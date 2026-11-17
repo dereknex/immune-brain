@@ -112,7 +112,7 @@ describe("Loop execution and repair routing", () => {
 		expect(prFix.call.prompt).not.toContain("branched workspaces");
 		expect(codeReview.call.subagent_type).toBe("Review");
 		expect(advisoryReview.call.subagent_type).toBe("general-purpose");
-		expect(read("plugins/immune-brain/runtime/prompts/code-review.md")).toContain("review_manifest/v5");
+		expect(read("plugins/immune-brain/runtime/prompts/code-review.md")).toContain("git diff <base_head> <review_commit>");
 		expect(read("plugins/immune-brain/dist/role-prompts/code-review.md")).toBe(read("plugins/immune-brain/runtime/prompts/code-review.md"));
 		for (const dispatch of [testFix, prFix, codeReview, advisoryReview]) {
 			expect(dispatch.call.run_in_background).toBe(false);

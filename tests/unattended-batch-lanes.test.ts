@@ -1,3 +1,4 @@
+import { allocateResultSlot, releaseResultSlot } from "../plugins/immune-brain/runtime/session_result_slot";
 import { describe, expect, it } from "bun:test";
 import { execFileSync, spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
@@ -771,6 +772,12 @@ describe("lane admission", () => {
 				active_claim_task_id: null,
 			});
 			expect(port.inspectLane(fx.repo, fx.repo).real_path).toBe(port.resolveRoot(fx.repo));
+
+			// A Review result slot is self-ignored, so it never parks the Lane (#565).
+			const slot = allocateResultSlot(lane, "review-op-1", "brief");
+			writeFileSync(slot.result, "{}");
+			expect(port.inspectLane(fx.repo, lane).clean).toBe(true);
+			releaseResultSlot(slot);
 
 			writeFileSync(join(lane, "stray.txt"), "x");
 			expect(port.inspectLane(fx.repo, lane).clean).toBe(false);

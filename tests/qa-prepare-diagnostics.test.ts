@@ -30,7 +30,7 @@ const snapshot = (): SnapshotDescriptor => ({
 	record_revision: "record-1", workspace_revision: "workspace-1", intent_revision: 1,
 	intent_content_hash: "sha256:intent", diff_hash: "sha256:diff", lifecycle: "active", artifact_state: "frozen", risk: "material",
 	fresh_acceptance_ids: ["A1"], missing_acceptance_ids: [], stale_attestation_ids: [],
-	acceptance: [{ id: "A1", assertion: "A1", verification: "{}" }], dirty_files: [], review_bundle_digest: null,
+	acceptance: [{ id: "A1", assertion: "A1", verification: "{}" }], dirty_files: [],
 } as unknown as SnapshotDescriptor);
 
 type Outcome = { exit_code: number; timed_out: boolean; output_limited: boolean; stdout: string; stderr: string };
@@ -128,9 +128,8 @@ describe("QA prepare diagnostics through the coordinator", () => {
 			projectTask: async () => fresh,
 			readTaskRecord: async () => ({ revision: "record-1", record: { findings: [] } }),
 			readTaskIntent: async () => ({ token: "intent-token" }),
-			buildAssurance: async () => ({ snapshot: snapshot(), descriptors: new Map([["A1", descriptor(true)]]), reviewBundle: null }),
+			buildAssurance: async () => ({ snapshot: snapshot(), descriptors: new Map([["A1", descriptor(true)]]), reviewFacts: null }),
 			runQa,
-			writeReviewEvidence: () => { throw new Error("unused"); },
 			applyVerdict: async () => { applied += 1; },
 			applyOrdinaryOperation: async () => undefined,
 		} as unknown as AssuranceCoordinatorPorts;

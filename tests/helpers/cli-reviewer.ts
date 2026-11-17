@@ -5,7 +5,8 @@
 // needs three things: a Host inside Herdr, the reviewer executable on PATH, and
 // the receipt the reviewer agent would write. `installCliReviewer` supplies the
 // first two once per test file; `runReservedReview` publishes the verdict bytes
-// to the reservation's out-of-tree `output_path`. No reviewer process runs.
+// to the reservation's `output_path` in its ignored result slot. No reviewer
+// process runs.
 
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -15,7 +16,7 @@ const BIN = mkdtempSync(join(tmpdir(), "imm-cli-reviewer-bin-"));
 /** The Herdr provider stand-in; `imm-session` resolves `herdr` from PATH. */
 const HERDR_BIN = join(import.meta.dir, "..", "fixtures", "fake-herdr");
 
-/** A receipt-backed Review session reservation's out-of-tree JSON file. */
+/** A receipt-backed Review session reservation's result-slot JSON file. */
 export function reservedReviewSession(ready: unknown): { output_path: string; create_command: string } {
 	const session = (ready as { review_session?: { output_path: string; create_command: string } }).review_session;
 	if (!session) throw new Error(`expected an explicit review session, got ${JSON.stringify(ready)}`);
@@ -37,9 +38,9 @@ export function installCliReviewer(): void {
 	process.env.PATH = [...new Set(entries)].join(":");
 }
 
-/** The packet path the prepared session's entry names. */
+/** The brief (or verifier packet) path the prepared session's entry names. */
 export function reservedPacketPath(ready: unknown): string {
-	const packet = /(\S*\/packet\.md)/.exec(reservedReviewSession(ready).create_command);
+	const packet = /(\S*\/(?:brief|verify-packet|packet)\.md)/.exec(reservedReviewSession(ready).create_command);
 	if (!packet) throw new Error("the reserved session names no Review packet");
 	return packet[1]!;
 }

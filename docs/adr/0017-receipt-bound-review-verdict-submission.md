@@ -4,6 +4,13 @@ status: partially superseded
 
 # Receipt-Bound Review Verdict Submission
 
+**Amendment (#565):** the reviewer no longer proves revision provenance from a
+manifest file. The runtime creates the immutable `review_commit` (single parent
+`base_head`) and binds the verdict to the Kernel identity
+`assurance_kernel/review_revision_identity/v2` = `{base_head, review_commit}`;
+the commit hash fixes its tree, so `review_tree` and `manifest_digest` are no
+longer part of new identities. Persisted v1 identities still validate.
+
 [ADR 0030](0030-marker-keyed-review-dispatch.md) supersedes the reserved-prompt
 binding and unbound-recovery rules below; receipt-bound settlement remains unchanged.
 

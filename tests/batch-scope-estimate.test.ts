@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { captureReviewManifest } from "../plugins/immune-brain/runtime/assurance/review_evidence";
+import { captureReviewFacts } from "../plugins/immune-brain/runtime/assurance/review_evidence";
 import { buildSnapshot } from "../plugins/immune-brain/runtime/assurance/verdict_authority";
 import { runDeterministicQa } from "../plugins/immune-brain/runtime/assurance/qa";
 import { parseTaskIntentV1, canonicalIntentHash } from "../plugins/immune-brain/runtime/kernel/intent";
@@ -86,10 +86,9 @@ describe("Lane branch delivery with scope estimates", () => {
 		writeFileSync(join(fx.root, "outside.txt"), "coordinator dirt");
 		expect(fx.snapshot().diff_hash).toBe(identity);
 		expect(taskDiffHash(fx.lane, fx.intent.scope_hint, "child")).toBe(hash);
-		const manifest = captureReviewManifest(fx.lane, { taskId: "child", baseHead: fx.base, scopeHint: fx.intent.scope_hint,
-			expectedDiffHash: identity, intentRevision: 1, intentContentHash: canonicalIntentHash(fx.intent), recordRevision: "record", workspaceRevision: "workspace",
-			lifecycle: "active", artifactState: "frozen", risk: "material", outcomes: {} });
-		expect(Object.keys(manifest.changed_paths)).toEqual(["added.txt", "deleted.txt", "outside.txt"]);
+		const manifest = captureReviewFacts(fx.lane, { taskId: "child", baseHead: fx.base, scopeHint: fx.intent.scope_hint,
+			expectedDiffHash: identity, outcomes: {} });
+		expect(manifest.changed_paths).toEqual(["added.txt", "deleted.txt", "outside.txt"]);
 		expect(manifest.beyond_estimate).toEqual(["added.txt", "deleted.txt", "outside.txt"]);
 		expect((await fx.qa()).decision).toBe("pass");
 		fx.settle();

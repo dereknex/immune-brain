@@ -1,17 +1,17 @@
+import { SESSION_RESULT_SLOTS_RELATIVE } from "../plugins/immune-brain/runtime/kernel/storage_paths";
 import { execFileSync } from "node:child_process";
 import { describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { packetDigest } from "../plugins/immune-brain/runtime/assurance/review_packet";
 import {
-	captureReviewBundle,
-	captureReviewManifest,
+	captureReviewFacts,
+	createReviewPacketWriter,
 	listReviewRefs,
 	reconcileReviewRefs,
-	writeNativeReviewEvidence,
 } from "../plugins/immune-brain/.pi-extension/pi-canary-review-bundle.ts";
-import { captureGitTaskRevisionSnapshot, taskDiffHash, taskRevisionDiffHash } from "../plugins/immune-brain/runtime/workspace_scope.ts";
+import { captureGitTaskRevisionSnapshot, taskRevisionDiffHash } from "../plugins/immune-brain/runtime/workspace_scope.ts";
 
 function repo(): string {
 	const root = mkdtempSync(join(tmpdir(), "canary-review-root-"));
@@ -44,69 +44,43 @@ function gitOutput(root: string, args: string[]): string {
 }
 
 describe("native canary review evidence", () => {
-	test("locks staged task bytes and immutable HEAD object identities", () => {
-		const root = repo();
+	test("rejects a Review revision request whose workspace hash is not the assurance snapshot", () => {
+		const root = revisionRepo();
 		try {
-			writeFileSync(join(root, "tracked.ts"), "export const value = 'captured';\n");
-			writeFileSync(join(root, "new.ts"), "export const added = 'captured';\n");
-			execFileSync("git", ["add", "tracked.ts", "new.ts"], { cwd: root });
-			const scope = ["new.ts", "tracked.ts"];
-			const hash = taskDiffHash(root, scope);
-			const bundle = captureReviewBundle(root, scope, hash, { "acc-1": { status: "passed", summary: "suite ok" } });
-			expect(bundle.contract).toBe("assurance_kernel/review_bundle/v4");
-			expect(bundle.scope).toEqual(scope);
-			expect(bundle.diff_hash).toBe(hash);
-			expect(bundle.bundle_digest).toMatch(/^sha256:[a-f0-9]{64}$/);
-			expect(bundle.outcomes).toEqual({ "acc-1": { status: "passed", summary: "suite ok" } });
-			expect(bundle.dirty_files["tracked.ts"].current_content).toContain("captured");
-			expect(bundle.dirty_files["tracked.ts"].oid).toMatch(/^[a-f0-9]{40,64}$/);
-			expect(bundle.dirty_files["tracked.ts"].base_oid).toMatch(/^[a-f0-9]{40,64}$/);
-			expect(bundle.dirty_files["tracked.ts"]).not.toHaveProperty("base_content");
-			expect(bundle.dirty_files["new.ts"].current_content).toContain("captured");
-			expect(bundle.dirty_files["new.ts"].base_oid).toBeNull();
-
-			writeFileSync(join(root, "tracked.ts"), "export const value = 'mutated later';\n");
-			rmSync(join(root, ".git"), { recursive: true, force: true });
-			expect(bundle.dirty_files["tracked.ts"].current_content).toContain("captured");
-			expect(bundle.dirty_files["tracked.ts"].base_oid).toMatch(/^[a-f0-9]{40,64}$/);
-			expect(bundle.outcomes["acc-1"].status).toBe("passed");
+			const baseHead = gitOutput(root, ["rev-parse", "HEAD"]);
+			writeFileSync(join(root, "src", "change.ts"), "changed\n");
+			execFileSync("git", ["add", "src/change.ts"], { cwd: root });
+			expect(() => captureReviewFacts(root, {
+				taskId: "hash-task",
+				baseHead,
+				scopeHint: ["src"],
+				expectedDiffHash: "sha256:" + "0".repeat(64),
+				outcomes: {},
+			})).toThrow(/does not match/i);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
 	});
 
-	test("rejects a bundle request whose workspace hash is not the assurance snapshot", () => {
-		const root = repo();
+	test("writes in-process verifier packets lazily into an ignored slot under the task root and removes them", () => {
+		const root = revisionRepo();
+		const writer = createReviewPacketWriter(root);
+		const packet = writer.writePacket("operation-1", "完整 review instructions\n");
 		try {
-			writeFileSync(join(root, "tracked.ts"), "changed\n");
-			execFileSync("git", ["add", "tracked.ts"], { cwd: root });
-			expect(() => captureReviewBundle(root, ["tracked.ts"], "sha256:" + "0".repeat(64), {})).toThrow(/does not match/i);
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
-	});
-
-	test("writes canonical bounded session evidence outside the repository and removes it", () => {
-		const evidence = writeNativeReviewEvidence({ contract: "test", secret: "locked" });
-		const bytes = readFileSync(evidence.path);
-		const packet = evidence.writePacket("operation-1", "完整 review instructions\n");
-		try {
-			expect(packet.path).toBe(join(dirname(evidence.path), "review-packet-operation-1.md"));
+			expect(packet.path.startsWith(join(root, SESSION_RESULT_SLOTS_RELATIVE) + "/")).toBe(true);
+			expect(gitOutput(root, ["status", "--porcelain", "--untracked-files=all"])).toBe("");
 			expect(readFileSync(packet.path, "utf8")).toBe("完整 review instructions\n");
+			expect(packet.path.endsWith("/review-packet-operation-1.md")).toBe(true);
 			expect(packet.sha256).toBe(packetDigest(readFileSync(packet.path, "utf8")));
-			expect(readFileSync(evidence.path)).toEqual(bytes);
-			expect(() => evidence.writePacket("../escape", "no")).toThrow("invalid review packet name");
-			expect(() => evidence.writePacket("operation-1", "overwrite")).toThrow();
-			expect(evidence.path).toBe(realpathSync(evidence.path));
-			expect(statSync(evidence.path).mode & 0o777).toBe(0o644);
-			expect(statSync(realpathSync(evidence.path.replace(/\/evidence\.json$/, ""))).mode & 0o777).toBe(0o755);
-			expect(existsSync(evidence.path)).toBe(true);
-			expect(JSON.parse(readFileSync(evidence.path, "utf8"))).toEqual({ contract: "test", secret: "locked" });
+			expect(statSync(packet.path).mode & 0o777).toBe(0o644);
+			expect(() => writer.writePacket("../escape", "no")).toThrow("invalid review packet name");
+			expect(() => writer.writePacket("operation-1", "overwrite")).toThrow();
 		} finally {
-			evidence.remove();
+			writer.remove();
 		}
-		expect(existsSync(evidence.path)).toBe(false);
 		expect(existsSync(packet.path)).toBe(false);
+		expect(existsSync(dirname(packet.path))).toBe(false);
+		rmSync(root, { recursive: true, force: true });
 	});
 
 	test("v4 revision metadata is deterministic, scoped, and source-size independent", { timeout: 15000 }, () => {
@@ -141,42 +115,32 @@ describe("native canary review evidence", () => {
 				baseHead,
 				scopeHint: scope,
 				expectedDiffHash: diffHash,
-				intentRevision: 1,
-				intentContentHash: `sha256:${"1".repeat(64)}`,
-				recordRevision: `r:${"2".repeat(64)}`,
-				workspaceRevision: `w:${"3".repeat(64)}`,
-				lifecycle: "active",
-				artifactState: "frozen",
-				risk: "material",
 				outcomes: { A1: { status: "passed" as const, summary: "verified" } },
 			};
-			const manifest = captureReviewManifest(root, input);
-			expect(manifest).toEqual(captureReviewManifest(root, input));
-			expect(JSON.stringify(manifest)).not.toContain("current_content");
-			expect(Object.hasOwn(manifest, "dirty_files")).toBe(false);
-			expect(Object.hasOwn(manifest, "neighborhood_files")).toBe(false);
-			expect(Object.hasOwn(manifest.changed_paths, "outside.txt")).toBe(false);
+			const facts = captureReviewFacts(root, input);
+			const manifest = facts.revision;
+			expect(manifest).toEqual(captureReviewFacts(root, input).revision);
+			expect(manifest.contract).toBe("assurance_kernel/review_revision/v1");
+			expect(Object.hasOwn(manifest, "manifest_digest")).toBe(false);
+			expect(JSON.stringify(facts)).not.toContain("current_content");
+			expect(facts.changed_paths).toEqual(["src/change.ts", "src/large.bin", "src/link.ts", "src/unchanged.ts"]);
+			expect(facts.beyond_estimate).toEqual([]);
+			expect(facts.outcomes).toEqual(input.outcomes);
+			expect(facts.outcomes).not.toBe(input.outcomes);
 			expect(gitOutput(root, ["rev-parse", `${manifest.review_commit}^`])).toBe(baseHead);
 			expect(gitOutput(root, ["rev-parse", `${manifest.review_commit}^{tree}`])).toBe(manifest.review_tree);
 			expect(gitOutput(root, ["diff", "--name-only", "--no-renames", baseHead, manifest.review_commit]).split("\n").sort()).toEqual(["src/change.ts", "src/large.bin", "src/link.ts", "src/unchanged.ts"]);
-			const invalidRefManifest = captureReviewManifest(root, { ...input, taskId: "revision..task." });
+			const invalidRefManifest = captureReviewFacts(root, { ...input, taskId: "revision..task." }).revision;
 			expect(invalidRefManifest.review_ref).not.toContain("..");
 			expect(listReviewRefs(root)).toEqual(expect.arrayContaining([{
 				ref: invalidRefManifest.review_ref,
 				commit: invalidRefManifest.review_commit,
 				taskId: "revision..task.",
 			}]));
-			expect(manifest.manifest_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
 			expect(listReviewRefs(root)).toHaveLength(2);
 			expect(reconcileReviewRefs(root, new Set(["revision-task", "revision..task."])).removed).toEqual([]);
 			expect(reconcileReviewRefs(root, new Set()).removed).toHaveLength(2);
-			const limit = 2 * 1024 * 1024;
-			const emptyManifest = captureReviewManifest(root, { ...input, outcomes: { A1: { status: "passed", summary: "" } } });
-			const boundaryLength = limit - Buffer.byteLength(JSON.stringify(emptyManifest));
-			expect(boundaryLength).toBeGreaterThan(0);
-			const bounded = captureReviewManifest(root, { ...input, outcomes: { A1: { status: "passed", summary: "x".repeat(boundaryLength) } } });
-			expect(Buffer.byteLength(JSON.stringify(bounded))).toBe(limit);
-			expect(() => captureReviewManifest(root, { ...input, outcomes: { A1: { status: "passed", summary: "x".repeat(boundaryLength + 1) } } })).toThrow(/bounded output limit/);
+			captureReviewFacts(root, input);
 			expect(listReviewRefs(root)).toHaveLength(1);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
@@ -197,18 +161,11 @@ describe("native canary review evidence", () => {
 				baseHead,
 				scopeHint: scope,
 				expectedDiffHash: diffHash,
-				intentRevision: 1,
-				intentContentHash: `sha256:${"1".repeat(64)}`,
-				recordRevision: `r:${"2".repeat(64)}`,
-				workspaceRevision: `w:${"3".repeat(64)}`,
-				lifecycle: "active",
-				artifactState: "frozen",
-				risk: "material",
 				outcomes: { A1: { status: "passed" as const, summary: "verified" } },
 			};
-			const manifest = captureReviewManifest(root, input);
-			expect(manifest.changed_paths[path]).toBeDefined();
-			expect(captureReviewManifest(root, input).review_commit).toBe(manifest.review_commit);
+			const facts = captureReviewFacts(root, input);
+			expect(facts.changed_paths).toContain(path);
+			expect(captureReviewFacts(root, input).revision.review_commit).toBe(facts.revision.review_commit);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}

@@ -19,9 +19,8 @@ import { CLAUDE_REVIEW_SETTINGS, CliReviewHost, REVIEW_GIT_ALLOWED_TOOLS, resolv
 import type { AssuranceHostPort, HostReviewReservation, ReviewRequest, ReviewSessionSpec, VerificationRequest } from "../plugins/immune-brain/runtime/assurance/host_port";
 import { submitMediatedReview } from "../plugins/immune-brain/runtime/assurance/review_mediation";
 import { digestOfReviewerBytes } from "../plugins/immune-brain/runtime/assurance/review_mediation";
-import type { ReviewBundle } from "../plugins/immune-brain/runtime/assurance/review_evidence";
+import type { ReviewFacts } from "../plugins/immune-brain/runtime/assurance/review_evidence";
 import type { VerdictAuthority } from "../plugins/immune-brain/runtime/assurance/verdict_authority";
-import { currentReviewContractHash } from "../plugins/immune-brain/runtime/role_prompt_bridge";
 import { writeTestReviewPacket } from "./helpers/review-packet-fixture";
 import { laneBatchReviewProfile, parseBatchReviewProfile, prepareBatchLaneRunState, writeBatchLaneRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
 import { parseRequestedAgents } from "../plugins/immune-brain/runtime/unattended/agent_profiles";
@@ -130,10 +129,10 @@ function reviewSessionOf(result: unknown): ReviewSessionSpec {
 	return session;
 }
 
-/** The Review packet the prepared session's entry names. */
-function packetPathOfSession(session: ReviewSessionSpec): string {
-	const packet = /(\S*\/packet\.md)/.exec(session.create_command);
-	if (!packet) throw new Error("the review session names no packet");
+/** The Review brief the prepared session's entry names. */
+function briefPathOfSession(session: ReviewSessionSpec): string {
+	const packet = /(\S*\/brief\.md)/.exec(session.create_command);
+	if (!packet) throw new Error("the review session names no brief");
 	return packet[1]!;
 }
 
@@ -201,31 +200,33 @@ function snapshot(role: "qa" | "review", root: string, risk: Risk, revision: boo
 		stale_attestation_ids: [],
 		acceptance: [{ id: "A1", assertion: "the change satisfies the acceptance", verification: "{}" }],
 		dirty_files: ["src.ts"],
-		review_bundle_digest: role === "review" ? "sha256:bundle" : null,
-		...(revision ? {
+		// Every Review snapshot names its immutable revision (TaskRecord v4).
+		...(role === "review" || revision ? {
 			review_revision: {
-				contract: "assurance_kernel/review_revision_identity/v1",
+				contract: "assurance_kernel/review_revision_identity/v2",
 				base_head: "a".repeat(40),
 				review_commit: "b".repeat(40),
-				review_tree: "c".repeat(40),
-				manifest_digest: `sha256:${"d".repeat(64)}`,
 			},
 		} : {}),
 		root,
 	} as SnapshotDescriptor;
 }
 
-function reviewBundle(root: string): ReviewBundle {
+function reviewFacts(): ReviewFacts {
 	return {
-		contract: "assurance_kernel/review_bundle/v4",
-		root,
-		head: "a".repeat(40),
-		scope: ["src.ts"],
-		diff_hash: "sha256:diff",
-		dirty_files: {},
+		revision: {
+			contract: "assurance_kernel/review_revision/v1",
+			base_head: "a".repeat(40),
+			review_tree: "c".repeat(40),
+			review_commit: "b".repeat(40),
+			review_ref: `refs/imm/review/${TASK}`,
+			diff_hash: "sha256:diff",
+		},
+		changed_paths: ["src.ts"],
+		beyond_estimate: [],
+		outside_routine_allowlist: [],
 		outcomes: { A1: { status: "passed", summary: "fresh" } },
-		bundle_digest: "sha256:bundle",
-	} as unknown as ReviewBundle;
+	} as ReviewFacts;
 }
 
 function passVerdict(s: SnapshotDescriptor): AssuranceVerdict {
@@ -326,15 +327,9 @@ function fixtureFor(root: string, options: { risk?: Risk; revision?: boolean; ve
 				command: { executable: "bun", argv: ["test"], cwd: ".", timeout_ms: 1000, max_output_bytes: 1024 },
 				environment: { prepare: null, writable_paths: [] },
 			}]] as never),
-			reviewBundle: role === "review" ? reviewBundle(root) : null,
+			reviewFacts: role === "review" ? reviewFacts() : null,
 		}),
 		runQa: async (s: SnapshotDescriptor) => passVerdict(s),
-		writeReviewEvidence: () => {
-			const dir = scratchDir("evidence");
-			const path = join(dir, "evidence.json");
-			writeFileSync(path, "{}");
-			return { path, writePacket: writeTestReviewPacket, remove: () => rmSync(dir, { recursive: true, force: true }) };
-		},
 		applyVerdict: async (_ctx: HostContext, input: Parameters<VerdictAuthority["applyVerdict"]>[1]) => {
 			applied.push({ actorId: input.actorId, role: input.snapshot.role as "qa" | "review", decision: input.verdict.decision,
 				...(input.reviewer_verdict_sha256 ? { verdictSha256: input.reviewer_verdict_sha256 } : {}),
@@ -346,7 +341,7 @@ function fixtureFor(root: string, options: { risk?: Risk; revision?: boolean; ve
 		applyOrdinaryOperation: async (_ctx: HostContext, input: { operation: { op: string } }) => {
 			if (input.operation.op === "complete") { lifecycle = "done"; obligation = "none"; }
 		},
-		ensureReviewRevision: async () => current("review").review_revision!,
+		ensureReviewRevision: async () => reviewFacts().revision,
 	} as AssuranceCoordinatorPorts;
 	return { ports, cli, applied, calls, snapshot: current("review"), current };
 }
@@ -392,7 +387,7 @@ describe("#426 plain-cwd git instruction", () => {
 // --- AC3: settlement and session failures ---------------------------------
 
 describe("cli review settlement", () => {
-	test("a pass verdict settles through the reviewer's out-of-tree receipt", async () => {
+	test("a pass verdict settles through the reviewer's result-slot receipt", async () => {
 		const root = reviewRepo();
 		const kernel = kernelFor(root);
 		const verdict = passVerdict(kernel.snapshot);
@@ -402,7 +397,11 @@ describe("cli review settlement", () => {
 		const ready = await kernel.coordinator.advance(TASK, ctx(root));
 		const session = reviewSessionOf(ready);
 
-		expect(readFileSync(packetPathOfSession(session), "utf8")).toContain(`review_contract_hash: ${currentReviewContractHash()}`);
+		// The brief is the coordinator's prompt verbatim: it names the revision to diff and carries no contract stamp.
+		const brief = readFileSync(briefPathOfSession(session), "utf8");
+		expect(brief).toContain(`git diff ${"a".repeat(40)} ${"b".repeat(40)}`);
+		expect(brief).not.toContain("review_contract_hash:");
+		expect(dirname(briefPathOfSession(session))).toBe(dirname(session.output_path));
 		writeFileSync(session.output_path, bytes);
 
 		const settled = await submitMediatedReview(kernel.coordinator, ctx(root), TASK, undefined, () => kernel.cli.inspectReview(TASK));
@@ -482,22 +481,6 @@ describe("cli review settlement", () => {
 		expect(reviewsOf(kernel)).toHaveLength(0);
 	});
 
-	test("a contract mismatch in the receipt ends the round", async () => {
-		const root = reviewRepo();
-		const kernel = kernelFor(root);
-		onPath(fakeReviewer("exit 0"));
-		enterHerdr();
-		const ready = await kernel.coordinator.advance(TASK, ctx(root));
-		writeFileSync(reviewSessionOf(ready).output_path, "REVIEW_CONTRACT_MISMATCH sha256:0\n");
-
-		const settled = await submitMediatedReview(kernel.coordinator, ctx(root), TASK, undefined, () => kernel.cli.inspectReview(TASK));
-		expect(settled).toMatchObject({ state: "blocked" });
-		expect((settled as { reason: string }).reason).toContain("review_contract_mismatch");
-		expect((settled as { reason: string }).reason).toContain("sha256:0");
-		expect((settled as { reason: string }).reason).toContain(currentReviewContractHash());
-		expect(kernel.coordinator.active(TASK)).toBeNull();
-		expect(reviewsOf(kernel)).toHaveLength(0);
-	});
 });
 
 // --- AC4: tree guard -------------------------------------------------------
@@ -848,7 +831,7 @@ describe("explicit review session", () => {
 		expect(reviewsOf(kernel)).toHaveLength(0);
 	});
 
-	test("inside Herdr the reviewer runs as an explicit session whose out-of-tree JSON settles the Review", async () => {
+	test("inside Herdr the reviewer runs as an explicit session whose result-slot JSON settles the Review", async () => {
 		const root = reviewRepo("pi");
 		const kernel = kernelFor(root);
 		const verdict = passVerdict(kernel.snapshot);
@@ -867,9 +850,11 @@ describe("explicit review session", () => {
 		// A startup dialog holds the entry back; resume submits it in the same session, before the Host arguments.
 		expect(session.resume_command).toBe(session.create_command.replace(" '--' ", " '--resume' '<handle>' '--' "));
 		expect(session.stop_command).toMatch(/'stop' '--provider' 'herdr' '<handle>'$/);
-		// The receipt channel is out of tree and is one JSON file.
+		// The receipt channel is one JSON file in the task's ignored result slot.
 		expect(session.output_path.endsWith(".json")).toBe(true);
-		expect(session.output_path.startsWith(realpathSync(root))).toBe(false);
+		const slot = dirname(session.output_path);
+		expect(realpathSync(slot)).toBe(join(realpathSync(root), ".imm/state/sessions", `review-${(ready as { operation_id?: string }).operation_id}`));
+		expect(readFileSync(join(dirname(slot), ".gitignore"), "utf8").trim()).toBe("*");
 
 		// A session that has not written its file retains the reservation and names the wait.
 		const pending = await submitMediatedReview(kernel.coordinator, ctx(root), TASK, undefined, () => kernel.cli.inspectReview(TASK));
@@ -909,25 +894,6 @@ describe("explicit review session", () => {
 		expect(kernel.coordinator.active(TASK)).toBeNull();
 		expect(reviewsOf(kernel)).toHaveLength(0);
 		// Preparation launches nothing itself (BR-OUT-1), and a failed round runs no stop.
-		expect(JSON.parse(readFileSync(state, "utf8")).calls ?? []).toEqual([]);
-	});
-
-	test("a review contract mismatch written to the session's file ends the round", async () => {
-		const root = reviewRepo("pi");
-		const kernel = kernelFor(root);
-		const state = enterHerdr();
-		onPath([fakeReviewer("exit 0"), join(__dirname, "fixtures/fake-herdr")].join(":"));
-		const ready = await kernel.coordinator.advance(TASK, ctx(root)) as { review_session?: ReviewSessionSpec };
-		const session = ready.review_session!;
-		// The reviewer's own contract differs: the skill's answer is the file's whole content.
-		writeFileSync(session.output_path, "REVIEW_CONTRACT_MISMATCH sha256:0\n");
-
-		const settled = await submitMediatedReview(kernel.coordinator, ctx(root), TASK, undefined, () => kernel.cli.inspectReview(TASK));
-		expect(settled).toMatchObject({ state: "blocked" });
-		expect((settled as { reason: string }).reason).toContain("review_contract_mismatch");
-		expect((settled as { reason: string }).reason).toContain(currentReviewContractHash());
-		expect(kernel.coordinator.active(TASK)).toBeNull();
-		expect(reviewsOf(kernel)).toHaveLength(0);
 		expect(JSON.parse(readFileSync(state, "utf8")).calls ?? []).toEqual([]);
 	});
 
@@ -1004,10 +970,10 @@ describe("explicit review session", () => {
 // --- Spec D1/D3: the session's Host arguments and profile -------------------
 
 describe("explicit session launch arguments", () => {
-	const output = "/tmp/imm-cli-review-x/review-output-op-1.json";
+	const output = "/repo/.imm/state/sessions/review-op-1/result.json";
 
-	test("claude-code keeps the read-only reviewer boundary and allows one write: the reservation's out-of-tree file", () => {
-		const argv = sessionHostArguments({ host: "claude-code", model: "m", effort: "high" }, { outputPath: output, readDirs: ["/tmp/imm-cli-review-x"] });
+	test("claude-code keeps the read-only reviewer boundary and allows one write: the reservation's result-slot file", () => {
+		const argv = sessionHostArguments({ host: "claude-code", model: "m", effort: "high" }, { outputPath: output });
 		// Hooks off, so no user rewrite (`rtk git ...`) escapes the git allowlist (#426 F11).
 		expect(argv[argv.indexOf("--settings") + 1]).toBe(CLAUDE_REVIEW_SETTINGS);
 		expect(JSON.parse(CLAUDE_REVIEW_SETTINGS)).toMatchObject({ disableAllHooks: true });
@@ -1017,8 +983,9 @@ describe("explicit session launch arguments", () => {
 		const allowed = argv.slice(argv.indexOf("--allowedTools") + 1, argv.indexOf("--permission-mode"));
 		// Claude Code governs Write through Edit rules, and an absolute path takes a leading `//`.
 		expect(allowed).toEqual([...REVIEW_GIT_ALLOWED_TOOLS, `Edit(/${output})`]);
-		expect(allowed.filter((rule) => !rule.startsWith("Bash(git "))).toEqual([`Edit(//tmp/imm-cli-review-x/review-output-op-1.json)`]);
-		expect(argv.slice(argv.indexOf("--add-dir") + 1, argv.indexOf("--add-dir") + 2)).toEqual(["/tmp/imm-cli-review-x"]);
+		expect(allowed.filter((rule) => !rule.startsWith("Bash(git "))).toEqual([`Edit(//repo/.imm/state/sessions/review-op-1/result.json)`]);
+		// The slot lives inside the task cwd, so no extra directory is granted.
+		expect(argv).not.toContain("--add-dir");
 		expect(argv[argv.indexOf("--model") + 1]).toBe("m");
 		expect(argv[argv.indexOf("--effort") + 1]).toBe("high");
 		expect(argv).not.toContain("--print");
