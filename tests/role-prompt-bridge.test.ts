@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -413,6 +414,9 @@ describe("internal role-prompt bridge", () => {
 				expect({ file, retired, present: content.includes(retired) }).toEqual({ file, retired, present: false });
 		}
 		expect(read("AGENTS.md")).not.toContain("Initiative carrier default");
-		expect(JSON.parse(read(".imm/config.json")).initiative_carrier).toBe("github");
+		// The project config is local-only: gitignored and untracked, so a fresh
+		// clone resolves the carrier from the user config, then asks.
+		expect(read(".gitignore").split("\n")).toContain(".imm/config.json");
+		expect(spawnSync("git", ["ls-files", "--error-unmatch", ".imm/config.json"], { cwd: ROOT }).status).not.toBe(0);
 	});
 });

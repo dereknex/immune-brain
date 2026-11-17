@@ -2,7 +2,7 @@
   "contract": "assurance_kernel/task_intent/v1",
   "task_id": "config-git-carrier",
   "owner": "user",
-  "goal": "layered-config S4 (#360-C3; Spec docs/specs/layered-config.spec.md D4, D6, D9). The Git integration reader takes git_integration from the tracked .imm/config.json through resolveConfig, falls back to the instruction-file directive with a deprecation warning, and keeps manual for an absent or invalid value; every existing caller is unchanged. The Planner's Initiative carrier resolution in draw-up reads initiative_carrier and its source from imm-kernel config --json after a literal request, keeps the Host's user-level instruction-file directive only as a deprecated last step, and still asks when nothing resolves. The baseline prose names .imm/config.json as the Git integration source, and AGENTS.md drops its carrier directive because .imm/config.json now carries it.",
+  "goal": "layered-config S4 (#360-C3; Spec docs/specs/layered-config.spec.md D4, D6, D9). The Git integration reader takes git_integration from the project .imm/config.json through resolveConfig, falls back to the instruction-file directive with a deprecation warning, and keeps manual for an absent or invalid value; every existing caller is unchanged. The Planner's Initiative carrier resolution in draw-up reads initiative_carrier and its source from imm-kernel config --json after a literal request, keeps the Host's user-level instruction-file directive only as a deprecated last step, and still asks when nothing resolves. The baseline prose names .imm/config.json as the Git integration source. This repository keeps its project .imm/config.json untracked and gitignored (local-only), so AGENTS.md carries no carrier directive and a fresh clone resolves the carrier from the user config, then asks.",
   "acceptance": [
     {
       "id": "AC1",
@@ -16,8 +16,8 @@
     },
     {
       "id": "AC3",
-      "assertion": "AGENTS.md no longer contains `Initiative carrier default`; the repository's imm-kernel config --json resolves initiative_carrier github from source project; skill and dist mirrors are consistent.",
-      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"! grep -q 'Initiative carrier default' AGENTS.md && plugins/immune-brain/bin/imm-kernel config --json | bun -e 'const c=JSON.parse(await Bun.stdin.text()); if (c.initiative_carrier?.value!==\\\"github\\\"||c.initiative_carrier?.source!==\\\"project\\\") process.exit(1)' && bun test tests/skill-dist-consistency.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      "assertion": "AGENTS.md no longer contains `Initiative carrier default`; the repository tracks no .imm/config.json and .gitignore lists it (local-only project config); skill and dist mirrors are consistent.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"! grep -q 'Initiative carrier default' AGENTS.md && ! git ls-files --error-unmatch .imm/config.json && git check-ignore -q .imm/config.json && bun test tests/role-prompt-bridge.test.ts tests/skill-dist-consistency.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
     },
     {
       "id": "AC4",
@@ -27,6 +27,7 @@
   ],
   "scope_hint": [
     ".changeset/config-git-carrier.md",
+    ".gitignore",
     "AGENTS.md",
     "docs/plans/config-git-carrier.intent.json",
     "docs/specs/layered-config.spec.md",
@@ -39,8 +40,9 @@
     "plugins/immune-brain/skills/BASELINE.md",
     "tests/carrier-enrollment-gate-contract.test.ts",
     "tests/exhaustive-decision-tree-contract.test.ts",
-    "tests/git-integration-preference.test.ts"
+    "tests/git-integration-preference.test.ts",
+    "tests/role-prompt-bridge.test.ts"
   ],
   "risk": "material",
-  "revision": 1
+  "revision": 2
 }
