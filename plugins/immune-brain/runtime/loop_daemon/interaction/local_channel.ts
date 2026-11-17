@@ -38,12 +38,19 @@ import {
 import { decisionId, type LoopDecisionRecord } from "../decision_record.ts";
 import type { GuardFacts } from "../guards.ts";
 import { LOOP_DECISION_RECORD_CONTRACT, type LoopLease } from "../types.ts";
+import { clearWaitingPointer } from "../waiting.ts";
 import {
 	INTERACTION_REQUEST_CONTRACT,
 	changedBindingFields,
+	fitInteractionContext,
 	interactionAuthority,
+	isAdvisoryKind,
+	bindingsMatch,
+	sanitizeInteractionContext,
+	subjectsMatch,
 	type InteractionBinding,
 	type InteractionChannel,
+	type InteractionContext,
 	type InteractionKind,
 	type InteractionPollResult,
 	type InteractionRequest,
@@ -164,6 +171,8 @@ export function writeLocalAnswer(
 export function retireLocalRequest(stateDir: string, interactionId: string): void {
 	rmSync(requestPath(stateDir, interactionId), { force: true });
 	rmSync(answerPath(stateDir, interactionId), { force: true });
+	// D4.6: a retired request is no longer something the owner is awaited on.
+	clearWaitingPointer(stateDir, interactionId);
 }
 
 export interface LocalInteractionChannelDeps {
@@ -176,6 +185,21 @@ export interface LocalInteractionChannelDeps {
 
 export function createLocalInteractionChannel(deps: LocalInteractionChannelDeps): InteractionChannel {
 	const now = () => (deps.now ?? (() => new Date().toISOString()))();
+	/** D4.4: a stored pack is sanitized and bounded, exactly like a rendered one. */
+	const storedContext = (context: InteractionContext | undefined) =>
+		context === undefined ? undefined : fitInteractionContext(sanitizeInteractionContext(context)).context;
+	/**
+	 * D4.5: one pending advisory question per subject and binding. The new request
+	 * retires the older local request; a `literal_user` request is never touched.
+	 */
+	const supersedeAdvisory = (req: InteractionRequest): void => {
+		if (!isAdvisoryKind(req.kind)) return;
+		for (const existing of readLocalRequests(deps.stateDir)) {
+			if (existing.interaction_id === req.interaction_id || !isAdvisoryKind(existing.kind)) continue;
+			if (!subjectsMatch(existing.subject, req.subject) || !bindingsMatch(existing.binding, req.binding)) continue;
+			retireLocalRequest(deps.stateDir, existing.interaction_id);
+		}
+	};
 	return {
 		id: "local",
 
@@ -193,7 +217,9 @@ export function createLocalInteractionChannel(deps: LocalInteractionChannelDeps)
 					`interaction_binding_required: ${req.interaction_id} lane_decision needs a record_revision and a run_id`,
 				);
 			if (readLocalRequest(deps.stateDir, req.interaction_id)) return "already_posted";
-			writeLocalRequest(deps.stateDir, req, now());
+			const context = storedContext(req.context);
+			supersedeAdvisory(req);
+			writeLocalRequest(deps.stateDir, context === undefined ? req : { ...req, context }, now());
 			return this.accepts(req) ? "posted" : "notice_only";
 		},
 
@@ -221,6 +247,19 @@ export function createLocalInteractionChannel(deps: LocalInteractionChannelDeps)
 
 		async withdraw(interactionId: string): Promise<void> {
 			retireLocalRequest(deps.stateDir, interactionId);
+		},
+
+		async annotate(interactionId: string, context: InteractionContext): Promise<"annotated" | "absent"> {
+			const request = readLocalRequest(deps.stateDir, interactionId);
+			if (!request) return "absent";
+			const fitted = fitInteractionContext(sanitizeInteractionContext(context)).context;
+			// The rewrite keeps `interaction_id`, kind, binding and answer semantics.
+			writeLocalRequest(deps.stateDir, { ...request, context: fitted }, request.posted_at);
+			return "annotated";
+		},
+
+		link(interactionId: string): string | null {
+			return requestPath(deps.stateDir, interactionId);
 		},
 	};
 }

@@ -12,6 +12,7 @@
  */
 
 import { isLoopHandler, type LoopHandler } from "./handlers.ts";
+import type { InteractionContext } from "./interaction/protocol.ts";
 
 export const LOOP_LEADER_PROPOSAL_CONTRACT = "immune_brain/loop_leader_proposal/v1" as const;
 /** At most 20 items per proposal (D2.4). */
@@ -29,7 +30,7 @@ export type LeaderProposalItem =
 	| { target: string; action: "priority"; rank: number }
 	| { target: string; action: "shape"; plan: "task" | "initiative"; reason: string }
 	| { target: string; action: "dispatch"; role: string; subject: string; brief: string }
-	| { target: string; action: "resolve"; kind: LeaderResolveKind; context?: string }
+	| { target: string; action: "resolve"; kind: LeaderResolveKind; context?: InteractionContext }
 	| { target: string; action: "note"; text: string };
 
 export interface LeaderProposal {
@@ -92,13 +93,48 @@ function parseItem(raw: unknown, input: LeaderProposalInput): { item: LeaderProp
 				return refuse("item_resolve_kind_unknown");
 			const kind = raw.kind as LeaderResolveKind;
 			// `ask_owner` is a question to the owner: without its context it carries nothing.
-			if (kind === "ask_owner" && !text(raw.context)) return refuse("item_ask_owner_context_missing");
-			return { item: text(raw.context) ? { target, action: "resolve", kind, context: raw.context } : { target, action: "resolve", kind } };
+			if (kind === "ask_owner" && raw.context === undefined) return refuse("item_ask_owner_context_missing");
+			if (raw.context === undefined) return { item: { target, action: "resolve", kind } };
+			const context = parseInteractionContext(raw.context);
+			if (context === null) return refuse("item_ask_owner_context_invalid");
+			return { item: { target, action: "resolve", kind, context } };
 		}
 		default:
 			if (!text(raw.text)) return refuse("item_note_empty");
 			return { item: { target, action: "note", text: raw.text } };
 	}
+}
+
+/**
+ * D4.4: `ask_owner` carries either a plain `blocked_on` string or the full
+ * context pack. Anything else is refused with its own item.
+ */
+function parseInteractionContext(raw: unknown): InteractionContext | null {
+	if (typeof raw === "string") return raw.trim().length > 0 ? { blocked_on: raw, tried: [], options: [], evidence: [] } : null;
+	if (!isObject(raw) || !text(raw.blocked_on)) return null;
+	const list = (value: unknown): unknown[] | null => (value === undefined ? [] : Array.isArray(value) ? value : null);
+	const tried = list(raw.tried);
+	const options = list(raw.options);
+	const evidence = list(raw.evidence);
+	if (tried === null || options === null || evidence === null) return null;
+	if (tried.some((entry) => !text(entry))) return null;
+	if (
+		options.some(
+			(entry) =>
+				!isObject(entry) ||
+				!text(entry.id) ||
+				!text(entry.label) ||
+				typeof entry.consequence !== "string",
+		)
+	)
+		return null;
+	if (evidence.some((entry) => !isObject(entry) || !text(entry.label) || !text(entry.ref))) return null;
+	return {
+		blocked_on: raw.blocked_on,
+		tried: tried as string[],
+		options: options as InteractionContext["options"],
+		evidence: evidence as InteractionContext["evidence"],
+	};
 }
 
 /**

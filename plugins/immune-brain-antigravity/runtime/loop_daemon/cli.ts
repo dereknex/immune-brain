@@ -24,6 +24,7 @@ import { fileURLToPath } from "node:url";
 import { DEFAULT_LOOP_CONFIG, LOOP_LEADER_WAKES_BOUNDS, type LoopConfig, resolveConfig } from "../config/layered_config.ts";
 import { createGhTransport, type GhTransport } from "../github_issue_tracker.ts";
 import { readTaskRecordRaw } from "../kernel/storage.ts";
+import { projectAssurance } from "../kernel/assurance_projection.ts";
 import { readNoTouch } from "../no_touch.ts";
 import { findLaneRelayTarget, type relayLaneDecision } from "../unattended/lane_decision.ts";
 import { POINT_REGISTRY } from "../decision_model/thresholds.ts";
@@ -47,9 +48,14 @@ import { type GuardFacts, eventTarget } from "./guards.ts";
 import { detectIdentityPosture, inspectDaemonIdentity, readAuthenticatedGithubLogin } from "./identity.ts";
 import {
 	applyLocalLaneDecisionAnswers,
+	createLocalInteractionChannel,
 	localClarifyAnswerDecisions,
 	localDecisionRecordRevision,
 } from "./interaction/local_channel.ts";
+import { createGithubInteractionChannel } from "./interaction/github_channel.ts";
+import { askOwnerQuestion, batchStateForTarget, collectResolveFacts } from "./replan.ts";
+import { resolveSubject } from "./leader_dispatch.ts";
+import { clearWaitingPointer, listWaitingStatus } from "./waiting.ts";
 import { loopJobEvents, reconcileLoopJobs } from "./jobs.ts";
 import {
 	type ClassifyFn,
@@ -527,6 +533,8 @@ Options:
 				base: session.base,
 				started_at: session.started_at,
 			})),
+			// D4.6: where the owner is awaited, as pointers only — never the question.
+			waiting: listWaitingStatus(stateDir),
 			stats,
 			updated_at: updatedAt,
 			log_path: snapshot.log_path,
@@ -1370,17 +1378,78 @@ Options:
 											stateDir,
 											snapshot: obs.snapshot,
 										}),
+							// D4.2: the target's authority gates, from local requests and the Kernel projection.
+							resolveFacts: async ({ target, work_item }) => {
+								const subject = resolveSubject(target);
+								const taskIds = [...new Set([...work_item.binding.task_ids, ...(subject.task_id ? [subject.task_id] : [])])];
+								return collectResolveFacts({
+									stateDir,
+									target,
+									subject,
+									task_ids: taskIds,
+									project: async (taskId) => {
+										try {
+											const projected = await projectAssurance(absoluteRoot, taskId);
+											if (projected.error !== null) return null;
+											return {
+												risk: projected.projection.risk,
+												open_user_decision_count: projected.projection.open_user_decision_count,
+												unresolved_user_decision_ids: [...projected.projection.unresolved_user_decision_ids],
+												replan_required_ids: [...projected.projection.replan_required_ids],
+												authorization: { state: projected.projection.authorization.state },
+												next_obligation: projected.projection.next_obligation,
+											};
+										} catch {
+											return null;
+										}
+									},
+									batchState: () =>
+										batchStateForTarget(absoluteRoot, {
+											task_ids: taskIds,
+											initiative_slug: work_item.binding.initiative_slug ?? null,
+										})?.batch_state ?? null,
+									comments: obs.snapshot.issues.flatMap((issue) => issue.comments ?? []),
+								});
+							},
+							// D4.2: a parked batch leaves `needs_human` only through a fresh Batch Authorization,
+							// so only a batch that is still running can be resumed without the owner.
+							resumeBatch: ({ work_item }) => {
+								const subject = resolveSubject(work_item.target);
+								const batch = batchStateForTarget(absoluteRoot, {
+									task_ids: [...new Set([...work_item.binding.task_ids, ...(subject.task_id ? [subject.task_id] : [])])],
+									initiative_slug: work_item.binding.initiative_slug ?? null,
+								});
+								if (!batch) return { resumed: false, reason: "batch_unknown" };
+								if (batch.batch_state === "needs_human")
+									return { resumed: false, reason: "the parked batch needs a fresh Batch Authorization" };
+								if (batch.batch_state !== "running" && batch.batch_state !== "pending")
+									return { resumed: false, reason: `batch_${batch.batch_state}` };
+								return { resumed: true, reason: `batch ${batch.batch_id} is ${batch.batch_state}` };
+							},
+							// D4.5: ask on the subject; a pending literal_user request is annotated, never withdrawn.
+							askOwner: async ({ target, subject, context, pending_literal_user }) => {
+								const channel =
+									loopConfig.interaction?.channel === "local"
+										? createLocalInteractionChannel({ stateDir })
+										: createGithubInteractionChannel({
+												port: gitHubPort,
+												comments: () => obs.snapshot.issues.flatMap((issue) => issue.comments ?? []),
+												binding: () => ({}),
+												guardFacts: facts,
+												// D4.6: a withdrawn request is no longer a waiting pointer.
+												onRetired: (interactionId) => clearWaitingPointer(stateDir, interactionId),
+											});
+								return askOwnerQuestion({ stateDir, now: recordedAt, target, channel, pending_literal_user }, { subject, context });
+							},
 						});
 
 			// D3.5: a leader dispatch starts a real catalog session, so started
 			// sessions count against the daily dispatch budget exactly like a
 			// Tier-1/2 dispatch: later ticks and the scheduler see them. A failed
 			// session ran too, so only refusals that started nothing are spared.
-			const leaderStartedSessions = isDryRun
-				? 0
-				: leaderItems.filter(
-						(item) => item.action === "dispatch" && (item.outcome === "accepted" || item.session_started === true),
-					).length;
+			// D3.5: every started catalog session counts, whatever item kind started
+			// it (`dispatch` or a `resolve{kind:"replan"}`), accepted or failed.
+			const leaderStartedSessions = isDryRun ? 0 : leaderItems.filter((item) => item.session_started === true).length;
 			if (leaderStartedSessions > 0) {
 				rollDailyStats(state, recordedAt.slice(0, 10));
 				state.stats.dispatches_today = (state.stats.dispatches_today ?? 0) + leaderStartedSessions;

@@ -1,0 +1,422 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "loop-leader-s4-replan-context",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "loop-leader-s4-replan-context",
+    "goal": "Let the leader resolve escalated work items, batches in needs_human, Lane questions and repeated refusals through guarded resume, release, replan or ask_owner items with a replan cap of 3, add an optional sanitized context pack to InteractionRequest rendered on the subject Issue or PR and in local requests, and list waiting pointers in imm-loop status and the Status Issue, per D4 of docs/specs/loop-leader.spec.md.",
+    "acceptance": [
+      {
+        "id": "S4-AC1",
+        "assertion": "Source BR-REQ-4, BR-DEC-10, BR-SCN-3; meet D4.1-D4.3 in docs/specs/loop-leader.spec.md. Agreed seam: tests/loop-leader-replan.test.ts. Done looks like: a resume item on a transient Lane escalation resumes the batch without posting an owner question, and a release item moves escalated to triage; every accepted resume, release or replan increments replan_rounds. Negative: resume, release or replan on a pending material or critical approval, a breaking Intent revision, or a Lane decision with literal_user authority is rejected and only ask_owner is accepted. Bound: a batch that re-escalates after three accepted resumes is forced to ask_owner with reason replan_cap_reached; derived-output checks and typecheck pass.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/loop-leader-replan.test.ts && bun scripts/sync-dist-docs.ts --check && bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "S4-AC2",
+        "assertion": "Source BR-REQ-5, BR-DEC-3, BR-OUT-3, BR-SCN-1; meet D4.4-D4.6 in docs/specs/loop-leader.spec.md. Agreed seam: tests/loop-sched-interaction-github.test.ts and tests/loop-sched-interaction-local.test.ts. Done looks like: an ask_owner item posts one comment on its subject Issue showing blocked-on, tried, options with consequences and evidence links; a local request and the loop_interactions listing carry the same context; imm-loop status --json lists a waiting entry with target, kind, channel and link, and the Status Issue shows the link without the question text. Negative: HTML comments and @ mentions in context are neutralized; a second advisory ask for the same subject and binding supersedes the pending advisory request instead of duplicating it; ask_owner on a subject with a pending lane_decision or plan_approval annotates that request in place with the same interaction_id, kind and binding, never withdraws it, and the owner's later answer is still accepted on both channels; a reply effects nothing beyond /approve and Lane decisions. Bound: context over 8 KiB is truncated with a marker; a failed GitHub post leaves local transitions unblocked.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-sched-interaction-github.test.ts\",\n      \"tests/loop-sched-interaction-local.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/loop-leader-s4-replan-context.md",
+      "docs/plans/loop-leader-s4-replan-context.intent.json",
+      "docs/reference/immune-brain-config.md",
+      "docs/specs/loop-leader.spec.md",
+      "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+      "plugins/immune-brain-antigravity/dist/docs/reference/immune-brain-config.md",
+      "plugins/immune-brain-antigravity/runtime/host-core/loop_interactions.ts",
+      "plugins/immune-brain-antigravity/runtime/loop_daemon/cli.ts",
+      "plugins/immune-brain-antigravity/runtime/loop_daemon/dispatch.ts",
+      "plugins/immune-brain-antigravity/runtime/loop_daemon/escalation.ts",
+      "plugins/immune-brain-antigravity/runtime/loop_daemon/interaction/github_channel.ts",
+      "plugins/immune-brain-antigravity/runtime/loop_daemon/interaction/local_channel.ts",
+      "plugins/immune-brain-antigravity/runtime/loop_daemon/interaction/protocol.ts",
+      "plugins/immune-brain-antigravity/runtime/loop_daemon/leader_dispatch.ts",
+      "plugins/immune-brain-antigravity/runtime/loop_daemon/status_issue.ts",
+      "plugins/immune-brain-antigravity/runtime/loop_daemon/work_items.ts",
+      "plugins/immune-brain-antigravity/runtime/unattended/batch_state.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/docs/reference/immune-brain-config.md",
+      "plugins/immune-brain/runtime/host-core/loop_interactions.ts",
+      "plugins/immune-brain/runtime/loop_daemon/cli.ts",
+      "plugins/immune-brain/runtime/loop_daemon/dispatch.ts",
+      "plugins/immune-brain/runtime/loop_daemon/escalation.ts",
+      "plugins/immune-brain/runtime/loop_daemon/interaction/github_channel.ts",
+      "plugins/immune-brain/runtime/loop_daemon/interaction/local_channel.ts",
+      "plugins/immune-brain/runtime/loop_daemon/interaction/protocol.ts",
+      "plugins/immune-brain/runtime/loop_daemon/leader_dispatch.ts",
+      "plugins/immune-brain/runtime/loop_daemon/status_issue.ts",
+      "plugins/immune-brain/runtime/loop_daemon/work_items.ts",
+      "plugins/immune-brain/runtime/unattended/batch_state.ts",
+      "tests/loop-leader-replan.test.ts",
+      "tests/loop-sched-interaction-github.test.ts",
+      "tests/loop-sched-interaction-local.test.ts"
+    ],
+    "scope_size_reason": "The context pack is one InteractionRequest field whose producer (leader resolve), both channels (github, local), the Host listing tool and the status pointer projection must change together so a question never appears without its context or pointer.",
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/loop-leader-s4-replan-context.intent.json",
+    "content_hash": "sha256:86acb9558a06a748bd93ffe96e413eb82c5d676081cc1a66248125793f3bf164"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:86acb9558a06a748bd93ffe96e413eb82c5d676081cc1a66248125793f3bf164",
+  "git_base_head": "ba8a19cb104679409022f9807c7b78925f52d31c",
+  "attestations": [
+    {
+      "id": "approval-qa-09d081e9",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:86acb9558a06a748bd93ffe96e413eb82c5d676081cc1a66248125793f3bf164",
+      "diff_hash": "sha256:bd5fd5fa7a5b3df0417825d31f99ae606877b5557be2d6287b295e5563a8c394",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:6d56e08424de23ac2796e5dbf69ce4173de27050059548c2ebaf3e6a4ca62767",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S4-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:6d56e08424de23ac2796e5dbf69ce4173de27050059548c2ebaf3e6a4ca62767"
+        },
+        {
+          "acceptance_id": "S4-AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:6d56e08424de23ac2796e5dbf69ce4173de27050059548c2ebaf3e6a4ca62767"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-80608705",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:86acb9558a06a748bd93ffe96e413eb82c5d676081cc1a66248125793f3bf164",
+      "diff_hash": "sha256:d3dfa2e3ecab1a6d39e935864787448123d245c991fb06c748b80e1f71031373",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:5ae97f1f93ec288c6a44ba8a4e75c38e9fb6678d35fefac080165a5ebc07e173",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S4-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:5ae97f1f93ec288c6a44ba8a4e75c38e9fb6678d35fefac080165a5ebc07e173"
+        },
+        {
+          "acceptance_id": "S4-AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:5ae97f1f93ec288c6a44ba8a4e75c38e9fb6678d35fefac080165a5ebc07e173"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-edeec8c5",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:86acb9558a06a748bd93ffe96e413eb82c5d676081cc1a66248125793f3bf164",
+      "diff_hash": "sha256:f668a5648e207526d782f3496a47d077d530def21bc4bd76b4fda7d950957c59",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:bd1e0b901b964c24933988c4cac1d327f82ab707aa7cc025e6ad24f6793b1b86",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S4-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:bd1e0b901b964c24933988c4cac1d327f82ab707aa7cc025e6ad24f6793b1b86"
+        },
+        {
+          "acceptance_id": "S4-AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:bd1e0b901b964c24933988c4cac1d327f82ab707aa7cc025e6ad24f6793b1b86"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-59738f06",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:86acb9558a06a748bd93ffe96e413eb82c5d676081cc1a66248125793f3bf164",
+      "diff_hash": "sha256:f668a5648e207526d782f3496a47d077d530def21bc4bd76b4fda7d950957c59",
+      "actor_id": "cli:claude-code:b8c3625c-9244-4957-a891-2b9ae4eadbf8",
+      "summary": "Round-3 delta: replan resolve sessions now read and move the shared per-proposal dispatch budget (countDispatch before startSession, session_started on accepted and failed paths), cli counts every session_started item, and dispatchDecisions feeds listWaitingStatus into the Status Issue snapshot; antigravity mirrors are byte-identical, and new tests pin budget exhaustion for replan and the Status Issue waiting link without the question text; blast radius medium (leader_dispatch.ts, cli.ts daily budget accounting, dispatch.ts status snapshot).",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "ba8a19cb104679409022f9807c7b78925f52d31c",
+        "review_commit": "5396e561414a054539a1831cd40c5ebf2df976d3"
+      },
+      "reviewer_verdict_sha256": "sha256:254c2d9864b3b32ed817c13c0acc8ae4899b774c3510265834aca8e020b0b90a"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-776d17d3ec4a-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S4-AC2",
+      "source": "review",
+      "review_round": 1,
+      "summary": "sanitizeContextText strips HTML comments in a single non-recursive pass and leaves unterminated `<!--`, so leader context can still forge an immune-brain marker or hide the rest of the pack",
+      "anchor": "sha256:3d391facc8eb2fb6c34e4a1eb4e36bdecb701c605a632155a2c204b15e56ae80",
+      "evidence": {
+        "trigger": "ask_owner context.blocked_on = \"<!<!---->-- immune-brain:context-end -->\" → HTML_COMMENT.replace removes only the inner `<!---->` and emits the exact CONTEXT_SECTION_END marker inside the rendered section. A later annotate's replaceContextSection then matches the forged end through indexOf and leaves the old Tried/Options/Evidence tail plus a second end marker on the plan_approval/lane_decision comment. Separately, blocked_on = \"see <!-- note\" with no `-->` passes through unchanged and hides Tried/Options/Evidence on GitHub. Spec line 45 says HTML comments are stripped so no `immune-brain:` marker can be forged; the new test only covers well-formed comments.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/replan.ts:askOwnerQuestion",
+          "plugins/immune-brain/runtime/loop_daemon/interaction/github_channel.ts:annotate",
+          "plugins/immune-brain/runtime/loop_daemon/interaction/protocol.ts:replaceContextSection",
+          "plugins/immune-brain/runtime/loop_daemon/interaction/protocol.ts:renderInteractionContext",
+          "plugins/immune-brain/runtime/loop_daemon/interaction/protocol.ts:sanitizeContextText"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S4-AC2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-776d17d3ec4a-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S4-AC2",
+      "source": "review",
+      "review_round": 1,
+      "summary": "Waiting pointers are never cleared: clearWaitingPointer has no caller, so superseded, withdrawn or answered requests stay in imm-loop status waiting[] and the Status Issue indefinitely",
+      "anchor": "sha256:d4683baf67fed645361ad11ab170025997c9e7c94471c53ee2cf48f0a36b6822",
+      "evidence": {
+        "trigger": "Two accepted ask_owner items on issue-42 with different context → two interaction_ids (digest of context). The channel's supersedeAdvisory withdraws the first request, but askOwnerQuestion has already called recordWaitingPointer for both, and nothing calls clearWaitingPointer (git grep finds only its definition in waiting.ts). Result: listWaitingStatus returns two issue-42 entries, one linking a withdrawn comment, and entries stay after the owner answers or the item closes. The supersede-instead-of-duplicate negative and the status waiting-pointer outcome of S4-AC2 are broken at the status seam, and no test covers it.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/replan.ts:askOwnerQuestion",
+          "plugins/immune-brain/runtime/loop_daemon/waiting.ts:recordWaitingPointer",
+          "plugins/immune-brain/runtime/loop_daemon/waiting.ts:listWaitingStatus",
+          "plugins/immune-brain/runtime/loop_daemon/cli.ts:status waiting",
+          "plugins/immune-brain/runtime/loop_daemon/status_issue.ts:renderStatusIssueBody"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S4-AC2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-f736b3c809a2-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S4-AC2",
+      "source": "review",
+      "review_round": 2,
+      "summary": "The Status Issue never shows the waiting links: the new LoopStatusSnapshot.waiting field is rendered by status_issue.ts but no producer ever fills it, so the body always reads 'Waiting on owner: - none'.",
+      "anchor": "sha256:2451fad6f6df638b648f4c9c4d4868ac72745f60f52bb04370a44a287382b4e6",
+      "evidence": {
+        "trigger": "An accepted ask_owner records a waiting pointer (replan.ts askOwnerQuestion -> recordWaitingPointer) and imm-loop status --json lists it, but the next tick's Status Issue update builds its snapshot at dispatch.ts:451-464 (unchanged caller, read because it is the only LoopStatusSnapshot producer of the changed renderStatusIssueBody) without a waiting field -> renderStatusIssueBody renders '### Waiting on owner\\n- none' instead of the link that D4.6/S4-AC2 says the Status Issue shows; no delivered test asserts the Status Issue body carries the link.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/replan.ts:askOwnerQuestion",
+          "plugins/immune-brain/runtime/loop_daemon/waiting.ts:listWaitingStatus",
+          "plugins/immune-brain/runtime/loop_daemon/dispatch.ts:statusSnapshot",
+          "plugins/immune-brain/runtime/loop_daemon/status_issue.ts:renderStatusIssueBody"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S4-AC2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-f736b3c809a2-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S4-AC1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "A replan's fresh plan session bypasses the daily dispatch budget: applyResolve checks a stale deps.dispatches_today, never calls the per-proposal counter, and cli.ts counts started leader sessions only for action === 'dispatch'.",
+      "anchor": "sha256:16edf8f3c117d55974780781dee3a9e231aadf3d13de0fdcb0105b07ff58ba3b",
+      "evidence": {
+        "trigger": "max_dispatches_per_day=1, dispatches_today=0, a proposal [dispatch X, resolve{kind:replan} Y] -> applyDispatch starts a session and bumps the local counter to 1, applyResolve still reads deps.dispatches_today=0 and starts a second plan session; afterwards cli.ts leaderStartedSessions filters item.action === 'dispatch' so state.stats.dispatches_today becomes 1 although two catalog sessions ran, and every later replan session (successful or failed with session_started) is likewise never counted, breaking the D3.5 invariant that every started leader session counts against the daily budget.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/leader_dispatch.ts:applyLeaderProposal",
+          "plugins/immune-brain/runtime/loop_daemon/leader_dispatch.ts:applyResolve",
+          "plugins/immune-brain/runtime/loop_daemon/role_sessions.ts:startRoleSession",
+          "plugins/immune-brain/runtime/loop_daemon/cli.ts:leaderStartedSessions"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S4-AC1"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:loop-leader-s4-replan-context:2026-11-17T16:13:11.022Z",
+      "at": "2026-11-17T16:13:11.022Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-leader-s4-replan-context.intent.json"
+    },
+    {
+      "id": "record_approval:loop-leader-s4-replan-context:2026-11-17T16:13:31.464Z",
+      "at": "2026-11-17T16:13:31.464Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-09d081e9\naction_v2_sha256:42ada644ad6380649bdb702525b6efdc77ea620c5d2f78b4f20ef7b1689b7fd8",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-17T16:13:31.464Z"
+      }
+    },
+    {
+      "id": "request_rework:loop-leader-s4-replan-context:2026-11-17T16:16:29.845Z",
+      "at": "2026-11-17T16:16:29.845Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:df35eb1359c181ecada9b0420d2444f34973635d7a3cd0113404dbe2c198dd8e",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:a7720297-b801-4c89-837f-8520c975ccf7",
+        "confirmation_ref": "pi:cli:claude-code:a7720297-b801-4c89-837f-8520c975ccf7",
+        "issued_at": "2026-11-17T16:16:29.845Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "ba8a19cb104679409022f9807c7b78925f52d31c",
+        "review_commit": "eef49384240f5a358d2321d3e0bae94b5589fcbb"
+      },
+      "review_started_at": "2026-11-17T16:13:36.776Z",
+      "review_submitted_at": "2026-11-17T16:16:28.565Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "resolve_finding:loop-leader-s4-replan-context:2026-11-17T16:39:20.870Z",
+      "at": "2026-11-17T16:39:20.870Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-776d17d3ec4a-1-review-1\naction_v2_sha256:540487617af91e31a5f2784da7c4f185d0f397422aeec3d6f9fb618736d8b504"
+    },
+    {
+      "id": "resolve_finding:loop-leader-s4-replan-context:2026-11-17T16:39:35.621Z",
+      "at": "2026-11-17T16:39:35.621Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-776d17d3ec4a-2-review-2\naction_v2_sha256:4e53d34f841b44fe0d17303be9623d90316869faa78c6104602e4d21390afb7a"
+    },
+    {
+      "id": "freeze_artifacts:loop-leader-s4-replan-context:2026-11-17T16:39:57.797Z",
+      "at": "2026-11-17T16:39:57.797Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-leader-s4-replan-context.intent.json"
+    },
+    {
+      "id": "record_approval:loop-leader-s4-replan-context:2026-11-17T16:40:16.988Z",
+      "at": "2026-11-17T16:40:16.988Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-80608705\naction_v2_sha256:b4e9a70e3fbac710c68fcef3b434ddbd5ee20450ee07c4f899449d8b76b13fde",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-17T16:40:16.989Z"
+      }
+    },
+    {
+      "id": "request_rework:loop-leader-s4-replan-context:2026-11-17T16:42:48.247Z",
+      "at": "2026-11-17T16:42:48.247Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:9b903de7fe0be91a538cfb3d667b327f6755d3841462f5db21e2c456b8a7c51a",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:eabe866c-c77d-4456-95c8-4777b34c9304",
+        "confirmation_ref": "pi:cli:claude-code:eabe866c-c77d-4456-95c8-4777b34c9304",
+        "issued_at": "2026-11-17T16:42:48.247Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "ba8a19cb104679409022f9807c7b78925f52d31c",
+        "review_commit": "cfe9c78b343bba3922b43120e2b9fac0c390307a"
+      },
+      "review_started_at": "2026-11-17T16:40:22.519Z",
+      "review_submitted_at": "2026-11-17T16:42:46.832Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "resolve_finding:loop-leader-s4-replan-context:2026-11-17T17:08:11.766Z",
+      "at": "2026-11-17T17:08:11.766Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-f736b3c809a2-1-review-1\naction_v2_sha256:e218559e8a7b21ca9d1f798f2b04de9ac02479b83940bdaa70f2de12c7d3a7e2"
+    },
+    {
+      "id": "resolve_finding:loop-leader-s4-replan-context:2026-11-17T17:08:30.857Z",
+      "at": "2026-11-17T17:08:30.857Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-f736b3c809a2-2-review-2\naction_v2_sha256:fd43ca91bec2c7491f6e196ce87a8e70ed66549fe91ba13a1143f86f378944a0"
+    },
+    {
+      "id": "freeze_artifacts:loop-leader-s4-replan-context:2026-11-17T17:08:44.161Z",
+      "at": "2026-11-17T17:08:44.161Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-leader-s4-replan-context.intent.json"
+    },
+    {
+      "id": "record_approval:loop-leader-s4-replan-context:2026-11-17T17:09:09.546Z",
+      "at": "2026-11-17T17:09:09.546Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-edeec8c5\naction_v2_sha256:8eed83877e33bff0a9fd6c130ea500544c5a77e60311841f277a445345185024",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-17T17:09:09.546Z"
+      }
+    },
+    {
+      "id": "record_approval:loop-leader-s4-replan-context:2026-11-17T17:10:26.545Z",
+      "at": "2026-11-17T17:10:26.545Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-59738f06\naction_v2_sha256:4d1cc76d907df49326cbd3f0c59399233e637803581450808e4f0b722fd3281d",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:b8c3625c-9244-4957-a891-2b9ae4eadbf8",
+        "confirmation_ref": "pi:cli:claude-code:b8c3625c-9244-4957-a891-2b9ae4eadbf8",
+        "issued_at": "2026-11-17T17:10:26.545Z"
+      },
+      "review_started_at": "2026-11-17T17:09:17.722Z",
+      "review_submitted_at": "2026-11-17T17:10:24.639Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:loop-leader-s4-replan-context:2026-11-17T17:10:32.328Z",
+      "at": "2026-11-17T17:10:32.328Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:82af8918ecb5420243b02ad34e17ac2e83dc17714db350be5939035981a90e73"
+    }
+  ]
+}

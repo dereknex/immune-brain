@@ -28,13 +28,17 @@ import { evaluateGuards, eventTarget, firstBlock, type GuardFacts } from "./guar
 import type { LoopHandler } from "./handlers.ts";
 import { appendLeaderJournal } from "./leader_journal.ts";
 import type { LeaderProposalActionName, LeaderProposalItem } from "./leader_proposal.ts";
+import type { InteractionSubject } from "./interaction/protocol.ts";
+import { REPLAN_CAP, resolveBlockers, type AskOwnerResult, type ResolveFacts } from "./replan.ts";
 import {
+	advanceWorkItem,
 	handlerWorkItemState,
 	isLegalWorkItemTransition,
 	markPlanPublished,
 	readWorkItem,
 	recordWorkItemOutcome,
 	writeWorkItem,
+	type WorkItem,
 } from "./work_items.ts";
 import type { ReconcileCandidate } from "./reconcile.ts";
 import { type LoopRoleBase, type ResolvedLoopRole } from "./role_catalog.ts";
@@ -56,9 +60,9 @@ export interface LeaderItemResult {
 	/** The catalog session a `dispatch` item started, when it started one. */
 	session_id: string | null;
 	/**
-	 * True when a real session ran even though the item was refused: a failed
-	 * or timed-out session still counts against the dispatch budget, so the
-	 * next tick must see it.
+	 * True when a real catalog session ran for this item, accepted or refused: a
+	 * failed or timed-out session still counts against the dispatch budget, so
+	 * the next tick must see it.
 	 */
 	session_started?: boolean;
 }
@@ -119,6 +123,17 @@ export interface LeaderDispatchDeps {
 		brief: string;
 		session_id: string;
 	}) => Promise<{ completed: boolean; reason: string }>;
+	/** D4.2: the target's authority gates, read from local requests and the Kernel. */
+	resolveFacts: (input: { target: string; work_item: WorkItem }) => Promise<ResolveFacts>;
+	/** D4.2: resume the target's still-running batch; a parked batch refuses. */
+	resumeBatch: (input: { target: string; work_item: WorkItem }) => { resumed: boolean; reason: string };
+	/** D4.5: post or annotate the owner question of an accepted `ask_owner`. */
+	askOwner: (input: {
+		target: string;
+		subject: InteractionSubject;
+		context: NonNullable<Extract<LeaderProposalItem, { action: "resolve" }>["context"]>;
+		pending_literal_user: ResolveFacts["pending_literal_user"];
+	}) => Promise<AskOwnerResult>;
 }
 
 const LEADER_UNDISPATCHABLE_BASES: readonly LoopRoleBase[] = ["leader"];
@@ -313,10 +328,11 @@ async function applyItem(
 	if (item.action === "note") {
 		return { index, target: item.target, action: "note", outcome: "noted", reason: item.text, handler: null, session_id: null };
 	}
-	// D3.1 lists next, priority, shape and dispatch; `resolve` is `S4`'s contract and
-	// journaling it as refused keeps `S3` from half-applying a replanning decision.
-	if (item.action === "resolve") return reject(index, item, "resolve_not_supported_in_slice");
+	// D3.1 lists next, priority, shape and dispatch; `resolve` is D4's replanning
+	// contract (S4) and is guarded by the target's authority gates.
 	switch (item.action) {
+		case "resolve":
+			return applyResolve(index, item, deps, dispatchesToday, countDispatch);
 		case "next":
 			return applyNext(index, item, deps);
 		case "priority":
@@ -326,6 +342,159 @@ async function applyItem(
 		default:
 			return applyDispatch(index, item, deps, dispatchesToday, countDispatch);
 	}
+}
+
+/** The subject a target is asked on: its Issue, its PR or its Lane task. */
+export function resolveSubject(target: string): InteractionSubject {
+	const issue = /^issue-(\d+)$/.exec(target);
+	if (issue) return { issue: Number(issue[1]) };
+	const pr = /^pr-(\d+)$/.exec(target);
+	if (pr) return { pr: Number(pr[1]) };
+	const lane = /^lane-(.+)$/.exec(target);
+	return lane ? { task_id: lane[1]! } : {};
+}
+
+/**
+ * D4.1-D4.3: `resume`, `release` and `replan` cross orchestration-level blockers
+ * only. An authority-gated target accepts `ask_owner` alone, and the third
+ * accepted round forces it (`replan_cap_reached`).
+ */
+async function applyResolve(
+	index: number,
+	item: Extract<LeaderProposalItem, { action: "resolve" }>,
+	deps: LeaderDispatchDeps,
+	dispatchesToday: () => number,
+	countDispatch: () => void,
+): Promise<LeaderItemResult> {
+	const workItem = readWorkItem(deps.stateDir, item.target);
+	if (!workItem) return reject(index, item, "work_item_unknown");
+	if (workItem.state !== "escalated") return reject(index, item, `resolve_requires_escalated: ${workItem.state}`);
+	let facts: ResolveFacts;
+	try {
+		facts = await deps.resolveFacts({ target: item.target, work_item: workItem });
+	} catch (error) {
+		return reject(index, item, `resolve_facts_unavailable: ${error instanceof Error ? error.message : String(error)}`);
+	}
+
+	if (item.kind === "ask_owner") {
+		if (!item.context) return reject(index, item, "item_ask_owner_context_missing");
+		if (deps.dry_run)
+			return { index, target: item.target, action: "resolve", outcome: "accepted", reason: "dry_run", handler: null, session_id: null };
+		const asked = await deps.askOwner({
+			target: item.target,
+			subject: resolveSubject(item.target),
+			context: item.context,
+			pending_literal_user: facts.pending_literal_user,
+		});
+		if (asked.action === "failed") return reject(index, item, `owner_question_failed: ${asked.reason ?? "unknown"}`);
+		return {
+			index,
+			target: item.target,
+			action: "resolve",
+			outcome: "accepted",
+			reason: `owner question ${asked.action} ${asked.interaction_id}`,
+			handler: null,
+			session_id: null,
+		};
+	}
+
+	const rounds = workItem.replan_rounds ?? 0;
+	if (rounds >= REPLAN_CAP) return reject(index, item, "replan_cap_reached");
+	const blockers = resolveBlockers(facts);
+	if (blockers.length > 0)
+		return reject(index, item, `authority_gated: ${blockers.join(", ")}; only ask_owner is accepted`);
+
+	if (item.kind === "resume") {
+		const resumed = deps.resumeBatch({ target: item.target, work_item: workItem });
+		if (!resumed.resumed) return reject(index, item, `batch_resume_refused: ${resumed.reason}`);
+		if (deps.dry_run)
+			return { index, target: item.target, action: "resolve", outcome: "accepted", reason: "dry_run", handler: null, session_id: null };
+		return countResolveRound(index, item, deps, workItem, "driving", rounds, `batch resumed: ${resumed.reason}`);
+	}
+	if (item.kind === "release") {
+		if (deps.dry_run)
+			return { index, target: item.target, action: "resolve", outcome: "accepted", reason: "dry_run", handler: null, session_id: null };
+		return countResolveRound(index, item, deps, workItem, "triage", rounds, "released to triage");
+	}
+
+	// D4.2: `replan` runs a fresh plan session; its published plan is a new digest
+	// (and, for an Initiative, a new plan approval) through the existing plan path.
+	const role = deps.roles.find((entry) => entry.base === "plan");
+	if (!role) return reject(index, item, "plan_role_missing");
+	const running = runningRoleSessions(deps.stateDir);
+	if (running.filter((session) => session.role === role.name).length >= role.limits.max_parallel)
+		return reject(index, item, "role_max_parallel");
+	if (running.length >= deps.max_concurrent) return reject(index, item, "max_concurrent");
+	// D3.5: a replan session is a catalog session too, so it reads and moves the
+	// same per-proposal budget counter a `dispatch` item does.
+	if (deps.max_dispatches_per_day !== null && dispatchesToday() >= deps.max_dispatches_per_day)
+		return reject(index, item, "dispatch_budget_exhausted");
+	if (deps.dry_run)
+		return { index, target: item.target, action: "resolve", outcome: "accepted", reason: "dry_run", handler: null, session_id: null };
+	const session = startRoleSession(deps.stateDir, {
+		target: item.target,
+		role: role.name,
+		base: role.base,
+		started_at: deps.now,
+	});
+	countDispatch();
+	let outcome: { completed: boolean; reason: string };
+	try {
+		outcome = await deps.startSession({
+			role,
+			target: item.target,
+			subject: item.target,
+			brief: item.context?.blocked_on ?? `replan ${item.target}`,
+			session_id: session.session_id,
+		});
+	} catch (error) {
+		outcome = { completed: false, reason: `session_provider_error: ${error instanceof Error ? error.message : String(error)}` };
+	}
+	finishRoleSession(deps.stateDir, session, {
+		status: outcome.completed ? "completed" : "failed",
+		reason: outcome.reason,
+		at: deps.now,
+	});
+	if (!outcome.completed) {
+		const failed = reject(index, item, `session_failed: ${outcome.reason}`);
+		failed.session_started = true;
+		return failed;
+	}
+	const accepted = countResolveRound(
+		index,
+		item,
+		deps,
+		workItem,
+		"triage",
+		rounds,
+		`replan session ${session.session_id}: ${outcome.reason}`,
+	);
+	accepted.session_started = true;
+	return accepted;
+}
+
+/** D4.3: an accepted round moves the item and increments `replan_rounds`. */
+function countResolveRound(
+	index: number,
+	item: Extract<LeaderProposalItem, { action: "resolve" }>,
+	deps: LeaderDispatchDeps,
+	workItem: WorkItem,
+	to: "driving" | "triage",
+	rounds: number,
+	reason: string,
+): LeaderItemResult {
+	const moved = advanceWorkItem(workItem, to, { reason: `${item.kind}: ${reason}`, now: deps.now });
+	if (moved.refused) return reject(index, item, `illegal_transition: ${workItem.state} -> ${to}`);
+	writeWorkItem(deps.stateDir, { ...moved.item, replan_rounds: rounds + 1 });
+	return {
+		index,
+		target: item.target,
+		action: "resolve",
+		outcome: "accepted",
+		reason: `${item.kind}: ${reason} (round ${rounds + 1}/${REPLAN_CAP})`,
+		handler: null,
+		session_id: null,
+	};
 }
 
 async function applyNext(
@@ -515,7 +684,16 @@ async function applyDispatch(
 		at: deps.now,
 	});
 	if (outcome.completed)
-		return { index, target: item.target, action: "dispatch", outcome: "accepted", reason: outcome.reason, handler: null, session_id: session.session_id };
+		return {
+			index,
+			target: item.target,
+			action: "dispatch",
+			outcome: "accepted",
+			reason: outcome.reason,
+			handler: null,
+			session_id: session.session_id,
+			session_started: true,
+		};
 	const failed = reject(index, item, `session_failed: ${outcome.reason}`);
 	// The session ran and failed: the budget must see the attempt even though
 	// nothing was achieved.

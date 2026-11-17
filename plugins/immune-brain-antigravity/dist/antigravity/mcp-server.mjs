@@ -24165,6 +24165,7 @@ var DEFAULT_GATE_TTL_MS = 30 * 1000;
 
 // plugins/immune-brain/runtime/loop_daemon/interaction/protocol.ts
 var INTERACTION_REQUEST_CONTRACT = "immune_brain/interaction_request/v1";
+var CONTEXT_MAX_BYTES = 8 * 1024;
 
 // plugins/immune-brain/runtime/loop_daemon/interaction/local_channel.ts
 var LOCAL_ANSWER_CONTRACT = "immune_brain/interaction_answer/v1";
@@ -24265,6 +24266,7 @@ function listPendingLoopInteractions(root, taskId) {
       binding: request.binding,
       prompt: request.prompt,
       ...request.options && request.options.length > 0 ? { options: [...request.options] } : {},
+      ...request.context === undefined ? {} : { context: request.context },
       answer: request.answer,
       answerable,
       ...answerable ? {} : { local_action: LOCAL_ACTION[request.kind] ?? "" },

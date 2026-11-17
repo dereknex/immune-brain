@@ -58,7 +58,9 @@ export const WORK_ITEM_TRANSITIONS: Readonly<Record<WorkItemState, readonly Work
 	repairing: ["pr_open", "escalated"],
 	ready_for_merge: ["closed"],
 	closed: [],
-	escalated: ["triage"],
+	// D4.2: an accepted `resume` returns a transiently escalated item to its
+	// still-running batch, so the next tick observes it again.
+	escalated: ["triage", "driving"],
 };
 
 /** The state one handler moves its target to; `null` handlers move nothing. */
@@ -111,6 +113,8 @@ export interface WorkItem {
 	refused_transitions: WorkItemRefusal[];
 	/** D3.1: the leader's tie-break inside one schedule class, never across classes. */
 	leader_rank?: number;
+	/** D4.3: accepted `resume`/`release`/`replan` rounds; the cap forces `ask_owner`. */
+	replan_rounds?: number;
 	updated_at: string;
 }
 

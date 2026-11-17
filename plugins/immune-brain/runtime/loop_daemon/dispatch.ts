@@ -98,6 +98,7 @@ import {
 	planStatusIssue,
 	type LoopStatusSnapshot,
 } from "./status_issue.ts";
+import { listWaitingStatus } from "./waiting.ts";
 import type {
 	LoopDaemonState,
 	LoopLease,
@@ -493,6 +494,8 @@ export async function dispatchDecisions(
 				dispatches_today: state.stats.dispatches_today ?? 0,
 			},
 			recent_escalations: [],
+			// D4.6: the Status Issue links where the owner is awaited, never the question.
+			waiting: listWaitingStatus(stateDir),
 			updated_at: now,
 		};
 
