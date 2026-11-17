@@ -17683,7 +17683,7 @@ import { fileURLToPath as fileURLToPath3 } from "node:url";
 import { stdin, stdout } from "node:process";
 
 // plugins/immune-brain/runtime/plugin_version.ts
-var PLUGIN_VERSION = "8.6.0";
+var PLUGIN_VERSION = "9.0.0";
 
 // plugins/immune-brain/runtime/host-core/interaction.ts
 import { createHash, randomUUID } from "node:crypto";
