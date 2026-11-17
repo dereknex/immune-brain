@@ -21,7 +21,7 @@ import { resolveConfig, type ReviewProfile } from "../config/layered_config";
 import { agentRole, type AgentsSection } from "../config/agent_roles";
 import { runtimeClaudePluginDir } from "../plugin_source_skew";
 import { laneBatchReviewProfile } from "../unattended/batch_state";
-import { allocateResultSlot, readSlotResult, releaseResultSlot, type ResultSlot } from "../session_result_slot";
+import { allocateResultSlot, isStrictJsonObject, readSlotResult, releaseResultSlot, type ResultSlot } from "../session_result_slot";
 import {
 	ReviewPreparationError,
 	type AssuranceHostPort,
@@ -63,10 +63,18 @@ const HOST_DEFAULT_MODEL = "host-default";
  * bind the subcommand after `-C`, and allowing a formatter admits non-git commands.
  */
 export const REVIEW_GIT_ALLOWED_TOOLS: readonly string[] = Object.freeze([
-	"Bash(git show:*)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git cat-file:*)", "Bash(git rev-parse:*)", "Bash(git ls-tree:*)",
+	"Bash(git show:*)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git cat-file:*)", "Bash(git rev-parse:*)", "Bash(git ls-tree:*)", "Bash(git grep:*)",
 	"Bash(git --no-pager show:*)", "Bash(git --no-pager diff:*)", "Bash(git --no-pager log:*)",
-	"Bash(git --no-pager cat-file:*)", "Bash(git --no-pager rev-parse:*)", "Bash(git --no-pager ls-tree:*)",
+	"Bash(git --no-pager cat-file:*)", "Bash(git --no-pager rev-parse:*)", "Bash(git --no-pager ls-tree:*)", "Bash(git --no-pager grep:*)",
 ]);
+
+/**
+ * The one non-git rule a claude-code reviewer and verifier may use: the MCP tool
+ * that writes the receipt into its result slot (Spec review-receipt-mcp-submission
+ * D5). A Lane worktree lives under `.git/`, where Claude Code refuses agent file
+ * writes, so the receipt leaves through the runtime instead.
+ */
+export const SESSION_RESULT_ALLOWED_TOOL = "mcp__plugin_immune-brain_immune-brain__submit_session_result";
 
 /**
  * Claude Code reviewer and verifier settings: user hooks must not rewrite the allowlisted
@@ -78,15 +86,6 @@ export const CLAUDE_REVIEW_SETTINGS = JSON.stringify({
 	disableAllHooks: true,
 	env: { BASH_MAX_OUTPUT_LENGTH: "150000" },
 });
-
-/**
- * The one write a claude-code session may make. Claude Code governs Write through
- * `Edit` rules, and an absolute path in a rule takes a leading `//`; a `Write(/abs)`
- * rule matches nothing, so `dontAsk` would deny the receipt itself (D2).
- */
-export function claudeOutputWriteRule(outputPath: string): string {
-	return `Edit(/${outputPath})`;
-}
 
 /** Resolve the reviewer executable from PATH as the Lane supervisor does; absent means unavailable. */
 function reviewBinary(host: ReviewProfile["host"]): string | null {
@@ -247,30 +246,46 @@ function sessionAwaitOutcome(awaitRecord: string): SessionAwaitOutcome {
 }
 
 /** The pending reason for a session that is still running or waits on its user. */
-function sessionPending(outcome: SessionAwaitOutcome, role: "reviewer" | "verifier", output: string, submit: string): string {
+function sessionPending(outcome: SessionAwaitOutcome, role: "reviewer" | "verifier", submit: string): string {
 	if (outcome && "blocked" in outcome)
 		return `${role} session is blocked on a dialog: relay it to the user; once they answered it in the session's tab, run \`resume_command\` once if \`create_command\` printed \`entry_submitted: false\` (the entry was never delivered), then \`await_command\` again, then ${submit} once`;
-	return `${role === "reviewer" ? "review" : "verification"} session still running; the ${role} writes ${output} when it finishes — await it with \`imm-session await\`, then ${submit} once`;
+	return `${role === "reviewer" ? "review" : "verification"} session still running; await it with \`imm-session await\`, then ${submit} once`;
 }
 
-/** The one sentence that turns any role instruction into a file-only receipt (D2). */
+/** The reason a session that ended without its receipt releases its round (D8). */
+function sessionAborted(code: string, ended: string): string {
+	return `${code}: the session ended (${ended}) without submitting its receipt; inspect its tab for a denied or failed tool call before dispatching another session`;
+}
+
+/** The one sentence that turns any role instruction into a file-only receipt on Pi (D2). */
 function writeToOutput(output: string): string {
 	return `Write the one JSON object you owe to ${output} as that file's whole content, in a single write, then stop.`
 		+ " It is the ignored result slot of this session and the only path you may create; print no verdict.";
+}
+
+/** The same sentence on the hosts whose receipt leaves through the runtime (D5). */
+function submitToOutput(slotId: string): string {
+	return `Call the MCP tool submit_session_result with slot_id ${JSON.stringify(slotId)} and result set to the one JSON object you owe, then stop.`
+		+ " Create no file; print no verdict.";
+}
+
+/** Claude Code and Antigravity submit; Pi writes. */
+function receiptInstruction(host: ReviewProfile["host"], slotId: string, output: string): string {
+	return host === "pi" ? writeToOutput(output) : submitToOutput(slotId);
 }
 
 /**
  * The Host arguments one supervised session starts with: the profile's model and
  * effort and the reviewer tool boundary. The slot lives in the session cwd, so no
  * extra directory is added and no trust dialog opens (#565).
- * On Claude Code that is the read-only tool set, the git allowlist, a write rule
- * for the reservation's single output file and `dontAsk`, with user hooks off so
- * no rewrite escapes the allowlist (D2, #426 F11). Pi gets its read-only tools plus
- * `write`; the D6 tree guard still backs every Host.
+ * On Claude Code that is the read-only tool set, the git allowlist, the one receipt
+ * tool and `dontAsk`, with user hooks off so no rewrite escapes the allowlist
+ * (D5, #426 F11). Pi gets its read-only tools plus `write`; the D6 tree guard still
+ * backs every Host.
  */
 export function sessionHostArguments(
 	profile: ReviewProfile,
-	options: { outputPath: string; model?: string; pluginDir?: string | null },
+	options: { model?: string; pluginDir?: string | null },
 ): string[] {
 	const model = options.model ?? profile.model;
 	// The sentinel is not a model name; never pass it as one.
@@ -280,8 +295,8 @@ export function sessionHostArguments(
 			"--settings", CLAUDE_REVIEW_SETTINGS,
 			// The skill must come from the plugin the Kernel runs, not an older user install (#426 F13).
 			...(options.pluginDir ? ["--plugin-dir", options.pluginDir] : []),
-			"--tools", "Read,Grep,Glob,Bash,Write",
-			"--allowedTools", ...REVIEW_GIT_ALLOWED_TOOLS, claudeOutputWriteRule(options.outputPath),
+			"--tools", "Read,Grep,Glob,Bash",
+			"--allowedTools", ...REVIEW_GIT_ALLOWED_TOOLS, SESSION_RESULT_ALLOWED_TOOL,
 			"--permission-mode", "dontAsk",
 			...modelFlag,
 			...(profile.effort ? ["--effort", profile.effort] : []),
@@ -289,16 +304,6 @@ export function sessionHostArguments(
 	if (profile.host === "pi")
 		return ["--tools", "read,grep,find,ls,bash,write", ...modelFlag, ...(profile.effort ? ["--thinking", profile.effort] : [])];
 	return [...modelFlag, ...(profile.effort ? ["--effort", profile.effort] : [])];
-}
-
-/** A receipt is one strict JSON object: no prose, fences or surrounding lines (D2). */
-function strictJsonObject(bytes: string): Record<string, unknown> | null {
-	const trimmed = bytes.trim();
-	if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) return null;
-	try {
-		const parsed: unknown = JSON.parse(trimmed);
-		return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null;
-	} catch { return null; }
 }
 
 interface CliVerificationReservation {
@@ -357,15 +362,16 @@ export class CliReviewHost implements AssuranceHostPort {
 		// The transport comes first: outside Herdr nothing can run, whatever is installed.
 		const sessionRunner = reviewSessionRunner(this.env);
 		requireReviewBinary(profile);
-		const slot = allocateResultSlot(review.root, `verify-${request.operationId}`, request.prompt, "verify-packet.md");
+		const slotId = `verify-${request.operationId}`;
+		const slot = allocateResultSlot(review.root, slotId, request.prompt, "verify-packet.md");
 		const awaitRecord = join(slot.directory, "session-await.json");
 		const label = `verify ${request.taskId}`.slice(0, 32);
 		const actorId = `cli-verifier:${profile.host}:${request.operationId}`;
 		const session = withSlot(slot, () => sessionSpec(sessionRunner, label, {
 			root: review.root,
 			host: profile.host,
-			entry: `${verificationInstruction(slot.brief)}\n\n${writeToOutput(slot.result)}`,
-			hostArgs: sessionHostArguments(profile, { outputPath: slot.result, model: request.model }),
+			entry: `${verificationInstruction(slot.brief)}\n\n${receiptInstruction(profile.host, slotId, slot.result)}`,
+			hostArgs: sessionHostArguments(profile, { model: request.model, pluginDir: runtimeClaudePluginDir() }),
 			output: slot.result,
 			awaitRecord,
 		}));
@@ -394,11 +400,11 @@ export class CliReviewHost implements AssuranceHostPort {
 			const outcome = sessionAwaitOutcome(owned.awaitRecord);
 			if (outcome && "ended" in outcome)
 				return { ok: false, release: true,
-					reason: `verification_session_aborted: the verifier session ended (${outcome.ended}) without writing ${owned.slot.result}; its tab stays open for inspection` };
-			return { ok: false, release: false, reason: sessionPending(outcome, "verifier", owned.slot.result, "submit_verification") };
+					reason: sessionAborted("verification_session_aborted", outcome.ended) };
+			return { ok: false, release: false, reason: sessionPending(outcome, "verifier", "submit_verification") };
 		}
 		// The session's file is the authority channel, so it must be strict JSON (D2).
-		if (!strictJsonObject(bytes))
+		if (!isStrictJsonObject(bytes))
 			return { ok: false, release: true, reason: "verification_output_invalid: the verifier's output is not one strict JSON object" };
 		return { ok: true, receipt: { actorId: owned.actorId, result: bytes, model: owned.model } };
 	}
@@ -426,7 +432,8 @@ export class CliReviewHost implements AssuranceHostPort {
 		requireReviewBinary(profile);
 		const tree = reviewTreeState(root);
 
-		const slot = allocateResultSlot(root, `review-${request.operationId}`, request.snapshotPrompt);
+		const slotId = `review-${request.operationId}`;
+		const slot = allocateResultSlot(root, slotId, request.snapshotPrompt);
 		const awaitRecord = join(slot.directory, "session-await.json");
 		const actorId = `cli:${profile.host}:${request.operationId}`;
 		// D1: an explicit interactive session the user can watch; its verdict comes
@@ -434,8 +441,8 @@ export class CliReviewHost implements AssuranceHostPort {
 		const session = withSlot(slot, () => sessionSpec(sessionRunner, `review ${request.taskId}`.slice(0, 32), {
 			root,
 			host: profile.host,
-			entry: `${reviewSkillPrompt(profile, slot.brief)}\n\n${writeToOutput(slot.result)}`,
-			hostArgs: sessionHostArguments(profile, { outputPath: slot.result, pluginDir: runtimeClaudePluginDir() }),
+			entry: `${reviewSkillPrompt(profile, slot.brief)}\n\n${receiptInstruction(profile.host, slotId, slot.result)}`,
+			hostArgs: sessionHostArguments(profile, { pluginDir: runtimeClaudePluginDir() }),
 			output: slot.result,
 			awaitRecord,
 		}));
@@ -475,11 +482,11 @@ export class CliReviewHost implements AssuranceHostPort {
 			const outcome = sessionAwaitOutcome(reservation.awaitRecord);
 			if (outcome && "ended" in outcome)
 				return { ok: false, release: true,
-					reason: `review_session_aborted: the reviewer session ended (${outcome.ended}) without writing ${reservation.slot.result}; its tab stays open for inspection` };
-			return { ok: false, release: false, reason: sessionPending(outcome, "reviewer", reservation.slot.result, "submit_review") };
+					reason: sessionAborted("review_session_aborted", outcome.ended) };
+			return { ok: false, release: false, reason: sessionPending(outcome, "reviewer", "submit_review") };
 		}
 		// The session's file is the authority channel, so it must be strict JSON (D2).
-		if (!strictJsonObject(bytes))
+		if (!isStrictJsonObject(bytes))
 			return { ok: false, release: true, reason: "review_output_invalid: the reviewer's receipt is not one strict JSON object" };
 		// The verifier runs on the reviewer's own profile (ADR 0041 retires #284 D1's separate model).
 		return { ok: true, receipt: { actorId: reservation.actorId, result: bytes, model: reservation.profile.model ?? HOST_DEFAULT_MODEL } };

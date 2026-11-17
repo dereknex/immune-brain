@@ -15,10 +15,11 @@ import { ClaudeRuntime } from "../plugins/immune-brain/runtime/claude/kernel_por
 import { AntigravityRuntime } from "../plugins/immune-brain/runtime/antigravity/kernel_ports";
 import { PiRuntime } from "../plugins/immune-brain/.pi-extension/pi-host-runtime";
 import { runtimeClaudePluginDir } from "../plugins/immune-brain/runtime/plugin_source_skew";
-import { CLAUDE_REVIEW_SETTINGS, CliReviewHost, REVIEW_GIT_ALLOWED_TOOLS, resolveReviewProfile, sessionHostArguments } from "../plugins/immune-brain/runtime/assurance/cli_review";
+import { CLAUDE_REVIEW_SETTINGS, CliReviewHost, REVIEW_GIT_ALLOWED_TOOLS, SESSION_RESULT_ALLOWED_TOOL, resolveReviewProfile, sessionHostArguments } from "../plugins/immune-brain/runtime/assurance/cli_review";
 import type { AssuranceHostPort, HostReviewReservation, ReviewRequest, ReviewSessionSpec, VerificationRequest } from "../plugins/immune-brain/runtime/assurance/host_port";
 import { submitMediatedReview } from "../plugins/immune-brain/runtime/assurance/review_mediation";
 import { digestOfReviewerBytes } from "../plugins/immune-brain/runtime/assurance/review_mediation";
+import { writeSlotResult } from "../plugins/immune-brain/runtime/session_result_slot";
 import type { ReviewFacts } from "../plugins/immune-brain/runtime/assurance/review_evidence";
 import type { VerdictAuthority } from "../plugins/immune-brain/runtime/assurance/verdict_authority";
 import { writeTestReviewPacket } from "./helpers/review-packet-fixture";
@@ -87,9 +88,9 @@ function homeAgents(agents: object): () => void {
 }
 
 /** A reviewer stand-in under the Host binary name, first on PATH (no model call). */
-function fakeReviewer(body: string): string {
+function fakeReviewer(body: string, name = "pi"): string {
 	const dir = scratchDir("bin");
-	const file = join(dir, "pi");
+	const file = join(dir, name);
 	writeFileSync(file, `#!/bin/sh\n${body}\n`, { mode: 0o755 });
 	chmodSync(file, 0o755);
 	return dir;
@@ -402,7 +403,9 @@ describe("cli review settlement", () => {
 		expect(brief).toContain(`git diff ${"a".repeat(40)} ${"b".repeat(40)}`);
 		expect(brief).not.toContain("review_contract_hash:");
 		expect(dirname(briefPathOfSession(session))).toBe(dirname(session.output_path));
-		writeFileSync(session.output_path, bytes);
+		// The receipt is written through the same slot writer the MCP tool uses (RRS-A3).
+		writeSlotResult(root, dirname(session.output_path).split("/").pop()!, bytes);
+		expect(readFileSync(session.output_path, "utf8")).toBe(bytes);
 
 		const settled = await submitMediatedReview(kernel.coordinator, ctx(root), TASK, undefined, () => kernel.cli.inspectReview(TASK));
 		expect(settled).toMatchObject({ state: "completed" });
@@ -455,8 +458,9 @@ describe("cli review settlement", () => {
 		const settled = await submitMediatedReview(kernel.coordinator, ctx(root), TASK, undefined, () => kernel.cli.inspectReview(TASK));
 		expect(settled).toMatchObject({ state: "blocked" });
 		expect((settled as { reason: string }).reason).toContain("still running");
-		// A pending round names the wait, never a repeat submit.
+		// A pending round names the wait, never a repeat submit, and never a file the agent writes.
 		expect((settled as { reason: string }).reason).not.toContain("submit_review again");
+		expect((settled as { reason: string }).reason).not.toContain("writes");
 		expect((settled as { recovery_action: string }).recovery_action).not.toContain("submit_review again");
 		expect(kernel.coordinator.active(TASK)).toMatchObject({ state: "review_ready" });
 		expect(reviewsOf(kernel)).toHaveLength(0);
@@ -645,7 +649,7 @@ describe("verification CLI stage", () => {
 		// Still running: the reservation is kept and nothing is applied.
 		expect(await kernel.coordinator.submitVerification(TASK, ctx(root))).toMatchObject({ state: "blocked", reason: "verification result pending" });
 
-		writeFileSync(session.output_path, verificationJsonFor(session));
+		writeSlotResult(root, dirname(session.output_path).split("/").pop()!, verificationJsonFor(session));
 		const settled = await kernel.coordinator.submitVerification(TASK, ctx(root));
 		expect(settled.state).toBe("rework");
 		const reviewRound = reviewsOf(kernel).at(-1)!;
@@ -675,6 +679,23 @@ describe("verification CLI stage", () => {
 		writeFileSync(join(dirname(session.output_path), "session-await.json"), JSON.stringify({ ok: true, transition: "exited" }));
 		expect((await kernel.coordinator.submitVerification(TASK, ctx(root))).state).toBe("rework");
 		expect(reviewsOf(kernel).at(-1)!.verification).toMatchObject({ failure: "dispatch_failed", verifier_actor: null });
+	});
+
+	test("a verifier session that ended without its receipt names the missing submission and the tab to inspect", () => {
+		const root = reviewRepo();
+		onPath(fakeReviewer("exit 0"));
+		enterHerdr();
+		const cli = new CliReviewHost(wrappedHost(false).host);
+		cli.prepareReview({ taskId: TASK, operationId: "op-aborted-verify", root, snapshotPrompt: "brief", maxTurns: 4 });
+		const reservation = cli.prepareVerification({
+			taskId: TASK, operationId: "op-aborted-verify", prompt: "packet", model: "m", writePacket: writeTestReviewPacket,
+		}) as { verification_session: ReviewSessionSpec };
+		writeFileSync(join(dirname(reservation.verification_session.output_path), "session-await.json"), JSON.stringify({ ok: true, transition: "exited" }));
+		const observed = cli.inspectVerification(reservation as never) as { ok: boolean; release: boolean; reason?: string };
+		expect(observed).toMatchObject({ ok: false, release: true });
+		expect(observed.reason).toContain("verification_session_aborted");
+		expect(observed.reason).toContain("without submitting its receipt");
+		expect(observed.reason).toContain("inspect its tab for a denied or failed tool call");
 	});
 
 	test("agents roles: the Review profile comes from the reviewer role and the verifier runs on its model", async () => {
@@ -931,6 +952,9 @@ describe("explicit review session", () => {
 		expect(settled).toMatchObject({ state: "blocked" });
 		expect((settled as { reason: string }).reason).toContain("review_session_aborted");
 		expect((settled as { reason: string }).reason).not.toContain("still running");
+		// D8: the reason names the missing receipt and the tab to inspect first.
+		expect((settled as { reason: string }).reason).toContain("without submitting its receipt");
+		expect((settled as { reason: string }).reason).toContain("inspect its tab for a denied or failed tool call");
 		expect(settled).not.toHaveProperty("stop_command");
 		// The reservation is released, so the next advance prepares a fresh round; the tab is left open.
 		expect(kernel.coordinator.active(TASK)).toBeNull();
@@ -970,20 +994,24 @@ describe("explicit review session", () => {
 // --- Spec D1/D3: the session's Host arguments and profile -------------------
 
 describe("explicit session launch arguments", () => {
-	const output = "/repo/.imm/state/sessions/review-op-1/result.json";
 
-	test("claude-code keeps the read-only reviewer boundary and allows one write: the reservation's result-slot file", () => {
-		const argv = sessionHostArguments({ host: "claude-code", model: "m", effort: "high" }, { outputPath: output });
+	test("claude-code keeps the read-only reviewer boundary and allows only the receipt tool", () => {
+		const argv = sessionHostArguments({ host: "claude-code", model: "m", effort: "high" }, {});
 		// Hooks off, so no user rewrite (`rtk git ...`) escapes the git allowlist (#426 F11).
 		expect(argv[argv.indexOf("--settings") + 1]).toBe(CLAUDE_REVIEW_SETTINGS);
 		expect(JSON.parse(CLAUDE_REVIEW_SETTINGS)).toMatchObject({ disableAllHooks: true });
-		expect(argv[argv.indexOf("--tools") + 1]).toBe("Read,Grep,Glob,Bash,Write");
+		// No Write tool: a Lane worktree lives under `.git/`, where Claude Code refuses an agent write (D5).
+		expect(argv[argv.indexOf("--tools") + 1]).toBe("Read,Grep,Glob,Bash");
 		expect(argv[argv.indexOf("--permission-mode") + 1]).toBe("dontAsk");
-		// Variadic allowlist: the git rules, then the single write rule, then the next flag.
+		// Variadic allowlist: the git rules, then the one receipt tool, then the next flag.
 		const allowed = argv.slice(argv.indexOf("--allowedTools") + 1, argv.indexOf("--permission-mode"));
-		// Claude Code governs Write through Edit rules, and an absolute path takes a leading `//`.
-		expect(allowed).toEqual([...REVIEW_GIT_ALLOWED_TOOLS, `Edit(/${output})`]);
-		expect(allowed.filter((rule) => !rule.startsWith("Bash(git "))).toEqual([`Edit(//repo/.imm/state/sessions/review-op-1/result.json)`]);
+		expect(allowed).toEqual([...REVIEW_GIT_ALLOWED_TOOLS, SESSION_RESULT_ALLOWED_TOOL]);
+		expect(SESSION_RESULT_ALLOWED_TOOL).toBe("mcp__plugin_immune-brain_immune-brain__submit_session_result");
+		// D6: the reviewer may search the revision, not only read individual files.
+		expect(allowed).toContain("Bash(git grep:*)");
+		expect(allowed).toContain("Bash(git --no-pager grep:*)");
+		expect(allowed.filter((rule) => !rule.startsWith("Bash(git "))).toEqual([SESSION_RESULT_ALLOWED_TOOL]);
+		expect(argv.join(" ")).not.toContain("Edit(");
 		// The slot lives inside the task cwd, so no extra directory is granted.
 		expect(argv).not.toContain("--add-dir");
 		expect(argv[argv.indexOf("--model") + 1]).toBe("m");
@@ -992,15 +1020,52 @@ describe("explicit session launch arguments", () => {
 	});
 
 	test("pi runs its read-only tools plus write, and antigravity carries only the profile's model and effort", () => {
-		expect(sessionHostArguments({ host: "pi", model: "m", effort: "high" }, { outputPath: output }))
+		expect(sessionHostArguments({ host: "pi", model: "m", effort: "high" }, {}))
 			.toEqual(["--tools", "read,grep,find,ls,bash,write", "--model", "m", "--thinking", "high"]);
-		expect(sessionHostArguments({ host: "antigravity", model: "m", effort: "high" }, { outputPath: output }))
+		expect(sessionHostArguments({ host: "antigravity", model: "m", effort: "high" }, {}))
 			.toEqual(["--model", "m", "--effort", "high"]);
-		expect(sessionHostArguments({ host: "pi" }, { outputPath: output, model: "verifier-m" }))
+		expect(sessionHostArguments({ host: "pi" }, { model: "verifier-m" }))
 			.toEqual(["--tools", "read,grep,find,ls,bash,write", "--model", "verifier-m"]);
 		// A host with no configured model keeps its own default; the sentinel is never a model flag.
-		expect(sessionHostArguments({ host: "pi" }, { outputPath: output, model: "host-default" })).toEqual(["--tools", "read,grep,find,ls,bash,write"]);
-		expect(sessionHostArguments({ host: "claude-code" }, { outputPath: output, model: "host-default" })).not.toContain("--model");
+		expect(sessionHostArguments({ host: "pi" }, { model: "host-default" })).toEqual(["--tools", "read,grep,find,ls,bash,write"]);
+		expect(sessionHostArguments({ host: "claude-code" }, { model: "host-default" })).not.toContain("--model");
+		expect(sessionHostArguments({ host: "claude-code" }, { pluginDir: "/plugin" })).toContain("--plugin-dir");
+	});
+
+	test("each Host's entry names its own receipt channel", () => {
+		const binary = { "claude-code": "claude", pi: "pi", antigravity: "agy" } as const;
+		enterHerdr();
+		for (const host of ["claude-code", "pi", "antigravity"] as const) {
+			const root = reviewRepo(host);
+			onPath(fakeReviewer("exit 0", binary[host]));
+			const reservation = new CliReviewHost(wrappedHost(false).host)
+				.prepareReview({ taskId: TASK, operationId: `op-entry-${host}`, root, snapshotPrompt: "brief", maxTurns: 4 }) as { review_session: ReviewSessionSpec };
+			const session = reservation.review_session;
+			const slotId = dirname(session.output_path).split("/").pop()!;
+			if (host === "pi") {
+				// Pi keeps its own `write` tool, so its entry still names the slot's file.
+				expect(session.create_command).toContain(`Write the one JSON object you owe to ${session.output_path}`);
+			} else {
+				expect(session.create_command).toContain(`submit_session_result with slot_id "${slotId}"`);
+				expect(session.create_command).toContain("Create no file");
+			}
+		}
+	});
+
+	test("a claude-code verification session carries --plugin-dir like the Review reservation", () => {
+		enterHerdr();
+		const root = reviewRepo("claude-code");
+		onPath(fakeReviewer("exit 0", "claude"));
+		const cli = new CliReviewHost(wrappedHost(false).host);
+		const review = cli.prepareReview({ taskId: TASK, operationId: "op-verify-entry", root, snapshotPrompt: "brief", maxTurns: 4 }) as { review_session: ReviewSessionSpec };
+		expect(review.review_session.create_command).toContain("--plugin-dir");
+		const verification = cli.prepareVerification({
+			taskId: TASK, operationId: "op-verify-entry", prompt: "packet", model: "m", writePacket: writeTestReviewPacket,
+		}) as { verification_session: ReviewSessionSpec };
+		const session = verification.verification_session;
+		expect(session.create_command).toContain("--plugin-dir");
+		expect(session.create_command).toContain("'--tools' 'Read,Grep,Glob,Bash'");
+		expect(session.create_command).toContain(`submit_session_result with slot_id "${dirname(session.output_path).split("/").pop()}"`);
 	});
 
 	test("the configured reviewer runs on Herdr, and a Lane batch keeps its recorded profile", () => {

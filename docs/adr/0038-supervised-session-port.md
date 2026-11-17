@@ -164,7 +164,7 @@ round, so every round stopped on a trust dialog.
 The transport is now a **result slot** (`runtime/session_result_slot.ts`): one
 directory at `<cwd>/.imm/state/sessions/<id>/` inside the session's own working
 directory, holding the brief the caller writes and the single result file the
-agent writes. `.imm/state/sessions/.gitignore` is `*`, so the slot is outside
+session delivers. `.imm/state/sessions/.gitignore` is `*`, so the slot is outside
 `git status`, the Lane park and cleanup checks (both run without `--ignored`)
 and the Review tree guard. The slot is transport, not authority: the caller
 reads the result bytes after the session is idle or done and validates them
@@ -183,3 +183,37 @@ are a file contract between the caller and the agent.
 The reserved `structuredResult` slot from Decision 1 is removed. It held room
 for an in-band result channel this addendum decides against; a provider no
 longer needs to leave it unfilled to be admitted.
+
+## Addendum: the receipt leaves through `submit_session_result` (2026-11-17)
+
+The slot location, its ignore file and its transport-not-authority role stay as
+#565 left them. What changes is **who writes the result** on Claude Code and
+Antigravity: the runtime does, through the Immune-Brain MCP tool
+`submit_session_result`, and the reviewer session holds no file write at all.
+
+#565 assumed the session's agent writes `result.json` itself. It cannot in a
+Lane: `runtime/unattended/batch_worktrees.ts` places the worktree at
+`<repo>/.git/imm/worktrees/<initiative>/<task>`, and Claude Code treats `.git`
+as a protected directory, so every `Write` of the receipt was denied and no
+`Edit(/<abs>)` rule ever matched there. Two authority Review rounds lost their
+receipt that way; the 2026-11-17 `claude -p` probe (Spec
+`review-receipt-mcp-submission`, BR-Q-1) showed a session started in such a
+worktree calls an Immune-Brain MCP tool successfully under `--tools
+Read,Grep,Glob,Bash` and `--permission-mode dontAsk`.
+
+The tool takes `{ slot_id, result }` and resolves `<workspace>/.imm/state/sessions/<slot_id>/`
+from the MCP call's own workspace. It accepts only a valid slot id whose
+directory is an existing real directory (not a symlink) holding a brief and no
+result, requires `result` to be one strict JSON object, and creates
+`result.json` exclusively; every refusal writes nothing. It is not a privileged
+operation: a native gate would be denied under `dontAsk`, and the tool adds no
+authority a process running as the same user does not already have by writing
+the ignored file directly. The receipt stays transport: `readSlotResult`, the
+strict-JSON check, the tree guard and the release decisions are unchanged, so
+the ADR 0017 sha256 binding reads exactly the bytes the reviewer produced.
+
+A session that ends without submitting its receipt keeps #565's report:
+`review_session_aborted` / `verification_session_aborted`, now saying that no
+receipt was submitted and that the session's tab must be inspected for a denied
+or failed tool call before another session is dispatched. Pi keeps its `write`
+tool and its file-only entry sentence.

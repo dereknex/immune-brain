@@ -155,9 +155,10 @@ assertion findings. Keep automated behavioral or geometry evidence separated
 from a human quality judgment.
 
 When the reservation names an `output_path`, that JSON file in the ignored
-result slot is the receipt: write the single verdict object there as the file's
-whole content and print nothing. It is the only path you create; every other
-file, and every Git ref, stays untouched.
+result slot is the receipt. Deliver the single verdict object exactly as the
+session entry instructs, and print nothing: the entry, not this contract, owns
+the channel, because it differs per Host. Create nothing beyond what it names;
+every other file, and every Git ref, stays untouched.
 
 Return exactly one JSON object with the fields required by the Loop review
 contract: `contract`, `role`, `task_id`, `snapshot_digest`, `decision` (`pass`

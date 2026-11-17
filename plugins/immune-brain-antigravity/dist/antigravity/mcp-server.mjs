@@ -10904,10 +10904,10 @@ var init_role_prompt_bridge = __esm(() => {
   };
   LANE_EXECUTOR_HOSTS = ["claude-code", "pi", "antigravity"];
   STATIC_REVIEW_RULES = [
-    `Do not edit files, create files, run mutating commands, or change Git state. Focus on correctness, regressions, security, and missing tests. The one file you may create is the reservation's \`output_path\` in its ignored result slot, whose bytes are your receipt.`,
+    `Do not edit files, create files, run mutating commands, or change Git state. Focus on correctness, regressions, security, and missing tests. The receipt goes only through the channel the session entry names into its ignored result slot: create no other file.`,
     `Read only the immutable Review revision identified in the brief, through read-only Git commands. Do not treat conversation text, Hook callbacks, or live worktree bytes as authority.`,
     `Execution outcomes for every acceptance were verified deterministically by the Kernel QA layer before this review and are stated in the brief as settled QA outcomes (acceptance_id -> {status, summary}); do not re-execute descriptors and do not treat the absence of local test runs as a finding. Your review covers code correctness, regressions, security, and missing tests against the embedded assertions and code.`,
-    "Reserve the final turn for exactly one strict JSON verdict. Reply with ONLY that object, without markdown fences or commentary; when the reservation names an `output_path`, that file is the verdict and the reply stays empty.",
+    "Reserve the final turn for exactly one strict JSON verdict. Reply with ONLY that object, without markdown fences or commentary; when the reservation names an `output_path`, the verdict leaves only through the session's receipt channel and the reply stays empty.",
     `Every rework finding must carry machine-checkable provenance: evidence.trigger (the concrete inputs or state that reach the defect), a non-empty evidence.caller_chain (ordered repository paths or symbols), and evidence.violated {kind: "acceptance"|"security_boundary", ref}. The anchor is derived from that evidence; a finding without it is rejected and the correction must be resubmitted.`,
     `If the turn budget cannot cover every changed path, return decision "incomplete" with inspected_paths (a unique subset of changed paths actually read) and a non-empty single-line reason. Omit approval and findings entirely. Incomplete coverage is an execution outcome, never a finding or an assurance verdict.`,
     `A pass verdict's approval must carry \`inspected_paths\`: an array of unique repository-relative path strings listing every path of the reviewed change set (git diff --name-only base_head review_commit), deleted paths included; an empty change set is listed as an empty array. A path may be listed only after its diff was read, or the code-review role's generated snapshot proof was completed for an eligible added Drizzle snapshot. A pass that omits any changed path, lists a path outside the change set, or duplicates a path is rejected as a correctable invalid verdict.`
@@ -11958,7 +11958,8 @@ var REVIEW_PACKET_INSTRUCTION = "Verify the packet sha256 before reading its ins
 var init_review_packet = () => {};
 
 // plugins/immune-brain/runtime/session_result_slot.ts
-import { existsSync as existsSync10, mkdirSync as mkdirSync8, readFileSync as readFileSync17, rmSync as rmSync7, writeFileSync as writeFileSync7 } from "node:fs";
+import { createHash as createHash18 } from "node:crypto";
+import { existsSync as existsSync10, lstatSync as lstatSync14, mkdirSync as mkdirSync8, readFileSync as readFileSync17, readdirSync as readdirSync7, rmSync as rmSync7, writeFileSync as writeFileSync7 } from "node:fs";
 import { join as join17 } from "node:path";
 function freshSlotDirectory(cwd, id) {
   if (!SLOT_ID.test(id) || id.includes(".."))
@@ -11976,7 +11977,7 @@ function freshSlotDirectory(cwd, id) {
 }
 function allocateResultSlot(cwd, id, brief, briefName = "brief.md") {
   const directory = freshSlotDirectory(cwd, id);
-  const slot = { directory, brief: join17(directory, briefName), result: join17(directory, "result.json") };
+  const slot = { directory, brief: join17(directory, briefName), result: join17(directory, RESULT_NAME) };
   writeFileSync7(slot.brief, brief, { encoding: "utf8", flag: "wx" });
   return slot;
 }
@@ -11992,7 +11993,46 @@ function readSlotResult(slot) {
 function releaseResultSlot(slot) {
   rmSync7(slot.directory, { recursive: true, force: true });
 }
-var SLOT_ID;
+function isStrictJsonObject(bytes) {
+  const trimmed = bytes.trim();
+  if (!trimmed.startsWith("{") || !trimmed.endsWith("}"))
+    return false;
+  try {
+    const parsed = JSON.parse(trimmed);
+    return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed);
+  } catch {
+    return false;
+  }
+}
+function writeSlotResult(workspace, id, result) {
+  if (!SLOT_ID.test(id) || id.includes(".."))
+    throw new Error(`session_result_slot_invalid: ${JSON.stringify(id)} is not a result slot id`);
+  const directory = join17(workspace, SESSION_RESULT_SLOTS_RELATIVE, id);
+  let allocated = false;
+  try {
+    const stat = lstatSync14(directory);
+    allocated = stat.isDirectory() && !stat.isSymbolicLink();
+  } catch {
+    allocated = false;
+  }
+  if (!allocated || !readdirSync7(directory).some((name) => name !== RESULT_NAME))
+    throw new Error(`session_result_slot_unknown: no result slot ${JSON.stringify(id)} holds a brief in this workspace`);
+  const target = join17(directory, RESULT_NAME);
+  let submitted = false;
+  try {
+    lstatSync14(target);
+    submitted = true;
+  } catch {
+    submitted = false;
+  }
+  if (submitted)
+    throw new Error(`session_result_already_submitted: result slot ${JSON.stringify(id)} already holds its result`);
+  if (!isStrictJsonObject(result))
+    throw new Error("session_result_not_json: result must be one strict JSON object");
+  writeFileSync7(target, result, { encoding: "utf8", flag: "wx" });
+  return `sha256:${createHash18("sha256").update(result).digest("hex")}`;
+}
+var SLOT_ID, RESULT_NAME = "result.json";
 var init_session_result_slot = __esm(() => {
   init_storage_paths();
   SLOT_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
@@ -12000,7 +12040,7 @@ var init_session_result_slot = __esm(() => {
 
 // plugins/immune-brain/runtime/assurance/review_evidence.ts
 import { execFileSync as execFileSync8 } from "node:child_process";
-import { createHash as createHash18, randomUUID as randomUUID5 } from "node:crypto";
+import { createHash as createHash19, randomUUID as randomUUID5 } from "node:crypto";
 import { mkdtempSync as mkdtempSync5, realpathSync as realpathSync12, rmSync as rmSync8, writeFileSync as writeFileSync8 } from "node:fs";
 import { tmpdir as tmpdir4 } from "node:os";
 import { join as join18 } from "node:path";
@@ -12051,7 +12091,7 @@ function reviewRefTaskSegment(taskId) {
   return `_${Buffer.from(taskId, "utf8").toString("base64url")}`;
 }
 function workspaceRefSegment(root) {
-  return createHash18("sha256").update(realpathSync12(root)).digest("hex").slice(0, 16);
+  return createHash19("sha256").update(realpathSync12(root)).digest("hex").slice(0, 16);
 }
 function reviewRef(root, taskId, reviewCommit) {
   const taskSegment = reviewRefTaskSegment(taskId);
@@ -12134,7 +12174,7 @@ function publishInput(root, input) {
   if (!REVISION_DIFF_HASH.test(input.expectedDiffHash))
     throw new Error("review task revision hash has invalid identity");
   const snapshot = captureGitTaskRevisionSnapshot(root, input.scopeHint, input.baseHead, input.taskId);
-  const recomputed = `sha256:${createHash18("sha256").update(JSON.stringify(snapshot)).digest("hex")}`;
+  const recomputed = `sha256:${createHash19("sha256").update(JSON.stringify(snapshot)).digest("hex")}`;
   if (recomputed !== input.expectedDiffHash)
     throw new Error("review task revision does not match assurance snapshot");
   if (Object.keys(snapshot.changed_paths).length === 0)
@@ -12520,7 +12560,7 @@ var init_verdict_authority = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/plugin_source_skew.ts
-import { createHash as createHash19 } from "node:crypto";
+import { createHash as createHash20 } from "node:crypto";
 import { execFileSync as execFileSync10, spawnSync as spawnSync9 } from "node:child_process";
 import { existsSync as existsSync12, readFileSync as readFileSync18, realpathSync as realpathSync13, statSync as statSync4 } from "node:fs";
 import { dirname as dirname11, join as join20, sep as sep8 } from "node:path";
@@ -12598,7 +12638,7 @@ function watchBundleIdentity(path) {
   const read = () => {
     try {
       const stat = statSync4(path);
-      return { stamp: { size: stat.size, mtimeMs: stat.mtimeMs }, hash: createHash19("sha256").update(readFileSync18(path)).digest("hex") };
+      return { stamp: { size: stat.size, mtimeMs: stat.mtimeMs }, hash: createHash20("sha256").update(readFileSync18(path)).digest("hex") };
     } catch {
       return null;
     }
@@ -12629,7 +12669,7 @@ function watchBundleIdentity(path) {
     }
   };
 }
-var WORKSPACE_PLUGIN_DIR, PLUGIN_MANIFEST, BUILD_PROXY, MAX_LEVELS = 8, BUNDLE_GIT_PATH = "plugins/immune-brain/dist/claude/mcp-server.mjs", bundleHash = (bytes) => `sha256:${createHash19("sha256").update(bytes).digest("hex")}`;
+var WORKSPACE_PLUGIN_DIR, PLUGIN_MANIFEST, BUILD_PROXY, MAX_LEVELS = 8, BUNDLE_GIT_PATH = "plugins/immune-brain/dist/claude/mcp-server.mjs", bundleHash = (bytes) => `sha256:${createHash20("sha256").update(bytes).digest("hex")}`;
 var init_plugin_source_skew = __esm(() => {
   init_runtime_contracts();
   WORKSPACE_PLUGIN_DIR = join20("plugins", "immune-brain");
@@ -12704,7 +12744,7 @@ var init_lane_workspace = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/assurance/coordinator.ts
-import { createHash as createHash20, randomUUID as randomUUID7 } from "node:crypto";
+import { createHash as createHash21, randomUUID as randomUUID7 } from "node:crypto";
 import { execFileSync as execFileSync11 } from "node:child_process";
 function deriveGithubTerminalProjectionInput(taskId, projection, tombstone) {
   if (projection.error || projection.claim !== null || projection.projection.lifecycle !== "done" && projection.projection.lifecycle !== "stopped" || tombstone?.task_id !== taskId || tombstone.lifecycle_status !== "terminal" || tombstone.terminal_lifecycle !== projection.projection.lifecycle)
@@ -12931,7 +12971,7 @@ function reviewTurnBudget(workload, changedPaths = 0, previousBudget = null) {
   return Math.min(HEAVY_REVIEW_MAX_TURNS, Math.max(HEAVY_REVIEW_MIN_TURNS, HEAVY_REVIEW_BASE_TURNS + changedPaths));
 }
 function snapshotDigest(snapshot) {
-  return `sha256:${createHash20("sha256").update(JSON.stringify(snapshot)).digest("hex")}`;
+  return `sha256:${createHash21("sha256").update(JSON.stringify(snapshot)).digest("hex")}`;
 }
 function reviewDeltaLines(delta, reviewCommit) {
   if (!delta)
@@ -13100,7 +13140,7 @@ function consumeReviewVerification(input) {
     verifier_model: dispatch.model,
     model_relation: dispatch.model_relation,
     verifier_actor: bound ? receipt.actorId : null,
-    result_sha256: bound ? `sha256:${createHash20("sha256").update(receipt.result).digest("hex")}` : null,
+    result_sha256: bound ? `sha256:${createHash21("sha256").update(receipt.result).digest("hex")}` : null,
     valid: parsed.valid,
     results: parsed.results,
     ...!parsed.valid ? { failure: input.failure ?? (releaseFailed || !receipt ? "dispatch_failed" : !bound ? "receipt_mismatch" : "malformed_output") } : {}
@@ -14535,7 +14575,7 @@ var PRE_EXISTING_BASELINE_PREFIX = "pre-existing baseline failure:";
 var init_qa_findings = () => {};
 
 // plugins/immune-brain/runtime/assurance/qa.ts
-import { createHash as createHash21 } from "node:crypto";
+import { createHash as createHash22 } from "node:crypto";
 import { execFileSync as execFileSync12 } from "node:child_process";
 function recordForSnapshot(snapshot) {
   const record = readTaskRecordRaw(snapshot.root, snapshot.task_id).record;
@@ -14554,7 +14594,7 @@ function deliveryTreeForSnapshot(snapshot) {
   }
   const record = recordForSnapshot(snapshot);
   const captured = captureGitTaskRevisionSnapshot(snapshot.root, record.intent_snapshot.scope_hint, record.git_base_head, snapshot.task_id);
-  const digest = `sha256:${createHash21("sha256").update(JSON.stringify(captured)).digest("hex")}`;
+  const digest = `sha256:${createHash22("sha256").update(JSON.stringify(captured)).digest("hex")}`;
   if (digest !== snapshot.diff_hash)
     throw new Error("QA delivery identity does not match the frozen snapshot");
   return writeDeliveryTree(snapshot.root, captured);
@@ -14606,7 +14646,7 @@ async function runDeterministicQa(snapshot, descriptors, options = {}) {
     const diagnostic = (reason, stage) => [{
       acceptance_id: item.id,
       descriptor_ref: `acceptance/${item.index}/verification/command`,
-      descriptor_digest: `sha256:${createHash21("sha256").update(JSON.stringify(item.descriptor)).digest("hex")}`,
+      descriptor_digest: `sha256:${createHash22("sha256").update(JSON.stringify(item.descriptor)).digest("hex")}`,
       stage,
       outcome: reason,
       elapsed_ms: 0,
@@ -14653,7 +14693,7 @@ async function runDeterministicQa(snapshot, descriptors, options = {}) {
     const diagnostics = (stage, outcome, affected = group, commandStage = "check", elapsed = 0, result) => affected.map((item) => ({
       acceptance_id: item.id,
       descriptor_ref: `acceptance/${item.index}/verification/${commandStage === "prepare" ? "environment/prepare" : "command"}`,
-      descriptor_digest: `sha256:${createHash21("sha256").update(JSON.stringify(item.descriptor)).digest("hex")}`,
+      descriptor_digest: `sha256:${createHash22("sha256").update(JSON.stringify(item.descriptor)).digest("hex")}`,
       stage,
       outcome,
       elapsed_ms: elapsed,
@@ -14726,8 +14766,8 @@ async function runDeterministicQa(snapshot, descriptors, options = {}) {
         allCommands.push({ frozen, diagnostics: diagnostics("integrity", "command_identity_changed", affected, stage, Math.round(performance.now() - started), result) });
       evidence.push({
         stage,
-        environment: createHash21("sha256").update(environmentKey).digest("hex"),
-        command: createHash21("sha256").update(JSON.stringify(command)).digest("hex"),
+        environment: createHash22("sha256").update(environmentKey).digest("hex"),
+        command: createHash22("sha256").update(JSON.stringify(command)).digest("hex"),
         entry: frozen?.entry?.content_hash ?? null,
         exit_code: result.exit_code,
         timed_out: result.timed_out,
@@ -14812,7 +14852,7 @@ async function runDeterministicQa(snapshot, descriptors, options = {}) {
   if (findings.length)
     return { ...base, decision: "rework", findings };
   const disclosure = disclosed.length ? `; ${disclosed.map((item) => item.summary).join("; ")}` : "";
-  const executionDigest = createHash21("sha256").update(JSON.stringify({
+  const executionDigest = createHash22("sha256").update(JSON.stringify({
     tree,
     platform: process.platform,
     arch: process.arch,
@@ -14841,7 +14881,7 @@ var init_qa = __esm(() => {
 
 // plugins/immune-brain/runtime/assurance/workflow_autocommit.ts
 import { execFileSync as execFileSync13, spawnSync as spawnSync11 } from "node:child_process";
-import { accessSync as accessSync2, chmodSync as chmodSync3, constants as constants5, lstatSync as lstatSync14, mkdirSync as mkdirSync9, mkdtempSync as mkdtempSync6, readdirSync as readdirSync7, realpathSync as realpathSync15, rmSync as rmSync9, writeFileSync as writeFileSync9 } from "node:fs";
+import { accessSync as accessSync2, chmodSync as chmodSync3, constants as constants5, lstatSync as lstatSync15, mkdirSync as mkdirSync9, mkdtempSync as mkdtempSync6, readdirSync as readdirSync8, realpathSync as realpathSync15, rmSync as rmSync9, writeFileSync as writeFileSync9 } from "node:fs";
 import { tmpdir as tmpdir5 } from "node:os";
 import { isAbsolute as isAbsolute10, join as join22, resolve as resolve15 } from "node:path";
 function identityEnv(root) {
@@ -14890,7 +14930,7 @@ function assertListedPath(root, path) {
     current = join22(current, part);
     let stat;
     try {
-      stat = lstatSync14(current);
+      stat = lstatSync15(current);
     } catch {
       return;
     }
@@ -14910,7 +14950,7 @@ function commitWithPathGuard(root, dirty, before, subject) {
     mkdirSync9(hooks);
     let entries = [];
     try {
-      entries = readdirSync7(originalHooks);
+      entries = readdirSync8(originalHooks);
     } catch (error) {
       if (!["ENOENT", "ENOTDIR"].includes(error.code ?? ""))
         throw error;
@@ -15517,7 +15557,7 @@ var init_batch_integration = __esm(() => {
 
 // plugins/immune-brain/runtime/unattended/checkout_delivery.ts
 import { spawnSync as spawnSync13 } from "node:child_process";
-import { lstatSync as lstatSync15 } from "node:fs";
+import { lstatSync as lstatSync16 } from "node:fs";
 import { join as join24 } from "node:path";
 function deliveredPaths(root, base, head) {
   const raw = gitIn(root, "diff", "--raw", "-z", "--abbrev=40", "--no-renames", base, head, "--");
@@ -15541,7 +15581,7 @@ function pathSatisfied(root, entry) {
     if (staged.stdout.length)
       return false;
     try {
-      lstatSync15(join24(root, entry.path));
+      lstatSync16(join24(root, entry.path));
       return false;
     } catch {
       return true;
@@ -15552,7 +15592,7 @@ function pathSatisfied(root, entry) {
     return false;
   let stat;
   try {
-    stat = lstatSync15(join24(root, entry.path));
+    stat = lstatSync16(join24(root, entry.path));
   } catch {
     return false;
   }
@@ -15617,16 +15657,16 @@ var init_checkout_delivery = __esm(() => {
 
 // plugins/immune-brain/runtime/unattended/batch_git.ts
 import { spawnSync as spawnSync14 } from "node:child_process";
-import { createHash as createHash22, randomUUID as randomUUID9 } from "node:crypto";
+import { createHash as createHash23, randomUUID as randomUUID9 } from "node:crypto";
 import {
   constants as constants6,
   closeSync as closeSync6,
   existsSync as existsSync13,
-  lstatSync as lstatSync16,
+  lstatSync as lstatSync17,
   mkdirSync as mkdirSync10,
   openSync as openSync6,
   realpathSync as realpathSync16,
-  readdirSync as readdirSync8,
+  readdirSync as readdirSync9,
   renameSync as renameSync4,
   rmSync as rmSync10,
   writeFileSync as writeFileSync10
@@ -15834,7 +15874,7 @@ function ensureSecureDirectory3(root, relativePath) {
   for (const segment of segments) {
     current = join25(current, segment);
     if (existsSync13(current)) {
-      const stats = lstatSync16(current);
+      const stats = lstatSync17(current);
       if (stats.isSymbolicLink() || !stats.isDirectory()) {
         throw new Error(`${segment} exists but is not a real directory`);
       }
@@ -15848,12 +15888,12 @@ function writeFileAtomically2(root, relativePath, bytes) {
   const target = join25(root, relativePath);
   const targetDir = dirname13(target);
   ensureSecureDirectory3(root, dirname13(relativePath));
-  const stats = lstatSync16(targetDir);
+  const stats = lstatSync17(targetDir);
   if (stats.isSymbolicLink() || !stats.isDirectory()) {
     throw new Error(`${dirname13(relativePath)} is not a real directory`);
   }
   if (existsSync13(target)) {
-    const targetStats = lstatSync16(target);
+    const targetStats = lstatSync17(target);
     if (targetStats.isSymbolicLink()) {
       throw new Error(`${relativePath} is a symlink`);
     }
@@ -15935,7 +15975,7 @@ function assertReviewedDelivery(root, authoritative, scopeHint, taskId) {
     if (!record.git_base_head)
       throw new Error("batch commit requires a TaskRecord v4 git_base_head");
     const captured = captureGitTaskRevisionSnapshot(root, scopeHint, record.git_base_head, taskId);
-    const digest = `sha256:${createHash22("sha256").update(JSON.stringify(captured)).digest("hex")}`;
+    const digest = `sha256:${createHash23("sha256").update(JSON.stringify(captured)).digest("hex")}`;
     if (digest !== qa.diff_hash)
       throw new Error("batch commit drifted from the reviewed delivery identity");
   }
@@ -15982,7 +16022,7 @@ async function commitBatchChild(input) {
       throw scopeRefusal("unsupported_index_flags", flagged);
     assertReviewedDelivery(root, authoritative, scopeHint, taskId);
     const captured = captureGitTaskRevisionSnapshot(root, scopeHint, expectedHead, taskId);
-    const deliveryHash = `sha256:${createHash22("sha256").update(JSON.stringify(captured)).digest("hex")}`;
+    const deliveryHash = `sha256:${createHash23("sha256").update(JSON.stringify(captured)).digest("hex")}`;
     const paths = [...Object.keys(captured.changed_paths), auditPaths.record, auditPaths.proof];
     const message = `imm(${taskId}): ${goal.trim().split(/\r?\n/)[0]?.trim() || taskId}
 
@@ -16343,7 +16383,7 @@ function parentDeliveryTasks(root, initiativeSlug, requiredTaskIds) {
   const directory = join25(root, ".imm", "state", "batches");
   const records = [];
   if (existsSync13(directory))
-    for (const file of readdirSync8(directory).sort()) {
+    for (const file of readdirSync9(directory).sort()) {
       if (!file.endsWith(".json"))
         continue;
       const candidate = JSON.parse(readSecureProjectFile(root, `.imm/state/batches/${file}`));
@@ -16427,7 +16467,7 @@ async function observeNativeParent(root, initiativeSlug, readInitiative, blocked
     return null;
   const native = readNativeParentFinalReport(root, initiativeSlug);
   const proof = await observeParentCompletion(root, initiativeSlug, parent.tasks.map((task) => task.task_id));
-  const planDigest = `sha256:${createHash22("sha256").update(JSON.stringify(intents.map(({ task, intent }) => ({ task_id: task.task_id, blocked_by: task.blocked_by, intent: intent.content_hash })))).digest("hex")}`;
+  const planDigest = `sha256:${createHash23("sha256").update(JSON.stringify(intents.map(({ task, intent }) => ({ task_id: task.task_id, blocked_by: task.blocked_by, intent: intent.content_hash })))).digest("hex")}`;
   const activeTask = readActiveClaimTaskId(root);
   const action = activeTask ? "drive" : proof.complete ? "complete" : "enroll";
   const ready = parent.tasks.find((task) => !blockedNativeTasks.includes(task.task_id) && !readSettledTaskEvidence(root, task.task_id) && task.blocked_by.every((id) => proof.integrated_task_ids.includes(id)));
@@ -16758,7 +16798,7 @@ var init_batch_leak_restore = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/unattended/batch_preflight.ts
-import { existsSync as existsSync15, readdirSync as readdirSync9, readFileSync as readFileSync19 } from "node:fs";
+import { existsSync as existsSync15, readdirSync as readdirSync10, readFileSync as readFileSync19 } from "node:fs";
 import { randomUUID as randomUUID10 } from "node:crypto";
 import { dirname as dirname15, join as join27 } from "node:path";
 import { spawnSync as spawnSync16 } from "node:child_process";
@@ -16782,7 +16822,7 @@ function findResumableBatchSlugForTask(root, taskId) {
   const batchesDir = join27(root, ".imm", "state", "batches");
   if (!existsSync15(batchesDir))
     return null;
-  for (const file of readdirSync9(batchesDir)) {
+  for (const file of readdirSync10(batchesDir)) {
     if (!file.endsWith(".json"))
       continue;
     try {
@@ -16804,7 +16844,7 @@ function findExistingActiveBatch(root, initiativeSlug) {
   const batchesDir = join27(root, ".imm", "state", "batches");
   if (!existsSync15(batchesDir))
     return null;
-  for (const file of readdirSync9(batchesDir)) {
+  for (const file of readdirSync10(batchesDir)) {
     if (!file.endsWith(".json"))
       continue;
     let record;
@@ -16847,7 +16887,7 @@ function findSettledBatchRecord(root, initiativeSlug) {
   if (!existsSync15(batchesDir))
     return null;
   let newest = null;
-  for (const file of readdirSync9(batchesDir).sort()) {
+  for (const file of readdirSync10(batchesDir).sort()) {
     if (!file.endsWith(".json"))
       continue;
     let record;
@@ -17206,7 +17246,7 @@ async function projectPreflight(options, preparing) {
   if (options.plan_source === "single_task") {
     const batchesDir = join27(root, ".imm", "state", "batches");
     if (existsSync15(batchesDir))
-      for (const file of readdirSync9(batchesDir)) {
+      for (const file of readdirSync10(batchesDir)) {
         if (!file.endsWith(".json") || file.endsWith(".report.json"))
           continue;
         try {
@@ -17895,7 +17935,7 @@ init_batch_final_verification();
 init_batch_final_report();
 init_checkout_delivery();
 import { spawnSync as spawnSync19 } from "node:child_process";
-import { createHash as createHash23 } from "node:crypto";
+import { createHash as createHash24 } from "node:crypto";
 import { existsSync as existsSync17, realpathSync as realpathSync17 } from "node:fs";
 import { isAbsolute as isAbsolute11, join as join30 } from "node:path";
 import { readFileSync as readFileSync21 } from "node:fs";
@@ -19540,7 +19580,7 @@ async function runLaneBatch(input, persisted) {
         task_id: request.task_id,
         kind: request.kind,
         text: request.text,
-        text_digest: `sha256:${createHash23("sha256").update(request.text).digest("hex")}`
+        text_digest: `sha256:${createHash24("sha256").update(request.text).digest("hex")}`
       }];
       persist();
       instruction = { task_id: request.task_id, kind: request.kind, accepted: true, reason: null };
@@ -19975,6 +20015,7 @@ async function runLaneBatch(input, persisted) {
 init_batch_final_verification();
 init_coordinator();
 init_storage();
+init_session_result_slot();
 init_plugin_source_skew();
 init_assurance_projection();
 var MCP_PROTOCOL_VERSION = "2025-06-18";
@@ -19993,7 +20034,8 @@ var TOOLS = [
   { name: "resolve_finding", description: "Resolve one open blocking or advisory finding whose cause is fixed and verified.", privileged: false },
   { name: "refute_finding", description: "Refute one open finding by binding the fresh passing QA attestation that contradicts it.", privileged: false },
   { name: "loop_interactions", description: "List the local Loop Interaction requests this checkout's daemon is waiting on.", privileged: false, optionalTaskId: true },
-  { name: "answer_loop_interaction", description: "Answer one pending local Loop Interaction request under the native confirmation.", privileged: true, optionalTaskId: true }
+  { name: "answer_loop_interaction", description: "Answer one pending local Loop Interaction request under the native confirmation.", privileged: true, optionalTaskId: true },
+  { name: "submit_session_result", description: "Write one supervised session's JSON result into its allocated result slot.", privileged: false }
 ];
 function listMcpTools() {
   return TOOLS.map((tool) => ({
@@ -20043,7 +20085,8 @@ function listMcpTools() {
             }
           } : {}
         } : {
-          task_id: { type: "string" },
+          ...tool.name === "submit_session_result" ? {} : { task_id: { type: "string" } },
+          ...tool.name === "submit_session_result" ? { slot_id: { type: "string" }, result: { type: "string" } } : {},
           ...tool.name === "answer_loop_interaction" ? { interaction_id: { type: "string" }, answer: { type: "string" } } : {},
           ...tool.name === "approve_breaking_intent_revision" || tool.name === "revise_intent" ? { next_intent: { type: "object" } } : {},
           ...tool.name === "stop" || tool.name === "request_authorization" ? { reason: { type: "string" } } : {},
@@ -20059,7 +20102,7 @@ function listMcpTools() {
           ...tool.name === "refute_finding" ? { finding_id: { type: "string" }, attestation_id: { type: "string" } } : {}
         }
       },
-      required: tool.name === "start_unattended_batch" ? [] : tool.name === "retire_stale_batch" ? ["initiative_slug"] : tool.name === "loop_interactions" ? [] : tool.name === "answer_loop_interaction" ? ["interaction_id", "answer"] : tool.name === "resolve_finding" ? ["task_id", "finding_id"] : tool.name === "refute_finding" ? ["task_id", "finding_id", "attestation_id"] : tool.name === "revise_intent" ? ["task_id", "next_intent"] : ["task_id"]
+      required: tool.name === "start_unattended_batch" ? [] : tool.name === "retire_stale_batch" ? ["initiative_slug"] : tool.name === "submit_session_result" ? ["slot_id", "result"] : tool.name === "loop_interactions" ? [] : tool.name === "answer_loop_interaction" ? ["interaction_id", "answer"] : tool.name === "resolve_finding" ? ["task_id", "finding_id"] : tool.name === "refute_finding" ? ["task_id", "finding_id", "attestation_id"] : tool.name === "revise_intent" ? ["task_id", "next_intent"] : ["task_id"]
     },
     annotations: tool.privileged ? privilegedAnnotations() : { readOnlyHint: tool.name === "status" || tool.name === "loop_interactions" }
   }));
@@ -20265,6 +20308,14 @@ function createMcpRuntime(profile, options = {}) {
           interactive: meta.interactive ?? options.interactive ?? negotiatedInteractive,
           signal: meta.signal
         });
+      }
+      if (name === "submit_session_result") {
+        refuseSuppliedAuthority(args);
+        if (typeof args.slot_id !== "string")
+          throw new Error("slot_id is required");
+        if (typeof args.result !== "string")
+          throw new Error("result is required");
+        return { contract: "immune_brain/session_result/v1", slot_id: args.slot_id, sha256: writeSlotResult(workspace, args.slot_id, args.result) };
       }
       const taskId = String(args.task_id ?? "");
       if (!taskId)
@@ -20951,21 +21002,21 @@ function runMcpEntry(profile, entrySuffixes) {
 }
 
 // plugins/immune-brain/runtime/antigravity/review_host.ts
-import { constants as constants9, closeSync as closeSync8, fstatSync as fstatSync5, lstatSync as lstatSync19, openSync as openSync8, readdirSync as readdirSync11, readSync as readSync2 } from "node:fs";
+import { constants as constants9, closeSync as closeSync8, fstatSync as fstatSync5, lstatSync as lstatSync20, openSync as openSync8, readdirSync as readdirSync12, readSync as readSync2 } from "node:fs";
 import { tmpdir as tmpdir7 } from "node:os";
 import { basename as basename5, join as join33, resolve as resolve16 } from "node:path";
 
 // plugins/immune-brain/runtime/host-core/hook_event_log.ts
-import { lstatSync as lstatSync18, readdirSync as readdirSync10, rmSync as rmSync13 } from "node:fs";
+import { lstatSync as lstatSync19, readdirSync as readdirSync11, rmSync as rmSync13 } from "node:fs";
 import { dirname as dirname17, join as join32 } from "node:path";
 import { tmpdir as tmpdir6 } from "node:os";
 
 // plugins/immune-brain/runtime/host-core/private_file.ts
-import { createHash as createHash24 } from "node:crypto";
-import { constants as constants8, closeSync as closeSync7, fstatSync as fstatSync4, ftruncateSync, lstatSync as lstatSync17, mkdirSync as mkdirSync13, openSync as openSync7, readSync, rmSync as rmSync12, writeSync } from "node:fs";
+import { createHash as createHash25 } from "node:crypto";
+import { constants as constants8, closeSync as closeSync7, fstatSync as fstatSync4, ftruncateSync, lstatSync as lstatSync18, mkdirSync as mkdirSync13, openSync as openSync7, readSync, rmSync as rmSync12, writeSync } from "node:fs";
 import { join as join31 } from "node:path";
 function sessionHash(sessionId) {
-  return createHash24("sha256").update(sessionId).digest("hex");
+  return createHash25("sha256").update(sessionId).digest("hex");
 }
 function cacheDir(root, cacheName) {
   return join31(root, cacheName);
@@ -20978,7 +21029,7 @@ function ownedByUs(stat) {
 }
 function ensurePrivateDir(dir) {
   try {
-    const existing = lstatSync17(dir);
+    const existing = lstatSync18(dir);
     return existing.isDirectory() && ownedByUs(existing) && (existing.mode & 511) === 448;
   } catch (error) {
     if (error.code !== "ENOENT")
@@ -20990,7 +21041,7 @@ function ensurePrivateDir(dir) {
     return false;
   }
   try {
-    const created = lstatSync17(dir);
+    const created = lstatSync18(dir);
     return created.isDirectory() && ownedByUs(created) && (created.mode & 511) === 448;
   } catch {
     return false;
@@ -21041,7 +21092,7 @@ function writePrivate(path, dir, content) {
 }
 function dropPrivate(path) {
   try {
-    const stat = lstatSync17(path);
+    const stat = lstatSync18(path);
     if (ownedByUs(stat) && stat.isFile())
       rmSync12(path, { force: true });
   } catch {}
@@ -21114,7 +21165,7 @@ class FileHookEventLog {
     if (!ensurePrivateDir(dir))
       return [];
     try {
-      return readdirSync10(dir).filter((name) => name.endsWith(".jsonl") && !name.endsWith(".events.jsonl")).flatMap((name) => this.readFile(join32(dir, name)));
+      return readdirSync11(dir).filter((name) => name.endsWith(".jsonl") && !name.endsWith(".events.jsonl")).flatMap((name) => this.readFile(join32(dir, name)));
     } catch {
       return [];
     }
@@ -21147,7 +21198,7 @@ class FileHookEventLog {
       return;
     const path = hookEventPath(this.cacheName, sessionId, this.root);
     try {
-      const stat = lstatSync18(path);
+      const stat = lstatSync19(path);
       if (!ownedByUs(stat) || stat.isSymbolicLink() || !stat.isFile() || (stat.mode & 511) !== 384)
         return;
       rmSync13(path, { force: true });
@@ -21383,7 +21434,7 @@ var ANTIGRAVITY_VERIFIER_PROFILE = {
 };
 function isOwnedNonSymlinkDir(dirPath) {
   try {
-    const stat = lstatSync19(dirPath);
+    const stat = lstatSync20(dirPath);
     return !stat.isSymbolicLink() && stat.isDirectory() && ownedByUs(stat);
   } catch {
     return false;
@@ -21438,7 +21489,7 @@ function readSpawnRecords(subagentsDir) {
     return null;
   let entries;
   try {
-    entries = readdirSync11(subagentsDir, { withFileTypes: true });
+    entries = readdirSync12(subagentsDir, { withFileTypes: true });
   } catch {
     return null;
   }
@@ -21465,7 +21516,7 @@ function readChildMessages(messagesDir) {
     return null;
   let entries;
   try {
-    entries = readdirSync11(messagesDir, { withFileTypes: true });
+    entries = readdirSync12(messagesDir, { withFileTypes: true });
   } catch {
     return null;
   }
@@ -21612,7 +21663,7 @@ class AntigravityReviewHost {
 
 // plugins/immune-brain/runtime/antigravity/lane_guard.ts
 init_lane_workspace();
-import { existsSync as existsSync23, lstatSync as lstatSync21, readdirSync as readdirSync13, realpathSync as realpathSync21 } from "node:fs";
+import { existsSync as existsSync23, lstatSync as lstatSync22, readdirSync as readdirSync14, realpathSync as realpathSync21 } from "node:fs";
 import { randomUUID as randomUUID13 } from "node:crypto";
 import { homedir as homedir3, tmpdir as tmpdir9 } from "node:os";
 import { join as join42 } from "node:path";
@@ -21664,7 +21715,7 @@ init_coordinator();
 init_batch_preflight();
 init_intent();
 init_storage();
-import { createHash as createHash25 } from "node:crypto";
+import { createHash as createHash26 } from "node:crypto";
 var UNCHANGED_CONTINUATION_LIMIT = 1;
 var USER_WAIT_GUIDANCE = "If the remaining step is an action only the user can perform, waiting for it is a valid stop: stop without repeating the request you already made.";
 function bindRun(binding) {
@@ -21678,7 +21729,7 @@ function releasesRunBinding(prompt, phase) {
   return phase === "planner" || phase === "brainstorm" || /^(?:stop|cancel|pause)(?:\s+(?:execution|the task|this run))?[.!\s]*$/i.test(prompt.trim()) || /^(?:请)?(?:停止|取消|暂停)(?:执行|任务|本次运行|这个任务)?[。！!\s]*$/.test(prompt.trim());
 }
 function digest(value) {
-  return createHash25("sha256").update(JSON.stringify(value)).digest("hex");
+  return createHash26("sha256").update(JSON.stringify(value)).digest("hex");
 }
 function hasContiguousLaneRebind(record, fromDigest) {
   if (!isLaneBatchRecord(record) || record.plan_source !== "single_task")
@@ -22241,7 +22292,7 @@ init_batch_preflight();
 // plugins/immune-brain/runtime/loop_daemon/interaction/local_channel.ts
 init_actor_identity();
 init_storage();
-import { existsSync as existsSync18, mkdirSync as mkdirSync14, readFileSync as readFileSync23, readdirSync as readdirSync12, rmSync as rmSync14, writeFileSync as writeFileSync14 } from "node:fs";
+import { existsSync as existsSync18, mkdirSync as mkdirSync14, readFileSync as readFileSync23, readdirSync as readdirSync13, rmSync as rmSync14, writeFileSync as writeFileSync14 } from "node:fs";
 import { join as join36 } from "node:path";
 
 // plugins/immune-brain/runtime/loop_daemon/guards.ts
@@ -22294,7 +22345,7 @@ function readLocalRequests(stateDir) {
   if (!existsSync18(dir))
     return [];
   const records = [];
-  for (const entry of readdirSync12(dir).sort()) {
+  for (const entry of readdirSync13(dir).sort()) {
     if (!entry.endsWith(".json") || entry.endsWith(".answer.json"))
       continue;
     const id = entry.slice(0, -".json".length);
@@ -22948,7 +22999,7 @@ init_session_result_slot();
 init_host_port();
 import { execFileSync as execFileSync15 } from "node:child_process";
 import { accessSync as accessSync4, constants as constants11, existsSync as existsSync20, readFileSync as readFileSync24 } from "node:fs";
-import { createHash as createHash26 } from "node:crypto";
+import { createHash as createHash27 } from "node:crypto";
 import { delimiter as delimiter5, dirname as dirname18, join as join38 } from "node:path";
 import { fileURLToPath as fileURLToPath4 } from "node:url";
 var REVIEW_PROFILE_RECOVERY = "Set `agents.reviewer` (a user `agents.profiles` name, `host[:model][@effort]` or { host, model?, effort? }) in the user or project configuration, then call `advance_assurance`";
@@ -22975,20 +23026,20 @@ var REVIEW_GIT_ALLOWED_TOOLS = Object.freeze([
   "Bash(git cat-file:*)",
   "Bash(git rev-parse:*)",
   "Bash(git ls-tree:*)",
+  "Bash(git grep:*)",
   "Bash(git --no-pager show:*)",
   "Bash(git --no-pager diff:*)",
   "Bash(git --no-pager log:*)",
   "Bash(git --no-pager cat-file:*)",
   "Bash(git --no-pager rev-parse:*)",
-  "Bash(git --no-pager ls-tree:*)"
+  "Bash(git --no-pager ls-tree:*)",
+  "Bash(git --no-pager grep:*)"
 ]);
+var SESSION_RESULT_ALLOWED_TOOL = "mcp__plugin_immune-brain_immune-brain__submit_session_result";
 var CLAUDE_REVIEW_SETTINGS = JSON.stringify({
   disableAllHooks: true,
   env: { BASH_MAX_OUTPUT_LENGTH: "150000" }
 });
-function claudeOutputWriteRule(outputPath) {
-  return `Edit(/${outputPath})`;
-}
 function reviewBinary(host) {
   const name = REVIEW_BINARY[host];
   return (process.env.PATH ?? "").split(delimiter5).map((dir) => join38(dir || ".", name)).find((path) => {
@@ -23022,7 +23073,7 @@ function git9(root, argv) {
   return execFileSync15("git", argv, { cwd: root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] });
 }
 function digest2(bytes) {
-  return `sha256:${createHash26("sha256").update(bytes).digest("hex")}`;
+  return `sha256:${createHash27("sha256").update(bytes).digest("hex")}`;
 }
 function reviewTreeState(root) {
   return {
@@ -23094,13 +23145,22 @@ function sessionAwaitOutcome(awaitRecord) {
     return { ended: `changed, state ${state}` };
   return state === "blocked" ? { blocked: true } : null;
 }
-function sessionPending(outcome, role, output, submit) {
+function sessionPending(outcome, role, submit) {
   if (outcome && "blocked" in outcome)
     return `${role} session is blocked on a dialog: relay it to the user; once they answered it in the session's tab, run \`resume_command\` once if \`create_command\` printed \`entry_submitted: false\` (the entry was never delivered), then \`await_command\` again, then ${submit} once`;
-  return `${role === "reviewer" ? "review" : "verification"} session still running; the ${role} writes ${output} when it finishes — await it with \`imm-session await\`, then ${submit} once`;
+  return `${role === "reviewer" ? "review" : "verification"} session still running; await it with \`imm-session await\`, then ${submit} once`;
+}
+function sessionAborted(code, ended) {
+  return `${code}: the session ended (${ended}) without submitting its receipt; inspect its tab for a denied or failed tool call before dispatching another session`;
 }
 function writeToOutput(output) {
   return `Write the one JSON object you owe to ${output} as that file's whole content, in a single write, then stop.` + " It is the ignored result slot of this session and the only path you may create; print no verdict.";
+}
+function submitToOutput(slotId) {
+  return `Call the MCP tool submit_session_result with slot_id ${JSON.stringify(slotId)} and result set to the one JSON object you owe, then stop.` + " Create no file; print no verdict.";
+}
+function receiptInstruction(host, slotId, output) {
+  return host === "pi" ? writeToOutput(output) : submitToOutput(slotId);
 }
 function sessionHostArguments(profile, options) {
   const model = options.model ?? profile.model;
@@ -23111,10 +23171,10 @@ function sessionHostArguments(profile, options) {
       CLAUDE_REVIEW_SETTINGS,
       ...options.pluginDir ? ["--plugin-dir", options.pluginDir] : [],
       "--tools",
-      "Read,Grep,Glob,Bash,Write",
+      "Read,Grep,Glob,Bash",
       "--allowedTools",
       ...REVIEW_GIT_ALLOWED_TOOLS,
-      claudeOutputWriteRule(options.outputPath),
+      SESSION_RESULT_ALLOWED_TOOL,
       "--permission-mode",
       "dontAsk",
       ...modelFlag,
@@ -23123,17 +23183,6 @@ function sessionHostArguments(profile, options) {
   if (profile.host === "pi")
     return ["--tools", "read,grep,find,ls,bash,write", ...modelFlag, ...profile.effort ? ["--thinking", profile.effort] : []];
   return [...modelFlag, ...profile.effort ? ["--effort", profile.effort] : []];
-}
-function strictJsonObject(bytes) {
-  const trimmed = bytes.trim();
-  if (!trimmed.startsWith("{") || !trimmed.endsWith("}"))
-    return null;
-  try {
-    const parsed = JSON.parse(trimmed);
-    return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
-  } catch {
-    return null;
-  }
 }
 
 class CliReviewHost {
@@ -23157,7 +23206,8 @@ class CliReviewHost {
     const profile = request.profile ?? review.profile;
     const sessionRunner = reviewSessionRunner(this.env);
     requireReviewBinary(profile);
-    const slot = allocateResultSlot(review.root, `verify-${request.operationId}`, request.prompt, "verify-packet.md");
+    const slotId = `verify-${request.operationId}`;
+    const slot = allocateResultSlot(review.root, slotId, request.prompt, "verify-packet.md");
     const awaitRecord = join38(slot.directory, "session-await.json");
     const label = `verify ${request.taskId}`.slice(0, 32);
     const actorId = `cli-verifier:${profile.host}:${request.operationId}`;
@@ -23166,8 +23216,8 @@ class CliReviewHost {
       host: profile.host,
       entry: `${verificationInstruction(slot.brief)}
 
-${writeToOutput(slot.result)}`,
-      hostArgs: sessionHostArguments(profile, { outputPath: slot.result, model: request.model }),
+${receiptInstruction(profile.host, slotId, slot.result)}`,
+      hostArgs: sessionHostArguments(profile, { model: request.model, pluginDir: runtimeClaudePluginDir() }),
       output: slot.result,
       awaitRecord
     }));
@@ -23194,11 +23244,11 @@ ${writeToOutput(slot.result)}`,
         return {
           ok: false,
           release: true,
-          reason: `verification_session_aborted: the verifier session ended (${outcome.ended}) without writing ${owned.slot.result}; its tab stays open for inspection`
+          reason: sessionAborted("verification_session_aborted", outcome.ended)
         };
-      return { ok: false, release: false, reason: sessionPending(outcome, "verifier", owned.slot.result, "submit_verification") };
+      return { ok: false, release: false, reason: sessionPending(outcome, "verifier", "submit_verification") };
     }
-    if (!strictJsonObject(bytes))
+    if (!isStrictJsonObject(bytes))
       return { ok: false, release: true, reason: "verification_output_invalid: the verifier's output is not one strict JSON object" };
     return { ok: true, receipt: { actorId: owned.actorId, result: bytes, model: owned.model } };
   }
@@ -23219,7 +23269,8 @@ ${writeToOutput(slot.result)}`,
     const sessionRunner = reviewSessionRunner(this.env);
     requireReviewBinary(profile);
     const tree = reviewTreeState(root);
-    const slot = allocateResultSlot(root, `review-${request.operationId}`, request.snapshotPrompt);
+    const slotId = `review-${request.operationId}`;
+    const slot = allocateResultSlot(root, slotId, request.snapshotPrompt);
     const awaitRecord = join38(slot.directory, "session-await.json");
     const actorId = `cli:${profile.host}:${request.operationId}`;
     const session = withSlot(slot, () => sessionSpec(sessionRunner, `review ${request.taskId}`.slice(0, 32), {
@@ -23227,8 +23278,8 @@ ${writeToOutput(slot.result)}`,
       host: profile.host,
       entry: `${reviewSkillPrompt(profile, slot.brief)}
 
-${writeToOutput(slot.result)}`,
-      hostArgs: sessionHostArguments(profile, { outputPath: slot.result, pluginDir: runtimeClaudePluginDir() }),
+${receiptInstruction(profile.host, slotId, slot.result)}`,
+      hostArgs: sessionHostArguments(profile, { pluginDir: runtimeClaudePluginDir() }),
       output: slot.result,
       awaitRecord
     }));
@@ -23273,11 +23324,11 @@ ${writeToOutput(slot.result)}`,
         return {
           ok: false,
           release: true,
-          reason: `review_session_aborted: the reviewer session ended (${outcome.ended}) without writing ${reservation.slot.result}; its tab stays open for inspection`
+          reason: sessionAborted("review_session_aborted", outcome.ended)
         };
-      return { ok: false, release: false, reason: sessionPending(outcome, "reviewer", reservation.slot.result, "submit_review") };
+      return { ok: false, release: false, reason: sessionPending(outcome, "reviewer", "submit_review") };
     }
-    if (!strictJsonObject(bytes))
+    if (!isStrictJsonObject(bytes))
       return { ok: false, release: true, reason: "review_output_invalid: the reviewer's receipt is not one strict JSON object" };
     return { ok: true, receipt: { actorId: reservation.actorId, result: bytes, model: reservation.profile.model ?? HOST_DEFAULT_MODEL } };
   }
@@ -23302,7 +23353,7 @@ ${writeToOutput(slot.result)}`,
 }
 
 // plugins/immune-brain/runtime/assurance/review_mediation.ts
-import { createHash as createHash27 } from "node:crypto";
+import { createHash as createHash28 } from "node:crypto";
 function extractVerdictJson(input) {
   if (typeof input === "string") {
     const first = input.indexOf("{");
@@ -23334,7 +23385,7 @@ function verdictFingerprint(raw) {
   });
 }
 function digestOfReviewerBytes(bytes) {
-  return `sha256:${createHash27("sha256").update(bytes).digest("hex")}`;
+  return `sha256:${createHash28("sha256").update(bytes).digest("hex")}`;
 }
 var RELEASED_REVIEW_RECOVERY = "Call advance_assurance to obtain a new Review reservation, then dispatch one fresh reviewer with the returned envelope unchanged";
 var RETAINED_REVIEW_RECOVERY = "Await the dispatched reviewer once (a Port session's await_command when the reservation carries one), then call submit_review once; do not poll submit_review and do not dispatch another reviewer";
@@ -24678,7 +24729,7 @@ import { tmpdir as tmpdir8 } from "node:os";
 init_coordinator();
 init_storage();
 init_batch_state();
-import { existsSync as existsSync22, lstatSync as lstatSync20, realpathSync as realpathSync19, renameSync as renameSync6, rmSync as rmSync15 } from "node:fs";
+import { existsSync as existsSync22, lstatSync as lstatSync21, realpathSync as realpathSync19, renameSync as renameSync6, rmSync as rmSync15 } from "node:fs";
 import { randomUUID as randomUUID12 } from "node:crypto";
 import { join as join40 } from "node:path";
 var NATIVE_OPERATIONS = new Set(["start_unattended_batch", "retire_stale_batch", "request_authorization", "approve_breaking_intent_revision", "request_stop", "stop"]);
@@ -24704,7 +24755,7 @@ function drop(host, path, root) {
   if (!ensurePrivateDir(cacheDir(root, host.cache_name)))
     return;
   try {
-    const stat = lstatSync20(path);
+    const stat = lstatSync21(path);
     if (stat.isFile() && ownedByUs(stat))
       rmSync15(path);
   } catch {}
@@ -24714,7 +24765,7 @@ function readLast(path, dir) {
     throw new Error("continuation directory could not be verified");
   let stat;
   try {
-    stat = lstatSync20(path);
+    stat = lstatSync21(path);
   } catch (error) {
     if (error.code === "ENOENT")
       return null;
@@ -25551,7 +25602,7 @@ function dropConversationConfirmations(conversationId, root) {
     return;
   const prefix = `${sessionHash(conversationId)}.`;
   try {
-    for (const file of readdirSync13(dir)) {
+    for (const file of readdirSync14(dir)) {
       if (file.startsWith(prefix) && file.endsWith(".confirm")) {
         dropPrivate(join42(dir, file));
       }
@@ -25577,7 +25628,7 @@ function readPhaseEntryState(sessionId, root = tmpdir9()) {
     return null;
   const path = entryLogPath(sessionId, root);
   try {
-    lstatSync21(path);
+    lstatSync22(path);
   } catch (error) {
     return error.code === "ENOENT" ? NO_PHASE_ENTRY : null;
   }

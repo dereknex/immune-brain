@@ -1432,6 +1432,8 @@ describe("claude host resolve_finding", () => {
 				// appended after every pre-existing Tool, so no prior surface moves.
 				"loop_interactions",
 				"answer_loop_interaction",
+				// Spec review-receipt-mcp-submission D4: the reviewer's receipt channel.
+				"submit_session_result",
 			]);
 			expect([...PRIVILEGED_OPERATIONS]).toEqual([
 				"request_authorization",
