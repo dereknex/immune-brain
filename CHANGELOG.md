@@ -1,5 +1,11 @@
 # Changelog
 
+## 9.1.0
+
+### Minor Changes
+
+- [#568](https://github.com/dereknex/immune-brain/pull/568) [`dbd9f4a`](https://github.com/dereknex/immune-brain/commit/dbd9f4a09b5392e94ed0d6b443dafc7b55d72ee8) Thanks [@dereknex](https://github.com/dereknex)! - An authority Review and the findings verification after it deliver their JSON receipt through the new Immune-Brain MCP tool `submit_session_result` on Claude Code and Antigravity, so the reviewer session holds no file write at all. A Lane worktree lives under `<repo>/.git/imm/worktrees/`, where Claude Code treats `.git` as protected and denied every receipt write (#565 assumed an agent write); the tool validates `{ slot_id, result }`, writes `result.json` exclusively into the session's existing result slot and reports its sha256, and every refusal writes nothing. The reviewer argv loses `Write` and its `Edit(` rule, gains `Bash(git grep:*)`, `Bash(git --no-pager grep:*)` and the one tool rule, and the verifier now also starts with `--plugin-dir`. Pi keeps its `write` tool. A session that ends without submitting its receipt still reports `review_session_aborted` / `verification_session_aborted`, and the reason now says that no receipt was submitted and to inspect the session's tab for a denied or failed tool call first. ADR 0038's #565 addendum records the change; slot location, tree guard, strict-JSON check, release decisions and the ADR 0017 byte binding are unchanged.
+
 ## 9.0.0
 
 ### Major Changes
