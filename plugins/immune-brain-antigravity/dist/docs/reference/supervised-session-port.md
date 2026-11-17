@@ -44,7 +44,7 @@ A missing optional capability takes its degrade path, and the degrade is stated 
 | `attachSession` | No effect on Parent scheduling; `imm-session attach` refuses with `provider_unavailable` |
 | `runCommand` | A command (not an agent) runs in a new watched session and returns its exit status once finished. Without it, a caller runs the command as a plain process; `imm-session run` refuses with `provider_unavailable` |
 
-`structuredResult` is reserved and unfilled: verdicts return through the file protocol, and a provider that fills it is refused. The file protocol is the result slot (`runtime/session_result_slot.ts`, ADR 0038 addendum #565): `<cwd>/.imm/state/sessions/<id>/` inside the session's own working directory, ignored by its own `*` file, holding the caller's brief and the one result file the agent writes. The caller reads the result after the session is idle or done and validates it; release removes the slot. No provider implements it.
+The port carries no result. A caller that needs one from a session uses the result slot (`runtime/session_result_slot.ts`, ADR 0038 addendum #565): `<cwd>/.imm/state/sessions/<id>/` inside the session's own working directory, ignored by its own `*` file, holding the caller's brief and the one result file the agent writes. The caller reads the result after the session is idle or done and validates it; release removes the slot. The slot is not a port capability and no provider implements it: the Parent runs the session commands, handles are opaque and never persisted, and every provider's session already runs in its `cwd`, so reading a file there needs no provider.
 
 ### Refusal codes
 

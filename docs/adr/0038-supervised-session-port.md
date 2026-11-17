@@ -173,5 +173,13 @@ rename or partial-write protocol. Release removes the directory.
 
 The slot is a helper beside the port, not a port capability, and no provider
 changes: `runtime/assurance` still imports nothing from `runtime/session`.
-`structuredResult` therefore stays reserved and unfilled; "the file protocol"
-it defers to now means the result slot.
+A `readResult(handle)` capability was rejected: the runtime never calls the
+port in-process (the Parent runs the session commands), handles are opaque and
+not persisted (Decision 4), so a provider could find the slot only by encoding
+assurance paths into its handle, and every provider would implement the same
+file read in the session's `cwd`. The port is session lifecycle only; results
+are a file contract between the caller and the agent.
+
+The reserved `structuredResult` slot from Decision 1 is removed. It held room
+for an in-band result channel this addendum decides against; a provider no
+longer needs to leave it unfilled to be admitted.
