@@ -5,6 +5,7 @@ __pycache__/
 data/
 plugins/immune-brain/.plugin-eval/
 .imm/migrations/
+.imm/config.json
 .imm/lanes.local.json
 .imm/decision-models.local.json
 # Storage-layout cutover: .imm/state/ is wholly ignored worktree-local
