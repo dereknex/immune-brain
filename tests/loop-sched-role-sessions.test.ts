@@ -7,7 +7,7 @@
  *
  * - Positive control: every loop role runs on the profile bound to that role and
  *   reads its 40 turns / 900 s from one per-role table.
- * - Negative control: `judging`, `clarify` and `plan` argv never carries
+ * - Negative control: `analyze`, `clarify` and `plan` argv never carries
  *   `acceptEdits` and carries the Host's read-tool allow-list; a read-only role on
  *   a Host with no verified read-only mode is refused with
  *   `role_readonly_unsupported` before any process starts; a read-only session
@@ -38,7 +38,7 @@ import {
 } from "../plugins/immune-brain/runtime/loop_daemon/agent_runner.ts";
 import { resolveLoopRoles, type LoopSessionConfig } from "../plugins/immune-brain/runtime/loop_daemon/role_catalog.ts";
 
-const ROLES: AgentSessionRole[] = ["judging", "clarify", "plan", "repair", "leader"];
+const ROLES: AgentSessionRole[] = ["clarify", "plan", "repair", "leader", "analyze"];
 
 const HOSTS: Array<CliAgentSessionProfile["host"]> = ["claude-code", "pi", "antigravity"];
 
@@ -108,14 +108,14 @@ describe("Loop Daemon: Per-Role Sessions (S2)", () => {
 		expect(Object.keys(ROLE_SESSION_LIMITS).sort()).toEqual([...ROLES].sort());
 		for (const role of ROLES) expect(ROLE_SESSION_LIMITS[role]).toEqual({ turn_budget: 40, timeout_ms: 900_000 });
 		// Each session kind runs as the role that owns it (D1/D2, D8).
-		expect(sessionRole("judging")).toBe("judging");
+		expect(sessionRole("analyze")).toBe("analyze");
 		expect(sessionRole("clarify")).toBe("clarify");
 		expect(sessionRole("planning")).toBe("plan");
 		expect(sessionRole("repair")).toBe("repair");
 		expect(sessionRole("leader")).toBe("leader");
 	});
 
-	it("never grants a write permission to judging, clarify or plan, and always passes the read-tool allow-list", () => {
+	it("never grants a write permission to analyze, clarify or plan, and always passes the read-tool allow-list", () => {
 		for (const host of HOSTS) {
 			for (const role of READ_ONLY_SESSION_ROLES) {
 				const argv = sessionArguments(role, { host, model: "m", effort: "high" }, "prompt", 40);
@@ -130,11 +130,11 @@ describe("Loop Daemon: Per-Role Sessions (S2)", () => {
 			expect(repair).not.toContain(READ_ONLY_ONLY_FLAG[host]);
 		}
 		expect(isReadOnlyRole("repair")).toBe(false);
-		expect(isReadOnlyRole("judging")).toBe(true);
+		expect(isReadOnlyRole("analyze")).toBe(true);
 	});
 
 	it("starts each session on the profile bound to its own role", async () => {
-		// judging runs as triage; clarify, plan and repair run as their catalog role (Spec loop-leader D1.6).
+		// Every loop session kind runs as the catalog role of its base (Spec loop-leader D1.6).
 		const agents = userAgents({
 			profiles: {
 				opus: { host: "claude-code", model: "claude-opus-5-5", effort: "high" },
@@ -150,7 +150,7 @@ describe("Loop Daemon: Per-Role Sessions (S2)", () => {
 			repair: { base: "repair", host: "pi", model: "auto/deepseek-v4.1-flash" },
 		});
 
-		expect(loopRoleProfile(config, "judging")).toEqual({ host: "claude-code", model: "claude-opus-5-5", effort: "high", instructions: null });
+		expect(loopRoleProfile(config, "analyze")).toEqual({ host: "claude-code", model: null, effort: null, instructions: null });
 		expect(loopRoleProfile(config, "repair")).toEqual({ host: "pi", model: "auto/deepseek-v4.1-flash", effort: null, instructions: null });
 		expect(loopRoleProfile(config, "plan")).toEqual({ host: "claude-code", model: "claude-opus-5-5", effort: "high", instructions: null });
 		// The Lane Host still comes from `agents.executor` (BR-DEC-8).
@@ -170,23 +170,51 @@ describe("Loop Daemon: Per-Role Sessions (S2)", () => {
 			}) as never,
 		});
 
-		const [judged, repaired] = await Promise.all([
-			runAgentSession(request("judging", worktree()), provider),
+		const [analyzed, repaired] = await Promise.all([
+			runAgentSession(request("analyze", worktree()), provider),
 			runAgentSession(request("repair", worktree()), provider),
 		]);
-		// Judging ran on the judging role's Host and model; repair on its own.
-		expect(asked).toEqual(["judging", "repair"]);
+		// The analyze session ran on its catalog role's Host; repair on its own.
+		expect(asked).toEqual(["analyze", "repair"]);
 		expect(spawned[0]!.binary.endsWith("/claude")).toBe(true);
-		expect(spawned[0]!.argv).toContain("claude-opus-5-5");
 		expect(spawned[1]!.binary.endsWith("/pi")).toBe(true);
 		expect(spawned[1]!.argv).toContain("auto/deepseek-v4.1-flash");
-		expect(judged.status).toBe("completed");
+		expect(analyzed.status).toBe("completed");
 		// A read-only session delivers what it printed; nothing is read from disk.
-		expect(judged.output).toBe('{"ok":true}');
-		expect(judged.output_path).toBeNull();
+		expect(analyzed.output).toBe('{"ok":true}');
+		expect(analyzed.output_path).toBeNull();
 		// The writable repair role still has to leave its result in the worktree.
 		expect(repaired.status).toBe("failed");
 		expect(repaired.reason).toContain("expected_output_missing");
+	});
+
+	it("runs one request on its explicit profile instead of its base's first role", async () => {
+		stubHostsOnPath("claude", "pi");
+		const spawned: Array<{ binary: string; argv: string[] }> = [];
+		const provider = createCliAgentSessionProvider({
+			profileFor: () => ({ host: "pi" }),
+			spawn: ((binary: string, argv: string[]) => {
+				spawned.push({ binary, argv });
+				return { status: 0, stdout: "{}", stderr: "", signal: null };
+			}) as never,
+		});
+		const record = await runAgentSession(
+			{
+				kind: "analyze",
+				worktree_path: worktree(),
+				prompt: "prompt",
+				turn_budget: 12,
+				timeout_ms: 120_000,
+				env: {},
+				profile: { host: "claude-code", model: "m", effort: "high", instructions: null },
+			},
+			provider,
+		);
+		expect(record.status).toBe("completed");
+		// The explicit profile's Host and model spawn, not profileFor's.
+		expect(spawned).toHaveLength(1);
+		expect(spawned[0]!.binary.endsWith("/claude")).toBe(true);
+		expect(spawned[0]!.argv).toContain("m");
 	});
 
 	it("refuses a read-only role on a Host with no verified read-only mode and starts no process", async () => {
@@ -200,7 +228,7 @@ describe("Loop Daemon: Per-Role Sessions (S2)", () => {
 			}) as never,
 		});
 
-		const record = await runAgentSession(request("judging", path), provider);
+		const record = await runAgentSession(request("analyze", path), provider);
 		expect(spawns).toBe(0);
 		expect(record.status).toBe("failed");
 		expect(record.reason).toContain("role_readonly_unsupported");
@@ -228,8 +256,8 @@ describe("Loop Daemon: Per-Role Sessions (S2)", () => {
 			},
 		};
 		expect(loopSessionLimits(config, "plan")).toEqual({ turn_budget: 12, timeout_ms: 120_000 });
-		// A session outside the catalog keeps the built-in table.
-		expect(loopSessionLimits(config, "judging")).toEqual(ROLE_SESSION_LIMITS.judging);
+		// The catalog owns the analyze role's limits too.
+		expect(loopSessionLimits(config, "analyze")).toEqual(ROLE_SESSION_LIMITS.analyze);
 
 		stubHostsOnPath("pi");
 		const spawned: Array<{ argv: string[] }> = [];

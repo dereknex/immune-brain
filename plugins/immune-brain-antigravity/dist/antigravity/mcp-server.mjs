@@ -7949,8 +7949,23 @@ function resolveAgents(layers) {
         err("config_invalid", file, `agents.${key}`, key === "profiles" ? "profiles are defined only in the user file" : "unknown key");
     return value;
   };
-  const user = section(layers.user, layers.files.user, ["profiles", ...AGENT_ROLES]);
-  const project = section(layers.project, layers.files.project, AGENT_ROLES);
+  const presetJudging = [];
+  const withoutJudgingPresets = (value, file) => {
+    if (value === null || value === undefined || !isObject2(value) || !isObject2(value.presets))
+      return value;
+    const presets = value.presets;
+    const entries = Object.entries(presets);
+    const onlyJudging = entries.length > 0 && entries.every(([, preset]) => isObject2(preset) && Object.keys(preset).every((key) => key === "roles") && isObject2(preset.roles) && Object.keys(preset.roles).length > 0 && Object.keys(preset.roles).every((air) => air === "judging"));
+    if (!onlyJudging)
+      return value;
+    for (const [name] of entries)
+      presetJudging.push({ file, key_path: `agents.presets.${name}.roles.judging` });
+    const stripped = { ...value };
+    delete stripped.presets;
+    return stripped;
+  };
+  const user = section(withoutJudgingPresets(layers.user, layers.files.user), layers.files.user, ["profiles", ...AGENT_ROLES]);
+  const project = section(withoutJudgingPresets(layers.project, layers.files.project), layers.files.project, AGENT_ROLES);
   const profiles = {};
   if (user.profiles !== undefined) {
     if (!isObject2(user.profiles))
@@ -7978,7 +7993,7 @@ function resolveAgents(layers) {
       roles[role] ??= { host: parsed.profile.host, model: parsed.profile.model ?? null, effort: parsed.profile.effort ?? null, source: layer };
     }
   }
-  return { agents: { valid: errors.length === 0, profiles: { value: profiles, source: user.profiles !== undefined ? "user" : "default" }, roles }, errors };
+  return { agents: { valid: errors.length === 0, profiles: { value: profiles, source: user.profiles !== undefined ? "user" : "default" }, roles }, errors, preset_judging: presetJudging };
 }
 function agentRole(agents, role) {
   return agents.roles[role] ?? null;
@@ -8616,6 +8631,8 @@ function resolveConfig(root, options = {}) {
     for (const base of bases)
       diag("deprecated_config_source", "warning", bound.source === "project" ? projectPath : userPath, "loop.roles", `${key} no longer chooses the loop ${base} role; bind a base ${base} role under loop.roles in .imm/config.json`);
   }
+  for (const binding of agentLayers.preset_judging)
+    diag("deprecated_config_source", "warning", binding.file, binding.key_path, "judging is retired: the leader replaces the Tier-3 judging session, so this binding selects nothing");
   for (const [layer, o, file] of layers)
     knownKeys(part(o, file, "decision_models"), layer === "user" ? ["profiles", "default_profile", "bindings", "egress"] : ["default_profile", "bindings", "egress"], file, "decision_models");
   let profiles = {};

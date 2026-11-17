@@ -65,7 +65,6 @@ import {
 } from "./escalation.ts";
 import { type GuardFacts, eventTarget } from "./guards.ts";
 import type { LoopHandler } from "./handlers.ts";
-import type { JudgingAgentFn } from "./judging_agent.ts";
 import { activeLoopJob } from "./jobs.ts";
 import { appendLoopLabel, loadLoopLabels } from "./labels.ts";
 import { acquireLoopLease, releaseLoopLease } from "./leases.ts";
@@ -94,7 +93,7 @@ import {
 	rollDailyStats,
 	saveLoopState,
 } from "./state.ts";
-import { plannedWorkItemCount, workItemScopeHint } from "./work_items.ts";
+import { plannedWorkItemCount, readWorkItem, workItemScopeHint } from "./work_items.ts";
 import {
 	planStatusIssue,
 	type LoopStatusSnapshot,
@@ -287,7 +286,6 @@ export interface DispatchDecisionsOptions {
 	agentPort?: AgentHandlerPort;
 	/** True only inside the standing `imm-loop run` process, which drives Lanes through the session port. */
 	standingDaemon?: boolean;
-	judgingAgent?: JudgingAgentFn;
 	relayDecision?: typeof relayLaneDecision;
 	relayInputFactory?: RelayInputFactory<unknown>;
 	/**
@@ -594,6 +592,8 @@ export async function dispatchDecisions(
 			event_kind: evt?.kind,
 			// D7: the scope the work item's TaskIntents cover, never an event field.
 			scope_hint: workItemScopeHint(root, stateDir, targetId),
+			// Spec loop-leader D3.1: the leader's rank only breaks ties inside one class.
+			leader_rank: readWorkItem(stateDir, targetId)?.leader_rank ?? null,
 			candidate_id: candidateId,
 		};
 
@@ -954,30 +954,6 @@ export async function dispatchDecisions(
 					} else {
 						resolvedOption = parsedBody.selected_option;
 					}
-				}
-				if (!resolvedOption && options.judgingAgent) {
-					try {
-						const judged = await options.judgingAgent({
-							point: "a19_owner_comment_intent",
-							escalation_reason: "unparsed lane decision reply requires option resolution",
-							event,
-							...(decision.classification?.choice
-								? { model_choice: decision.classification.choice }
-								: {}),
-							...(decision.classification?.confidence !== undefined
-								? { model_confidence: decision.classification.confidence }
-								: {}),
-							offered_options: offeredOptions,
-						});
-						const candidateOption = judged?.lane_option ?? judged?.corrected_option;
-						if (candidateOption) {
-							const matched =
-								offeredOptions.length > 0
-									? matchOfferedOption(candidateOption, offeredOptions)
-									: null;
-							resolvedOption = matched ? matched.id : candidateOption;
-						}
-					} catch {}
 				}
 
 				const outcome = await handleLaneDecisionReply(

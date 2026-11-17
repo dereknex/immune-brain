@@ -67,6 +67,8 @@ export interface ScheduleCandidate {
 	event_kind?: LoopEventKind;
 	scope_hint?: string[];
 	candidate_id?: string;
+	/** The leader's tie-break inside one class (Spec loop-leader D3.1); `null` sorts last. */
+	leader_rank?: number | null;
 }
 
 /**
@@ -182,6 +184,10 @@ export function scheduleLoopWork(input: ScheduleInput): ScheduleResult {
 			const leftRank = left.priority === null ? Number.MAX_SAFE_INTEGER : SCHEDULE_PRIORITY[left.priority];
 			const rightRank = right.priority === null ? Number.MAX_SAFE_INTEGER : SCHEDULE_PRIORITY[right.priority];
 			if (leftRank !== rightRank) return leftRank - rightRank;
+			// D3.1: priority only reorders ties inside one class, never across classes.
+			const leftLead = left.candidate.leader_rank ?? Number.MAX_SAFE_INTEGER;
+			const rightLead = right.candidate.leader_rank ?? Number.MAX_SAFE_INTEGER;
+			if (leftLead !== rightLead) return leftLead - rightLead;
 			if (left.candidate.target_id !== right.candidate.target_id) {
 				return left.candidate.target_id < right.candidate.target_id ? -1 : 1;
 			}

@@ -16,7 +16,8 @@
  */
 
 import { spawn } from "node:child_process";
-import { chmodSync, closeSync, existsSync, fstatSync, openSync, readSync } from "node:fs";
+import { chmodSync, closeSync, existsSync, fstatSync, mkdtempSync, openSync, readSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -27,10 +28,13 @@ import { readNoTouch } from "../no_touch.ts";
 import { findLaneRelayTarget, type relayLaneDecision } from "../unattended/lane_decision.ts";
 import { POINT_REGISTRY } from "../decision_model/thresholds.ts";
 import { buildDecisionRecord } from "./decision_record.ts";
-import { findLatestLaneDecisionQuestion } from "./decision_relay.ts";
 import { selectBestDuplicateCandidate } from "./duplicate_candidates.ts";
-import { createCliAgentSessionProvider, loopRoleProfile, loopSessionLimits, type AgentSessionProvider } from "./agent_runner.ts";
+import { loopSessionLimits, runAgentSession, sessionEnvironment, type AgentSessionKind, type AgentSessionProvider } from "./agent_runner.ts";
 import { recordLeaderWake, runLeaderTick } from "./leader_agent.ts";
+import { applyLeaderProposal, parseInitiativePlan, type InitiativePlan, type LeaderDispatchDeps } from "./leader_dispatch.ts";
+import { reconcileCandidates } from "./reconcile.ts";
+import { reapOrphanedRoleSessions, runningRoleSessions } from "./role_sessions.ts";
+import type { ResolvedLoopRole } from "./role_catalog.ts";
 import {
 	createAgentHandlerPort,
 	createDefaultAgentHandlerDeps,
@@ -53,7 +57,6 @@ import {
 	judgeEvents,
 	type JudgingBudgetTracker,
 } from "./judgement.ts";
-import { createSessionJudgingAgent, type JudgingAgentFn } from "./judging_agent.ts";
 import { acquireDaemonLock, cleanStaleDaemonLock, isPidAlive, readDaemonLock } from "./lock.ts";
 import { observeGithub } from "./observer.ts";
 import { rebuildLoopState } from "./rebuild.ts";
@@ -248,6 +251,115 @@ function spawnDetachedDaemonProcess(params: SpawnDaemonParams): SpawnDaemonHandl
 	}
 }
 
+/** The session kind one catalog base's role runs as (Spec loop-leader D1.2). */
+const ROLE_SESSION_KIND: Record<string, AgentSessionKind> = {
+	clarify: "clarify",
+	plan: "planning",
+	repair: "repair",
+	analyze: "analyze",
+};
+
+function roleEntryPrompt(role: ResolvedLoopRole, subject: string, brief: string): string {
+	return [
+		`You are the Loop's \`${role.name}\` role (base \`${role.base}\`).`,
+		`Subject: ${subject}`,
+		"",
+		brief,
+		"",
+		"Report what you found.",
+	].join("\n");
+}
+
+/**
+ * Start one catalog role session for an accepted `dispatch` (D3.5). A read-only
+ * base runs in an empty directory it cannot write; a `repair` base runs in the
+ * daemon's own PR worktree and must leave a new commit there as its evidence.
+ */
+export function createRoleSessionRunner(input: {
+	provider: AgentSessionProvider;
+	root: string;
+	stateDir: string;
+	snapshot: ObservationInput;
+}): LeaderDispatchDeps["startSession"] {
+	return async ({ role, subject, brief, target }) => {
+		const kind = ROLE_SESSION_KIND[role.base];
+		if (kind === undefined) return { completed: false, reason: `role_base_not_dispatchable: ${role.base}` };
+		const limits = { turn_budget: role.limits.turn_budget, timeout_ms: role.limits.timeout_s * 1000 };
+		// D3.5: the session runs on the dispatched role's own profile, not the
+		// first role of its base, so two roles on one base stay distinct.
+		const profile = { host: role.host, model: role.model, effort: role.effort, instructions: role.instructions };
+		if (role.base === "repair") {
+			const prNumber = /^pr-(\d+)$/.exec(target);
+			const pr = prNumber ? input.snapshot.pull_requests.find((entry) => entry.number === Number(prNumber[1])) : undefined;
+			if (!pr) return { completed: false, reason: "repair_outside_daemon_branch" };
+			const worktree = createDefaultAgentHandlerDeps(input.root, { stateDir: input.stateDir }).prWorktree({
+				root: input.root,
+				pr_number: pr.number,
+				branch: pr.head_ref_name,
+				head_sha: pr.head_sha,
+			});
+			const record = await runAgentSession(
+				{ kind, worktree_path: worktree, prompt: roleEntryPrompt(role, subject, brief), ...limits, env: sessionEnvironment(null), profile },
+				input.provider,
+				{ branch: pr.head_ref_name, expect_head_change: true },
+			);
+			return { completed: record.status === "completed", reason: `${record.status}: ${record.reason}` };
+		}
+		const directory = mkdtempSync(join(tmpdir(), "imm-loop-role-"));
+		try {
+			const record = await runAgentSession(
+				{ kind, worktree_path: directory, prompt: roleEntryPrompt(role, subject, brief), ...limits, env: sessionEnvironment(null), profile },
+				input.provider,
+			);
+			return { completed: record.status === "completed", reason: `${record.status}: ${record.reason}` };
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
+	};
+}
+
+/** The one reply the plan role returns for an Initiative shape (D3.3). */
+function initiativePlanPrompt(target: string, reason: string): string {
+	return [
+		"You are the Loop's plan role. Split one piece of work into ordered slices.",
+		"Read nothing outside this directory. Decide, then print exactly one JSON object and nothing else:",
+		`{"contract": "immune_brain/loop_initiative_plan/v1", "slug": "<initiative-slug>", "slices": [{"slice_id": "<id>", "result": "<what the slice delivers>", "path": "docs/plans/<task-id>.intent.json", "intent": {...}, "blocked_by": ["<id>"]}]}`,
+		"Each `intent` is one complete TaskIntent the Kernel can author, with its own `task_id`.",
+		"Each slice's `path` must be exactly `docs/plans/<task-id>.intent.json` for that intent's `task_id`: the drive reads every slice back through that path.",
+		"Leave `blocked_by` out when the slice has no predecessor.",
+		"",
+		`Target: ${target}`,
+		`Reason: ${reason}`,
+	].join("\n");
+}
+
+/** Run the plan role once, and read its Initiative slices from the session record. */
+export function createInitiativePlanner(input: {
+	provider: AgentSessionProvider;
+	turn_budget: number;
+	timeout_ms: number;
+}): (input: { target: string; reason: string }) => Promise<InitiativePlan | null> {
+	return async ({ target, reason }) => {
+		const directory = mkdtempSync(join(tmpdir(), "imm-loop-initiative-"));
+		try {
+			const record = await runAgentSession(
+				{
+					kind: "planning",
+					worktree_path: directory,
+					prompt: initiativePlanPrompt(target, reason),
+					turn_budget: input.turn_budget,
+					timeout_ms: input.timeout_ms,
+					env: sessionEnvironment(null),
+				},
+				input.provider,
+			);
+			return record.status === "completed" && record.output !== null ? parseInitiativePlan(record.output) : null;
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
+	};
+}
+
 export async function runLoopDaemonCli(
 	argv: string[],
 	root: string = process.cwd(),
@@ -262,8 +374,6 @@ export async function runLoopDaemonCli(
 		classify?: ClassifyFn;
 		/** Configured enabled points override; defaults to every point `decision_models.bindings` does not turn `off`. */
 		enabledPoints?: readonly string[];
-		/** Read-only judging agent seam; production executable binds the S9 session runner. */
-		judgingAgent?: JudgingAgentFn;
 		/** Facts the caller owns (budget, leases, identity posture, retry cap). */
 		guardFacts?: Partial<GuardFacts>;
 		loopConfig?: LoopConfig;
@@ -278,7 +388,13 @@ export async function runLoopDaemonCli(
 		/** The S9 agent port; the executable composes the production one. */
 		agentPort?: AgentHandlerPort;
 		/** The leader session backend; absent compiles the briefing but starts no leader session. */
-		leader?: { provider: AgentSessionProvider };
+		leader?: {
+			provider: AgentSessionProvider;
+			/** The plan role's Initiative slices for a `shape{plan:"initiative"}` item. */
+			planInitiative?: (input: { target: string; reason: string }) => Promise<InitiativePlan | null>;
+			/** `imm-kernel intent author --stdin --json`, for the carrier's TaskIntents. */
+			runKernel?: LeaderDispatchDeps["runKernel"];
+		};
 		/** True only inside the standing `imm-loop run` process. */
 		standingDaemon?: boolean;
 		/** Deterministic clock seam for reconciliation schedule tests. */
@@ -319,7 +435,7 @@ Commands:
   resume                                         Resume scheduling for the daemon
   retire-lease <target-id>                       Manually retire/remove an active lease
   rebuild [--json]                               Reconstruct state and leases from GitHub and repository evidence
-  reconcile [--dry-run] [--json]                 Re-check model-skipped decisions with the judging agent
+  reconcile [--dry-run] [--json]                 Collect model-skipped decisions as leader reconcile candidates
   run [--interval <sec>] [--dry-run]             Run standing loop daemon process in foreground
 
 Options:
@@ -404,6 +520,13 @@ Options:
 			pause_reason: snapshot.pause_reason,
 			watermarks,
 			active_leases: snapshot.active_leases,
+			// D3.5: the catalog role sessions still running, with what they run for.
+			sessions: runningRoleSessions(stateDir).map((session) => ({
+				target: session.target,
+				role: session.role,
+				base: session.base,
+				started_at: session.started_at,
+			})),
 			stats,
 			updated_at: updatedAt,
 			log_path: snapshot.log_path,
@@ -418,6 +541,7 @@ Options:
   Mode: ${mode}
   Paused: ${snapshot.paused ? `YES (${snapshot.pause_reason || "no reason"})` : "NO"}
   Active Leases: ${snapshot.active_leases_count}
+  Running Sessions: ${projection.sessions.length === 0 ? "none" : projection.sessions.map((session) => `${session.role} (${session.base}) on ${session.target}`).join(", ")}
   Log: ${snapshot.log_path}
   Watermarks:
     Issues: ${watermarks.issues_updated_at || "none"}
@@ -1089,17 +1213,7 @@ Options:
 				facts,
 				classify,
 				enabledPoints,
-				judgingAgent: options?.judgingAgent,
 				budgetTracker,
-				offeredOptionsForEvent: (evt) => {
-					if (evt.kind !== "E3_OWNER_COMMENT") return undefined;
-					if (facts.lane_decision_facts?.options) {
-						return facts.lane_decision_facts.options;
-					}
-					const issueComments =
-						obs.snapshot.issues.find((i) => i.number === evt.issue_number)?.comments ?? [];
-					return findLatestLaneDecisionQuestion(issueComments)?.options;
-				},
 			});
 			const decisions = judged.events.map((event, index) =>
 				buildDecisionRecord(event, judgements[index], eventTarget(event), { recorded_at: recordedAt, dry_run: isDryRun }),
@@ -1166,7 +1280,6 @@ Options:
 				now: recordedAt,
 				agentPort: options?.agentPort,
 				standingDaemon: options?.standingDaemon === true,
-				judgingAgent: options?.judgingAgent,
 				relayDecision: options?.relayDecision,
 				relayInputFactory: options?.relayInputFactory,
 				laneRuntime: options?.laneRuntime,
@@ -1199,6 +1312,83 @@ Options:
 				saveLoopState(stateDir, state);
 			}
 
+			// S3/D3.1: an accepted proposal item executes only behind its own code guard.
+			// A record still running belongs to a dead tick: every dispatch awaits
+			// its session inside the same tick, so reaping first frees the role
+			// for this tick's items instead of refusing them forever.
+			if (!isDryRun) reapOrphanedRoleSessions(stateDir, { at: recordedAt });
+			const leaderItems =
+				leaderTick.items.length === 0
+					? []
+					: await applyLeaderProposal(leaderTick.items, {
+							root: absoluteRoot,
+							stateDir,
+							now: recordedAt,
+							dry_run: isDryRun,
+							fingerprint: leaderTick.briefing_fingerprint,
+							roles: resolved.loop.value.roles,
+							guardFacts: facts,
+							events: obs.events,
+							candidates: reconcileCandidates(stateDir),
+							max_concurrent: loopConfig.max_concurrent,
+							dispatches_today: state.stats.dispatches_today ?? 0,
+							max_dispatches_per_day: loopConfig.budget.max_dispatches_per_day,
+							runNext: async ({ decision, event }) =>
+								(
+									await dispatchDecisions({
+										root: absoluteRoot,
+										stateDir,
+										loopConfig,
+										events: [event],
+										decisions: [decision],
+										snapshot: obs.snapshot,
+										state,
+										gitHubPort,
+										guardFacts: facts,
+										dryRun: isDryRun,
+										now: recordedAt,
+										agentPort: options?.agentPort,
+										standingDaemon: options?.standingDaemon === true,
+										...(options?.relayDecision ? { relayDecision: options.relayDecision } : {}),
+										...(options?.relayInputFactory ? { relayInputFactory: options.relayInputFactory } : {}),
+										...(options?.laneRuntime ? { laneRuntime: options.laneRuntime } : {}),
+									})
+								).dispatches,
+							planInitiative: (input) =>
+								options?.leader?.planInitiative
+									? options.leader.planInitiative(input)
+									: Promise.resolve(null),
+							runKernel:
+								options?.leader?.runKernel ??
+								((input) => ({ exit_code: 1, json: { reason: `kernel_unavailable: ${input.argv.join(" ")}` } })),
+							startSession:
+								options?.leader?.provider === undefined
+									? async () => ({ completed: false, reason: "session_provider_unavailable" })
+									: createRoleSessionRunner({
+											provider: options.leader.provider,
+											root: absoluteRoot,
+											stateDir,
+											snapshot: obs.snapshot,
+										}),
+						});
+
+			// D3.5: a leader dispatch starts a real catalog session, so started
+			// sessions count against the daily dispatch budget exactly like a
+			// Tier-1/2 dispatch: later ticks and the scheduler see them. A failed
+			// session ran too, so only refusals that started nothing are spared.
+			const leaderStartedSessions = isDryRun
+				? 0
+				: leaderItems.filter(
+						(item) => item.action === "dispatch" && (item.outcome === "accepted" || item.session_started === true),
+					).length;
+			if (leaderStartedSessions > 0) {
+				rollDailyStats(state, recordedAt.slice(0, 10));
+				state.stats.dispatches_today = (state.stats.dispatches_today ?? 0) + leaderStartedSessions;
+				state.stats.dispatches_total = (state.stats.dispatches_total ?? 0) + leaderStartedSessions;
+				state.updated_at = recordedAt;
+				saveLoopState(stateDir, state);
+			}
+
 			const outputPayload = {
 				contract: "assurance_kernel/loop_tick_result/v1",
 				dry_run: isDryRun,
@@ -1211,6 +1401,8 @@ Options:
 				local_answers: localAnswers,
 				local_answers_count: localAnswers.length,
 				leader: leaderTick,
+				leader_items: leaderItems,
+				leader_items_count: leaderItems.length,
 				watermarks: obs.watermarks,
 				paused: state.paused,
 			};
@@ -1228,6 +1420,9 @@ Options:
 				dispatchRes.dispatches.map((d) => `  => dispatch: ${d.handler} [${d.outcome}] ${d.detail}`).join("\n") +
 				(dispatchRes.dispatches.length > 0 ? "\n" : "") +
 				`  => leader: ${leaderTick.woke ? "woke" : "idle"} (${leaderTick.reason}) fingerprint ${leaderTick.briefing_fingerprint}` +
+				(leaderItems.length === 0
+					? ""
+					: `\n${leaderItems.map((item) => `  => leader item ${item.action} ${item.target} [${item.outcome}] ${item.reason}`).join("\n")}`) +
 				(leaderTick.proposal === null ? "" : `, ${leaderTick.proposal.items} item(s), ${leaderTick.proposal.rejected.length} rejected`) +
 				"\n";
 
@@ -1261,76 +1456,10 @@ Options:
 		try {
 			const state = loadLoopState(stateDir) ?? initLoopState();
 			const now = options?.now?.() ?? new Date().toISOString();
-			const gh = options?.gh ?? createGhTransport();
-			let snapshot: ObservationInput = options?.snapshotOverride ?? {
-				issues: [],
-				pull_requests: [],
-				observed_at: now,
-			};
-			if (!options?.snapshotOverride && options?.gh) {
-				try {
-					const obs = await observeGithub(absoluteRoot, {
-						gh: options.gh,
-						previousState: state,
-					});
-					snapshot = obs.snapshot;
-				} catch {}
-			}
-
-			let declaredNoTouch: string[] = [];
-			try {
-				declaredNoTouch = readNoTouch(absoluteRoot);
-			} catch (error: any) {
-				return {
-					stdout: "",
-					stderr: `Error: unreadable no-touch declaration: ${error?.message || String(error)}\n`,
-					returncode: 1,
-				};
-			}
-
-			let daemonLogin: string | null = options?.guardFacts?.daemon_identity ?? null;
-			if (!isDryRun && !daemonLogin && options?.gh) {
-				daemonLogin = await readAuthenticatedGithubLogin(gh, absoluteRoot);
-			}
-
-			const currentBudget: ScheduleBudget = {
-				ticks_today: state.stats.ticks_today ?? 0,
-				dispatches_today: state.stats.dispatches_today ?? 0,
-				max_ticks_per_day: loopConfig.budget.max_ticks_per_day,
-				max_dispatches_per_day: loopConfig.budget.max_dispatches_per_day,
-			};
-
-			const facts: GuardFacts = {
-				paused: state.paused,
-				no_touch_paths: declaredNoTouch,
-				active_leases: state.active_leases,
-				identity_posture: detectIdentityPosture(inspectDaemonIdentity(absoluteRoot)),
-				allowed_actors: loopConfig.allowed_actors,
-				allowed_associations: loopConfig.allowed_associations,
-				daemon_identity: daemonLogin,
-				budget_exhausted: Boolean(budgetExhausted(currentBudget)),
-				retry_counts: loadRepairRetries(stateDir),
-				pending_clarify: pendingClarifyInteractions(stateDir),
-				expected_plan_digests: loadPublishedPlanDigests(stateDir),
-				...options?.guardFacts,
-			};
-
-			const gitHubPort = options?.gitHubPort ?? createLoopGitHubPort(gh, absoluteRoot);
 			const result = await reconcileSkippedDecisions({
-				root: absoluteRoot,
 				stateDir,
-				loopConfig,
-				snapshot,
-				gitHubPort,
-				guardFacts: facts,
 				dryRun: isDryRun,
 				now,
-				judgingAgent: options?.judgingAgent,
-				agentPort: options?.agentPort,
-				standingDaemon: options?.standingDaemon === true,
-				relayDecision: options?.relayDecision,
-				relayInputFactory: options?.relayInputFactory,
-				laneRuntime: options?.laneRuntime,
 				state,
 			});
 
@@ -1342,7 +1471,9 @@ Options:
 			if (isJson) {
 				return { stdout: jsonOutput(payload), stderr: "", returncode: 0 };
 			}
-			const summary = `Reconcile completed (${isDryRun ? "DRY-RUN" : "LIVE"}): checked ${result.checked}, overrides ${result.overrides}, labels appended ${result.labels_appended}, dispatched ${result.dispatches.length}\n`;
+			const summary = `Reconcile completed (${isDryRun ? "DRY-RUN" : "LIVE"}): checked ${result.checked}, candidates ${result.candidates.length}\n` +
+				result.candidates.map((candidate) => `  => candidate ${candidate.target} (${candidate.point ?? "needs_judging"}${candidate.choice === null ? "" : `: ${candidate.choice}`})`).join("\n") +
+				(result.candidates.length > 0 ? "\n" : "");
 			return { stdout: summary, stderr: "", returncode: 0 };
 		} finally {
 			if (releaseLock) releaseLock();
@@ -1503,25 +1634,24 @@ export async function runLoopDaemonExecutable(
 	const needsAgent = command === "tick" || command === "run" || command === "reconcile";
 	const handlerDeps = needsAgent ? createDefaultAgentHandlerDeps(root, { stateDir: effectiveStateDir }) : undefined;
 	const agentPort = handlerDeps ? createAgentHandlerPort(handlerDeps) : undefined;
-	let judgingAgent: JudgingAgentFn | undefined;
-	if (needsAgent) {
-		// The judging session runs on the profile bound to the judging role; no
-		// executor Host leaf decides it (Spec D2).
-		const config = resolveConfig(root);
-		judgingAgent = createSessionJudgingAgent({
-			root,
-			provider: createCliAgentSessionProvider({
-				profileFor: (role) => loopRoleProfile(config, role),
-				instructions_root: root,
-				log_dir: join(effectiveStateDir, "session-logs"),
-			}),
-		});
-	}
+	const leader = handlerDeps
+		? (() => {
+				const planLimits = loopSessionLimits(resolveConfig(root), "plan");
+				return {
+					provider: handlerDeps.sessionProvider,
+					planInitiative: createInitiativePlanner({
+						provider: handlerDeps.sessionProvider,
+						turn_budget: planLimits.turn_budget,
+						timeout_ms: planLimits.timeout_ms,
+					}),
+					runKernel: handlerDeps.runKernel,
+				};
+			})()
+		: undefined;
 	return runLoopDaemonCli(argv, root, {
 		classify: createDecisionModelClassifier(root),
 		...(agentPort ? { agentPort } : {}),
-		...(handlerDeps ? { leader: { provider: handlerDeps.sessionProvider } } : {}),
-		...(judgingAgent ? { judgingAgent } : {}),
+		...(leader ? { leader } : {}),
 	});
 }
 

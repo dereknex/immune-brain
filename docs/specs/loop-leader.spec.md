@@ -138,14 +138,13 @@ sequenceDiagram
 4. **Diagnostics** (reported by `imm-kernel config --json`, role excluded from the catalog): `role_base_unknown`, `role_name_invalid`, `role_host_unknown`, `role_limit_out_of_range`, `role_instructions_outside_repo`, `role_instructions_missing`, `leader_role_duplicate`. `role_readonly_unsupported` keeps failing closed at spawn for a read-only base on a Host without verified read-only argv.
 5. **Resolution output** — `loop.value.roles` lists each resolved role with `name`, `base`, `host`, `model`, `effort`, `when`, `instructions`, `limits`, `source` (`project` or `default`).
 6. **Session use** — loop clarify, plan and repair sessions take Host, model, effort, `turn_budget` and `timeout_s` from the catalog role of their base instead of `agents` and `ROLE_SESSION_LIMITS`; `instructions` content is appended to the entry prompt under an "Advisory project instructions" heading and never changes tools, permission flags, or output contract.
-7. **Migration** (`BR-DEC-7`) — bindings at `agents.presets.<preset>.roles.clarify|plan|repair` and the `"*"` wildcard no longer affect loop sessions. Whenever today's resolution for a loop role would have come from a preset binding (explicit role key or `"*"`), `imm-kernel config --json` reports one `deprecated_config_source` diagnostic per role naming the binding path and `loop.roles` in `.imm/config.json`; the session uses the catalog role (default `claude-code`). `agents.presets.*.roles.executor`, `code-review`, `review-verifier`, `advisory-reviewer` are unchanged (`BR-DEC-8`). `judging` stays as-is until `S3`.
+7. **Migration** (`BR-DEC-7`) — bindings at `agents.presets.<preset>.roles.clarify|plan|repair` and the `"*"` wildcard no longer affect loop sessions. Whenever today's resolution for a loop role would have come from a preset binding (explicit role key or `"*"`), `imm-kernel config --json` reports one `deprecated_config_source` diagnostic per role naming the binding path and `loop.roles` in `.imm/config.json`; the session uses the catalog role (default `claude-code`). `agents.presets.*.roles.executor`, `code-review`, `review-verifier`, `advisory-reviewer` are unchanged (`BR-DEC-8`). `judging` is retired in `S3`: a `roles.judging` preset binding is ignored with one `deprecated_config_source` diagnostic and never makes the `agents` table `config_invalid`.
 
    ADR 0041 retired presets before this Slice landed, so the bindings a loop role could still
    come from are the four agent roles: `agents.planner` fed `clarify` and `plan`, and
    `agents.executor` fed `repair`. A retired `agents.presets` key stays `config_invalid` and
    reaches no loop role, so the one notice per affected role names `agents.planner` or
-   `agents.executor`; `agents.executor` keeps selecting the Lane Host (`BR-DEC-8`), and
-   `agents.triage` keeps running `judging`.
+   `agents.executor`; `agents.executor` keeps selecting the Lane Host (`BR-DEC-8`); `agents.triage` no longer runs a judging session after `S3` retires it.
 
 8. **Host availability** (`BR-DEC-9`) — before spawn the runner resolves the Host binary on `PATH`; absence concludes the session `failed` with `role_host_unavailable` and starts no other Host.
 

@@ -26,33 +26,33 @@ import { catalogRole, LOOP_ROLE_DEFAULT_HOST, type LoopRoleBase, type LoopSessio
 
 export const AGENT_SESSION_CONTRACT = "assurance_kernel/loop_agent_session/v1" as const;
 
-export type AgentSessionKind = "clarify" | "planning" | "repair" | "judging" | "leader";
+export type AgentSessionKind = "clarify" | "planning" | "repair" | "leader" | "analyze";
 
 /** The loop roles a session runs as (Spec loop-agent-scheduling D1/D2, Spec loop-leader D2.3). */
-export type AgentSessionRole = "judging" | "clarify" | "plan" | "repair" | "leader";
+export type AgentSessionRole = "clarify" | "plan" | "repair" | "leader" | "analyze";
 
 /** Roles whose argv never grants write permission (Spec D2). */
-export const READ_ONLY_SESSION_ROLES: readonly AgentSessionRole[] = ["judging", "clarify", "plan", "leader"];
+export const READ_ONLY_SESSION_ROLES: readonly AgentSessionRole[] = ["clarify", "plan", "leader", "analyze"];
 
 /**
  * The built-in per-role session limits (Spec D2). Making them configurable is
  * `BR-DEFER-3`, so every role starts at the daemon's existing 40 turns / 900 s.
  */
 export const ROLE_SESSION_LIMITS: Record<AgentSessionRole, { turn_budget: number; timeout_ms: number }> = {
-	judging: { turn_budget: 40, timeout_ms: 900_000 },
 	clarify: { turn_budget: 40, timeout_ms: 900_000 },
 	plan: { turn_budget: 40, timeout_ms: 900_000 },
 	repair: { turn_budget: 40, timeout_ms: 900_000 },
 	leader: { turn_budget: 40, timeout_ms: 900_000 },
+	analyze: { turn_budget: 40, timeout_ms: 900_000 },
 };
 
 /** A session kind runs as the role that owns it (Spec D1/D2). */
 const ROLE_OF_KIND: Record<AgentSessionKind, AgentSessionRole> = {
 	clarify: "clarify",
 	planning: "plan",
-	judging: "judging",
 	repair: "repair",
 	leader: "leader",
+	analyze: "analyze",
 };
 
 export function sessionRole(kind: AgentSessionKind): AgentSessionRole {
@@ -78,6 +78,13 @@ export interface AgentSessionRequest {
 	timeout_ms: number;
 	/** The only environment the session receives. */
 	env: Record<string, string>;
+	/**
+	 * The exact Host profile this session runs on. Absent means the provider
+	 * resolves the session kind's role the usual way; a leader dispatch sets
+	 * it so a catalog role runs on its own Host, model, effort and advisory
+	 * instructions even when its base has several roles (D3.5).
+	 */
+	profile?: CliAgentSessionProfile;
 }
 
 /** What a session process actually did; a provider never interprets it. */
@@ -252,18 +259,18 @@ export async function runAgentSession(
 
 /**
  * The base a loop session kind takes from the project catalog (Spec loop-leader
- * D1.6). `judging` keeps the agents table until `S3` retires it, and the Lane
- * Host stays `agents.executor` (BR-DEC-8).
+ * D1.6). The Lane Host stays `agents.executor` (BR-DEC-8).
  */
 const LOOP_SESSION_BASE: Partial<Record<AgentSessionRole, LoopRoleBase>> = {
 	clarify: "clarify",
 	plan: "plan",
 	repair: "repair",
 	leader: "leader",
+	analyze: "analyze",
 };
 
 /** The roles a session still takes from the `agents` table rather than the catalog. */
-const LOOP_AGENT_ROLE: Partial<Record<AgentSessionRole | "executor", AgentRole>> = { executor: "executor", judging: "triage" };
+const LOOP_AGENT_ROLE: Partial<Record<AgentSessionRole | "executor", AgentRole>> = { executor: "executor" };
 
 export interface CliAgentSessionProfile {
 	host: ExecutorHost;
@@ -421,7 +428,7 @@ export function createCliAgentSessionProvider(options: CliAgentSessionOptions): 
 	const spawn = options.spawn ?? spawnSync;
 	return {
 		async run(request: AgentSessionRequest): Promise<AgentSessionProcess> {
-			const profile = options.profileFor(sessionRole(request.kind));
+			const profile = request.profile ?? options.profileFor(sessionRole(request.kind));
 			// Built before the spawn, so unreadable instructions start no process.
 			const advisory = advisoryInstructions(profile.instructions, options.instructions_root);
 			const entry = advisory === null ? request.prompt : `${request.prompt}\n\n${advisory}`;

@@ -47,7 +47,7 @@ import type { TaskRisk } from "../kernel/types.ts";
 import { parseVerificationDescriptor, type VerificationDescriptor } from "../verification_descriptor.ts";
 import { createBatchKernelPort } from "../unattended/batch_kernel_port.ts";
 import { createDefaultBatchGitPort } from "../unattended/batch_git.ts";
-import { observeSingleTask } from "../unattended/batch_plan.ts";
+import { observeInitiative, observeSingleTask } from "../unattended/batch_plan.ts";
 import { findActiveLaneBatchForTask, prepareBatchPreflight } from "../unattended/batch_preflight.ts";
 import type { ExecutorHost } from "../unattended/agent_profiles.ts";
 import {
@@ -107,7 +107,7 @@ import {
 	type RepairResult,
 } from "./repair_agent.ts";
 import { ensureLoopStateDir, loadLoopDecisions } from "./state.ts";
-import { markPlanPublished, parkOnClarifyQuestion, readWorkItem, releaseClarifyWait } from "./work_items.ts";
+import { drivingInitiativeSlug, markPlanPublished, parkOnClarifyQuestion, readWorkItem, releaseClarifyWait } from "./work_items.ts";
 import type { NormalizedLoopEvent, ObservationInput, RawComment, RawPR } from "./types.ts";
 
 /** The plan one Issue's planning chain recorded; published by the handler that owns the write. */
@@ -166,6 +166,18 @@ export interface AgentDriveRequest {
 	confirmation_ref: string;
 	/** The BatchAgreement confirmation source; inferred from the ref when absent. */
 	confirmation_source?: "tracker_approval" | "policy_auto";
+	base_head: string;
+	now: string;
+}
+
+/** Drive one Initiative-shaped WorkItem as a single batch (Spec loop-leader D3.3). */
+export interface AgentDriveInitiativeRequest {
+	root: string;
+	slug: string;
+	/** Slice tasks in carrier order; every one must already be enrolled. */
+	task_ids: string[];
+	plan_digest: string;
+	confirmation_ref: string;
 	base_head: string;
 	now: string;
 }
@@ -258,6 +270,8 @@ export interface AgentHandlerDeps {
 	readComment(input: { root: string; issue_number: number; comment_id: number }): Promise<AgentApprovalComment | null>;
 	enroll(input: AgentEnrollRequest): Promise<{ record_revision: string }>;
 	drive(input: AgentDriveRequest): Promise<AgentDriveResult>;
+	/** The `observeInitiative` batch drive; production runs `driveInitiativeLane`. */
+	driveInitiative(input: AgentDriveInitiativeRequest): Promise<AgentDriveResult>;
 	runVerification(input: {
 		root: string;
 		worktree_path: string;
@@ -1105,6 +1119,21 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 		const baseHead = deps.head({ root: context.root, cwd: context.root });
 		if (!baseHead) return { outcome: "failed", detail: "enroll_and_drive could not read the repository HEAD" };
 
+		// D3.3: an Initiative-shaped WorkItem drives its carrier as one batch
+		// through `observeInitiative`, never as one single-task Lane per slice.
+		const initiativeSlug = drivingInitiativeSlug(readWorkItem(context.stateDir, workItemTargetOf(context)));
+		if (initiativeSlug !== null)
+			return driveInitiativeJob(context, {
+				issue,
+				plan,
+				taskIds,
+				baseHead,
+				initiativeSlug,
+				confirmationSource,
+				recordRevision,
+				confirmationRef: confirmationRefs.get(taskIds[0]!) ?? `resume:${taskIds[0]}`,
+			});
+
 		// D6: the drive runs as a background job that holds its lease until the
 		// record is terminal; the tick returns here and `open_pr` runs on E13.
 		const job = startLoopJob(
@@ -1230,6 +1259,85 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 		return {
 			outcome: "executed",
 			detail: `started drive job ${job.job_id} for ${taskIds.join(", ")} (${confirmationSource ?? "resume"}, record ${recordRevision}); the PR opens when the lane settles`,
+		};
+	}
+
+	/**
+	 * The Initiative drive job (Spec loop-leader D3.3): one batch for the whole
+	 * carrier, so slice order and `blocked_by` are the batch's own. Each settled
+	 * slice is recorded on the job like a settled single-task Lane, so the
+	 * reconciler emits one E13 per slice and a lost-job retry skips the settled.
+	 */
+	async function driveInitiativeJob(
+		context: AgentHandlerContext,
+		input: {
+			issue: { number: number };
+			plan: LoopPlanPublication;
+			taskIds: string[];
+			baseHead: string;
+			initiativeSlug: string;
+			confirmationSource: string | null;
+			recordRevision: string;
+			confirmationRef: string;
+		},
+	): Promise<AgentHandlerResult> {
+		const job = startLoopJob(
+			context.stateDir,
+			{
+				kind: "drive",
+				target_id: `issue-${input.issue.number}`,
+				task_id: input.taskIds[0]!,
+				issue_number: input.issue.number,
+				plan_digest: input.plan.digest,
+				task_ids: input.taskIds,
+				expected_output: "executor_exit_record",
+				now: now(),
+			},
+			async () => {
+				const jobTarget = `issue-${input.issue.number}`;
+				const alreadySettled = new Map(
+					(readLoopJob(context.stateDir, jobTarget)?.settled_lanes ?? []).map((lane) => [lane.task_id, lane]),
+				);
+				const pending = input.taskIds.filter((taskId) => !alreadySettled.has(taskId));
+				let firstExit: LoopJobExit | null = null;
+				for (const lane of alreadySettled.values()) firstExit ??= lane.exit;
+				if (pending.length === 0)
+					return { outcome: "settled" as const, detail: `initiative ${input.initiativeSlug} slices already settled`, exit: firstExit };
+				const driven = await deps.driveInitiative({
+					root: context.root,
+					slug: input.initiativeSlug,
+					task_ids: pending,
+					plan_digest: input.plan.digest,
+					confirmation_ref: input.confirmationRef,
+					base_head: input.baseHead,
+					now: now(),
+				});
+				const exit = driven.exit;
+				firstExit ??= exit ?? null;
+				const settled =
+					driven.settled &&
+					exit?.state === "exited" &&
+					exit.exit_code === 0 &&
+					Boolean(exit.verification_evidence_digest);
+				if (!settled)
+					return {
+						outcome: "failed" as const,
+						detail: `initiative ${input.initiativeSlug} did not settle: ${driven.reason}${exit ? ` (state=${exit.state} exit_code=${exit.exit_code})` : " (no exit recorded)"}`,
+						exit,
+					};
+				for (const taskId of pending)
+					recordSettledLane(context.stateDir, jobTarget, { task_id: taskId, exit: exit ?? null });
+				return {
+					outcome: "settled" as const,
+					detail: `initiative ${input.initiativeSlug} settled ${pending.length} slice(s) (commit ${exit?.final_commit_sha ?? "unknown"}, digest ${exit?.verification_evidence_digest})`,
+					exit: firstExit,
+				};
+			},
+		);
+
+		return {
+			outcome: "executed",
+			detail: `started initiative drive job ${job.job_id} for ${input.initiativeSlug} (${input.taskIds.join(", ")}) (${input.confirmationSource ?? "resume"}, record ${input.recordRevision}); the PRs open when the slices settle`,
 		};
 	}
 
@@ -1759,6 +1867,7 @@ export function createDefaultAgentHandlerDeps(
 			return { record_revision: readTaskRecordRaw(input.root, input.task_id).revision };
 		},
 		drive: async (input) => driveSingleTaskLane(input, { stateDir, profile: executor, pluginRoot }),
+		driveInitiative: async (input) => driveInitiativeLane(input, { stateDir, profile: executor, pluginRoot }),
 		runVerification: async ({ root: repository, worktree_path, task_id }) => {
 			if (!task_id) return { exit_code: 1, stdout: "", stderr: "verification_needs_task: no TaskIntent is bound to this PR" };
 			let intent: ReturnType<typeof observeEnrollmentTaskIntent>;
@@ -1912,4 +2021,130 @@ async function driveSingleTaskLane(
 			...(result.hold_for_dialog ? { hold_for_dialog: result.hold_for_dialog } : {}),
 			...(result.parked ? { parked: result.parked } : {}),
 		};
+}
+
+/**
+ * Drive one Initiative-shaped WorkItem as a single batch (Spec loop-leader
+ * D3.3). The mirror of `driveSingleTaskLane` with the carrier as the plan:
+ * the preflight takes the general path (no `single_task` source, so the
+ * default reader is `observeInitiative`), the parent observation is the Local
+ * carrier, and every slice runs as a batch child in carrier order. The daemon
+ * still owns the authority: the batch binding names the tracker approval or
+ * policy that started this initiative. The `driver` seam exists for tests;
+ * production always runs the shared driver.
+ */
+export async function driveInitiativeLane(
+	input: AgentDriveInitiativeRequest,
+	context: { stateDir: string; profile: { host: ExecutorHost; model?: string | null; effort?: string | null }; pluginRoot: string },
+	driver: typeof dispatchLoopDrive = dispatchLoopDrive,
+): Promise<AgentDriveResult> {
+	const preflight = await prepareBatchPreflight({
+		root: input.root,
+		initiative_slug: input.slug,
+		now: input.now,
+	});
+	if (!preflight.ok) return { settled: false, exit: null, reason: `drive_preflight_failed: ${preflight.reason}` };
+	const projection = preflight.projection;
+
+	const registry = createBatchAuthorityRegistry();
+	const binding: BatchAuthorizationBinding = {
+		batch_id: `batch-${input.slug}-${randomUUID()}`,
+		initiative_slug: input.slug,
+		plan_digest: projection.plan_digest,
+		branch: projection.batch_branch,
+		base_head: projection.base_head,
+		budget: projection.budget,
+		actor_id: LOOP_DAEMON_ACTOR_ID,
+		confirmation_ref: input.confirmation_ref,
+		nonce: randomUUID(),
+	};
+	const authorityChildren = projection.recovery_children.map(authorityChild);
+	const capability = registry.issue(binding, authorityChildren, input.now);
+	// D3.3: the carrier is the plan. A missing carrier fails the drive here, so
+	// an initiative whose file vanished never runs on a stale task list.
+	const parent = await observeInitiative(input.root, input.slug);
+
+	const kernel = createBatchKernelPort({
+		root: input.root,
+		parent,
+		enrollmentRegistry: createEnrollmentAuthorityRegistry(),
+		registry,
+		capability,
+		binding,
+		// The daemon has no Host to run an Assurance attempt, so it reports the
+		// projection's obligation instead of fabricating a verdict.
+		advanceTask: async (laneRoot, taskId) => {
+			const fresh = await projectAssurance(laneRoot, taskId, undefined);
+			if (fresh.projection.lifecycle === "done" && fresh.projection.completion_ready) return { state: "completed" };
+			return {
+				state: "blocked",
+				reason: `kernel obligation ${fresh.projection.next_obligation ?? "unknown"} has no daemon Host`,
+			};
+		},
+		resume: {
+			isResuming: projection.is_resuming,
+			existingBatch: projection.existing_batch,
+			batchBranch: projection.batch_branch,
+		},
+	});
+
+	const { report, exit_record } = await driver({
+			root: input.root,
+			batch_id: binding.batch_id,
+			initiative_slug: input.slug,
+			registry,
+			capability,
+			children: projection.recovery_children,
+			plan_digest: projection.plan_digest,
+			base_head: binding.base_head,
+			confirmation_time: input.now,
+			budget: projection.budget,
+			now: input.now,
+			kernel,
+			git: createDefaultBatchGitPort(),
+			max_parallel: 1,
+			supervision: {
+				parent_host: context.profile.host,
+				plugin_dir: context.pluginRoot,
+				wait_ms: 60_000,
+				...(context.profile.model || context.profile.effort
+					? {
+							request: {
+								...(context.profile.model ? { executor_model: context.profile.model } : {}),
+								...(context.profile.effort ? { executor_effort: context.profile.effort } : {}),
+							},
+						}
+					: {}),
+			},
+			run_id: input.slug,
+			// The batch exit carries what the batch reports: every slice's state,
+			// plus the delivery head when the batch completed.
+			settled_facts: async (settledReport) => {
+				if (settledReport.batch_state !== "completed") return { final_commit_sha: null, verification_evidence: null };
+				const lanePath = input.root;
+				const head = git(lanePath, ["rev-parse", "HEAD"]);
+				const final_commit_sha = head?.status === 0 && /^[0-9a-f]{40,64}$/.test(head.stdout.trim()) ? head.stdout.trim() : null;
+				return {
+					final_commit_sha,
+					verification_evidence: JSON.stringify({
+						batch_state: settledReport.batch_state,
+						children: settledReport.children.map((child) => ({ task_id: child.task_id, state: child.state })),
+					}),
+				};
+			},
+			state_dir: context.stateDir,
+		});
+	return {
+		settled: report.batch_state === "completed",
+		exit: exit_record === null
+			? null
+			: {
+					state: exit_record.state,
+					exit_code: exit_record.exit_code,
+					generation: exit_record.generation,
+					final_commit_sha: exit_record.final_commit_sha,
+					verification_evidence_digest: exit_record.verification_evidence_digest,
+				},
+		reason: report.reason ?? `batch_state ${report.batch_state}`,
+	};
 }

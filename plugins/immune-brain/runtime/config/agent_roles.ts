@@ -29,6 +29,8 @@ export interface AgentsSection {
 	roles: Record<AgentRole, ResolvedAgentRole | null>;
 }
 export interface AgentConfigError { code: "config_invalid" | "unknown_profile"; file: string; key_path: string; message: string }
+/** A retired preset binding that is ignored but still reported once (Spec loop-leader D3.4). */
+export interface AgentPresetJudgingBinding { file: string; key_path: string }
 
 /**
  * `host`, `host:model`, `host@effort` or `host:model@effort`. The first `:`
@@ -73,7 +75,11 @@ export function parseAgentValue(value: unknown, profiles: Record<string, AgentPr
  * Resolve the four roles: project value, else user value, else unset. An
  * invalid value counts as unset and records an error.
  */
-export function resolveAgents(layers: { user: Obj | null; project: Obj | null; files: { user: string; project: string } }): { agents: AgentsSection; errors: AgentConfigError[] } {
+export function resolveAgents(layers: { user: Obj | null; project: Obj | null; files: { user: string; project: string } }): {
+	agents: AgentsSection;
+	errors: AgentConfigError[];
+	preset_judging: AgentPresetJudgingBinding[];
+} {
 	const errors: AgentConfigError[] = [];
 	const err = (code: AgentConfigError["code"], file: string, key_path: string, message: string) => errors.push({ code, file, key_path, message });
 	const section = (value: Obj | null, file: string, keys: readonly string[]): Obj => {
@@ -82,8 +88,31 @@ export function resolveAgents(layers: { user: Obj | null; project: Obj | null; f
 		for (const key of Object.keys(value)) if (!keys.includes(key)) err("config_invalid", file, `agents.${key}`, key === "profiles" ? "profiles are defined only in the user file" : "unknown key");
 		return value;
 	};
-	const user = section(layers.user, layers.files.user, ["profiles", ...AGENT_ROLES]);
-	const project = section(layers.project, layers.files.project, AGENT_ROLES);
+	// Spec loop-leader D3.4: a retired `roles.judging` binding is ignored, never
+	// `config_invalid`, and the executor beside it still resolves exactly as before.
+	const presetJudging: AgentPresetJudgingBinding[] = [];
+	const withoutJudgingPresets = (value: Obj | null, file: string): Obj | null => {
+		if (value === null || value === undefined || !isObject(value) || !isObject(value.presets)) return value;
+		const presets = value.presets as Obj;
+		const entries = Object.entries(presets);
+		const onlyJudging =
+			entries.length > 0 &&
+			entries.every(
+				([, preset]) =>
+					isObject(preset) &&
+					Object.keys(preset).every((key) => key === "roles") &&
+					isObject(preset.roles) &&
+					Object.keys(preset.roles).length > 0 &&
+					Object.keys((preset as Obj).roles).every((air) => air === "judging"),
+			);
+		if (!onlyJudging) return value;
+		for (const [name] of entries) presetJudging.push({ file, key_path: `agents.presets.${name}.roles.judging` });
+		const stripped: Obj = { ...value };
+		delete stripped.presets;
+		return stripped;
+	};
+	const user = section(withoutJudgingPresets(layers.user, layers.files.user), layers.files.user, ["profiles", ...AGENT_ROLES]);
+	const project = section(withoutJudgingPresets(layers.project, layers.files.project), layers.files.project, AGENT_ROLES);
 	const profiles: Record<string, AgentProfile> = {};
 	if (user.profiles !== undefined) {
 		if (!isObject(user.profiles)) err("config_invalid", layers.files.user, "agents.profiles", "expected object");
@@ -104,7 +133,7 @@ export function resolveAgents(layers: { user: Obj | null; project: Obj | null; f
 			roles[role] ??= { host: parsed.profile.host, model: parsed.profile.model ?? null, effort: parsed.profile.effort ?? null, source: layer };
 		}
 	}
-	return { agents: { valid: errors.length === 0, profiles: { value: profiles, source: user.profiles !== undefined ? "user" : "default" }, roles }, errors };
+	return { agents: { valid: errors.length === 0, profiles: { value: profiles, source: user.profiles !== undefined ? "user" : "default" }, roles }, errors, preset_judging: presetJudging };
 }
 
 /** One role's profile, or null while no layer binds it. */

@@ -118,7 +118,7 @@ none of those sources; remove them once the result is right.
 | `executor` | every Lane Executor, and the Loop's `repair` work (`pr-fix`, `test-fixer`) |
 | `reviewer` | Authority Review, its findings verification, and advisory reviewers |
 | `planner` | the Loop's `clarify` and `plan` steps |
-| `triage` | the Loop's judging of new issues, PRs and comments |
+| `triage` | reserved; no Loop session reads it since `S3` retired judging |
 
 A role value is one of:
 
@@ -262,8 +262,7 @@ configured Host whose executable is not on `PATH` fails that session
 `clarify` and `plan` sessions run on the `clarify` and `plan` base role, and its
 `repair` session on the `repair` base role. Each affected role reports one
 `deprecated_config_source` warning naming the ignored binding and `loop.roles`.
-`agents.executor` still selects the Lane Executor's Host, and `agents.triage`
-still runs Loop judging (retired later by `S3`).
+`agents.executor` still selects the Lane Executor's Host, and `agents.triage` binds nothing in the Loop since `S3` retired judging. A retired `roles.judging` preset binding is ignored with one `deprecated_config_source` warning and never makes `agents` invalid.
 
 ## Initiative Carrier
 

@@ -36,7 +36,8 @@ import {
 	lastLeaderWakeFingerprint,
 	readLeaderJournal,
 } from "./leader_journal.ts";
-import { parseLeaderProposal, type LeaderProposal, type LeaderProposalRejection } from "./leader_proposal.ts";
+import { parseLeaderProposal, type LeaderProposal, type LeaderProposalItem, type LeaderProposalRejection } from "./leader_proposal.ts";
+import { reconcileCandidates } from "./reconcile.ts";
 import { readLocalRequests } from "./interaction/local_channel.ts";
 import type { InteractionSubject } from "./interaction/protocol.ts";
 import type { ResolvedLoopRole } from "./role_catalog.ts";
@@ -190,8 +191,14 @@ export function collectLeaderBriefingInput(input: {
 		batches: readBatchSummaries(input.root).filter((batch) => batch.children.some((child) => taskIds.has(child.task_id))),
 		interactions,
 		outcomes,
-		// D3.4 lists model-skipped decisions here; `S3` fills it.
-		reconcile_candidates: [],
+		// D3.4: model skips and needs_judging baselines are the leader's reconcile input.
+		reconcile_candidates: reconcileCandidates(input.stateDir).map((candidate) => ({
+			target: candidate.target,
+			reason:
+				candidate.point === null
+					? "needs_judging: no point answered"
+					: `${candidate.point}: ${candidate.choice ?? "unknown"}`,
+		})),
 		roles: input.roles.map((role) => ({ name: role.name, base: role.base, when: role.when })),
 		owner_hints: [...input.ownerHints],
 		budget: input.budget,
@@ -262,6 +269,8 @@ export interface LeaderTickResult {
 	reason: LeaderWakeDecision["reason"];
 	journal_seq: number | null;
 	proposal: { items: number; rejected: LeaderProposalRejection[] } | null;
+	/** The items an accepted proposal carries, for `S3`'s guarded dispatch. */
+	items: LeaderProposalItem[];
 	proposal_rejection: string | null;
 	session_reason: string | null;
 	/** Set when a live wake was counted; the caller persists it into the daemon budget. */
@@ -308,6 +317,7 @@ export async function runLeaderTick(deps: LeaderTickDeps): Promise<LeaderTickRes
 		reason: decision.reason,
 		journal_seq: null,
 		proposal: null,
+		items: [],
 		proposal_rejection: null,
 		session_reason: null,
 		counted_wake: false,
@@ -357,6 +367,7 @@ export async function runLeaderTick(deps: LeaderTickDeps): Promise<LeaderTickRes
 	else if (!parsed.ok) result.proposal_rejection = parsed.reason;
 	else {
 		proposal = parsed.proposal;
+		result.items = [...proposal.items];
 		result.proposal = { items: proposal.items.length, rejected: parsed.rejected };
 		writeFileSync(join(worktree, LEADER_PROPOSAL_FILE), `${JSON.stringify(proposal, null, 2)}\n`, { mode: 0o600 });
 	}

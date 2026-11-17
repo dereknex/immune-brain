@@ -24,10 +24,6 @@ import {
 	judgeEvent,
 } from "../plugins/immune-brain/runtime/loop_daemon/judgement.ts";
 import {
-	createSessionJudgingAgent,
-	type JudgingAgentFn,
-} from "../plugins/immune-brain/runtime/loop_daemon/judging_agent.ts";
-import {
 	DUPLICATE_SIMILARITY_FLOOR,
 	selectBestDuplicateCandidate,
 } from "../plugins/immune-brain/runtime/loop_daemon/duplicate_candidates.ts";
@@ -36,6 +32,11 @@ import {
 	loadLoopLabels,
 	type LoopLabelRow,
 } from "../plugins/immune-brain/runtime/loop_daemon/labels.ts";
+import {
+	loadReconcileState,
+	reconcileCandidates,
+} from "../plugins/immune-brain/runtime/loop_daemon/reconcile.ts";
+import { listRoleSessions } from "../plugins/immune-brain/runtime/loop_daemon/role_sessions.ts";
 import {
 	LOOP_DAEMON_EVENT_CONTRACT,
 	type E1NewIssueEvent,
@@ -252,7 +253,7 @@ function stubClassifier(
 	return { classify, calls };
 }
 
-describe("S10-AC1: D12 v1 thresholds & correctable-direction gating", () => {
+describe("D12 v1 thresholds & correctable-direction gating (S3 retains S10 baselines)", () => {
 	it("publishes D12 hand-set /v1 threshold sets on all five application points", () => {
 		expect(A18_EVENT_PREFILTER.threshold_set).toEqual({ version: "a18/v1", values: { ignore: 0.9 } });
 		expect(A15_TASK_GRANULARITY.threshold_set).toEqual({
@@ -280,11 +281,6 @@ describe("S10-AC1: D12 v1 thresholds & correctable-direction gating", () => {
 	});
 
 	it("acts only on listed correctable directions: low-confidence a18 actionable and a20 unrelated still proceed", async () => {
-		let judged = 0;
-		const judgingAgent: JudgingAgentFn = async () => {
-			judged += 1;
-			return { handler: "escalate", reason: "should not be called" };
-		};
 		const { classify } = stubClassifier({
 			a18_event_prefilter: { choice: "actionable", confidence: 0.41, truncation: "none" },
 			a20_issue_duplicate_pair: { choice: "unrelated", confidence: 0.38, truncation: "none" },
@@ -294,68 +290,77 @@ describe("S10-AC1: D12 v1 thresholds & correctable-direction gating", () => {
 		const result = await judgeEvent(issueEvent(), {
 			facts: { duplicate_candidate: { number: 2, title: "Other", body: "Other" } },
 			classify,
-			judgingAgent,
 		});
-		expect(judged).toBe(0);
 		expect(result.tier).toBe(2);
 		expect(result.handler).toBe("draft_plan");
 	});
 
-	it("routes below-threshold ignore/duplicate/granularity, truncation!=none, disabled points, and unavailable answers to S9 judging agent", async () => {
-		const ws = makeWorkspace();
-		mkdirSync(join(ws.root, ".imm-loop"), { recursive: true });
-		const sessionCalls: string[] = [];
-		const s9JudgingAgent = createSessionJudgingAgent({
-			root: ws.root,
-			worktree_path: ws.root,
-			provider: {
-				async run(req) {
-					sessionCalls.push(req.kind);
-					return {
-						exit_code: 0,
-						exit_signal: null,
-						timed_out: false,
-						stdout: JSON.stringify({ handler: "draft_plan", reason: "judging session resolved ambiguity" }),
-					};
-				},
-			},
-		});
-
-		// 1) Below threshold on a18 ignore (0.85 < 0.90)
+	it("applies the point baseline on every needs_judging outcome and starts no session", async () => {
+		// Spec loop-leader D3.4: the Tier-3 judging session is retired, so each of
+		// these falls to the exact D12 baseline the unavailable-judge path used.
+		// 1) Below threshold on a18 ignore (0.85 < 0.90): proceed as `actionable`,
+		// then a15 is unavailable, whose baseline escalates.
 		const lowIgnore = await judgeEvent(issueEvent(), {
 			classify: stubClassifier({ a18_event_prefilter: { choice: "ignore", confidence: 0.85, truncation: "none" } }).classify,
-			judgingAgent: s9JudgingAgent,
 		});
-		expect(lowIgnore).toMatchObject({ tier: 3, handler: "draft_plan", judging_agent_used: true });
+		expect(lowIgnore).toMatchObject({ tier: 3, handler: "escalate", needs_judging: true });
+		expect(lowIgnore.judging_agent_used).toBeUndefined();
 
-		// 2) Truncation !== "none"
+		// 2) Truncation !== "none" is needs_judging, same baseline.
 		const truncated = await judgeEvent(issueEvent(), {
 			classify: stubClassifier({
 				a18_event_prefilter: { choice: "actionable", confidence: 0.99, truncation: "possible" },
 			}).classify,
-			judgingAgent: s9JudgingAgent,
 		});
-		expect(truncated).toMatchObject({ tier: 3, handler: "draft_plan", judging_agent_used: true });
+		expect(truncated).toMatchObject({ tier: 3, handler: "escalate", needs_judging: true });
 
-		// 3) Point disabled (bindings.<point>: "off" leaves it out of enabledPoints)
+		// 3) Point disabled (bindings.<point>: "off" leaves it out of enabledPoints).
 		const disabledCalls = stubClassifier({
 			a18_event_prefilter: { choice: "ignore", confidence: 0.99, truncation: "none" },
 		});
 		const disabled = await judgeEvent(issueEvent(), {
 			classify: disabledCalls.classify,
-			enabledPoints: ["a15_task_granularity"], // a18 omitted
-			judgingAgent: s9JudgingAgent,
+			enabledPoints: ["a15_task_granularity"],
 		});
-		expect(disabledCalls.calls).toHaveLength(0);
-		expect(disabled).toMatchObject({ tier: 3, handler: "draft_plan", judging_agent_used: true });
+		// a18 is disabled, so the classifier is asked only for the enabled a15 point.
+		expect(disabledCalls.calls.map((call) => call.point)).toEqual(["a15_task_granularity"]);
+		expect(disabled).toMatchObject({ tier: 3, handler: "escalate", needs_judging: true });
 
-		// 4) Unavailable classifier
+		// 4) Unavailable classifier.
 		const unavailable = await judgeEvent(issueEvent(), {
 			classify: stubClassifier({ a18_event_prefilter: "unavailable" }).classify,
-			judgingAgent: s9JudgingAgent,
 		});
-		expect(unavailable).toMatchObject({ tier: 3, handler: "draft_plan", judging_agent_used: true });
-		expect(sessionCalls).toEqual(["judging", "judging", "judging", "judging"]);
+		expect(unavailable).toMatchObject({ tier: 3, handler: "escalate", needs_judging: true });
+
+		// Nothing started a session: a needs_judging outcome writes no role session, and
+		// the record carries the flag that makes it a briefing reconcile candidate.
+		const ws = makeWorkspace();
+		await runLoopDaemonCli(["tick", "--json"], ws.root, {
+			gh: mockGh(),
+			gitHubPort: makeFakeGitHubPort().port,
+			guardFacts: { daemon_identity: "imm-bot" },
+			classify: stubClassifier({ a18_event_prefilter: { choice: "ignore", confidence: 0.4, truncation: "none" } }).classify,
+			snapshotOverride: {
+				issues: [
+					{
+						id: 1,
+						number: 10,
+						title: "Skipped issue",
+						body: "check",
+						state: "open",
+						created_at: TS,
+						updated_at: TS,
+						author: { login: "owner" },
+						labels: [],
+					},
+				],
+				pull_requests: [],
+				observed_at: TS,
+			},
+		});
+		expect(listRoleSessions(ws.stateDir)).toEqual([]);
+		expect(loadLoopDecisions(ws.stateDir).map((decision) => decision.needs_judging)).toEqual([true]);
+		expect(reconcileCandidates(ws.stateDir).map((candidate) => candidate.target)).toEqual(["issue-10"]);
 	});
 
 	it("records full decision_model Envelope provenance in loop_decision_record/v1 via cli.ts default classifier", async () => {
@@ -384,7 +389,6 @@ describe("S10-AC1: D12 v1 thresholds & correctable-direction gating", () => {
 		});
 
 		const ghPort = makeFakeGitHubPort();
-		let judged = 0;
 		const res = await runLoopDaemonCli(["tick", "--json"], ws.root, {
 			gh: mockGh(),
 			gitHubPort: ghPort.port,
@@ -407,42 +411,37 @@ describe("S10-AC1: D12 v1 thresholds & correctable-direction gating", () => {
 				pull_requests: [],
 				observed_at: TS,
 			},
-			// fakeAdapter returns truncation: "unknown", so S10 routes to judging agent while keeping full Envelope on classification!
-			judgingAgent: async () => {
-				judged += 1;
-				return { handler: "draft_plan", reason: "confirmed clear single task" };
-			},
 		});
 		expect(res.returncode).toBe(0);
-		expect(judged).toBe(1);
 
+		// fakeAdapter returns truncation: "unknown", so every point needs judging and
+		// the baseline applies: the record keeps the last point's full Envelope.
 		const decisions = loadLoopDecisions(ws.stateDir);
 		expect(decisions).toHaveLength(1);
+		expect(decisions[0]).toMatchObject({ handler: "escalate", needs_judging: true });
 		const cls = decisions[0]!.classification;
 		expect(cls).toMatchObject({
-			point: "a18_event_prefilter",
-			choice: "actionable",
-			confidence: 0.95,
-			probabilities: { actionable: 0.95, ignore: 0.05 },
-			profile: "p_a18",
+			point: "a15_task_granularity",
+			choice: "clear_single_task",
+			confidence: 0.85,
+			probabilities: { clear_single_task: 0.85, needs_initiative_decomposition: 0.1, needs_clarification: 0.05 },
+			profile: "p_a15",
 			model: "fake",
 			model_version: null,
-			threshold_set_version: "a18/v1",
+			threshold_set_version: "a15-granularity/v1",
 			truncation: "unknown",
 		});
 	});
 });
 
-describe("S10-AC1 & AC2: Reconciliation, Guards/Scheduler & labels.jsonl Corpus Compatibility", () => {
-	it("reconciles kept model-skipped decisions, gates overrides through guards & scheduler, and writes 0600 labels.jsonl loadable by loadCorpus()", async () => {
+describe("Reconciliation as leader candidates (S3-AC1)", () => {
+	it("lists kept model-skipped decisions as reconcile candidates and starts no session", async () => {
 		const ws = makeWorkspace({ loopConfig: { max_concurrent: 2 } });
 		const ghPort = makeFakeGitHubPort();
 		const { classify } = stubClassifier({
 			a18_event_prefilter: { choice: "ignore", confidence: 0.95, truncation: "none" },
-			a19_owner_comment_intent: { choice: "discussion", confidence: 0.9, truncation: "none" },
 		});
 
-		// Tick records skipped decisions (`ignore` on issue 10, plus let's also do `discussion` via a second tick)
 		const tick1 = await runLoopDaemonCli(["tick", "--json"], ws.root, {
 			gh: mockGh(),
 			gitHubPort: ghPort.port,
@@ -453,7 +452,7 @@ describe("S10-AC1 & AC2: Reconciliation, Guards/Scheduler & labels.jsonl Corpus 
 					{
 						id: 1,
 						number: 10,
-						title: "Important issue misclassified as ignore",
+						title: "Issue the model called noise",
 						body: "Fix parser bug",
 						state: "open",
 						created_at: TS,
@@ -472,83 +471,44 @@ describe("S10-AC1 & AC2: Reconciliation, Guards/Scheduler & labels.jsonl Corpus 
 		expect(dec1[0]!.handler).toBe("noop_record");
 		expect(dec1[0]!.kept_for_reconciliation).toBe(true);
 
-		// First test scheduler contention: fill max_concurrent leases before reconcile so override is held by scheduleLoopWork!
-		acquireLoopLease(ws.stateDir, { target_id: "issue-700", kind: "drive" });
-		acquireLoopLease(ws.stateDir, { target_id: "issue-701", kind: "drive" });
-
-		const heldReconcile = await runLoopDaemonCli(["reconcile", "--json"], ws.root, {
+		// Spec loop-leader D3.4: reconcile collects the skip as a leader candidate and
+		// starts no judging session, appends no override decision and writes no label.
+		const reconcile = await runLoopDaemonCli(["reconcile", "--json"], ws.root, {
 			gh: mockGh(),
 			gitHubPort: ghPort.port,
 			guardFacts: { daemon_identity: "imm-bot" },
-			snapshotOverride: {
-				issues: [
-					{
-						id: 1,
-						number: 10,
-						title: "Important issue misclassified as ignore",
-						body: "Fix parser bug",
-						state: "open",
-						created_at: TS,
-						updated_at: TS,
-						author: { login: "owner" },
-						labels: [],
-					},
-				],
-				pull_requests: [],
-				observed_at: TS,
-			},
-			judgingAgent: async () => ({
-				handler: "draft_plan",
-				corrected_option: "actionable",
-				reason: "issue describes an actual bug",
-			}),
+			snapshotOverride: { issues: [], pull_requests: [], observed_at: TS },
 		});
-		expect(heldReconcile.returncode).toBe(0);
-		const heldPayload = JSON.parse(heldReconcile.stdout);
-		expect(heldPayload.checked).toBe(1);
-		expect(heldPayload.overrides).toBe(1);
-		expect(heldPayload.labels_appended).toBe(1);
-		expect(heldPayload.dispatches[0]).toMatchObject({ handler: "draft_plan", outcome: "held" });
+		expect(reconcile.returncode).toBe(0);
+		const payload = JSON.parse(reconcile.stdout);
+		expect(payload.checked).toBe(1);
+		expect(payload.candidates).toEqual([
+			expect.objectContaining({ target: "issue-10", point: "a18_event_prefilter", choice: "ignore" }),
+		]);
+		expect(listRoleSessions(ws.stateDir)).toEqual([]);
+		expect(loadLoopDispatches(ws.stateDir)).toHaveLength(0);
+		expect(existsSync(labelsFilePath(ws.stateDir))).toBe(false);
+		expect(loadLoopDecisions(ws.stateDir)).toHaveLength(1);
 
-		// Verify labels.jsonl mode 0600 and loadCorpus() compatibility
-		const lp = labelsFilePath(ws.stateDir);
-		expect(existsSync(lp)).toBe(true);
-		const mode = statSync(lp).mode & 0o777;
-		expect(mode).toBe(0o600);
-
-		const text = readFileSync(lp, "utf8");
-		const parsedRows = loadCorpus<LoopLabelRow>(
-			text,
-			[...A18_EVENT_PREFILTER.options],
-			(v): v is LoopLabelRow =>
-				typeof v === "object" && v !== null && typeof (v as LoopLabelRow).id === "string",
-		);
-		expect(parsedRows).toHaveLength(1);
-		expect(parsedRows[0]).toMatchObject({
-			point: "a18_event_prefilter",
-			gold: "actionable",
-			model_choice: "ignore",
-			source: "judging_agent",
-		});
-
-		// Second reconcile pass must not re-check the already reconciled decision
-		const secondReconcile = await runLoopDaemonCli(["reconcile", "--json"], ws.root, {
+		// The second pass reports nothing new: the first pass retired the skip,
+		// so the candidate list cannot grow without bound. The decision log keeps
+		// the evidence; only the re-report stops.
+		const second = await runLoopDaemonCli(["reconcile", "--json"], ws.root, {
 			gh: mockGh(),
 			gitHubPort: ghPort.port,
 			guardFacts: { daemon_identity: "imm-bot" },
-			judgingAgent: async () => {
-				throw new Error("should not be called again");
-			},
 		});
-		expect(secondReconcile.returncode).toBe(0);
-		expect(JSON.parse(secondReconcile.stdout).checked).toBe(0);
+		expect(second.returncode).toBe(0);
+		expect(JSON.parse(second.stdout)).toMatchObject({ checked: 0, candidates: [] });
+		expect(reconcileCandidates(ws.stateDir)).toEqual([]);
+		expect(loadLoopDecisions(ws.stateDir)).toHaveLength(1);
+		expect(loadReconcileState(ws.stateDir).last_reconcile_at).toBeString();
 	});
 
 	it("imm-loop run triggers reconcile on startup and again after 24h", async () => {
 		const ws = makeWorkspace();
 		const ghPort = makeFakeGitHubPort();
 		let currentNow = Date.parse(TS);
-		let reconcileJudgeCalls = 0;
 
 		// Run iteration 1 at T=0 -> creates initial state & last_reconcile_at = T=0
 		const res1 = await runLoopDaemonCli(["run", "--interval", "1"], ws.root, {
@@ -561,6 +521,7 @@ describe("S10-AC1 & AC2: Reconciliation, Guards/Scheduler & labels.jsonl Corpus 
 			snapshotOverride: { issues: [], pull_requests: [], observed_at: TS },
 		});
 		expect(res1.returncode).toBe(0);
+		expect(loadReconcileState(ws.stateDir).last_reconcile_at).toBe(TS);
 
 		// Add a skipped decision via tick at T+1h
 		currentNow += 60 * 60 * 1000;
@@ -589,6 +550,7 @@ describe("S10-AC1 & AC2: Reconciliation, Guards/Scheduler & labels.jsonl Corpus 
 				observed_at: new Date(currentNow).toISOString(),
 			},
 		});
+		expect(reconcileCandidates(ws.stateDir).map((candidate) => candidate.target)).toEqual(["issue-11"]);
 
 		// Advance clock past 24h from T=0 -> `run` checks scheduled reconcile automatically
 		currentNow = Date.parse(DAY_LATER);
@@ -599,14 +561,14 @@ describe("S10-AC1 & AC2: Reconciliation, Guards/Scheduler & labels.jsonl Corpus 
 			now: () => new Date(currentNow).toISOString(),
 			guardFacts: { daemon_identity: "imm-bot" },
 			classify: stubClassifier({}).classify,
-			judgingAgent: async () => {
-				reconcileJudgeCalls += 1;
-				return { handler: "noop_record", reason: "confirmed ignore" };
-			},
 			snapshotOverride: { issues: [], pull_requests: [], observed_at: DAY_LATER },
 		});
 		expect(res2.returncode).toBe(0);
-		expect(reconcileJudgeCalls).toBe(1);
+		// The scheduled pass ran at the later clock: its stamp is the evidence, and it
+		// left the skip as a leader candidate rather than starting a judging session.
+		expect(loadReconcileState(ws.stateDir).last_reconcile_at).toBe(DAY_LATER);
+		expect(listRoleSessions(ws.stateDir)).toEqual([]);
+		expect(reconcileCandidates(ws.stateDir)).toEqual([]);
 	});
 
 	it("appends source='owner' labels.jsonl row when verified owner @imm-loop ignore or retry reverses a model decision", async () => {
@@ -694,7 +656,7 @@ describe("S10-AC1 & AC2: Reconciliation, Guards/Scheduler & labels.jsonl Corpus 
 	});
 });
 
-describe("S10-AC2: Safety Invariants, Judging Agent Failure Baseline, Duplicate Search, E10 & Unparsed Lane Replies", () => {
+describe("Safety invariants, baselines, duplicate search, E10 & lane replies (S3-AC1)", () => {
 	it("a19 approve_plan or command at any confidence yields one deduplicated format reminder per comment and never enroll_and_drive", async () => {
 		const ws = makeWorkspace();
 		const ghPort = makeFakeGitHubPort();
@@ -808,95 +770,49 @@ describe("S10-AC2: Safety Invariants, Judging Agent Failure Baseline, Duplicate 
 		expect(ghPort.postedComments).toHaveLength(3);
 	});
 
-	it("invalid or unavailable judging agent runs nothing side-effecting, falls back to exact D12 baselines, and counts against loop.budget", async () => {
+	it("applies the exact D12 baselines when no point answers and starts no session", async () => {
 		const ws = makeWorkspace({ loopConfig: { budget: { max_dispatches_per_day: 2 } } });
-		mkdirSync(join(ws.root, ".imm-loop"), { recursive: true });
-		const invalidSessionJudge = createSessionJudgingAgent({
-			root: ws.root,
-			worktree_path: ws.root,
-			provider: {
-				async run(req) {
-					// Out-of-catalogue handler `force_merge` must be rejected cleanly!
-					return {
-						exit_code: 0,
-						exit_signal: null,
-						timed_out: false,
-						stdout: JSON.stringify({ handler: "force_merge", reason: "invalid" }),
-					};
-				},
-			},
-		});
 
-		// a18 invalid judge -> proceed as actionable -> a20 invalid judge -> proceed as unrelated -> a15 invalid judge -> escalate
+		// a18, a20 and a15 all unavailable: the issue takes the documented baseline,
+		// which escalates, and the record says a needs_judging outcome produced it.
 		const issueFallback = await judgeEvent(issueEvent(), {
 			facts: { duplicate_candidate: { number: 3, title: "Dup", body: "Dup" } },
 			classify: stubClassifier({}).classify,
-			judgingAgent: invalidSessionJudge,
 		});
-		expect(issueFallback.handler).toBe("escalate");
+		expect(issueFallback).toMatchObject({ tier: 3, handler: "escalate", needs_judging: true });
 
-		// a14_pr_comment_triage invalid judge -> address_pr_review baseline
+		// a14 unavailable: baseline address_pr_review.
 		const prFallback = await judgeEvent(reviewCommentEvent(), {
 			facts: OWNER_FACTS,
 			classify: stubClassifier({}).classify,
-			judgingAgent: invalidSessionJudge,
 		});
-		expect(prFallback.handler).toBe("address_pr_review");
+		expect(prFallback).toMatchObject({ tier: 3, handler: "address_pr_review", needs_judging: true });
 
-		// Budget enforcement: max_dispatches_per_day = 2 caps judging agent invocations across events in a tick
-		let judgeInvocations = 0;
-		const countingJudge: JudgingAgentFn = async () => {
-			judgeInvocations += 1;
-			return { handler: "escalate", reason: "counted" };
-		};
+		// Three such events in one tick start no judging session at all.
 		const ghPort = makeFakeGitHubPort();
 		await runLoopDaemonCli(["tick", "--json"], ws.root, {
 			gh: mockGh(),
 			gitHubPort: ghPort.port,
 			guardFacts: { daemon_identity: "imm-bot" },
-			classify: stubClassifier({ a18_event_prefilter: { choice: "ignore", confidence: 0.4, truncation: "none" } }).classify,
-			judgingAgent: countingJudge,
+			classify: stubClassifier({}).classify,
 			snapshotOverride: {
-				issues: [
-					{
-						id: 1,
-						number: 1,
-						title: "I1",
-						body: "b1",
-						state: "open",
-						created_at: TS,
-						updated_at: TS,
-						author: { login: "owner" },
-						labels: [],
-					},
-					{
-						id: 2,
-						number: 2,
-						title: "I2",
-						body: "b2",
-						state: "open",
-						created_at: TS,
-						updated_at: TS,
-						author: { login: "owner" },
-						labels: [],
-					},
-					{
-						id: 3,
-						number: 3,
-						title: "I3",
-						body: "b3",
-						state: "open",
-						created_at: TS,
-						updated_at: TS,
-						author: { login: "owner" },
-						labels: [],
-					},
-				],
+				issues: [1, 2, 3].map((number) => ({
+					id: number,
+					number,
+					title: `I${number}`,
+					body: `b${number}`,
+					state: "open",
+					created_at: TS,
+					updated_at: TS,
+					author: { login: "owner" },
+					labels: [],
+				})),
 				pull_requests: [],
 				observed_at: TS,
 			},
 		});
-		expect(judgeInvocations).toBe(2);
+		expect(loadLoopDecisions(ws.stateDir).map((decision) => decision.needs_judging)).toEqual([true, true, true]);
+		expect(listRoleSessions(ws.stateDir)).toEqual([]);
 	});
 
 	it("selectBestDuplicateCandidate deterministically finds open lexical duplicates above floor and ignores closed/unrelated issues", async () => {
@@ -1107,7 +1023,7 @@ describe("S10-AC2: Safety Invariants, Judging Agent Failure Baseline, Duplicate 
 		expect(calls.map((c) => c.point)).toEqual(["a14_pr_comment_triage"]);
 	});
 
-	it("binds an unparsed Lane decision reply resolved through a19 + judging agent to parked (run_id, record_revision)", async () => {
+	it("binds an explicit Lane decision reply to parked (run_id, record_revision) without a judging session", async () => {
 		const ws = makeWorkspace();
 		const ghPort = makeFakeGitHubPort();
 		const questionBody = renderLaneDecisionQuestion({
@@ -1131,14 +1047,6 @@ describe("S10-AC2: Safety Invariants, Judging Agent Failure Baseline, Duplicate 
 				a18_event_prefilter: { choice: "actionable", confidence: 0.95, truncation: "none" },
 				a19_owner_comment_intent: { choice: "answer_lane_decision", confidence: 0.9, truncation: "none" },
 			}).classify,
-			judgingAgent: async (ctx) => {
-				expect(ctx.offered_options?.map((o) => o.id)).toEqual(["opt-minimal", "opt-expand"]);
-				return {
-					handler: "apply_lane_decision_reply",
-					lane_option: "opt-minimal",
-					reason: "owner text prefers the minimal fix",
-				};
-			},
 			relayDecision: (async (input: any) => {
 				relayedCalls.push({
 					expectedRecordRevision: input.expectedRecordRevision,
@@ -1182,7 +1090,7 @@ describe("S10-AC2: Safety Invariants, Judging Agent Failure Baseline, Duplicate 
 							},
 							{
 								id: 2,
-								body: "Let's stick with the minimal fix here, thank you.",
+								body: "@imm-loop select opt-minimal",
 								user: { login: "owner" },
 								author_association: "OWNER",
 								created_at: replyTime,

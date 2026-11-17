@@ -23,6 +23,8 @@ import {
 import { join } from "node:path";
 import { observeEnrollmentTaskIntent } from "../kernel/intent.ts";
 import { readPlanPublication } from "./agent_handlers.ts";
+import { observeInitiative, observeSingleTask } from "../unattended/batch_plan.ts";
+import type { InitiativeObservationReader } from "../unattended/types.ts";
 import { eventTarget } from "./guards.ts";
 import type { LoopHandler } from "./handlers.ts";
 import type { NormalizedLoopEvent, ObservationInput } from "./types.ts";
@@ -99,12 +101,16 @@ export interface WorkItem {
 		task_ids: string[];
 		run_id: string | null;
 		pr: number | null;
+		/** D3.3: set when the leader shaped this target as an Initiative. */
+		initiative_slug?: string | null;
 	};
 	pending_interactions: string[];
 	jobs: string[];
 	/** Per judged key: level-event fingerprints and edge-event ids. */
 	last_judged: Record<string, string>;
 	refused_transitions: WorkItemRefusal[];
+	/** D3.1: the leader's tie-break inside one schedule class, never across classes. */
+	leader_rank?: number;
 	updated_at: string;
 }
 
@@ -317,8 +323,17 @@ export function markPlanPublished(
 ): WorkItem {
 	const item = readWorkItem(stateDir, target) ?? newWorkItem(target, "planning", now);
 	let next: WorkItem = { ...item, binding: { ...item.binding, plan_digest: planDigest } };
+	// D5 has no direct edge from `triage`, `clarifying` or `awaiting_input` to
+	// `plan_published`, so a plan published from an early state passes `planning`
+	// first; refusing the final move would orphan the carrier written before it.
 	if (next.state === "awaiting_input") {
 		next = advanceWorkItem(next, "clarifying", { reason: "clarify answer applied", now }).item;
+	}
+	if (next.state === "triage" || next.state === "clarifying") {
+		next = advanceWorkItem(next, "planning", { reason: "plan drafted", now }).item;
+	}
+	if (next.state !== "planning" && next.state !== "plan_published") {
+		throw new Error(`plan publication is unreachable from work item state ${next.state}`);
 	}
 	next = advanceWorkItem(next, "plan_published", { reason: `plan ${planDigest.slice(0, 12)} published`, now }).item;
 	writeWorkItem(stateDir, next);
@@ -364,6 +379,21 @@ function intentPathScopeHint(path: string): string[] {
 	} catch {
 		return [];
 	}
+}
+
+/** D3.3: `driving` reads the carrier when the leader shaped an Initiative, else the task. */
+export function drivingObserver(item: WorkItem | null): InitiativeObservationReader {
+	return item?.binding.initiative_slug ? observeInitiative : observeSingleTask;
+}
+
+/** D3.3: the plan source a `driving` WorkItem runs as. */
+export function drivingPlanSource(item: WorkItem | null): "single_task" | "initiative" {
+	return item?.binding.initiative_slug ? "initiative" : "single_task";
+}
+
+/** D3.3: the Initiative slug a `driving` WorkItem runs, or null for a single task. */
+export function drivingInitiativeSlug(item: WorkItem | null): string | null {
+	return item?.binding.initiative_slug ?? null;
 }
 
 const LEVEL_EVENT_KINDS: ReadonlySet<NormalizedLoopEvent["kind"]> = new Set([

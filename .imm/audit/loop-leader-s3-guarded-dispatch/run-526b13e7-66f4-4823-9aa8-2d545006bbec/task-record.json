@@ -1,0 +1,413 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "loop-leader-s3-guarded-dispatch",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "loop-leader-s3-guarded-dispatch",
+    "goal": "Execute leader proposal items next, priority, shape and dispatch only after code guards, run Initiative-shaped work as a Local-carrier batch recorded on the WorkItem, list running catalog sessions in imm-loop status --json, retire the Tier-3 judging agent in favour of the leader, and record the change in ADR 0041, per D3 of docs/specs/loop-leader.spec.md.",
+    "acceptance": [
+      {
+        "id": "S3-AC1",
+        "assertion": "Source BR-REQ-3, BR-DEC-4, BR-DEC-5, BR-DEC-10, BR-DEC-2; meet D3.1-D3.4 and D3.6 in docs/specs/loop-leader.spec.md. Agreed seam: tests/loop-leader-dispatch.test.ts, tests/loop-daemon-judge.test.ts, tests/loop-daemon-decision-model.test.ts and tests/agent-roles-config.test.ts. Done looks like: a legal next item runs its handler; priority reorders ties inside one schedule class; shape initiative in planning writes docs/initiatives/<slug>.md in the Local carrier shape plus one TaskIntent per slice, records binding.initiative_slug, and driving uses observeInitiative; reconcile lists model-skipped decisions as briefing reconcile candidates and a leader next for one passes the Tier-0 guards; docs/adr/0041 exists and amends ADR 0039 Decisions 2, 6 and 7. Negative: an illegal transition, dispatch of an execute role without Enrollment authority, repair on a branch the daemon does not own, and shape after plan publication are rejected with a journal reason and zero side effects; a Tier-2 needs_judging outcome starts no session and applies the point baseline; reconcile starts no judging session; a preset roles.judging binding yields deprecated_config_source while agents.valid stays true and the executor Host is unchanged. Bound: priority never lifts an item above a higher class; no GitHub tracker write occurs for a loop Initiative; derived-output checks and typecheck pass.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/loop-leader-dispatch.test.ts tests/loop-daemon-judge.test.ts tests/loop-daemon-decision-model.test.ts tests/agent-roles-config.test.ts && bun scripts/sync-dist-docs.ts --check && bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "S3-AC2",
+        "assertion": "Source BR-REQ-3, BR-DEC-6, BR-SCN-2; meet D3.1, D3.2 and D3.5 in docs/specs/loop-leader.spec.md. Agreed seam: tests/loop-leader-dispatch.test.ts. Done looks like: a dispatch item naming a security-analyst role on base analyze starts one read-only session with the brief as context, imm-loop status --json lists it with target, role, base and started_at, and completion is taken from the session record rather than the session text. Negative: a role absent from the catalog, including one dropped for role_base_unknown, is rejected and never listed; a dispatch while the role is at max_parallel is rejected. Bound: an exhausted max_dispatches_per_day rejects the dispatch.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-leader-dispatch.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/loop-leader-s3-guarded-dispatch.md",
+      "CONTEXT.md",
+      "docs/adr/0039-loop-daemon.md",
+      "docs/adr/0041-loop-leader-role-catalog.md",
+      "docs/agents/derived-files.json",
+      "docs/plans/loop-leader-s3-guarded-dispatch.intent.json",
+      "docs/reference/immune-brain-config.md",
+      "docs/specs/loop-leader.spec.md",
+      "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+      "plugins/immune-brain-antigravity/dist/docs/reference/immune-brain-config.md",
+      "plugins/immune-brain-antigravity/runtime/config/agent_roles.ts",
+      "plugins/immune-brain-antigravity/runtime/config/layered_config.ts",
+      "plugins/immune-brain-antigravity/runtime/loop_daemon/agent_handlers.ts",
+      "plugins/immune-brain-antigravity/runtime/loop_daemon/agent_runner.ts",
+      "plugins/immune-brain-antigravity/runtime/loop_daemon/cli.ts",
+      "plugins/immune-brain-antigravity/runtime/loop_daemon/decision_record.ts",
+      "plugins/immune-brain-antigravity/runtime/loop_daemon/dispatch.ts",
+      "plugins/immune-brain-antigravity/runtime/loop_daemon/judgement.ts",
+      "plugins/immune-brain-antigravity/runtime/loop_daemon/judging_agent.ts",
+      "plugins/immune-brain-antigravity/runtime/loop_daemon/leader_dispatch.ts",
+      "plugins/immune-brain-antigravity/runtime/loop_daemon/plan_drafter.ts",
+      "plugins/immune-brain-antigravity/runtime/loop_daemon/reconcile.ts",
+      "plugins/immune-brain-antigravity/runtime/loop_daemon/scheduler.ts",
+      "plugins/immune-brain-antigravity/runtime/loop_daemon/work_items.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/docs/reference/immune-brain-config.md",
+      "plugins/immune-brain/runtime/config/agent_roles.ts",
+      "plugins/immune-brain/runtime/config/layered_config.ts",
+      "plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts",
+      "plugins/immune-brain/runtime/loop_daemon/agent_runner.ts",
+      "plugins/immune-brain/runtime/loop_daemon/cli.ts",
+      "plugins/immune-brain/runtime/loop_daemon/decision_record.ts",
+      "plugins/immune-brain/runtime/loop_daemon/dispatch.ts",
+      "plugins/immune-brain/runtime/loop_daemon/judgement.ts",
+      "plugins/immune-brain/runtime/loop_daemon/judging_agent.ts",
+      "plugins/immune-brain/runtime/loop_daemon/leader_dispatch.ts",
+      "plugins/immune-brain/runtime/loop_daemon/plan_drafter.ts",
+      "plugins/immune-brain/runtime/loop_daemon/reconcile.ts",
+      "plugins/immune-brain/runtime/loop_daemon/scheduler.ts",
+      "plugins/immune-brain/runtime/loop_daemon/work_items.ts",
+      "tests/agent-roles-config.test.ts",
+      "tests/loop-daemon-decision-model.test.ts",
+      "tests/loop-daemon-judge.test.ts",
+      "tests/loop-leader-dispatch.test.ts",
+      "tests/loop-sched-role-sessions.test.ts"
+    ],
+    "scope_size_reason": "Retiring the judging agent and adding guarded dispatch touch the role list, runner, handlers, judgement, reconcile, scheduler and work items with their Antigravity mirrors and MCP bundles, and reconcile must move its re-check into the leader briefing in the same change so ADR 0039 Decision 7 never silently lapses.",
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/loop-leader-s3-guarded-dispatch.intent.json",
+    "content_hash": "sha256:c66a9f8c8393581a5bba2d4a0ef48be78b1e52b828af7d1514f6aa9a5733d292"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:c66a9f8c8393581a5bba2d4a0ef48be78b1e52b828af7d1514f6aa9a5733d292",
+  "git_base_head": "c009ccd700da6054a6f7571c9a335dfd2ba60cf8",
+  "attestations": [
+    {
+      "id": "approval-qa-31deda61",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:c66a9f8c8393581a5bba2d4a0ef48be78b1e52b828af7d1514f6aa9a5733d292",
+      "diff_hash": "sha256:bb975f2baa34139461de58909636c64db50c2ab86d7aab2ae9a3dbc4ad2326e9",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:6c14d5b035a52d60768e535dce1d733dc2848516ab35f0f66b663eb27619cb78",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S3-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:6c14d5b035a52d60768e535dce1d733dc2848516ab35f0f66b663eb27619cb78"
+        },
+        {
+          "acceptance_id": "S3-AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:6c14d5b035a52d60768e535dce1d733dc2848516ab35f0f66b663eb27619cb78"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-dd2f057e",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:c66a9f8c8393581a5bba2d4a0ef48be78b1e52b828af7d1514f6aa9a5733d292",
+      "diff_hash": "sha256:5b23bb439d53e67029c4ffb9e76d0c85779a9ca8fb35d8b0bcbcd52aba00970c",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:6c8a1519029e63d6b25d80e47a9fd58b9eb43cad6a206b7f2dbed42536bf7091",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S3-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:6c8a1519029e63d6b25d80e47a9fd58b9eb43cad6a206b7f2dbed42536bf7091"
+        },
+        {
+          "acceptance_id": "S3-AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:6c8a1519029e63d6b25d80e47a9fd58b9eb43cad6a206b7f2dbed42536bf7091"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-abd3aa47",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:c66a9f8c8393581a5bba2d4a0ef48be78b1e52b828af7d1514f6aa9a5733d292",
+      "diff_hash": "sha256:c8a3457a7038df7b6fe22dd797f395d8cf2be4a4b7f9526a6d99080b29479d06",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:e9e242f7ce1d1a348caef4afc6c88edc8a20d1d64afcbfb1ede383233108e240",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S3-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:e9e242f7ce1d1a348caef4afc6c88edc8a20d1d64afcbfb1ede383233108e240"
+        },
+        {
+          "acceptance_id": "S3-AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:e9e242f7ce1d1a348caef4afc6c88edc8a20d1d64afcbfb1ede383233108e240"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-ff969235",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:c66a9f8c8393581a5bba2d4a0ef48be78b1e52b828af7d1514f6aa9a5733d292",
+      "diff_hash": "sha256:f95cade176496959fc97cbc086a7032dfe10ea2ea12979f8669d74f9169bb881",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:764e4ccb5bb43a9c7a6637420870c21bbe392dadc253af34892318f022ef9763",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S3-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:764e4ccb5bb43a9c7a6637420870c21bbe392dadc253af34892318f022ef9763"
+        },
+        {
+          "acceptance_id": "S3-AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:764e4ccb5bb43a9c7a6637420870c21bbe392dadc253af34892318f022ef9763"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-5f571144",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:c66a9f8c8393581a5bba2d4a0ef48be78b1e52b828af7d1514f6aa9a5733d292",
+      "diff_hash": "sha256:f95cade176496959fc97cbc086a7032dfe10ea2ea12979f8669d74f9169bb881",
+      "actor_id": "cli:claude-code:3266424b-1915-426c-b058-6e7628485fae",
+      "summary": "Guarded leader dispatch (next/priority/shape/dispatch) rejects illegal transitions, execute, non-daemon repair, late shape, unknown/over-parallel roles and spent budgets with journaled reasons; judging agent retired to D12 baselines plus reconcile candidates; status lists running sessions; roles.judging preset tolerated; antigravity runtime tree byte-identical to claude runtime at base and review; blast radius medium (loop_daemon/cli.ts tick path, judgement.ts, reconcile.ts, new persisted role_sessions registry and WorkItem leader_rank/initiative_slug, config/agent_roles.ts).",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "c009ccd700da6054a6f7571c9a335dfd2ba60cf8",
+        "review_commit": "3c7954df191644213f8410c0d78b32b2be07e6be"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-e76eb5026b35-1-review-1",
+          "acceptance_id": "S3-AC1",
+          "summary": "A repair-base dispatch is unreachable in production: applyDispatch requires WorkItem.binding.pr !== null, but no production path ever sets binding.pr (newWorkItem sets null; recordWorkItemOutcome/markPlanPublished never assign it), and the session runner never calls isDaemonManagedPr; fail-closed today, but the positive repair path is dead code.",
+          "anchor": "sha256:33d5b7583b73aeb355e230b4024ef0064251cedb738fea278ed5feba52f58776",
+          "evidence": {
+            "trigger": "leader proposal dispatch{role with base repair, target pr-N} on a daemon-owned PR whose WorkItem is repairing → rejected repair_outside_daemon_branch because binding.pr is always null",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/loop_daemon/leader_dispatch.ts:applyDispatch",
+              "plugins/immune-brain/runtime/loop_daemon/work_items.ts:recordWorkItemOutcome",
+              "plugins/immune-brain/runtime/loop_daemon/cli.ts:createRoleSessionRunner"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S3-AC1"
+            }
+          }
+        },
+        {
+          "id": "review-e76eb5026b35-2-review-2",
+          "acceptance_id": "S3-AC1",
+          "summary": "driveInitiativeLane's settled_facts reads final_commit_sha from `git rev-parse HEAD` in input.root (the main checkout), not the batch branch head, so the exit record and the later open_pr body cite an unrelated commit.",
+          "anchor": "sha256:7719bbf6bbcb8e365e44a601ab27c1f3a2fc40a20181583777cbd0690a7cc4e9",
+          "evidence": {
+            "trigger": "initiative batch completes on its batch branch → exit record final_commit_sha = main checkout HEAD → open_pr summary 'Commit SHA' names a commit that is not the delivery",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts:driveInitiativeLane",
+              "plugins/immune-brain/runtime/loop_daemon/dispatch.ts:open_pr"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S3-AC1"
+            }
+          }
+        },
+        {
+          "id": "review-e76eb5026b35-3-review-3",
+          "acceptance_id": "S3-AC1",
+          "summary": "shapeInitiative authors slice intents one at a time through the Kernel before writing the carrier; a Kernel failure on a later slice rejects the item but leaves earlier authored docs/plans/<task>.intent.json files behind.",
+          "anchor": "sha256:d2f21531666fadaac4d6fd31a3990e0bf23a38e6aa5b5765cfb37229a3b3c25e",
+          "evidence": {
+            "trigger": "shape{plan:initiative} with two slices where runKernel fails on slice 2 → item rejected intent_validation_failed while docs/plans/<slice-1 task>.intent.json remains written",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/loop_daemon/leader_dispatch.ts:applyShape",
+              "plugins/immune-brain/runtime/loop_daemon/leader_dispatch.ts:shapeInitiative"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S3-AC1"
+            }
+          }
+        },
+        {
+          "id": "review-e76eb5026b35-4-review-4",
+          "acceptance_id": "S3-AC1",
+          "summary": "leaderEventFor only searches this tick's observed events, so a leader next for a reconcile candidate recorded in an earlier tick (edge event no longer re-observed) is rejected event_unavailable.",
+          "anchor": "sha256:f5ac6de18514682b94e7ce7d4f31d8537805e4e4e36574d0d50984fb361405fa",
+          "evidence": {
+            "trigger": "candidate decision from tick N for an edge event; leader proposes next for it in tick N+1 → obs.events lacks the event → rejected event_unavailable",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/loop_daemon/cli.ts:runLoopDaemonCli tick",
+              "plugins/immune-brain/runtime/loop_daemon/leader_dispatch.ts:applyNext",
+              "plugins/immune-brain/runtime/loop_daemon/leader_dispatch.ts:leaderEventFor"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S3-AC1"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:6660c4b362ce23dcf04c6016deabfaf199ad4f13142700673a216d8c5fa0e210"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-d9a04addbbc8-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S3-AC1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "applyShape admits shape{plan:\"initiative\"} from WorkItem state triage, but markPlanPublished then attempts triage -> plan_published, which WORK_ITEM_TRANSITIONS forbids (triage: clarifying|planning|escalated); the item is left in triage with a refused transition while the carrier, TaskIntents, binding.initiative_slug and plan publication are already written and the item is journaled accepted. Advance triage -> planning before publishing (or refuse triage before any write) and add a test that shapes from triage.",
+      "anchor": "sha256:1a0d32ff44166e106be104ccbe719c2e6993756b024a4cb29c4bda8a147257e8",
+      "evidence": {
+        "trigger": "WorkItem issue-42 in state triage + leader item {target:\"issue-42\",action:\"shape\",plan:\"initiative\"} with a valid plan → result outcome \"accepted\", docs/initiatives/<slug>.md, docs/plans/*.intent.json and the plan publication are written, but readWorkItem(issue-42).state stays \"triage\" with refused_transitions [triage->plan_published]; the shaped Initiative is stranded because later approval cannot move triage -> driving. The only shape test (loop-leader-dispatch.test.ts 'shapes an Initiative...') seeds state planning, so the triage path is untested. Read unchanged work_items.ts markPlanPublished/advanceWorkItem/WORK_ITEM_TRANSITIONS because the changed caller applyShape drives that state machine.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/leader_dispatch.ts:applyShape",
+          "plugins/immune-brain/runtime/loop_daemon/work_items.ts:markPlanPublished",
+          "plugins/immune-brain/runtime/loop_daemon/work_items.ts:advanceWorkItem"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S3-AC1"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:loop-leader-s3-guarded-dispatch:2026-11-17T13:15:38.356Z",
+      "at": "2026-11-17T13:15:38.356Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-leader-s3-guarded-dispatch.intent.json"
+    },
+    {
+      "id": "record_approval:loop-leader-s3-guarded-dispatch:2026-11-17T13:16:43.146Z",
+      "at": "2026-11-17T13:16:43.146Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-31deda61\naction_v2_sha256:3f5f5f7eb855806d2c92e760dbce92c3e952edc0ba71658b8321bb1c11d9a736",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-17T13:16:43.146Z"
+      }
+    },
+    {
+      "id": "record_approval:loop-leader-s3-guarded-dispatch:2026-11-17T13:45:01.239Z",
+      "at": "2026-11-17T13:45:01.239Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-dd2f057e\naction_v2_sha256:a6627858edfd3004b22d2316430affa426bc4604a35e7a52a01701740db8b563",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-17T13:45:01.240Z"
+      }
+    },
+    {
+      "id": "record_approval:loop-leader-s3-guarded-dispatch:2026-11-17T13:54:01.094Z",
+      "at": "2026-11-17T13:54:01.094Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-abd3aa47\naction_v2_sha256:e2eb053ec0c5ccfcacdcc5029d3f15d204ed4009d52cb18a4789a83437561b90",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-17T13:54:01.094Z"
+      }
+    },
+    {
+      "id": "request_rework:loop-leader-s3-guarded-dispatch:2026-11-17T13:56:46.451Z",
+      "at": "2026-11-17T13:56:46.451Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:d23139a7148a74aaf509fa5d3ff4278509ba04807f6fa2e7f396c27722b5d986",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:b6d52313-08ae-4e3e-9c2b-63a9f027419c",
+        "confirmation_ref": "pi:cli:claude-code:b6d52313-08ae-4e3e-9c2b-63a9f027419c",
+        "issued_at": "2026-11-17T13:56:46.451Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "c009ccd700da6054a6f7571c9a335dfd2ba60cf8",
+        "review_commit": "7fe9aef2f5de7008f4bf870c9a9f2f7d17718353"
+      },
+      "review_started_at": "2026-11-17T13:54:09.805Z",
+      "review_submitted_at": "2026-11-17T13:56:44.375Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "freeze_artifacts:loop-leader-s3-guarded-dispatch:2026-11-17T14:00:05.973Z",
+      "at": "2026-11-17T14:00:05.973Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-leader-s3-guarded-dispatch.intent.json"
+    },
+    {
+      "id": "resolve_finding:loop-leader-s3-guarded-dispatch:2026-11-17T14:00:20.238Z",
+      "at": "2026-11-17T14:00:20.238Z",
+      "type": "resolve_finding",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review-d9a04addbbc8-1-review-1\naction_v2_sha256:f83feb7bab9c8955d6968b044f00cf8f85852157ae47cb9eb5fcc45dab9226d4"
+    },
+    {
+      "id": "record_approval:loop-leader-s3-guarded-dispatch:2026-11-17T14:00:58.512Z",
+      "at": "2026-11-17T14:00:58.512Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-ff969235\naction_v2_sha256:02019b29d2cac57def55f30cef5bc5291cd87213b1673431b154fe8d81f8e61d",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-17T14:00:58.512Z"
+      }
+    },
+    {
+      "id": "record_approval:loop-leader-s3-guarded-dispatch:2026-11-17T14:05:13.411Z",
+      "at": "2026-11-17T14:05:13.411Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-5f571144\naction_v2_sha256:40004303a81bb5b319ea747eb86a31ac5de522d8a1100b45c04866ddb0a40090",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:3266424b-1915-426c-b058-6e7628485fae",
+        "confirmation_ref": "pi:cli:claude-code:3266424b-1915-426c-b058-6e7628485fae",
+        "issued_at": "2026-11-17T14:05:13.411Z"
+      },
+      "review_started_at": "2026-11-17T14:01:07.783Z",
+      "review_submitted_at": "2026-11-17T14:05:11.353Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:loop-leader-s3-guarded-dispatch:2026-11-17T14:05:19.471Z",
+      "at": "2026-11-17T14:05:19.471Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:03e7cd77096f106d0f90f1dfe6e1e8f2d233d586b1674323b387b3241d1d32dc"
+    }
+  ]
+}

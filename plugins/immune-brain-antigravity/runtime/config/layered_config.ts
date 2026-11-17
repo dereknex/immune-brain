@@ -250,6 +250,16 @@ export function resolveConfig(root: string, options: { userConfigPath?: string; 
 			diag("deprecated_config_source", "warning", bound.source === "project" ? projectPath : userPath, "loop.roles",
 				`${key} no longer chooses the loop ${base} role; bind a base ${base} role under loop.roles in .imm/config.json`);
 	}
+	// Spec loop-leader D3.4: judging is retired, so a retired preset binding is
+	// tolerated and reported once instead of invalidating the agents table.
+	for (const binding of agentLayers.preset_judging)
+		diag(
+			"deprecated_config_source",
+			"warning",
+			binding.file,
+			binding.key_path,
+			"judging is retired: the leader replaces the Tier-3 judging session, so this binding selects nothing",
+		);
 
 	// decision_models
 	for (const [layer, o, file] of layers) knownKeys(part(o, file, "decision_models"), layer === "user" ? ["profiles", "default_profile", "bindings", "egress"] : ["default_profile", "bindings", "egress"], file, "decision_models");

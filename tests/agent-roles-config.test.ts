@@ -199,8 +199,8 @@ test("an agents binding that used to choose a loop role is ignored and reported 
 	// The sessions run on the catalog role: the default when no role overrides it.
 	expect(loopRoleProfile(c, "plan")).toEqual({ host: "claude-code", model: null, effort: null, instructions: null });
 	expect(loopRoleProfile(c, "repair")).toEqual({ host: "claude-code", model: null, effort: null, instructions: null });
-	// Judging and the Lane Host are unchanged (BR-DEC-8): judging stays on `triage`.
-	expect(loopRoleProfile(c, "judging")).toEqual({ host: "claude-code", model: null, effort: null, instructions: null });
+	// The Lane Host and the read-only catalog roles are unchanged (BR-DEC-8).
+	expect(loopRoleProfile(c, "analyze")).toEqual({ host: "claude-code", model: null, effort: null, instructions: null });
 	expect(loopRoleProfile(c, "executor")).toEqual({ host: "pi", model: "auto/deepseek-v4.1-flash", effort: "high", instructions: null });
 	// The project can still bind the loop's own role, and the notice stays: the agents key is not a loop source.
 	f.project({ loop: { roles: { planner: { base: "plan", host: "pi", model: "p-model" } } } });
@@ -219,4 +219,23 @@ test("a resurrected agents.presets table is config_invalid and never reaches a l
 	// Nothing from the preset reaches a loop role: every catalog role keeps its documented default.
 	for (const role of ["clarify", "plan", "repair"] as const) expect(loopRoleProfile(c, role)).toEqual({ host: "claude-code", model: null, effort: null, instructions: null });
 	expect(c.loop.value.roles.every((role) => role.source === "default")).toBe(true);
+});
+
+test("a retired preset roles.judging binding is tolerated, reported once, and leaves the executor Host alone", () => {
+	const f = fixture();
+	// Spec loop-leader D3.4: judging is retired, so the binding selects nothing and
+	// is reported rather than making the whole agents table config_invalid.
+	f.user({ agents: { executor: "pi:exec-model", presets: { fast: { roles: { judging: "pi" } } } } });
+	const c = f.read();
+	expect(c.agents.valid).toBe(true);
+	expect(c.diagnostics).toContainEqual(
+		expect.objectContaining({
+			code: "deprecated_config_source",
+			severity: "warning",
+			file: f.userPath,
+			key_path: "agents.presets.fast.roles.judging",
+		}),
+	);
+	expect(c.agents.roles.executor).toEqual({ host: "pi", model: "exec-model", effort: null, source: "user" });
+	expect(loopRoleProfile(c, "executor")).toEqual({ host: "pi", model: "exec-model", effort: null, instructions: null });
 });
