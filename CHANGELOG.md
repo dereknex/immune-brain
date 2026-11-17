@@ -1,5 +1,19 @@
 # Changelog
 
+## 9.0.0
+
+### Major Changes
+
+- [#566](https://github.com/dereknex/immune-brain/pull/566) [`c54ff12`](https://github.com/dereknex/immune-brain/commit/c54ff124afad29aaaf5282cf37936b751c45dd6e) Thanks [@dereknex](https://github.com/dereknex)! - Configuration moves to contract v2 (ADR 0041, #564). The user file and a local, unversioned project `.imm/config.json` resolve every key request → project → user → default, with permission keys taking the stricter value. `agents` binds four roles (`executor`, `reviewer`, `planner`, `triage`) to a user profile name, shorthand `host[:model][@effort]` or an object; presets, `active`, `projects.<key>`, `lanes`, per-profile `transport` and `enabled_points` are removed, and a top-level `herdr` switch and `batch.max_parallel` replace them. `start_unattended_batch` takes `agents: { executor?, reviewer? }` instead of the flat `executor_*` / `review_*` parameters; a new batch freezes the resolved profiles, and every Executor handoff carries the frozen profile, so a Lane no longer starts without its model. v1 files are reported as `config_invalid`: convert them with `imm-kernel config migrate [--write]`, which keeps the v1 user file as `config.json.v1`.
+
+### Minor Changes
+
+- [#567](https://github.com/dereknex/immune-brain/pull/567) [`392a51e`](https://github.com/dereknex/immune-brain/commit/392a51e85b5734430dfa68e37b8db714fc28979a) Thanks [@dereknex](https://github.com/dereknex)! - Authority Review and findings verification no longer stop on a directory-trust dialog every round. The brief and the receipt live in an ignored result slot inside the task's working directory (`.imm/state/sessions/<id>/`), so no reviewer argv carries `--add-dir`. The reviewer reads `git diff <base_head> <review_commit>` itself; the evidence manifest file, `manifest_digest`, the provenance self-check and the `REVIEW_CONTRACT_MISMATCH` line are removed, and new Review approvals carry `assurance_kernel/review_revision_identity/v2` (`base_head`, `review_commit`). Persisted v1 identities still validate. Review now requires a TaskRecord v4 base head; re-enroll a v3 task.
+
+### Patch Changes
+
+- [#550](https://github.com/dereknex/immune-brain/pull/550) [`e5a771b`](https://github.com/dereknex/immune-brain/commit/e5a771b4631b4ed1f71679601bdbfb59afe01709) Thanks [@dereknex](https://github.com/dereknex)! - Review preparation now reports an invalid user `agents` table as `review_config_invalid`, naming the config file and the key path to fix instead of asking for the deprecated `lanes.review_host`; `review_profile_required` and `review_host_unavailable` recovery texts name `agents.profiles` / `agents.presets`. A round that still runs on the legacy `lanes` fallback returns `review_ready` with a `review_legacy_profile` warning. `drive.md` and the config reference follow.
+
 ## 8.6.0
 
 ### Minor Changes
