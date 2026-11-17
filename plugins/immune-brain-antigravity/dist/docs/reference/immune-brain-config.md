@@ -90,6 +90,11 @@ file:
   `.imm/state/loop/interactions/`, your own Host session lists them with `loop_interactions` and answers one
   through `answer_loop_interaction`, and the daemon applies the confirmed answer on its next tick. A
   `plan_approval` is still answered by your own `drive` entry. Any other value is `config_invalid`.
+- `loop.budget` caps the daemon's day: `max_ticks_per_day` and
+  `max_dispatches_per_day` are positive integers or `null` (unlimited), and
+  `max_leader_wakes_per_day` is an integer in 0..500 (default 48) bounding how
+  many changed briefings may wake the read-only leader; `0` disables the leader.
+  A wake counts once against both the leader and the dispatch budget.
 - `.imm/risk-floor.json` and `.imm/routine-classes.json` stay separate, tracked
   files (see [Risk Floor](#risk-floor)).
 

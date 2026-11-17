@@ -20,7 +20,7 @@ import { chmodSync, closeSync, existsSync, fstatSync, openSync, readSync } from 
 import { join, resolve } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
-import { DEFAULT_LOOP_CONFIG, type LoopConfig, resolveConfig } from "../config/layered_config.ts";
+import { DEFAULT_LOOP_CONFIG, LOOP_LEADER_WAKES_BOUNDS, type LoopConfig, resolveConfig } from "../config/layered_config.ts";
 import { createGhTransport, type GhTransport } from "../github_issue_tracker.ts";
 import { readTaskRecordRaw } from "../kernel/storage.ts";
 import { readNoTouch } from "../no_touch.ts";
@@ -29,7 +29,8 @@ import { POINT_REGISTRY } from "../decision_model/thresholds.ts";
 import { buildDecisionRecord } from "./decision_record.ts";
 import { findLatestLaneDecisionQuestion } from "./decision_relay.ts";
 import { selectBestDuplicateCandidate } from "./duplicate_candidates.ts";
-import { createCliAgentSessionProvider, loopRoleProfile } from "./agent_runner.ts";
+import { createCliAgentSessionProvider, loopRoleProfile, loopSessionLimits, type AgentSessionProvider } from "./agent_runner.ts";
+import { recordLeaderWake, runLeaderTick } from "./leader_agent.ts";
 import {
 	createAgentHandlerPort,
 	createDefaultAgentHandlerDeps,
@@ -75,6 +76,7 @@ import {
 	initLoopState,
 	inspectLoopDaemonState,
 	loadLoopState,
+	rollDailyStats,
 	saveLoopState,
 } from "./state.ts";
 import type { ObservationInput } from "./types.ts";
@@ -275,6 +277,8 @@ export async function runLoopDaemonCli(
 		laneRuntime?: LaneRuntimeFactory;
 		/** The S9 agent port; the executable composes the production one. */
 		agentPort?: AgentHandlerPort;
+		/** The leader session backend; absent compiles the briefing but starts no leader session. */
+		leader?: { provider: AgentSessionProvider };
 		/** True only inside the standing `imm-loop run` process. */
 		standingDaemon?: boolean;
 		/** Deterministic clock seam for reconciliation schedule tests. */
@@ -870,12 +874,8 @@ Options:
 			}
 
 			if (!isDryRun) {
-				const today = new Date().toISOString().slice(0, 10);
-				if (state.stats.today_date !== today) {
-					state.stats.today_date = today;
-					state.stats.ticks_today = 0;
-					state.stats.dispatches_today = 0;
-				}
+				// Every per-day counter rolls together, the leader wake count included.
+				rollDailyStats(state, new Date().toISOString().slice(0, 10));
 
 				state.watermarks = obs.watermarks;
 				state.updated_at = new Date().toISOString();
@@ -1065,12 +1065,7 @@ Options:
 				},
 				recordInvocation: () => {
 					if (!isDryRun) {
-						const today = recordedAt.slice(0, 10);
-						if (state.stats.today_date !== today) {
-							state.stats.today_date = today;
-							state.stats.ticks_today = 0;
-							state.stats.dispatches_today = 0;
-						}
+						rollDailyStats(state, recordedAt.slice(0, 10));
 						state.stats.dispatches_today = (state.stats.dispatches_today ?? 0) + 1;
 						state.stats.dispatches_total = (state.stats.dispatches_total ?? 0) + 1;
 						state.updated_at = recordedAt;
@@ -1177,6 +1172,33 @@ Options:
 				laneRuntime: options?.laneRuntime,
 			});
 
+			// S2/D2: the briefing is compiled on every tick; only a fingerprint the journal
+			// has not recorded starts one read-only leader session. `S2` executes nothing.
+			rollDailyStats(state, recordedAt.slice(0, 10));
+			const leaderLimits = loopSessionLimits({ agents: resolved.agents, loop: resolved.loop }, "leader");
+			const leaderTick = await runLeaderTick({
+				root: absoluteRoot,
+				stateDir,
+				roles: resolved.loop.value.roles,
+				mode: loopConfig.mode,
+				dry_run: isDryRun,
+				now: recordedAt,
+				turn_budget: leaderLimits.turn_budget,
+				timeout_ms: leaderLimits.timeout_ms,
+				budget: {
+					wakes_today: state.stats.leader_wakes_today ?? 0,
+					max_leader_wakes_per_day: loopConfig.budget.max_leader_wakes_per_day ?? LOOP_LEADER_WAKES_BOUNDS.default,
+					dispatches_today: state.stats.dispatches_today ?? 0,
+					max_dispatches_per_day: loopConfig.budget.max_dispatches_per_day,
+				},
+				sessionProvider: options?.leader?.provider ?? null,
+			});
+			if (leaderTick.counted_wake && !isDryRun) {
+				recordLeaderWake(state.stats);
+				state.updated_at = recordedAt;
+				saveLoopState(stateDir, state);
+			}
+
 			const outputPayload = {
 				contract: "assurance_kernel/loop_tick_result/v1",
 				dry_run: isDryRun,
@@ -1188,6 +1210,7 @@ Options:
 				dispatches_count: dispatchRes.dispatches.length,
 				local_answers: localAnswers,
 				local_answers_count: localAnswers.length,
+				leader: leaderTick,
 				watermarks: obs.watermarks,
 				paused: state.paused,
 			};
@@ -1203,7 +1226,10 @@ Options:
 				decisions.map((d) => `  -> ${d.handler} (tier ${d.tier}) ${d.event_id}: ${d.reason}`).join("\n") +
 				(decisions.length > 0 ? "\n" : "") +
 				dispatchRes.dispatches.map((d) => `  => dispatch: ${d.handler} [${d.outcome}] ${d.detail}`).join("\n") +
-				(dispatchRes.dispatches.length > 0 ? "\n" : "");
+				(dispatchRes.dispatches.length > 0 ? "\n" : "") +
+				`  => leader: ${leaderTick.woke ? "woke" : "idle"} (${leaderTick.reason}) fingerprint ${leaderTick.briefing_fingerprint}` +
+				(leaderTick.proposal === null ? "" : `, ${leaderTick.proposal.items} item(s), ${leaderTick.proposal.rejected.length} rejected`) +
+				"\n";
 
 			return { stdout: summary, stderr: "", returncode: 0 };
 		} finally {
@@ -1475,9 +1501,8 @@ export async function runLoopDaemonExecutable(
 	// The agent port belongs to the live daemon: a `tick`, `run`, or `reconcile`
 	// from this executable dispatches agent-backed handlers through real sessions.
 	const needsAgent = command === "tick" || command === "run" || command === "reconcile";
-	const agentPort = needsAgent
-		? createAgentHandlerPort(createDefaultAgentHandlerDeps(root, { stateDir: effectiveStateDir }))
-		: undefined;
+	const handlerDeps = needsAgent ? createDefaultAgentHandlerDeps(root, { stateDir: effectiveStateDir }) : undefined;
+	const agentPort = handlerDeps ? createAgentHandlerPort(handlerDeps) : undefined;
 	let judgingAgent: JudgingAgentFn | undefined;
 	if (needsAgent) {
 		// The judging session runs on the profile bound to the judging role; no
@@ -1495,6 +1520,7 @@ export async function runLoopDaemonExecutable(
 	return runLoopDaemonCli(argv, root, {
 		classify: createDecisionModelClassifier(root),
 		...(agentPort ? { agentPort } : {}),
+		...(handlerDeps ? { leader: { provider: handlerDeps.sessionProvider } } : {}),
 		...(judgingAgent ? { judgingAgent } : {}),
 	});
 }

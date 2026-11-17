@@ -10403,7 +10403,7 @@ function resolveConfig(root, options = {}) {
     knownKeys(part(o, file, "loop"), layer === "project" ? [...loopKeys, "roles"] : loopKeys, file, "loop");
     if (layer === "user" && has(part(o, file, "loop"), "roles"))
       invalid(file, "loop.roles", "loop.roles is defined only in the project file");
-    knownKeys(part(o, file, "loop.budget"), ["max_ticks_per_day", "max_dispatches_per_day"], file, "loop.budget");
+    knownKeys(part(o, file, "loop.budget"), ["max_ticks_per_day", "max_dispatches_per_day", "max_leader_wakes_per_day"], file, "loop.budget");
     knownKeys(part(o, file, "loop.interaction"), ["channel"], file, "loop.interaction");
   }
   const distinct = (v) => Array.isArray(v) && v.every((item) => typeof item === "string" && item.trim().length > 0) && new Set(v).size === v.length;
@@ -10416,6 +10416,7 @@ function resolveConfig(root, options = {}) {
   };
   const risks = valid((o) => o.loop?.auto_enroll_max_risk, "loop.auto_enroll_max_risk", oneOf(LOOP_AUTO_ENROLL_MAX_RISKS), "expected none or routine; material and critical require tracker_approval");
   const budgetPick = (key) => pick((o) => o.loop?.budget?.[key], `loop.budget.${key}`, (v) => integerWithin(v, 1), "expected a positive integer", null).value;
+  const leaderWakes = pick((o) => o.loop?.budget?.max_leader_wakes_per_day, "loop.budget.max_leader_wakes_per_day", (v) => integerWithin(v, LOOP_LEADER_WAKES_BOUNDS.min, LOOP_LEADER_WAKES_BOUNDS.max), `expected an integer between ${LOOP_LEADER_WAKES_BOUNDS.min} and ${LOOP_LEADER_WAKES_BOUNDS.max}`, LOOP_LEADER_WAKES_BOUNDS.default).value;
   const loopCatalog = resolveLoopRoles({ roles: project?.loop?.roles, root });
   for (const error of loopCatalog.errors)
     diag(error.code, "error", projectPath, error.key_path, error.message);
@@ -10429,7 +10430,11 @@ function resolveConfig(root, options = {}) {
     allowed_actors: intersect("allowed_actors", distinct, "expected distinct non-empty GitHub logins"),
     allowed_associations: intersect("allowed_associations", (v) => distinct(v) && v.length > 0 && v.every((a) => LOOP_ASSOCIATIONS.includes(a)), `expected a subset of ${LOOP_ASSOCIATIONS.join(", ")}`),
     interaction: { channel: pick((o) => o.loop?.interaction?.channel, "loop.interaction.channel", oneOf(LOOP_INTERACTION_CHANNELS), `expected one of ${LOOP_INTERACTION_CHANNELS.join(", ")}`, "github").value },
-    budget: { max_ticks_per_day: budgetPick("max_ticks_per_day"), max_dispatches_per_day: budgetPick("max_dispatches_per_day") },
+    budget: {
+      max_ticks_per_day: budgetPick("max_ticks_per_day"),
+      max_dispatches_per_day: budgetPick("max_dispatches_per_day"),
+      max_leader_wakes_per_day: leaderWakes
+    },
     roles: loopCatalog.roles
   };
   const deprecated = [
@@ -10525,7 +10530,7 @@ function resolveConfig(root, options = {}) {
 function batchConfigErrors(config) {
   return config.diagnostics.filter((d) => d.severity === "error" && (/^(agents|batch|session_providers)(\.|$)/.test(d.key_path) || d.key_path === "$" || d.key_path === "contract"));
 }
-var object3 = (v) => v !== null && typeof v === "object" && !Array.isArray(v), leaf = (value, source) => ({ value, source }), has = (o, k) => !!o && Object.hasOwn(o, k), envName, USER_CONFIG_CONTRACT = "immune_brain/user_config/v2", PROJECT_CONFIG_CONTRACT = "immune_brain/project_config/v2", BATCH_MAX_PARALLEL, LOOP_MODES, LOOP_AUTO_ENROLL_MAX_RISKS, LOOP_ASSOCIATIONS, LOOP_INTERACTION_CHANNELS, DEFAULT_LOOP_CONFIG, FILE_KEYS, REGISTERED_SESSION_PROVIDERS;
+var object3 = (v) => v !== null && typeof v === "object" && !Array.isArray(v), leaf = (value, source) => ({ value, source }), has = (o, k) => !!o && Object.hasOwn(o, k), envName, USER_CONFIG_CONTRACT = "immune_brain/user_config/v2", PROJECT_CONFIG_CONTRACT = "immune_brain/project_config/v2", BATCH_MAX_PARALLEL, LOOP_MODES, LOOP_AUTO_ENROLL_MAX_RISKS, LOOP_ASSOCIATIONS, LOOP_INTERACTION_CHANNELS, LOOP_LEADER_WAKES_BOUNDS, DEFAULT_LOOP_CONFIG, FILE_KEYS, REGISTERED_SESSION_PROVIDERS;
 var init_layered_config = __esm(() => {
   init_agent_roles();
   init_role_catalog();
@@ -10538,6 +10543,7 @@ var init_layered_config = __esm(() => {
   LOOP_AUTO_ENROLL_MAX_RISKS = ["none", "routine"];
   LOOP_ASSOCIATIONS = ["OWNER", "MEMBER", "COLLABORATOR"];
   LOOP_INTERACTION_CHANNELS = ["github", "local"];
+  LOOP_LEADER_WAKES_BOUNDS = { min: 0, max: 500, default: 48 };
   DEFAULT_LOOP_CONFIG = {
     mode: "off",
     interval_seconds: 60,
@@ -10548,7 +10554,7 @@ var init_layered_config = __esm(() => {
     allowed_actors: [],
     allowed_associations: [...LOOP_ASSOCIATIONS],
     interaction: { channel: "github" },
-    budget: { max_ticks_per_day: null, max_dispatches_per_day: null }
+    budget: { max_ticks_per_day: null, max_dispatches_per_day: null, max_leader_wakes_per_day: LOOP_LEADER_WAKES_BOUNDS.default }
   };
   FILE_KEYS = ["contract", "agents", "herdr", "session_providers", "decision_models", "git_integration", "initiative_carrier", "batch", "loop", "review_verifier"];
   REGISTERED_SESSION_PROVIDERS = ["herdr", "herdr-core"];

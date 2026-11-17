@@ -55,8 +55,10 @@ export interface LoopConfig {
 	allowed_actors: string[];
 	allowed_associations: LoopAssociation[];
 	interaction: { channel: LoopInteractionChannel };
-	budget: { max_ticks_per_day: number | null; max_dispatches_per_day: number | null };
+	budget: { max_ticks_per_day: number | null; max_dispatches_per_day: number | null; max_leader_wakes_per_day: number };
 }
+/** Spec loop-leader D2.2: 0 disables the leader, 48 wakes a day by default. */
+export const LOOP_LEADER_WAKES_BOUNDS = { min: 0, max: 500, default: 48 } as const;
 /** The `loop.value` shape: the loop switches plus the project role catalog (Spec loop-leader D1.5). */
 export type LoopValue = LoopConfig & { roles: ResolvedLoopRole[] };
 export const DEFAULT_LOOP_CONFIG: LoopConfig = {
@@ -69,7 +71,7 @@ export const DEFAULT_LOOP_CONFIG: LoopConfig = {
 	allowed_actors: [],
 	allowed_associations: [...LOOP_ASSOCIATIONS],
 	interaction: { channel: "github" },
-	budget: { max_ticks_per_day: null, max_dispatches_per_day: null },
+	budget: { max_ticks_per_day: null, max_dispatches_per_day: null, max_leader_wakes_per_day: LOOP_LEADER_WAKES_BOUNDS.default },
 };
 
 /** The top-level keys either file may set; `profiles` under agents and decision_models stay user-only.
@@ -197,7 +199,7 @@ export function resolveConfig(root: string, options: { userConfigPath?: string; 
 	for (const [layer, o, file] of layers) {
 		knownKeys(part(o, file, "loop"), layer === "project" ? [...loopKeys, "roles"] : loopKeys, file, "loop");
 		if (layer === "user" && has(part(o, file, "loop"), "roles")) invalid(file, "loop.roles", "loop.roles is defined only in the project file");
-		knownKeys(part(o, file, "loop.budget"), ["max_ticks_per_day", "max_dispatches_per_day"], file, "loop.budget");
+		knownKeys(part(o, file, "loop.budget"), ["max_ticks_per_day", "max_dispatches_per_day", "max_leader_wakes_per_day"], file, "loop.budget");
 		knownKeys(part(o, file, "loop.interaction"), ["channel"], file, "loop.interaction");
 	}
 	const distinct = (v: unknown) => Array.isArray(v) && v.every((item) => typeof item === "string" && item.trim().length > 0) && new Set(v).size === v.length;
@@ -210,6 +212,13 @@ export function resolveConfig(root: string, options: { userConfigPath?: string; 
 	};
 	const risks = valid((o) => o.loop?.auto_enroll_max_risk, "loop.auto_enroll_max_risk", oneOf(LOOP_AUTO_ENROLL_MAX_RISKS), "expected none or routine; material and critical require tracker_approval");
 	const budgetPick = (key: string): any => pick((o) => o.loop?.budget?.[key], `loop.budget.${key}`, (v) => integerWithin(v, 1), "expected a positive integer", null).value;
+	const leaderWakes = pick(
+		(o) => o.loop?.budget?.max_leader_wakes_per_day,
+		"loop.budget.max_leader_wakes_per_day",
+		(v) => integerWithin(v, LOOP_LEADER_WAKES_BOUNDS.min, LOOP_LEADER_WAKES_BOUNDS.max),
+		`expected an integer between ${LOOP_LEADER_WAKES_BOUNDS.min} and ${LOOP_LEADER_WAKES_BOUNDS.max}`,
+		LOOP_LEADER_WAKES_BOUNDS.default,
+	).value;
 	const loopCatalog = resolveLoopRoles({ roles: project?.loop?.roles, root });
 	for (const error of loopCatalog.errors) diag(error.code, "error", projectPath, error.key_path, error.message);
 	const resolvedLoop: LoopValue = {
@@ -222,7 +231,11 @@ export function resolveConfig(root: string, options: { userConfigPath?: string; 
 		allowed_actors: intersect("allowed_actors", distinct, "expected distinct non-empty GitHub logins"),
 		allowed_associations: intersect("allowed_associations", (v) => distinct(v) && (v as string[]).length > 0 && (v as string[]).every((a) => (LOOP_ASSOCIATIONS as readonly string[]).includes(a)), `expected a subset of ${LOOP_ASSOCIATIONS.join(", ")}`),
 		interaction: { channel: pick((o) => o.loop?.interaction?.channel, "loop.interaction.channel", oneOf(LOOP_INTERACTION_CHANNELS), `expected one of ${LOOP_INTERACTION_CHANNELS.join(", ")}`, "github").value as LoopInteractionChannel },
-		budget: { max_ticks_per_day: budgetPick("max_ticks_per_day"), max_dispatches_per_day: budgetPick("max_dispatches_per_day") },
+		budget: {
+			max_ticks_per_day: budgetPick("max_ticks_per_day"),
+			max_dispatches_per_day: budgetPick("max_dispatches_per_day"),
+			max_leader_wakes_per_day: leaderWakes as number,
+		},
 		roles: loopCatalog.roles,
 	};
 	// BR-DEC-7: an agents binding that used to choose a loop role's profile is ignored

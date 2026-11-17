@@ -38,7 +38,7 @@ import {
 } from "../plugins/immune-brain/runtime/loop_daemon/agent_runner.ts";
 import { resolveLoopRoles, type LoopSessionConfig } from "../plugins/immune-brain/runtime/loop_daemon/role_catalog.ts";
 
-const ROLES: AgentSessionRole[] = ["judging", "clarify", "plan", "repair"];
+const ROLES: AgentSessionRole[] = ["judging", "clarify", "plan", "repair", "leader"];
 
 const HOSTS: Array<CliAgentSessionProfile["host"]> = ["claude-code", "pi", "antigravity"];
 
@@ -112,6 +112,7 @@ describe("Loop Daemon: Per-Role Sessions (S2)", () => {
 		expect(sessionRole("clarify")).toBe("clarify");
 		expect(sessionRole("planning")).toBe("plan");
 		expect(sessionRole("repair")).toBe("repair");
+		expect(sessionRole("leader")).toBe("leader");
 	});
 
 	it("never grants a write permission to judging, clarify or plan, and always passes the read-tool allow-list", () => {

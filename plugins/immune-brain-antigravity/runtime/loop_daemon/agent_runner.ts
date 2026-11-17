@@ -26,13 +26,13 @@ import { catalogRole, LOOP_ROLE_DEFAULT_HOST, type LoopRoleBase, type LoopSessio
 
 export const AGENT_SESSION_CONTRACT = "assurance_kernel/loop_agent_session/v1" as const;
 
-export type AgentSessionKind = "clarify" | "planning" | "repair" | "judging";
+export type AgentSessionKind = "clarify" | "planning" | "repair" | "judging" | "leader";
 
-/** The loop roles a session runs as (Spec loop-agent-scheduling D1/D2). */
-export type AgentSessionRole = "judging" | "clarify" | "plan" | "repair";
+/** The loop roles a session runs as (Spec loop-agent-scheduling D1/D2, Spec loop-leader D2.3). */
+export type AgentSessionRole = "judging" | "clarify" | "plan" | "repair" | "leader";
 
 /** Roles whose argv never grants write permission (Spec D2). */
-export const READ_ONLY_SESSION_ROLES: readonly AgentSessionRole[] = ["judging", "clarify", "plan"];
+export const READ_ONLY_SESSION_ROLES: readonly AgentSessionRole[] = ["judging", "clarify", "plan", "leader"];
 
 /**
  * The built-in per-role session limits (Spec D2). Making them configurable is
@@ -43,6 +43,7 @@ export const ROLE_SESSION_LIMITS: Record<AgentSessionRole, { turn_budget: number
 	clarify: { turn_budget: 40, timeout_ms: 900_000 },
 	plan: { turn_budget: 40, timeout_ms: 900_000 },
 	repair: { turn_budget: 40, timeout_ms: 900_000 },
+	leader: { turn_budget: 40, timeout_ms: 900_000 },
 };
 
 /** A session kind runs as the role that owns it (Spec D1/D2). */
@@ -51,6 +52,7 @@ const ROLE_OF_KIND: Record<AgentSessionKind, AgentSessionRole> = {
 	planning: "plan",
 	judging: "judging",
 	repair: "repair",
+	leader: "leader",
 };
 
 export function sessionRole(kind: AgentSessionKind): AgentSessionRole {
@@ -253,7 +255,12 @@ export async function runAgentSession(
  * D1.6). `judging` keeps the agents table until `S3` retires it, and the Lane
  * Host stays `agents.executor` (BR-DEC-8).
  */
-const LOOP_SESSION_BASE: Partial<Record<AgentSessionRole, LoopRoleBase>> = { clarify: "clarify", plan: "plan", repair: "repair" };
+const LOOP_SESSION_BASE: Partial<Record<AgentSessionRole, LoopRoleBase>> = {
+	clarify: "clarify",
+	plan: "plan",
+	repair: "repair",
+	leader: "leader",
+};
 
 /** The roles a session still takes from the `agents` table rather than the catalog. */
 const LOOP_AGENT_ROLE: Partial<Record<AgentSessionRole | "executor", AgentRole>> = { executor: "executor", judging: "triage" };

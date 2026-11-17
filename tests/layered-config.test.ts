@@ -217,6 +217,20 @@ test("batchConfigErrors counts only agents, batch, herdr and whole-file errors",
 	expect(batchConfigErrors(f.read())).toContainEqual(expect.objectContaining({ key_path: "$" }));
 });
 
+test("loop.budget.max_leader_wakes_per_day accepts 0..500 and defaults to 48", () => {
+	const f = fixture();
+	expect(f.read().loop.value.budget.max_leader_wakes_per_day).toBe(48);
+	f.project({ loop: { budget: { max_leader_wakes_per_day: 0 } } });
+	expect(f.read().loop.value.budget.max_leader_wakes_per_day).toBe(0);
+	f.project({ loop: { budget: { max_leader_wakes_per_day: 500 } } });
+	expect(f.read().loop.value.budget.max_leader_wakes_per_day).toBe(500);
+	// Out of range: the key is refused and the default stands.
+	f.project({ loop: { budget: { max_leader_wakes_per_day: 501 } } });
+	const c = f.read();
+	expect(errorAt(c, "loop.budget.max_leader_wakes_per_day")).toMatchObject({ code: "config_invalid" });
+	expect(c.loop.value.budget.max_leader_wakes_per_day).toBe(48);
+});
+
 test("loop.roles resolves from the project file only, and a rejected role never invalidates the loop", () => {
 	const f = fixture();
 	expect(f.read().loop.value.roles).toHaveLength(6);

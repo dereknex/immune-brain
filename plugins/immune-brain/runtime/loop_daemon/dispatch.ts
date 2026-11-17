@@ -91,6 +91,7 @@ import {
 	listLeases,
 	loadLease,
 	loadLoopDecisions,
+	rollDailyStats,
 	saveLoopState,
 } from "./state.ts";
 import { plannedWorkItemCount, workItemScopeHint } from "./work_items.ts";
@@ -446,12 +447,7 @@ export async function dispatchDecisions(
 		if (!dryRun) {
 			appendLoopDispatch(stateDir, record);
 			if (outcome === "executed") {
-				const today = now.slice(0, 10);
-				if (state.stats.today_date !== today) {
-					state.stats.today_date = today;
-					state.stats.ticks_today = 0;
-					state.stats.dispatches_today = 0;
-				}
+				rollDailyStats(state, now.slice(0, 10));
 				state.stats.dispatches_today = (state.stats.dispatches_today ?? 0) + 1;
 				state.stats.dispatches_total = (state.stats.dispatches_total ?? 0) + 1;
 				state.updated_at = now;
