@@ -1,6 +1,6 @@
 # Layered configuration
 
-Status: accepted; supersedes [ADR 0033](0033-lane-preferences-local-preset.md) and item 1 of [ADR 0024](0024-git-integration-preference.md).
+Status: superseded by [ADR 0041](0041-simplified-configuration.md); superseded [ADR 0033](0033-lane-preferences-local-preset.md) and item 1 of [ADR 0024](0024-git-integration-preference.md).
 
 ## Context
 

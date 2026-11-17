@@ -70,10 +70,9 @@ function fixture() {
 	const userPath = join(temp, `user-${counter}.json`);
 	mkdirSync(join(root, ".imm"), { recursive: true });
 	execFileSync("git", ["init", "-q", root]);
-	writeFileSync(userPath, JSON.stringify({ contract: "immune_brain/user_config/v1" }));
+	writeFileSync(userPath, JSON.stringify({ contract: "immune_brain/user_config/v2" }));
 	const project = (data: object) => {
-		writeFileSync(join(root, ".imm/config.json"), JSON.stringify({ contract: "immune_brain/project_config/v1", ...data }));
-		execFileSync("git", ["add", ".imm/config.json"], { cwd: root });
+		writeFileSync(join(root, ".imm/config.json"), JSON.stringify({ contract: "immune_brain/project_config/v2", ...data }));
 	};
 	return { root, project, read: () => resolveConfig(root, { userConfigPath: userPath }) };
 }
@@ -211,7 +210,8 @@ describe("loop configuration block", () => {
 			f.project({ loop: { auto_enroll_max_risk: risk } });
 			const config = f.read();
 			expect(config.loop.valid).toBe(false);
-			expect(config.loop.value).toBeNull();
+			// An invalid value counts as unset: the permission key keeps its strict default.
+			expect(config.loop.value.auto_enroll_max_risk).toBe("none");
 			expect(config.diagnostics).toContainEqual(
 				expect.objectContaining({ code: "config_invalid", key_path: "loop.auto_enroll_max_risk" }),
 			);

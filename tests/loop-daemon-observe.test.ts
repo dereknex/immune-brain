@@ -121,7 +121,7 @@ describe("loop daemon observe, normalization, and state persistence (S1)", () =>
 		writeFileSync(
 			join(testDir, ".imm/config.json"),
 			JSON.stringify({
-				contract: "immune_brain/project_config/v1",
+				contract: "immune_brain/project_config/v2",
 				loop: {
 					mode: "observe",
 					allowed_actors: ["owner"],

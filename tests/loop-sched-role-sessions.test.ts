@@ -21,7 +21,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 
-import { resolveAgentRoles, type AgentRoleLayers } from "../plugins/immune-brain/runtime/config/agent_roles.ts";
+import { resolveAgents, type AgentsSection } from "../plugins/immune-brain/runtime/config/agent_roles.ts";
 import {
 	createCliAgentSessionProvider,
 	isReadOnlyRole,
@@ -54,14 +54,11 @@ const READ_ONLY_ONLY_FLAG: Record<CliAgentSessionProfile["host"], string> = {
 	antigravity: "--mode",
 };
 
-function layers(agents: Record<string, unknown> | null): AgentRoleLayers {
-	return {
-		file: { user: "user.json", project: "project.json", override: "override.json" },
-		user: agents,
-		project: {},
-		override: {},
-		legacy: null,
-	};
+/** The user file's `agents` section resolved alone (no project file). */
+function userAgents(agents: Record<string, unknown> | null): AgentsSection {
+	const resolved = resolveAgents({ user: agents, project: null, files: { user: "user.json", project: "project.json" } });
+	expect(resolved.errors).toEqual([]);
+	return resolved.agents;
 }
 
 function request(kind: AgentSessionRequest["kind"], worktree: string): AgentSessionRequest {
@@ -129,19 +126,16 @@ describe("Loop Daemon: Per-Role Sessions (S2)", () => {
 	});
 
 	it("starts each session on the profile bound to its own role", async () => {
-		const agents = resolveAgentRoles(
-			layers({
-				profiles: {
-					opus: { host: "claude-code", model: "claude-opus-5-5", effort: "high" },
-					flash: { host: "pi", model: "auto/deepseek-v4.1-flash" },
-				},
-				presets: {
-					default: {
-						roles: { "*": "flash", judging: "opus", clarify: "opus", plan: "opus", repair: "flash", executor: "flash" },
-					},
-				},
-			}),
-		).agents;
+		// judging runs as triage, clarify/plan as planner, repair as executor (ADR 0041).
+		const agents = userAgents({
+			profiles: {
+				opus: { host: "claude-code", model: "claude-opus-5-5", effort: "high" },
+				flash: { host: "pi", model: "auto/deepseek-v4.1-flash" },
+			},
+			triage: "opus",
+			planner: "opus",
+			executor: "flash",
+		});
 
 		expect(loopRoleProfile(agents, "judging")).toEqual({ host: "claude-code", model: "claude-opus-5-5", effort: "high" });
 		expect(loopRoleProfile(agents, "repair")).toEqual({ host: "pi", model: "auto/deepseek-v4.1-flash", effort: null });
@@ -200,7 +194,7 @@ describe("Loop Daemon: Per-Role Sessions (S2)", () => {
 	});
 
 	it("falls back to the documented Host only when the role is unset", () => {
-		const unset = resolveAgentRoles(layers(null)).agents;
+		const unset = userAgents(null);
 		for (const role of ROLES) expect(loopRoleProfile(unset, role)).toEqual({ host: "claude-code", model: null, effort: null });
 	});
 

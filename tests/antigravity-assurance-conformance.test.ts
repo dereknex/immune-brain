@@ -1223,11 +1223,10 @@ describe("Antigravity Harness Conformance", () => {
 			const status = resultOf(await toolCall(mcp, "status", { task_id: TASK }, [laneDir]));
 			expect(status.claim).toMatchObject({ task_id: TASK, lifecycle_status: "active" });
 			expect(status.projection.run_id).toMatch(/^run-/);
-			expect(status.config.project_key).toBeTruthy();
+			expect(status.config.contract).toBe("immune_brain/effective_config/v2");
 			// The plugin root owns no claim: projecting it is the observable difference.
 			const outside = resultOf(await toolCall(mcp, "status", { task_id: TASK }));
 			expect(outside.claim).toBeNull();
-			expect(outside.config.project_key).not.toBe(status.config.project_key);
 
 			await handleJsonRpc({
 				jsonrpc: "2.0",
@@ -2298,7 +2297,7 @@ describe("verifier via real hook dispatch", () => {
 		execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: root });
 		mkdirSync(join(root, ".imm"), { recursive: true });
 		writeFileSync(join(root, ".imm/config.json"), `${JSON.stringify({
-			contract: "immune_brain/project_config/v1", lanes: { review_host: "pi" }, review_verifier: "on",
+			contract: "immune_brain/project_config/v2", agents: { reviewer: "pi" }, review_verifier: "on",
 		})}\n`);
 		writeFileSync(join(root, "src.ts"), "export const value = 1;\n");
 		execFileSync("git", ["add", "-A"], { cwd: root });
@@ -4025,15 +4024,17 @@ describe("Antigravity allow rule provenance (AARP-A1, AARP-A2)", () => {
 				const body = JSON.parse(text) as {
 					report?: {
 						retirement?: { confirmation_ref?: string };
-						handoffs?: Array<{ role?: string; lane_path?: string }>;
+						children?: Array<{ lane?: { path?: string } }>;
 					};
 				};
 				if (gate === "retire_stale_batch") {
 					return body.report?.retirement?.confirmation_ref ?? "";
 				}
 				if (gate === "start_unattended_batch") {
-					const laneWorktree = body.report?.handoffs?.find((h) => h.role === "executor")?.lane_path;
-					expect(typeof laneWorktree).toBe("string");
+					// Without `herdr: true` the Lane Executor runs supervised, so the started
+					// Lane is read from the report's child rather than an interactive handoff.
+					const laneWorktree = body.report?.children?.[0]?.lane?.path;
+					expect(typeof laneWorktree, text).toBe("string");
 					expect(readTaskRecordRaw(laneWorktree!, taskId).record?.lifecycle).toBe("active");
 					return recordedRefs.at(-1) ?? "";
 				}

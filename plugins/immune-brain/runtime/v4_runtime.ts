@@ -194,6 +194,17 @@ async function runKernelCli(args: string[], root: string): Promise<{
 		const config = resolveConfig(root, { checkEnv: args.includes("--check-env") });
 		return { stdout: `${JSON.stringify(config, null, 2)}\n`, stderr: "", returncode: config.diagnostics.some((d) => d.severity === "error") ? 1 : 0 };
 	}
+	if (sub === "config" && args[1] === "migrate") {
+		if (!args.slice(2).every((arg) => arg === "--write"))
+			return { stdout: "", stderr: "usage: imm-kernel config migrate [--write]\n", returncode: 2 };
+		const { migrateConfig } = await import("./config/migrate");
+		try {
+			const report = migrateConfig(root, { write: args.includes("--write") });
+			return { stdout: `${JSON.stringify(report, null, 2)}\n`, stderr: report.written ? "" : "dry run: review the after objects, then rerun with --write\n", returncode: 0 };
+		} catch (error) {
+			return { stdout: "", stderr: `config migrate: ${(error as Error).message}\n`, returncode: 1 };
+		}
+	}
 	if (sub === "migrate") return runKernelCommand(args, root);
 	if (sub === "intent") return runKernelCommand(args, root);
 	if (sub === "status" && args.includes("--json")) return runKernelCommand(args, root);

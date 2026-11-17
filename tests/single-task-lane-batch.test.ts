@@ -61,7 +61,7 @@ function fixture(options: { mode?: "manual" | "auto"; untrackedIntent?: boolean 
 	writeIntent(dir);
 	if (options.mode) {
 		mkdirSync(join(dir, ".imm"), { recursive: true });
-		writeFileSync(join(dir, ".imm/config.json"), JSON.stringify({ contract: "immune_brain/project_config/v1", git_integration: options.mode }));
+		writeFileSync(join(dir, ".imm/config.json"), JSON.stringify({ contract: "immune_brain/project_config/v2", git_integration: options.mode }));
 	}
 	git(dir, "init", "-q", "-b", "main");
 	git(dir, "add", "-A");

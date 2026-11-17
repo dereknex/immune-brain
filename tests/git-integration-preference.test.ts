@@ -6,8 +6,8 @@ import { dirname, join } from "node:path";
 import { projectTaskStatus } from "../plugins/immune-brain/runtime/assurance/coordinator";
 import { readGitIntegrationPreference } from "../plugins/immune-brain/runtime/git_integration_preference";
 
-// ADR 0024 / content-delivery-authority T3: the one-line preference, where it
-// is read from, and how the status Tool both Hosts return reports it.
+// ADR 0024 / ADR 0041: the git_integration preference, which layer it is read
+// from, and how the status Tool both Hosts return reports it.
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 const git = (root: string, ...args: string[]) => execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
@@ -22,6 +22,19 @@ function repo(files: Record<string, string>, untracked: Record<string, string> =
 	return root;
 }
 const declares = (value: string) => `# Agent Instructions\n\n## Immune-Brain Preferences\n\n- Initiative carrier default: github\n- Git integration: ${value}\n`;
+const projectFile = (body: object | string) => ({ ".imm/config.json": typeof body === "string" ? body : JSON.stringify({ contract: "immune_brain/project_config/v2", ...body }) });
+const userFile = (body: object = {}) => ({ contract: "immune_brain/user_config/v2", ...body });
+/** User-file contents that are invalid for git_integration: a bad value, malformed JSON, a retired v1 contract. */
+const INVALID_USER: Array<[string, unknown]> = [
+	["invalid value", userFile({ git_integration: "sometimes" })],
+	["malformed JSON", "{"],
+	["v1 contract", { contract: "immune_brain/user_config/v1", git_integration: "auto" }],
+];
+const INVALID_PROJECT: Array<[string, string]> = [
+	["invalid value", JSON.stringify({ contract: "immune_brain/project_config/v2", git_integration: "sometimes" })],
+	["malformed JSON", "{"],
+	["v1 contract", JSON.stringify({ contract: "immune_brain/project_config/v1", git_integration: "auto" })],
+];
 
 const withUserConfig = <T>(root: string, content: unknown, fn: (userPath: string) => T): T => {
 	const previous = process.env.XDG_CONFIG_HOME;
@@ -54,153 +67,102 @@ const withUserConfigAsync = async <T>(root: string, content: unknown, fn: (userP
 };
 
 describe("readGitIntegrationPreference", () => {
-	test("no directive resolves to manual with no diagnostic", () => {
+	test("no configuration resolves to manual with no diagnostic", () => {
 		expect(readGitIntegrationPreference(repo({ "AGENTS.md": "# Agent Instructions\n" }))).toEqual({ mode: "manual", source: null, diagnostic: null });
 		expect(readGitIntegrationPreference(repo({}))).toEqual({ mode: "manual", source: null, diagnostic: null });
 	});
 
-	for (const value of ["manual", "auto", "`auto`"]) test(`a tracked AGENTS.md declaring ${value} is honored`, () => {
-		expect(readGitIntegrationPreference(repo({ "AGENTS.md": declares(value) }))).toEqual({ mode: value.replaceAll("`", ""), source: "AGENTS.md", diagnostic: expect.stringContaining("git_integration in .imm/config.json") });
-	});
-
-	test("AGENTS.md wins over CLAUDE.md, and CLAUDE.md applies when AGENTS.md says nothing", () => {
-		expect(readGitIntegrationPreference(repo({ "AGENTS.md": declares("manual"), "CLAUDE.md": declares("auto") })).mode).toBe("manual");
-		expect(readGitIntegrationPreference(repo({ "AGENTS.md": "# Agents\n", "CLAUDE.md": declares("auto") }))).toEqual({ mode: "auto", source: "CLAUDE.md", diagnostic: expect.stringContaining("deprecated") });
-	});
-
-	test("an untracked instruction file declares nothing", () => {
+	test("a Git integration line in AGENTS.md or CLAUDE.md is no longer read", () => {
+		for (const files of [{ "AGENTS.md": declares("auto") }, { "CLAUDE.md": declares("auto") }])
+			expect(readGitIntegrationPreference(repo(files))).toEqual({ mode: "manual", source: null, diagnostic: null });
 		expect(readGitIntegrationPreference(repo({}, { "AGENTS.md": declares("auto") }))).toEqual({ mode: "manual", source: null, diagnostic: null });
 	});
 
-	test("tracked project configuration overrides the legacy directive", () => {
-		const config = JSON.stringify({ contract: "immune_brain/project_config/v1", git_integration: "auto" });
-		const root = repo({ ".imm/config.json": config, "AGENTS.md": declares("manual") });
-		expect(readGitIntegrationPreference(root)).toEqual({ mode: "auto", source: ".imm/config.json", diagnostic: null });
+	test.each([
+		["manual", true], ["auto", true], ["manual", false], ["auto", false],
+	] as const)("a project file declaring %s is honored (tracked: %p)", (value, tracked) => {
+		const files = projectFile({ git_integration: value });
+		const root = tracked ? repo({ ...files, "AGENTS.md": declares(value === "auto" ? "manual" : "auto") }) : repo({}, files);
+		expect(readGitIntegrationPreference(root)).toEqual({ mode: value, source: ".imm/config.json", diagnostic: null });
 	});
 
-	test("invalid and untracked project values fail to manual", () => {
-		const config = (value: string) => JSON.stringify({ contract: "immune_brain/project_config/v1", git_integration: value });
-		const invalid = readGitIntegrationPreference(repo({ ".imm/config.json": config("sometimes"), "AGENTS.md": declares("auto") }));
-		expect(invalid).toEqual({ mode: "manual", source: ".imm/config.json", diagnostic: expect.stringContaining("git_integration") });
-		expect(invalid.diagnostic).toContain(".imm/config.json");
-		expect(readGitIntegrationPreference(repo({}, { ".imm/config.json": config("auto") }))).toEqual({ mode: "manual", source: null, diagnostic: null });
+	test.each([
+		["user auto, no project value", userFile({ git_integration: "auto" }), {}, "auto", "user"],
+		["user auto, project manual: manual wins", userFile({ git_integration: "auto" }), { git_integration: "manual" }, "manual", "project"],
+		["user manual, project auto: manual wins", userFile({ git_integration: "manual" }), { git_integration: "auto" }, "manual", "user"],
+		["user unset, project auto", userFile(), { git_integration: "auto" }, "auto", "project"],
+		["user unset, project unset", userFile(), {}, "manual", null],
+	] as const)("%s", (_name, user, project, mode, layer) => {
+		const root = repo(projectFile(project));
+		withUserConfig(root, user, (userPath) => {
+			expect(readGitIntegrationPreference(root)).toEqual({ mode, source: layer === "user" ? userPath : layer === "project" ? ".imm/config.json" : null, diagnostic: null });
+		});
 	});
 
 	test("an unrelated user section error does not misreport a valid project policy", () => {
-		const root = repo({ ".imm/config.json": JSON.stringify({ contract: "immune_brain/project_config/v1", git_integration: "auto" }) });
-		withUserConfig(root, { contract: "immune_brain/user_config/v1", lanes: { active: "missing" } }, () => {
+		const root = repo(projectFile({ git_integration: "auto" }));
+		withUserConfig(root, userFile({ agents: { executor: "not-a-host" } }), () => {
 			expect(readGitIntegrationPreference(root)).toEqual({ mode: "auto", source: ".imm/config.json", diagnostic: null });
 		});
 	});
 
-	test("user top-level git_integration overrides project and attributes config.files.user, and omits keep project/legacy/null", () => {
-		const root = repo({ ".imm/config.json": JSON.stringify({ contract: "immune_brain/project_config/v1", git_integration: "manual" }) });
-		withUserConfig(root, { contract: "immune_brain/user_config/v1", git_integration: "auto" }, (userPath) => {
-			expect(readGitIntegrationPreference(root)).toEqual({ mode: "auto", source: userPath, diagnostic: null });
-		});
-		const autoProject = repo({ ".imm/config.json": JSON.stringify({ contract: "immune_brain/project_config/v1", git_integration: "auto" }) });
-		withUserConfig(autoProject, { contract: "immune_brain/user_config/v1", git_integration: "manual" }, (userPath) => {
-			expect(readGitIntegrationPreference(autoProject)).toEqual({ mode: "manual", source: userPath, diagnostic: null });
-		});
-		withUserConfig(autoProject, { contract: "immune_brain/user_config/v1" }, () => {
-			expect(readGitIntegrationPreference(autoProject)).toEqual({ mode: "auto", source: ".imm/config.json", diagnostic: null });
-		});
-		const legacyAgents = repo({ "AGENTS.md": declares("auto") });
-		withUserConfig(legacyAgents, { contract: "immune_brain/user_config/v1" }, () => {
-			expect(readGitIntegrationPreference(legacyAgents)).toEqual({ mode: "auto", source: "AGENTS.md", diagnostic: expect.stringContaining("deprecated") });
-		});
-		const legacyClaude = repo({ "CLAUDE.md": declares("auto") });
-		withUserConfig(legacyClaude, { contract: "immune_brain/user_config/v1" }, () => {
-			expect(readGitIntegrationPreference(legacyClaude)).toEqual({ mode: "auto", source: "CLAUDE.md", diagnostic: expect.stringContaining("deprecated") });
-		});
-		const noDecl = repo({});
-		withUserConfig(noDecl, { contract: "immune_brain/user_config/v1" }, () => {
-			expect(readGitIntegrationPreference(noDecl)).toEqual({ mode: "manual", source: null, diagnostic: null });
+	// An invalid user value or a void user file behaves as manual even when the project sets auto.
+	test.each(INVALID_USER)("an invalid user file (%s) fails closed to manual even when the project sets auto", (_name, payload) => {
+		const root = repo(projectFile({ git_integration: "auto" }));
+		withUserConfig(root, payload, (userPath) => {
+			expect(readGitIntegrationPreference(root)).toEqual({ mode: "manual", source: userPath, diagnostic: expect.stringContaining(userPath) });
 		});
 	});
 
-	test("invalid user git_integration, projects.<key>.git_integration, or malformed user file fails closed to manual even when project sets auto", () => {
-		const root = repo({ ".imm/config.json": JSON.stringify({ contract: "immune_brain/project_config/v1", git_integration: "auto" }) });
-		git(root, "remote", "add", "origin", "git@github.com:O/R.git");
-		for (const payload of [
-			{ contract: "immune_brain/user_config/v1", git_integration: "sometimes" },
-			{ contract: "immune_brain/user_config/v1", projects: { "github.com/O/R": { git_integration: "auto" } } },
-			"{",
-		]) {
-			withUserConfig(root, payload, (userPath) => {
-				expect(readGitIntegrationPreference(root)).toEqual({
-					mode: "manual",
-					source: userPath,
-					diagnostic: expect.stringContaining(userPath),
-				});
-			});
-		}
-	});
-
-	test("a malformed project file fails closed even with a legacy auto directive", () => {
-		const preference = readGitIntegrationPreference(repo({ ".imm/config.json": "{", "AGENTS.md": declares("auto") }));
+	test.each(INVALID_PROJECT)("an invalid project file (%s) is manual with a diagnostic naming the file", (_name, content) => {
+		const preference = readGitIntegrationPreference(repo({ ".imm/config.json": content }));
 		expect(preference).toEqual({ mode: "manual", source: ".imm/config.json", diagnostic: expect.stringContaining(".imm/config.json") });
-	});
-
-	test("an invalid value behaves as manual with a diagnostic naming the file and the key", () => {
-		const preference = readGitIntegrationPreference(repo({ "AGENTS.md": declares("always") }));
-		expect(preference.mode).toBe("manual");
-		expect(preference.source).toBe("AGENTS.md");
-		expect(preference.diagnostic).toContain("AGENTS.md");
-		expect(preference.diagnostic).toContain("git_integration");
 	});
 });
 
 describe("status reports the resolved preference", () => {
 	test("the status projection carries the resolved mode and its source", async () => {
-		expect((await projectTaskStatus(repo({ "AGENTS.md": declares("auto") }), "absent-task")).git_integration).toEqual({ mode: "auto", source: "AGENTS.md" });
-		expect((await projectTaskStatus(repo({}), "absent-task")).git_integration).toEqual({ mode: "manual", source: null });
+		expect((await projectTaskStatus(repo(projectFile({ git_integration: "auto" })), "absent-task")).git_integration).toEqual({ mode: "auto", source: ".imm/config.json" });
+		expect((await projectTaskStatus(repo({ "AGENTS.md": declares("auto") }), "absent-task")).git_integration).toEqual({ mode: "manual", source: null });
 	});
 
-	test("a valid legacy declaration is reported as deprecated", async () => {
-		const status = await projectTaskStatus(repo({ "AGENTS.md": declares("auto") }), "absent-task");
-		expect(status.warnings?.find((warning) => warning.code === "deprecated_git_integration")).toMatchObject({
-			paths: ["AGENTS.md"], message: expect.stringContaining("git_integration in .imm/config.json"),
-		});
-	});
-
-	test("an invalid value is a visible invalid_git_integration warning", async () => {
-		const status = await projectTaskStatus(repo({ "CLAUDE.md": declares("yes") }), "absent-task");
-		expect(status.git_integration).toEqual({ mode: "manual", source: "CLAUDE.md" });
-		expect(status.warnings?.find((warning) => warning.code === "invalid_git_integration")).toMatchObject({
-			paths: ["CLAUDE.md"], message: expect.stringContaining("using manual"),
-		});
-	});
-
-	test("status reports user-resolved git_integration and fails closed with warnings naming config.files.user", async () => {
-		const root = repo({ ".imm/config.json": JSON.stringify({ contract: "immune_brain/project_config/v1", git_integration: "manual" }) });
-		await withUserConfigAsync(root, { contract: "immune_brain/user_config/v1", git_integration: "auto" }, async (userPath) => {
+	test("status reports a user-resolved git_integration and the stricter project manual", async () => {
+		const root = repo({});
+		await withUserConfigAsync(root, userFile({ git_integration: "auto" }), async (userPath) => {
 			const status = await projectTaskStatus(root, "absent-task");
 			expect(status.git_integration).toEqual({ mode: "auto", source: userPath });
 			expect(status.config?.files.user).toBe(userPath);
 			expect(status.config?.git_integration).toEqual({ value: "auto", source: "user" });
 			expect((status.warnings ?? []).some((w) => w.code === "invalid_git_integration" || w.code === "config_invalid")).toBe(false);
 		});
+		const manualProject = repo(projectFile({ git_integration: "manual" }));
+		await withUserConfigAsync(manualProject, userFile({ git_integration: "auto" }), async () => {
+			const status = await projectTaskStatus(manualProject, "absent-task");
+			expect(status.git_integration).toEqual({ mode: "manual", source: ".imm/config.json" });
+			expect(status.config?.git_integration).toEqual({ value: "manual", source: "project" });
+		});
+	});
 
-		const autoProject = repo({ ".imm/config.json": JSON.stringify({ contract: "immune_brain/project_config/v1", git_integration: "auto" }) });
-		git(autoProject, "remote", "add", "origin", "git@github.com:O/R.git");
-		for (const payload of [
-			{ contract: "immune_brain/user_config/v1", git_integration: "sometimes" },
-			{ contract: "immune_brain/user_config/v1", projects: { "github.com/O/R": { git_integration: "auto" } } },
-			"{",
-		]) {
-			await withUserConfigAsync(autoProject, payload, async (userPath) => {
-				const status = await projectTaskStatus(autoProject, "absent-task");
+	test("an invalid project file is a visible config_invalid warning naming the file", async () => {
+		for (const [, content] of INVALID_PROJECT) {
+			const root = repo({ ".imm/config.json": content });
+			const status = await projectTaskStatus(root, "absent-task");
+			expect(status.git_integration.mode).toBe("manual");
+			expect(status.warnings?.find((w) => w.code === "config_invalid")).toMatchObject({
+				paths: [status.config!.files.project], message: expect.stringContaining(".imm/config.json"),
+			});
+		}
+	});
+
+	test("an invalid user file fails closed with warnings naming config.files.user", async () => {
+		const root = repo(projectFile({ git_integration: "auto" }));
+		for (const [, payload] of INVALID_USER) {
+			await withUserConfigAsync(root, payload, async (userPath) => {
+				const status = await projectTaskStatus(root, "absent-task");
 				expect(status.git_integration).toEqual({ mode: "manual", source: userPath });
-				expect(status.config?.git_integration).toEqual({ value: "manual", source: "default" });
-				expect(status.warnings?.find((w) => w.code === "invalid_git_integration")).toMatchObject({
-					paths: [userPath],
-					message: expect.stringContaining(userPath),
-				});
-				expect(status.warnings?.find((w) => w.code === "config_invalid")).toMatchObject({
-					paths: [userPath],
-					message: expect.stringContaining(userPath),
-				});
+				expect(status.config?.git_integration).toEqual({ value: "manual", source: "user" });
+				expect(status.warnings?.find((w) => w.code === "invalid_git_integration")).toMatchObject({ paths: [userPath], message: expect.stringContaining(userPath) });
+				expect(status.warnings?.find((w) => w.code === "config_invalid")).toMatchObject({ paths: [userPath], message: expect.stringContaining(userPath) });
 			});
 		}
 	});
@@ -213,7 +175,8 @@ describe("ADR 0024 and its contract text", () => {
 		expect(readFileSync("docs/adr/0024-git-integration-preference.md", "utf8")).toMatch(/^---\nstatus: accepted\n---/);
 		const reference = readFileSync("docs/reference/immune-brain-config.md", "utf8");
 		expect(reference).toContain("## Git Integration");
-		expect(reference).toContain("- Git integration: manual");
+		expect(reference).toContain('{ "contract": "immune_brain/user_config/v2", "git_integration": "manual" }');
+		expect(reference).toContain("| `git_integration` | stricter wins: `manual` if either file sets it |");
 		expect(readFileSync("plugins/immune-brain/dist/docs/reference/immune-brain-config.md", "utf8")).toBe(reference);
 	});
 

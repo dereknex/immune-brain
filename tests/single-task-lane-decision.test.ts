@@ -454,7 +454,7 @@ function claudeHarness(root: string): HostHarness {
 	const tool = (name: string, args: Record<string, unknown>) => runtime.callTool(name, args, { toolCallId: `s5-${name}-${++calls}` });
 	return {
 		gates, answer,
-		start: () => tool("start_unattended_batch", { task_id: TASK, executor_host: "claude-code", final_verification: FINAL_VERIFICATION }),
+		start: () => tool("start_unattended_batch", { task_id: TASK, agents: { executor: "claude-code" }, final_verification: FINAL_VERIFICATION }),
 		stopBatch: async () => { await tool("start_unattended_batch", { task_id: TASK, stop: true, final_verification: FINAL_VERIFICATION }).catch(() => undefined); },
 		relay: async (op, extra = {}) => {
 			try { const raw = await tool(op, { task_id: TASK, ...extra }); return { raw, lane_relay: raw.lane_relay }; }

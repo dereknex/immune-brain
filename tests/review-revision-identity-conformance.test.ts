@@ -101,8 +101,8 @@ function makeReviewReadyRoot(): string {
 	mkdirSync(join(root, "src"), { recursive: true });
 	mkdirSync(join(root, ".imm", "state", "tasks"), { recursive: true });
 	writeFileSync(join(root, ".imm", "config.json"), JSON.stringify({
-		contract: "immune_brain/project_config/v1",
-		lanes: { review_host: "pi" },
+		contract: "immune_brain/project_config/v2",
+		agents: { reviewer: "pi" },
 	}) + "\n");
 	execFileSync("git", ["init", "-q"], { cwd: root, stdio: "ignore" });
 	writeFileSync(join(root, "src", "worked.ts"), "export const value = 1;\n");

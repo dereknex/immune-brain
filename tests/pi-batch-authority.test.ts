@@ -124,7 +124,7 @@ describe("acc-pi-batch-gate", () => {
 	it("registers the Lane tool and exactly its supported parameters", () => {
 		const tool = register(async () => { throw new Error("schema does not read a plan"); });
 		expect(tool).toBeDefined(); expect(tool.description).toContain("Lane"); expect(tool.description).not.toMatch(/serial/i);
-		expect(Object.keys(tool.parameters.properties)).toEqual(["initiative_slug", "task_id", "stop", "executor_host", "executor_model", "executor_effort", "review_host", "review_model", "review_effort", "max_parallel", "lane_offers", "final_verification", "lane_instruction", "lane_session_close"]);
+		expect(Object.keys(tool.parameters.properties)).toEqual(["initiative_slug", "task_id", "stop", "agents", "max_parallel", "lane_offers", "final_verification", "lane_instruction", "lane_session_close"]);
 		expect(tool.parameters.required ?? []).toEqual([]);
 		const schema = tool.parameters.properties.max_parallel;
 		expect(schema.minimum).toBe(1); expect(schema.type === "integer" || schema.multipleOf === 1).toBe(true);
@@ -140,6 +140,7 @@ describe("acc-pi-batch-gate", () => {
 		for (const name of ["claude", "pi"]) { writeFileSync(join(bins, name), "#!/bin/sh\nprintf '%s\\n' \"$PWD\" \"$@\" > \"$LANE_TEST_OUTPUT\"\nexec /bin/sleep 30\n"); chmodSync(join(bins, name), 0o755); }
 		const oldPath = process.env.PATH, oldOutput = process.env.LANE_TEST_OUTPUT, oldHerdr = process.env.HERDR_ENV;
 		if (herdr) process.env.HERDR_ENV = "1"; else delete process.env.HERDR_ENV;
+		if (herdr) writeFileSync(join(f.root, ".imm/config.json"), JSON.stringify({ contract: "immune_brain/project_config/v2", herdr: true }));
 		process.env.PATH = `${bins}:${oldPath}`; process.env.LANE_TEST_OUTPUT = join(bins, "args");
 		try {
 		const gates: any[] = [];

@@ -90,7 +90,7 @@ function makeWorkspace(loop: Record<string, unknown> = {}): { root: string; stat
 	writeFileSync(
 		join(root, ".imm/config.json"),
 		`${JSON.stringify({
-			contract: "immune_brain/project_config/v1",
+			contract: "immune_brain/project_config/v2",
 			loop: { mode: "assist", allowed_actors: ["owner"], allowed_associations: ["OWNER"], ...loop },
 		})}\n`,
 	);

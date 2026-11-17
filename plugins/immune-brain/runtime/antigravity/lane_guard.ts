@@ -776,13 +776,8 @@ async function prepareBatchConfirmation(
 	const task = typeof opArgs.task_id === "string" ? opArgs.task_id : "";
 	if (opArgs.stop !== undefined && typeof opArgs.stop !== "boolean") return { decision: "allow" };
 	if (opArgs.stop === true) return { decision: "allow" };
-	if (opArgs.executor_host !== undefined && opArgs.executor_host !== "pi" &&
-		opArgs.executor_host !== "claude-code" && opArgs.executor_host !== "antigravity") {
-		return { decision: "allow" };
-	}
-	for (const key of ["executor_model", "executor_effort"]) {
-		if (opArgs[key] !== undefined && (typeof opArgs[key] !== "string" || !opArgs[key])) return { decision: "allow" };
-	}
+	// A malformed agents request is refused by the runtime handler, not gated here.
+	if (opArgs.agents !== undefined && (opArgs.agents === null || typeof opArgs.agents !== "object" || Array.isArray(opArgs.agents))) return { decision: "allow" };
 	if (!!initiative === !!task || "native_decision" in opArgs || "entry_token" in opArgs) return { decision: "allow" };
 
 	let workspaceRealpath: string;

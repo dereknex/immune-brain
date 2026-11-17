@@ -71,24 +71,18 @@ describe("current Pi-only contracts", () => {
     expect(readFileSync(resolve(ROOT, "plugins/immune-brain/USER_GUIDE.md"), "utf8")).toContain("host native Review");
     expect(readFileSync(resolve(ROOT, "plugins/immune-brain/README.md"), "utf8")).toContain("Pi host extension or the Claude Code plugin");
     const preferencesDoc = readFileSync(resolve(ROOT, "docs/reference/immune-brain-config.md"), "utf8");
-    // ADR 0034: one user file and one tracked project file replace instruction-file directives and the Lane preset.
-    for (const term of ["~/.config/immune-brain/config.json", "`.imm/config.json`", "imm-kernel config --json", "`docs/adr/0034-layered-configuration.md`"])
+    // ADR 0041: one user file and one local project file; instruction-file directives are not read.
+    for (const term of ["~/.config/immune-brain/config.json", "`.imm/config.json`", "imm-kernel config --json", "`docs/adr/0041-simplified-configuration.md`"])
       expect(preferencesDoc).toContain(term);
-    // Each legacy source is documented with its replacement key.
-    for (const [legacy, replacement] of [
-      ["`.imm/lanes.local.json`", "user `lanes`"],
-      ["`.imm/decision-models.local.json`", "user `decision_models.profiles`"],
-      ["`.imm/decision-bindings.json`", "project `decision_models.egress`"],
-      ["`- Git integration:`", "project `git_integration`"],
-      ["`- Initiative carrier default:`", "project `initiative_carrier`"],
-    ])
-      expect(preferencesDoc.split("\n").find((line) => line.startsWith(`| ${legacy}`))).toContain(replacement);
-    // Issues #369, #370: warnings name the replacement's layer and file; the Planner uses a legacy carrier.
-    const legacyProse = preferencesDoc.slice(preferencesDoc.indexOf("## Legacy Sources"), preferencesDoc.indexOf("## Initiative Carrier")).replace(/\s+/g, " ");
-    expect(legacyProse).toContain("replacement key with that key's layer and file");
-    expect(legacyProse).toContain("A `legacy:AGENTS.md` or `legacy:CLAUDE.md` carrier is used like any other resolved value");
-    expect(legacyProse).toContain("its deprecation warning");
-    expect(legacyProse).not.toContain("It does not take the carrier from a");
+    const flat = preferencesDoc.replace(/\s+/g, " ");
+    expect(flat).toContain("no preference line in `AGENTS.md` or `CLAUDE.md`");
+    // Every retired source is named by the one migration, which folds it in and deletes nothing.
+    const migrationNote = flat.slice(flat.indexOf("A file whose `contract` is a `v1` contract"), flat.indexOf("## Agents"));
+    expect(migrationNote).toContain("imm-kernel config migrate --write");
+    for (const legacy of ["`projects.<key>`", "`lanes`", "`.imm/lanes.local.json`", "`.imm/decision-models.local.json`", "`.imm/decision-bindings.json`", "`decision_models.enabled_points`", "`- Git integration:`", "`- Initiative carrier default:`"])
+      expect({ legacy, named: migrationNote.includes(legacy) }).toEqual({ legacy, named: true });
+    expect(migrationNote).toContain("It deletes none of those sources");
+    expect(preferencesDoc).not.toContain("## Legacy Sources");
     expect(preferencesDoc).not.toContain("does not load an\nagent-local TOML file");
     expect(preferencesDoc).not.toContain("Lane preferences are the one exception");
     expect(readFileSync(resolve(ROOT, "plugins/immune-brain/dist/docs/reference/immune-brain-config.md"), "utf8")).toBe(preferencesDoc);

@@ -162,8 +162,8 @@ function makeEnrolledRoot(intent: typeof INTENT = INTENT): string {
 	mkdirSync(join(root, "plugins", "immune-brain", ".pi-extension"), { recursive: true });
 	mkdirSync(join(root, ".imm/state"), { recursive: true });
 	writeFileSync(join(root, ".imm", "config.json"), JSON.stringify({
-		contract: "immune_brain/project_config/v1",
-		lanes: { review_host: "pi" },
+		contract: "immune_brain/project_config/v2",
+		agents: { reviewer: "pi" },
 	}) + "\n");
 	execFileSync("git", ["init", "-q"], { cwd: root });
 	writeFileSync(join(root, "docs", "plans", `${TASK}.intent.json`), JSON.stringify(intent, null, 2) + "\n");

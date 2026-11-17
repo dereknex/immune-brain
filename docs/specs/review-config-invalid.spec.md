@@ -1,6 +1,7 @@
 # Review Preparation Reports an Invalid `agents` Configuration (#455)
 
 - **Task ID**: `review-config-invalid`
+- **Status**: D4 and RCI-A2 (the `review_legacy_profile` warning) are superseded by [ADR 0041](../adr/0041-simplified-configuration.md) (#564), which removes the legacy `lanes` fallback; the rest stands.
 - **Source**: GitHub Issue #455 (Brainstorm manifest in the `clarify` handoff of 2026-11-16)
 - **Design risk**: Medium — additive change to the `ReviewPreparationError` code union and to the `review_ready` coordinator result (an internal machine contract read by every Host), single module family (`runtime/assurance`).
 - **Threat model and supported environment**: None beyond the repository's own tooling. Input is the local user/project Immune-Brain configuration the user owns; no adversary. Supported platforms are those of the existing runtime (macOS, Linux).

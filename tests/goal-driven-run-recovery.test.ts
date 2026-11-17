@@ -42,7 +42,7 @@ describe("native repair recovery round trip", () => {
   try {
    mkdirSync(join(root, "docs/plans"), { recursive: true }); mkdirSync(join(root, "docs/initiatives"));
    mkdirSync(join(root, ".imm"), { recursive: true });
-   writeFileSync(join(root, ".imm/config.json"), JSON.stringify({ contract: "immune_brain/project_config/v1", lanes: { review_host: "pi" } }) + "\n");
+   writeFileSync(join(root, ".imm/config.json"), JSON.stringify({ contract: "immune_brain/project_config/v2", agents: { reviewer: "pi" } }) + "\n");
    writeFileSync(join(root, ".gitignore"), ".imm/state/\n");
    writeFileSync(join(root, "integration.txt"), "broken\n");
    writeFileSync(join(root, "delivered.txt"), "pending\n");

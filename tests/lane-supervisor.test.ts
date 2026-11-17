@@ -20,13 +20,13 @@ function fixture() {
 }
 
 describe("Lane Executor supervision", () => {
-	it("keeps model and effort with the layer selecting the Host", () => {
+	it("takes the whole profile from the layer selecting the Host", () => {
 		expect(chooseExecutor([{ executor_model: "wrong" }, { executor_host: "pi", executor_effort: "high" },
 			{ executor_host: "claude-code", executor_model: "other" }], "claude-code"))
-			.toEqual({ host: "pi", effort: "high", not_applied: ["executor_model"] });
+			.toEqual({ host: "pi", effort: "high" });
 	});
 	it("places antigravity --print immediately before the prompt so CLI flags precede it", () => {
-		expect(executorArguments({ host: "antigravity", model: "Gemini 3.8 Flash (Low)", effort: "high", not_applied: [] }, "/plugin", "task-1"))
+		expect(executorArguments({ host: "antigravity", model: "Gemini 3.8 Flash (Low)", effort: "high" }, "/plugin", "task-1"))
 			.toEqual(["--dangerously-skip-permissions", "--model", "Gemini 3.8 Flash (Low)", "--effort", "high", "--print", "/drive task-1"]);
 	});
 	it("refuses a missing Executor without reserving a generation", async () => {
@@ -34,7 +34,7 @@ describe("Lane Executor supervision", () => {
 		const path = process.env.PATH; process.env.PATH = dir;
 		rmSync(join(dir, "pi"));
 		try {
-			const result = await new LaneSupervisor().run({ key: dir, repository: dir, lanePath: dir, taskId: "task", choice: { host: "pi", not_applied: [] },
+			const result = await new LaneSupervisor().run({ key: dir, repository: dir, lanePath: dir, taskId: "task", choice: { host: "pi" },
 				pluginDir: "/plugin", store, baseline: "r1", waitMs: 50, graceMs: 50 });
 			expect(result).toMatchObject({ state: "unavailable", generation: null }); expect(store.read()).toBeNull();
 		} finally { process.env.PATH = path; }
@@ -42,7 +42,7 @@ describe("Lane Executor supervision", () => {
 	it("a stop with no live generation changes nothing", async () => {
 		const { dir, store } = fixture();
 		const before = store.read();
-		const result = await new LaneSupervisor().run({ key: dir, repository: dir, lanePath: dir, taskId: "task", choice: { host: "pi", not_applied: [] },
+		const result = await new LaneSupervisor().run({ key: dir, repository: dir, lanePath: dir, taskId: "task", choice: { host: "pi" },
 			pluginDir: "/plugin", store, baseline: "r1", waitMs: 50, graceMs: 50, stop: true });
 		expect(result).toMatchObject({ state: "stopped", generation: null, exit: null }); expect(store.read()).toBe(before);
 	});
@@ -50,7 +50,7 @@ describe("Lane Executor supervision", () => {
 		const { dir, store } = fixture();
 		writeFileSync(join(dir, "claude"), "#!/bin/sh\nexit 0\n");
 		const result = await superviseLane(new LaneSupervisor(), { key: dir, repository: dir, lanePath: dir, taskId: "task",
-			choice: { host: "claude-code", not_applied: [] }, pluginDir: "/plugin", store, baseline: "r1", waitMs: 5000, graceMs: 100,
+			choice: { host: "claude-code" }, pluginDir: "/plugin", store, baseline: "r1", waitMs: 5000, graceMs: 100,
 			project: async () => ({ record_revision: "r1", lifecycle: "active", next_obligation: "submit_assurance", open_user_decision_count: 0 }) });
 		expect(result).toMatchObject({ state: "exited", generation: 2, reason: "lane_executor_no_progress" });
 		expect(store.read()).toMatchObject({ no_progress: 2, handled_generation: 2 });
@@ -60,7 +60,7 @@ describe("Lane Executor supervision", () => {
 		writeFileSync(join(dir, "claude"), "#!/bin/sh\nexit 7\n");
 		let reads = 0;
 		const result = await superviseLane(new LaneSupervisor(), { key: dir, repository: dir, lanePath: dir, taskId: "task",
-			choice: { host: "claude-code", not_applied: [] }, pluginDir: "/plugin", store, baseline: "r1", waitMs: 1000, graceMs: 100,
+			choice: { host: "claude-code" }, pluginDir: "/plugin", store, baseline: "r1", waitMs: 1000, graceMs: 100,
 			project: async () => (++reads === 1
 				? { record_revision: "r1", lifecycle: "active", next_obligation: "submit_assurance", open_user_decision_count: 0 }
 				: { record_revision: "r2", lifecycle: "done", next_obligation: "none", open_user_decision_count: 0 }) });
@@ -71,7 +71,7 @@ describe("Lane Executor supervision", () => {
 		it(`${host} attaches simultaneous calls to one generation`, async () => {
 			const { dir, store } = fixture();
 			const supervisor = new LaneSupervisor();
-			const input = { key: dir, repository: dir, lanePath: dir, taskId: "task", choice: { host, not_applied: [] },
+			const input = { key: dir, repository: dir, lanePath: dir, taskId: "task", choice: { host },
 				pluginDir: "/plugin", store, baseline: "r1", waitMs: 80, graceMs: 100 };
 			try {
 				const results = await Promise.all([supervisor.run(input), supervisor.run(input)]);
@@ -83,7 +83,7 @@ describe("Lane Executor supervision", () => {
 			const binName = host === "pi" ? "pi" : host === "antigravity" ? "agy" : "claude";
 			writeFileSync(join(dir, binName), "#!/bin/sh\ntrap '' TERM\nprintf ready > ready\nexec /bin/sleep 30\n");
 			const supervisor = new LaneSupervisor();
-			const input = { key: dir, repository: dir, lanePath: dir, taskId: "task", choice: { host, not_applied: [] },
+			const input = { key: dir, repository: dir, lanePath: dir, taskId: "task", choice: { host },
 				pluginDir: "/plugin", store, baseline: "r1", waitMs: 80, graceMs: 100 };
 			try {
 				await supervisor.run(input);
@@ -95,7 +95,7 @@ describe("Lane Executor supervision", () => {
 		it(`${host} reports a lost handle as unobservable`, async () => {
 			const { dir, store } = fixture();
 			const original = new LaneSupervisor();
-			const input = { key: dir, repository: dir, lanePath: dir, taskId: "task", choice: { host, not_applied: [] },
+			const input = { key: dir, repository: dir, lanePath: dir, taskId: "task", choice: { host },
 				pluginDir: "/plugin", store, baseline: "r1", waitMs: 80, graceMs: 100 };
 			try {
 				expect(await original.run(input)).toMatchObject({ state: "running", generation: 1 });
@@ -108,7 +108,7 @@ describe("Lane Executor supervision", () => {
 			const { dir, store } = fixture();
 			const controller = new AbortController();
 			const supervisor = new LaneSupervisor();
-			const input = { key: dir, repository: dir, lanePath: dir, taskId: "task", choice: { host, not_applied: [] },
+			const input = { key: dir, repository: dir, lanePath: dir, taskId: "task", choice: { host },
 				pluginDir: "/plugin", store, baseline: "r1", waitMs: 1000, graceMs: 100, signal: controller.signal };
 			const timer = setTimeout(() => controller.abort(), 100);
 			try {
@@ -119,7 +119,7 @@ describe("Lane Executor supervision", () => {
 		it(`${host} waits, reattaches to the same process and stops it`, async () => {
 			const { dir, store } = fixture();
 			const supervisor = new LaneSupervisor();
-			const input = { key: dir, repository: dir, lanePath: dir, taskId: "task", choice: { host, model: "model", effort: "high", not_applied: [] },
+			const input = { key: dir, repository: dir, lanePath: dir, taskId: "task", choice: { host, model: "model", effort: "high" },
 				pluginDir: "/plugin", store, baseline: "r1", waitMs: 80, graceMs: 100 };
 			const herdr = process.env.HERDR_ENV; process.env.HERDR_ENV = "1";
 			try {
@@ -151,7 +151,7 @@ describe("Pi Executor outside Herdr (#426 D4)", () => {
 	/** An active Lane with no open user decision: the point where a new generation would start. */
 	const active = { record_revision: "r1", lifecycle: "active", next_obligation: "submit_assurance", open_user_decision_count: 0 };
 	const input = (dir: string, store: LaneGenerationStore, project: () => Promise<typeof active>, host: "pi" | "claude-code") => ({
-		key: dir, repository: dir, lanePath: dir, taskId: "task", choice: { host, not_applied: [] },
+		key: dir, repository: dir, lanePath: dir, taskId: "task", choice: { host },
 		pluginDir: "/plugin", store, baseline: "r1", waitMs: 80, graceMs: 100, project });
 
 	it("refuses a Pi choice without reserving a generation or calling run", async () => {
@@ -192,27 +192,27 @@ describe("Pi Executor outside Herdr (#426 D4)", () => {
 describe("#426 F16 batch Executor preferences", () => {
 	const oldXdg = process.env.XDG_CONFIG_HOME;
 	afterAll(() => { if (oldXdg === undefined) delete process.env.XDG_CONFIG_HOME; else process.env.XDG_CONFIG_HOME = oldXdg; });
-	/** A checkout whose user config makes an antigravity profile active, with model and effort set. */
+	/** A checkout whose user config sets the executor role to an antigravity profile, with model and effort set. */
 	function activeAntigravity() {
 		const dir = realpathSync(mkdtempSync(join(tmpdir(), "lane-f16-"))); dirs.push(dir);
 		mkdirSync(join(dir, "xdg", "immune-brain"), { recursive: true });
-		writeFileSync(join(dir, "xdg", "immune-brain", "config.json"), JSON.stringify({ contract: "immune_brain/user_config/v1",
-			lanes: { active: "gemini", profiles: { gemini: { executor_host: "antigravity", executor_model: "gemini-x", executor_effort: "high" } } } }));
+		writeFileSync(join(dir, "xdg", "immune-brain", "config.json"), JSON.stringify({ contract: "immune_brain/user_config/v2",
+			agents: { profiles: { gemini: { host: "antigravity", model: "gemini-x", effort: "high" } }, executor: "gemini" } }));
 		process.env.XDG_CONFIG_HOME = join(dir, "xdg");
 		mkdirSync(join(dir, "repo"));
 		return join(dir, "repo");
 	}
 
-	it("a request-selected Executor Host ignores the active profile and reports nothing from it as not_applied", () => {
+	it("a request-selected Executor Host replaces the configured executor role whole", () => {
 		expect(laneExecutorChoice(activeAntigravity(), { executor_host: "claude-code", executor_model: "sonnet", executor_effort: "high" }, "pi"))
-			.toEqual({ host: "claude-code", model: "sonnet", effort: "high", not_applied: [] });
+			.toEqual({ host: "claude-code", model: "sonnet", effort: "high" });
 	});
 
-	it("without a selected Executor Host the active profile still applies", () => {
+	it("without a selected Executor Host the configured executor role applies whole", () => {
 		const root = activeAntigravity();
-		expect(laneExecutorChoice(root, undefined, "pi")).toEqual({ host: "antigravity", model: "gemini-x", effort: "high", not_applied: [] });
+		expect(laneExecutorChoice(root, undefined, "pi")).toEqual({ host: "antigravity", model: "gemini-x", effort: "high" });
 		expect(laneExecutorChoice(root, { executor_model: "stray" }, "pi"))
-			.toEqual({ host: "antigravity", model: "gemini-x", effort: "high", not_applied: ["executor_model"] });
+			.toEqual({ host: "antigravity", model: "gemini-x", effort: "high" });
 	});
 
 	it("a lane batch records the preferences and refuses a malformed value", () => {

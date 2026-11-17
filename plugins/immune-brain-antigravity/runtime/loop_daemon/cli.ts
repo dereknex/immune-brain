@@ -25,6 +25,7 @@ import { createGhTransport, type GhTransport } from "../github_issue_tracker.ts"
 import { readTaskRecordRaw } from "../kernel/storage.ts";
 import { readNoTouch } from "../no_touch.ts";
 import { findLaneRelayTarget, type relayLaneDecision } from "../unattended/lane_decision.ts";
+import { POINT_REGISTRY } from "../decision_model/thresholds.ts";
 import { buildDecisionRecord } from "./decision_record.ts";
 import { findLatestLaneDecisionQuestion } from "./decision_relay.ts";
 import { selectBestDuplicateCandidate } from "./duplicate_candidates.ts";
@@ -257,7 +258,7 @@ export async function runLoopDaemonCli(
 		singleIteration?: boolean;
 		/** Decision-model seam; production runs resolve the user's point bindings. */
 		classify?: ClassifyFn;
-		/** Configured enabled points override; defaults to `decision_models.enabled_points`. */
+		/** Configured enabled points override; defaults to every point `decision_models.bindings` does not turn `off`. */
 		enabledPoints?: readonly string[];
 		/** Read-only judging agent seam; production executable binds the S9 session runner. */
 		judgingAgent?: JudgingAgentFn;
@@ -1054,8 +1055,8 @@ Options:
 				});
 			const enabledPoints =
 				options?.enabledPoints ??
-				(Array.isArray(resolved.decision_models?.enabled_points?.value)
-					? (resolved.decision_models.enabled_points.value as string[])
+				(resolved.decision_models?.bindings
+					? Object.keys(POINT_REGISTRY).filter((point) => resolved.decision_models.bindings[point]?.value !== "off")
 					: undefined);
 			const budgetTracker: JudgingBudgetTracker = {
 				canInvoke: () => {

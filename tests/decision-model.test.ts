@@ -5,8 +5,6 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import type { ApplicationPoint, DecideDeps, FetchLike, PointRegistry } from "../plugins/immune-brain/runtime/decision_model/contract.ts";
 import { decide } from "../plugins/immune-brain/runtime/decision_model/decide.ts";
-import { resolveConfig } from "../plugins/immune-brain/runtime/config/layered_config.ts";
-import { projectIdentity } from "../plugins/immune-brain/runtime/config/project_identity.ts";
 import { POINT_REGISTRY } from "../plugins/immune-brain/runtime/decision_model/thresholds.ts";
 
 const REPO = resolve(import.meta.dir, "..");
@@ -31,21 +29,26 @@ afterEach(() => {
 	for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
-function bindingsFile(over: Record<string, unknown> = {}) {
-	return { contract: "immune_brain/decision_bindings/v1", default_profile: "default", bindings: {}, egress: {}, ...over };
+/** The user file's `decision_models`: the given profiles bound by default_profile "default". */
+function models(profiles: Record<string, unknown>, over: Record<string, unknown> = {}) {
+	return { profiles, default_profile: "default", ...over };
 }
 
-function makeRoot(files: { bindings?: unknown; local?: unknown }): string {
+const userConfigPath = (root: string) => join(root, "user-config.json");
+
+/**
+ * A Git root whose user file (passed as userConfigPath) and local project file
+ * `.imm/config.json` carry the given `decision_models`; a string is written verbatim.
+ */
+function makeRoot(files: { user?: unknown; project?: unknown } = {}): string {
 	const root = mkdtempSync(join(tmpdir(), "decision-model-"));
 	roots.push(root);
 	mkdirSync(join(root, ".imm"));
 	spawnSync("git", ["init", "-q"], { cwd: root });
-	const write = (name: string, value: unknown) => writeFileSync(join(root, ".imm", name), typeof value === "string" ? value : JSON.stringify(value));
-	if (files.bindings !== undefined) {
-		write("decision-bindings.json", files.bindings);
-		spawnSync("git", ["add", ".imm/decision-bindings.json"], { cwd: root });
-	}
-	if (files.local !== undefined) write("decision-models.local.json", files.local);
+	const write = (path: string, contract: string, value: unknown) =>
+		writeFileSync(path, typeof value === "string" ? value : JSON.stringify({ contract, decision_models: value }));
+	if (files.user !== undefined) write(userConfigPath(root), "immune_brain/user_config/v2", files.user);
+	if (files.project !== undefined) write(join(root, ".imm/config.json"), "immune_brain/project_config/v2", files.project);
 	return root;
 }
 
@@ -84,54 +87,43 @@ function clefOk(answer: Record<string, unknown> = {}, extra: Record<string, unkn
 }
 
 function deps(root: string, fetchImpl: FetchLike, over: Partial<DecideDeps> = {}): DecideDeps {
-	return { root, env: ENV, fetch: fetchImpl, ...over };
+	return { root, env: ENV, fetch: fetchImpl, userConfigPath: userConfigPath(root), ...over };
 }
 
 describe("layered decision configuration", () => {
-	test("applies project overrides, enabled points and the egress ceiling before fetch", async () => {
-		const root = makeRoot({});
-		const original = process.env.XDG_CONFIG_HOME;
-		process.env.XDG_CONFIG_HOME = join(root, "config");
-		const userDir = join(root, "config/immune-brain");
-		mkdirSync(userDir, { recursive: true });
-		const user = { contract: "immune_brain/user_config/v1", decision_models: { profiles: { global: fakeProfile(), chosen: fakeProfile(), sensitive: clefProfile() }, bindings: { [A14]: "global", [DIFF_POINT.id]: "sensitive" }, egress: { clef: ["diff"] } }, projects: { [projectIdentity(root)]: { decision_models: { bindings: { [A14]: "chosen" } } } } };
-		const project = { contract: "immune_brain/project_config/v1", decision_models: { enabled_points: [A14], egress: { clef: [] } } };
-		try {
-			writeFileSync(join(userDir, "config.json"), JSON.stringify(user));
-			writeFileSync(join(root, ".imm/config.json"), JSON.stringify(project));
-			spawnSync("git", ["add", ".imm/config.json"], { cwd: root });
-			const rec = recordingFetch();
-			const chosen = await decide({ point: A14, state: "s" }, deps(root, rec.fetch, { registry: DIFF_REGISTRY }));
-			expect(chosen.status === "decided" && chosen.envelope.profile).toBe("chosen");
-			expect(await decide({ point: DIFF_POINT.id, state: "s" }, deps(root, rec.fetch, { registry: DIFF_REGISTRY }))).toMatchObject({ reason: "point_disabled" });
-			project.decision_models.enabled_points.push(DIFF_POINT.id);
-			writeFileSync(join(root, ".imm/config.json"), JSON.stringify(project));
-			expect(await decide({ point: DIFF_POINT.id, state: "s" }, deps(root, rec.fetch, { registry: DIFF_REGISTRY }))).toMatchObject({ reason: "egress_denied" });
-			expect(rec.calls).toHaveLength(0);
-		} finally {
-			if (original === undefined) delete process.env.XDG_CONFIG_HOME; else process.env.XDG_CONFIG_HOME = original;
-		}
+	test("applies project bindings, an off binding and the project egress list before fetch", async () => {
+		const user = models({ global: fakeProfile(), chosen: fakeProfile(), sensitive: clefProfile() }, { default_profile: "global", bindings: { [A14]: "global", [DIFF_POINT.id]: "sensitive" }, egress: { clef: ["diff"] } });
+		const project = { bindings: { [A14]: "chosen", [DIFF_POINT.id]: "off" } as Record<string, string>, egress: { clef: [] } };
+		const root = makeRoot({ user, project });
+		const rec = recordingFetch();
+		const chosen = await decide({ point: A14, state: "s" }, deps(root, rec.fetch, { registry: DIFF_REGISTRY }));
+		expect(chosen.status === "decided" && chosen.envelope.profile).toBe("chosen");
+		expect(await decide({ point: DIFF_POINT.id, state: "s" }, deps(root, rec.fetch, { registry: DIFF_REGISTRY }))).toMatchObject({ reason: "point_disabled" });
+		delete project.bindings[DIFF_POINT.id];
+		writeFileSync(join(root, ".imm/config.json"), JSON.stringify({ contract: "immune_brain/project_config/v2", decision_models: project }));
+		expect(await decide({ point: DIFF_POINT.id, state: "s" }, deps(root, rec.fetch, { registry: DIFF_REGISTRY }))).toMatchObject({ reason: "egress_denied" });
+		expect(rec.calls).toHaveLength(0);
 	});
 
-	test("legacy sources answer with a deprecation warning", async () => {
-		const root = makeRoot({ bindings: bindingsFile(), local: { profiles: { default: fakeProfile() } } });
-		expect((await decide({ point: A14, state: "s" }, deps(root, recordingFetch().fetch))).status).toBe("decided");
-		expect(resolveConfig(root).diagnostics.some((d) => d.code === "deprecated_config_source")).toBe(true);
+	test("the project file counts without being tracked by Git", async () => {
+		const root = makeRoot({ user: models({ default: fakeProfile(), chosen: fakeProfile() }), project: { default_profile: "chosen" } });
+		const result = await decide({ point: A14, state: "s" }, deps(root, recordingFetch().fetch));
+		expect(result.status === "decided" && result.envelope.profile).toBe("chosen");
 	});
 
 	test("an undefined user profile preserves unknown_profile without fetch", async () => {
-		const root = makeRoot({});
-		const original = process.env.XDG_CONFIG_HOME;
-		process.env.XDG_CONFIG_HOME = join(root, "config");
-		mkdirSync(join(root, "config/immune-brain"), { recursive: true });
-		writeFileSync(join(root, "config/immune-brain/config.json"), JSON.stringify({ contract: "immune_brain/user_config/v1", decision_models: { default_profile: "missing", profiles: { other: fakeProfile() } } }));
-		try {
-			const rec = recordingFetch();
-			expect(await decide({ point: A14, state: "s" }, deps(root, rec.fetch))).toMatchObject({ reason: "unknown_profile" });
-			expect(rec.calls).toHaveLength(0);
-		} finally {
-			if (original === undefined) delete process.env.XDG_CONFIG_HOME; else process.env.XDG_CONFIG_HOME = original;
-		}
+		const root = makeRoot({ user: models({ other: fakeProfile() }, { default_profile: "missing" }) });
+		const rec = recordingFetch();
+		expect(await decide({ point: A14, state: "s" }, deps(root, rec.fetch))).toMatchObject({ reason: "unknown_profile" });
+		expect(rec.calls).toHaveLength(0);
+	});
+
+	test("an unknown profile on another point leaves this point's binding usable", async () => {
+		const root = makeRoot({ user: models({ global: fakeProfile() }, { bindings: { [A14]: "global", a15_issue_triage: "missing" } }) });
+		const rec = recordingFetch();
+		const a14 = await decide({ point: A14, state: "s" }, deps(root, rec.fetch));
+		expect(a14.status === "decided" && a14.envelope.profile).toBe("global");
+		expect(await decide({ point: "a15_issue_triage", state: "s" }, deps(root, rec.fetch))).toMatchObject({ reason: "unknown_profile" });
 	});
 
 	test("missing profiles identify the user configuration path", async () => {
@@ -143,30 +135,32 @@ describe("layered decision configuration", () => {
 
 describe("decide() resolution (AC1)", () => {
 	test("a per-point binding wins over the default profile", async () => {
-		const root = makeRoot({ bindings: bindingsFile({ default_profile: "chosen", bindings: { [A14]: "chosen" } }), local: { profiles: { chosen: fakeProfile() } } });
+		const root = makeRoot({ user: models({ default: fakeProfile(), chosen: fakeProfile() }, { bindings: { [A14]: "chosen" } }) });
 		const result = await decide({ point: A14, state: "s" }, deps(root, recordingFetch().fetch));
 		expect(result.status).toBe("decided");
 		if (result.status === "decided") expect(result.envelope.profile).toBe("chosen");
 	});
 
-	test("a binding key present with null beats a non-null default", async () => {
-		const root = makeRoot({ bindings: bindingsFile({ default_profile: "default", bindings: { [A14]: null } }), local: { profiles: { default: fakeProfile() } } });
+	test("a binding of off beats a non-null default", async () => {
+		const root = makeRoot({ user: models({ default: fakeProfile() }, { bindings: { [A14]: "off" } }) });
 		const result = await decide({ point: A14, state: "s" }, deps(root, recordingFetch().fetch));
-		expect(result).toMatchObject({ status: "unavailable", reason: "no_binding" });
+		expect(result).toMatchObject({ status: "unavailable", reason: "point_disabled" });
 	});
 
-	const cases: [string, { bindings?: unknown; local?: unknown }, string][] = [
-		["default_profile null with no binding", { bindings: bindingsFile({ default_profile: null }), local: { profiles: { default: clefProfile() } } }, "no_binding"],
-		["missing bindings file", { local: { profiles: { default: clefProfile() } } }, "no_binding"],
-		["missing local file", { bindings: bindingsFile() }, "no_local_config"],
-		["profile absent from local file", { bindings: bindingsFile(), local: { profiles: { other: clefProfile() } } }, "unknown_profile"],
-		["malformed local JSON", { bindings: bindingsFile(), local: "{ not json" }, "config_invalid"],
-		["malformed bindings JSON", { bindings: "{ nope", local: { profiles: { default: clefProfile() } } }, "config_invalid"],
-		["unknown top-level local key", { bindings: bindingsFile(), local: { profiles: { default: clefProfile() }, extra: 1 } }, "config_invalid"],
-		["unknown profile key", { bindings: bindingsFile(), local: { profiles: { default: clefProfile({ api_key: "x" }) } } }, "config_invalid"],
-		["unknown top-level bindings key", { bindings: bindingsFile({ thresholds: {} }), local: { profiles: { default: clefProfile() } } }, "config_invalid"],
-		["unknown application point in bindings", { bindings: bindingsFile({ bindings: { a99_nope: "default" } }), local: { profiles: { default: clefProfile() } } }, "config_invalid"],
-		["unknown provider kind", { bindings: bindingsFile(), local: { profiles: { default: { kind: "gpt" } } } }, "config_invalid"],
+	const cases: [string, { user?: unknown; project?: unknown }, string][] = [
+		["no default_profile and no binding", { user: { profiles: { default: clefProfile() } } }, "no_binding"],
+		["no profiles in the user file", { user: { default_profile: "default" } }, "no_local_config"],
+		["a null default_profile", { user: models({ default: clefProfile() }, { default_profile: null }) }, "config_invalid"],
+		["a null binding", { user: models({ default: clefProfile() }, { bindings: { [A14]: null } }) }, "config_invalid"],
+		["malformed user JSON", { user: "{ not json" }, "config_invalid"],
+		["malformed project JSON", { user: models({ default: clefProfile() }), project: "{ nope" }, "config_invalid"],
+		["a v1 user file", { user: JSON.stringify({ contract: "immune_brain/user_config/v1", decision_models: models({ default: clefProfile() }) }) }, "config_invalid"],
+		["unknown decision_models key in the user file", { user: models({ default: clefProfile() }, { extra: 1 }) }, "config_invalid"],
+		["unknown profile key", { user: models({ default: clefProfile({ api_key: "x" }) }) }, "config_invalid"],
+		["unknown decision_models key in the project file", { user: models({ default: clefProfile() }), project: { thresholds: {} } }, "config_invalid"],
+		["profiles in the project file", { user: models({ default: clefProfile() }), project: { profiles: { default: clefProfile() } } }, "config_invalid"],
+		["unknown application point in bindings", { user: models({ default: clefProfile() }, { bindings: { a99_nope: "default" } }) }, "config_invalid"],
+		["unknown provider kind", { user: models({ default: { kind: "gpt" } }) }, "config_invalid"],
 	];
 	for (const [name, files, reason] of cases) {
 		test(`${name} returns ${reason} without calling fetch`, async () => {
@@ -185,7 +179,7 @@ describe("egress gate (AC2)", () => {
 			["clef", clefProfile()],
 			["fake", { kind: "fake", answers: {}, default: { yes: 0.9, no: 0.1 } }],
 		] as const) {
-			const root = makeRoot({ bindings: bindingsFile({ egress: { clef: kind === "fake" ? ["diff"] : [] } }), local: { profiles: { default: profile } } });
+			const root = makeRoot({ user: models({ default: profile }, { egress: { clef: kind === "fake" ? ["diff"] : [] } }) });
 			const rec = recordingFetch(() => clefOk({}, {}, DIFF_POINT.id));
 			let adapterCalls = 0;
 			const counting = async () => {
@@ -204,7 +198,7 @@ describe("egress gate (AC2)", () => {
 	});
 
 	test("listing the sensitive category for clef lets the same request reach fetch exactly once", async () => {
-		const root = makeRoot({ bindings: bindingsFile({ egress: { clef: ["diff"] } }), local: { profiles: { default: clefProfile() } } });
+		const root = makeRoot({ user: models({ default: clefProfile() }, { egress: { clef: ["diff"] } }) });
 		const rec = recordingFetch(() =>
 			Response.json({ success: true, result: { model: "clef", answers: { [DIFF_POINT.id]: { type: "choice", choice: "yes", probabilities: { yes: 0.8, no: 0.2 }, confidence: 0.8 } } } }),
 		);
@@ -214,7 +208,7 @@ describe("egress gate (AC2)", () => {
 	});
 
 	test("listing a non-sensitive category in egress is config_invalid", async () => {
-		const root = makeRoot({ bindings: bindingsFile({ egress: { clef: ["pr_comment"] } }), local: { profiles: { default: clefProfile() } } });
+		const root = makeRoot({ user: models({ default: clefProfile() }, { egress: { clef: ["pr_comment"] } }) });
 		const rec = recordingFetch();
 		const result = await decide({ point: A14, state: "s" }, deps(root, rec.fetch));
 		expect(result).toMatchObject({ status: "unavailable", reason: "config_invalid" });
@@ -222,7 +216,7 @@ describe("egress gate (AC2)", () => {
 	});
 
 	test("listing issue_text in egress is config_invalid as a non-sensitive category", async () => {
-		const root = makeRoot({ bindings: bindingsFile({ egress: { clef: ["issue_text"] } }), local: { profiles: { default: clefProfile() } } });
+		const root = makeRoot({ user: models({ default: clefProfile() }, { egress: { clef: ["issue_text"] } }) });
 		const rec = recordingFetch();
 		const result = await decide({ point: "a15_issue_triage", state: "s" }, deps(root, rec.fetch));
 		expect(result).toMatchObject({ status: "unavailable", reason: "config_invalid" });
@@ -231,7 +225,7 @@ describe("egress gate (AC2)", () => {
 });
 
 describe("Clef adapter (AC3)", () => {
-	const clefRoot = (over: Record<string, unknown> = {}) => makeRoot({ bindings: bindingsFile(), local: { profiles: { default: clefProfile(over) } } });
+	const clefRoot = (over: Record<string, unknown> = {}) => makeRoot({ user: models({ default: clefProfile(over) }) });
 
 	test("a valid wrapped response yields an envelope from one exact POST", async () => {
 		const rec = recordingFetch();
@@ -322,13 +316,13 @@ const JEV_KEY = "jev-s3cr3t-key";
 const jevProfile = (over: Record<string, unknown> = {}) => ({ kind: "jev", api_key_env: "JEV_KEY", ...over });
 
 describe("Jev adapter (BR-DEC-5)", () => {
-	const jevRoot = (over: Record<string, unknown> = {}) => makeRoot({ bindings: bindingsFile(), local: { profiles: { default: jevProfile(over) } } });
+	const jevRoot = (over: Record<string, unknown> = {}) => makeRoot({ user: models({ default: jevProfile(over) }) });
 	const jevDeps = (root: string, fetchImpl: FetchLike, env: Record<string, string | undefined> = { JEV_KEY }, registry?: PointRegistry) => deps(root, fetchImpl, { env, ...(registry ? { registry } : {}) });
 
 	test("sends one Clef-shaped POST to the default endpoint and returns a jev envelope", async () => {
 		const state = { target: "x" };
 		const clefRec = recordingFetch();
-		await decide({ point: A14, state }, deps(makeRoot({ bindings: bindingsFile(), local: { profiles: { default: clefProfile() } } }), clefRec.fetch));
+		await decide({ point: A14, state }, deps(makeRoot({ user: models({ default: clefProfile() }) }), clefRec.fetch));
 
 		const rec = recordingFetch();
 		const result = await decide({ point: A14, state }, jevDeps(jevRoot(), rec.fetch));
@@ -396,13 +390,13 @@ describe("Jev adapter (BR-DEC-5)", () => {
 	test("a sensitive category needs egress.jev, and only that listing opens one jev fetch", async () => {
 		const respond = () => Response.json({ model: "m", answers: { [DIFF_POINT.id]: { type: "choice", choice: "yes", probabilities: { yes: 0.8, no: 0.2 }, confidence: 0.8 } } });
 		const denied = recordingFetch(respond);
-		const deniedRoot = makeRoot({ bindings: bindingsFile({ egress: { clef: ["diff"] } }), local: { profiles: { default: jevProfile() } } });
+		const deniedRoot = makeRoot({ user: models({ default: jevProfile() }, { egress: { clef: ["diff"] } }) });
 		const result = await decide({ point: DIFF_POINT.id, state: "diff --git" }, jevDeps(deniedRoot, denied.fetch, { JEV_KEY }, DIFF_REGISTRY));
 		expect(result).toMatchObject({ status: "unavailable", reason: "egress_denied" });
 		expect(denied.calls).toHaveLength(0);
 
 		const allowed = recordingFetch(respond);
-		const allowedRoot = makeRoot({ bindings: bindingsFile({ egress: { jev: ["diff"] } }), local: { profiles: { default: jevProfile() } } });
+		const allowedRoot = makeRoot({ user: models({ default: jevProfile() }, { egress: { jev: ["diff"] } }) });
 		const ok = await decide({ point: DIFF_POINT.id, state: "diff --git" }, jevDeps(allowedRoot, allowed.fetch, { JEV_KEY }, DIFF_REGISTRY));
 		expect(ok.status).toBe("decided");
 		expect(allowed.calls).toHaveLength(1);
@@ -429,7 +423,7 @@ describe("Jev adapter (BR-DEC-5)", () => {
 
 describe("envelope and isolation (AC4)", () => {
 	test("a fake profile returns exactly the envelope fields", async () => {
-		const root = makeRoot({ bindings: bindingsFile(), local: { profiles: { default: fakeProfile() } } });
+		const root = makeRoot({ user: models({ default: fakeProfile() }) });
 		const result = await decide({ point: A14, state: "s", trace_id: "t1" }, deps(root, recordingFetch().fetch));
 		expect(result.status).toBe("decided");
 		if (result.status !== "decided") return;
@@ -465,13 +459,13 @@ describe("envelope and isolation (AC4)", () => {
 	});
 
 	test("the fake answer for a trace_id takes precedence over default", async () => {
-		const root = makeRoot({ bindings: bindingsFile(), local: { profiles: { default: fakeProfile({ answers: { t2: { blocking: 0.1, nit: 0.1, out_of_scope: 0.1, duplicate: 0.7 } } }) } } });
+		const root = makeRoot({ user: models({ default: fakeProfile({ answers: { t2: { blocking: 0.1, nit: 0.1, out_of_scope: 0.1, duplicate: 0.7 } } }) }) });
 		const result = await decide({ point: A14, state: "s", trace_id: "t2" }, deps(root, recordingFetch().fetch));
 		expect(result.status === "decided" && result.envelope.choice).toBe("duplicate");
 	});
 
 	test("an adapter that throws returns provider_error instead of throwing", async () => {
-		const root = makeRoot({ bindings: bindingsFile(), local: { profiles: { default: fakeProfile() } } });
+		const root = makeRoot({ user: models({ default: fakeProfile() }) });
 		const throwing = async () => {
 			throw new Error("kaboom");
 		};

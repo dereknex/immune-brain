@@ -90,7 +90,7 @@ function makeWorkspace(options: {
 		join(root, ".imm/config.json"),
 		JSON.stringify(
 			{
-				contract: "immune_brain/project_config/v1",
+				contract: "immune_brain/project_config/v2",
 				...(options.decisionModels ? { decision_models: options.decisionModels } : {}),
 				loop: {
 					mode: "assist",
@@ -103,7 +103,7 @@ function makeWorkspace(options: {
 			2,
 		) + "\n",
 	);
-	execFileSync("git", ["add", ".imm/config.json", "docs/agents/no-touch.json"], { cwd: root });
+	execFileSync("git", ["add", "docs/agents/no-touch.json"], { cwd: root });
 
 	let userConfigPath: string | undefined;
 	if (options.userConfig) {
@@ -337,7 +337,7 @@ describe("S10-AC1: D12 v1 thresholds & correctable-direction gating", () => {
 		});
 		expect(truncated).toMatchObject({ tier: 3, handler: "draft_plan", judging_agent_used: true });
 
-		// 3) Point disabled in enabled_points
+		// 3) Point disabled (bindings.<point>: "off" leaves it out of enabledPoints)
 		const disabledCalls = stubClassifier({
 			a18_event_prefilter: { choice: "ignore", confidence: 0.99, truncation: "none" },
 		});
@@ -361,7 +361,7 @@ describe("S10-AC1: D12 v1 thresholds & correctable-direction gating", () => {
 	it("records full decision_model Envelope provenance in loop_decision_record/v1 via cli.ts default classifier", async () => {
 		const ws = makeWorkspace({
 			userConfig: {
-				contract: "immune_brain/user_config/v1",
+				contract: "immune_brain/user_config/v2",
 				decision_models: {
 					profiles: {
 						p_a18: { kind: "fake", answers: {}, default: { actionable: 0.95, ignore: 0.05 } },

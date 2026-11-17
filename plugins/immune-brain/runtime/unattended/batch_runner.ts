@@ -11,9 +11,11 @@ import { laneRejectionReport, retainedLaneAction, retainedLaneNotices, runLaneBa
 import { isLaneBatchRecord, laneGenerationStore, parkLaneForExecutor, readAnyBatchRunState, writeBatchRunReport, type BatchLaneRunReport, type BatchRunReport } from "./batch_state";
 import { exitProofCondition, retainedLaneReason } from "./lane_cleanup";
 import { laneDecisionFacts, type LaneDecisionFacts } from "./lane_decision";
-import { chooseExecutor, LaneSupervisor, superviseLane, type ExecutorChoice, type ExecutorHost, type ExecutorPreferences } from "./lane_supervisor";
+import { LaneSupervisor, superviseLane, type ExecutorHost, type ExecutorPreferences } from "./lane_supervisor";
 import { resolveConfig } from "../config/layered_config";
-import { agentRole } from "../config/agent_roles";
+export { laneExecutorChoice, frozenExecutorPreferences, frozenReviewProfile } from "./agent_profiles";
+import { laneExecutorChoice } from "./agent_profiles";
+import { batchConfigErrors } from "../config/layered_config";
 import { readTaskTombstone } from "../kernel/backend_claim";
 import { observeInitiative } from "./batch_plan";
 import { observeParentCompletion, withBatchEvidence } from "./batch_git";
@@ -116,6 +118,12 @@ export interface StartBatchInput {
 	/** Single task only: the exit this call's own wait observed; cleanup compares its generation with the current one. */
 	lane_exit_observation?: import("./lane_supervisor").LaneExit | null;
 	supervision?: { supervisor: LaneSupervisor; parentHost: ExecutorHost; pluginDir: string; waitMs: number; signal?: AbortSignal; stop?: boolean; request?: ExecutorPreferences };
+	/**
+	 * The Executor request and Parent Host that decide a new batch's frozen
+	 * profile (#564). Set for every batch, including multi-child and interactive
+	 * ones that carry no `supervision`; falls back to `supervision`.
+	 */
+	executor_freeze?: { request?: ExecutorPreferences; parentHost?: ExecutorHost };
 	topology_digest?: string;
 	root: string;
 	batch_id: string;
@@ -190,7 +198,7 @@ export async function stopSingleTaskSupervisor(supervisor: LaneSupervisor, root:
 	const lane = record.children.find(child => child.task_id === taskId)?.lane;
 	if (!lane) return { state: "blocked" as const, reason: "lane_executor_not_running", recovery_action: "Inspect the task status in the current Host." };
 	const observation = await supervisor.run({ key: `${root}\0${record.batch_id}`, repository: root, lanePath: lane.path, taskId,
-		choice: { host: "pi", not_applied: [] }, pluginDir: "", store: laneGenerationStore(root, record.batch_id),
+		choice: { host: "pi" }, pluginDir: "", store: laneGenerationStore(root, record.batch_id),
 		baseline: "", waitMs: 5_000, graceMs: 1000, signal, stop: true });
 	const reason = laneGenerationStore(root, record.batch_id).read()?.state === "interrupted" ? "lane_executor_interrupted" : "lane_executor_stopped";
 	const parked = observation.state === "stopped" && observation.exit && record.batch_state === "running"
@@ -198,7 +206,7 @@ export async function stopSingleTaskSupervisor(supervisor: LaneSupervisor, root:
 	const condition = observation.state === "stopped" ? exitProofCondition(laneGenerationStore(root, record.batch_id).read()) : null;
 	return { state: "started" as const, batch_id: record.batch_id, report: { ...reportFromLane(parked),
 		...(condition ? { lane_refusals: [{ task_id: taskId, path: lane.path, reason: retainedLaneReason(condition) }] } : {}),
-		lane_supervision: { ...observation, not_applied: [] } } as unknown as BatchRunReport };
+		lane_supervision: observation } as unknown as BatchRunReport };
 }
 
 function reportFromLane(record: import("./batch_state").BatchLaneRunStateRecord): BatchLaneRunReport {
@@ -218,24 +226,6 @@ function afterExecutorExit(advanced: BatchLaneRunReport, observed: BatchLaneRunR
 		...(decision ? { lane_decision_required: decision } : {}),
 		next_action: decision ? observed.next_action : advanced.handoffs.some(h => h.role === "executor") ? "Call start_unattended_batch again to continue the Lane." : advanced.next_action,
 		lane_supervision: observed.lane_supervision } as unknown as BatchRunReport;
-}
-
-/**
- * The Executor of a supervised Lane generation (#426 F16). `preferences` are the batch's recorded Executor
- * preferences, else the request's: the Parent resolved them from the request-selected Lane profile, so when they
- * name an Executor Host `agents.active` is not consulted and its model or effort is not reported as `not_applied`.
- * Null when the `lanes` section is invalid.
- */
-export function laneExecutorChoice(root: string, preferences: ExecutorPreferences | undefined, parentHost: ExecutorHost): ExecutorChoice | null {
-	const config = resolveConfig(root);
-	if (!config.lanes.valid) return null;
-	const project = config.lanes.project_defaults.value as ExecutorPreferences;
-	if (preferences?.executor_host) return chooseExecutor([preferences, project], parentHost);
-	// Spec loop-agent-scheduling D1: the resolved executor role is one whole profile, so a host from one
-	// layer never meets a model from another.
-	const role = agentRole(config.agents, "executor");
-	const resolved: ExecutorPreferences = role?.host ? { executor_host: role.host, ...(role.model ? { executor_model: role.model } : {}), ...(role.effort ? { executor_effort: role.effort } : {}) } : {};
-	return chooseExecutor([preferences ?? {}, resolved, project], parentHost);
 }
 
 async function superviseSingle(input: StartBatchInput, report: BatchLaneRunReport): Promise<BatchLaneRunReport> {
@@ -270,7 +260,7 @@ async function superviseSingle(input: StartBatchInput, report: BatchLaneRunRepor
 	if (observation.reason === "lane_executor_requires_tui") {
 		const tui = batchReason("lane_executor_requires_tui");
 		return { ...report, reason: tui.reason, next_action: tui.recovery_action.replaceAll("<task_id>", child.task_id),
-			lane_supervision: { ...observation, not_applied: choice.not_applied } } as unknown as BatchLaneRunReport;
+			lane_supervision: observation } as unknown as BatchLaneRunReport;
 	}
 	// Spec drive-always-lanes D11: an Executor that stopped on a literal-user decision is answered at this Host's native gate.
 	let decision: LaneDecisionFacts | null = null;
@@ -289,15 +279,16 @@ async function superviseSingle(input: StartBatchInput, report: BatchLaneRunRepor
 			observation.state === "running" ? "Call start_unattended_batch again to continue supervising this generation." :
 			observation.state === "unobservable" ? batchReason("lane_executor_unobservable").recovery_action :
 			observation.state === "unavailable" ? batchReason("lane_executor_unavailable").recovery_action : report.next_action,
-		lane_supervision: { ...observation, not_applied: choice.not_applied } };
+		lane_supervision: observation };
 }
 
 export async function startBatch(input: StartBatchInput): Promise<BatchRunReport> {
 	const recorded = readAnyBatchRunState(input.root, input.batch_id);
 	// Keep the recorded execution mode across re-entry; an existing runtime child is never replaced.
 	const interactive = recorded ? isLaneBatchRecord(recorded) && recorded.executor_mode === "interactive" : input.executor_mode === "interactive";
-	if (interactive) input = { ...input, executor_mode: "interactive", supervision: undefined, lane_exit_observation: null };
-	if (input.plan_source === "single_task" && input.supervision && !input.supervision.stop && !resolveConfig(input.root).lanes.valid) {
+	if (interactive) input = { ...input, executor_mode: "interactive", supervision: undefined, lane_exit_observation: null,
+		executor_freeze: input.executor_freeze ?? (input.supervision ? { request: input.supervision.request, parentHost: input.supervision.parentHost } : undefined) };
+	if (input.plan_source === "single_task" && input.supervision && !input.supervision.stop && batchConfigErrors(resolveConfig(input.root)).length > 0) {
 		const report = recorded && isLaneBatchRecord(recorded) ? reportFromLane(recorded) : null;
 		if (!report) throw new Error("lane_config_invalid");
 		return { ...report, batch_state: "rejected", reason: "lane_config_invalid" } as unknown as BatchRunReport;
