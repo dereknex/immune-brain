@@ -168,9 +168,8 @@ describe("Executor Host coverage", () => {
 			execFileSync("git", ["init", "-q", root]);
 			mkdirSync(join(root, ".imm"));
 			const accepted = (host: string) => {
-				writeFileSync(join(root, ".imm/config.json"), JSON.stringify({ contract: "immune_brain/project_config/v1", lanes: { executor_host: host } }));
-				execFileSync("git", ["add", ".imm/config.json"], { cwd: root });
-				return !resolveConfig(root, { userConfigPath: join(root, "absent-user.json") }).diagnostics.some(d => d.key_path === "lanes.executor_host");
+				writeFileSync(join(root, ".imm/config.json"), JSON.stringify({ contract: "immune_brain/project_config/v2", agents: { executor: { host } } }));
+				return !resolveConfig(root, { userConfigPath: join(root, "absent-user.json") }).diagnostics.some(d => d.key_path === "agents.executor");
 			};
 			for (const host of EXECUTOR_HOSTS) expect({ host, accepted: accepted(host) }).toEqual({ host, accepted: true });
 			expect(accepted("codex")).toBe(false);

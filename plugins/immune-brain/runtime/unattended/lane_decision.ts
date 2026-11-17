@@ -177,5 +177,5 @@ export async function relayLaneDecision<R>(input: LaneRelayInput<R>): Promise<La
 		},
 	});
 	return { relayed: true, result, lane_relay: { batch_id: target.batch_id, operation: input.operation, applied: true, rebound,
-		lane_supervision: { ...observation, not_applied: choice.not_applied } } };
+		lane_supervision: observation } };
 }

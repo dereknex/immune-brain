@@ -33,7 +33,7 @@ import {
 import type { ReviewObservation } from "./review_mediation";
 
 const REVIEW_PROFILE_RECOVERY =
-	"Set the `code-review` role on a profile in the user `agents.profiles` / `agents.presets` table, then call `advance_assurance`";
+	"Set `agents.reviewer` (a user `agents.profiles` name, `host[:model][@effort]` or { host, model?, effort? }) in the user or project configuration, then call `advance_assurance`";
 
 const REVIEW_BINARY: Record<ReviewProfile["host"], string> = {
 	"claude-code": "claude",
@@ -175,14 +175,14 @@ export function resolveReviewProfile(root: string): ReviewProfile | null {
 
 /** The `code-review` role's own profile, or null while no preset binds one. */
 function agentReviewProfile(agents: AgentsSection): ReviewProfile | null {
-	const role = agentRole(agents, "code-review");
-	if (!role?.host) return null;
+	const role = agentRole(agents, "reviewer");
+	if (!role) return null;
 	return { host: role.host, ...(role.model ? { model: role.model } : {}), ...(role.effort ? { effort: role.effort } : {}), transport: "herdr" };
 }
 
 /** A diagnostic key path under an `agents` table, in any layer (Spec review-config-invalid D1). */
 function isAgentKeyPath(keyPath: string): boolean {
-	return keyPath === "agents" || keyPath.startsWith("agents.") || /^projects\.[^.]+\.agents(\.|$)/.test(keyPath);
+	return keyPath === "agents" || keyPath.startsWith("agents.");
 }
 
 /**
@@ -452,12 +452,6 @@ export class CliReviewHost implements AssuranceHostPort {
 			review_session: session,
 			review_profile: profile,
 			review_actor_id: actorId,
-			// D4: the legacy table still reviews, but the round says so.
-			...(configured && !config.agents.valid && config.agents.source.value === "legacy" ? { warnings: [{
-				code: "review_legacy_profile" as const,
-				paths: [...new Set(agentErrors.map((item) => item.file))],
-				message: `Review uses the legacy \`lanes\` profile because the \`agents\` configuration is invalid: ${agentErrors[0]?.key_path ?? "agents"}`,
-			}] } : {}),
 		};
 	}
 
@@ -493,16 +487,8 @@ export class CliReviewHost implements AssuranceHostPort {
 		// The session's file is the authority channel, so it must be strict JSON (D2).
 		if (!strictJsonObject(bytes))
 			return { ok: false, release: true, reason: "review_output_invalid: the reviewer's receipt is not one strict JSON object" };
-		// A configured verifier model is offered, so the verifier runs on a different
-		// model from the reviewer's whenever one is set (#284 D1).
-		const verifierModel = agentRole(resolveConfig(reservation.root).agents, "review-verifier")?.model ?? null;
-		return {
-			ok: true,
-			receipt: {
-				actorId: reservation.actorId, result: bytes, model: reservation.profile.model ?? HOST_DEFAULT_MODEL,
-				...(verifierModel ? { offered_models: [verifierModel] } : {}),
-			},
-		};
+		// The verifier runs on the reviewer's own profile (ADR 0041 retires #284 D1's separate model).
+		return { ok: true, receipt: { actorId: reservation.actorId, result: bytes, model: reservation.profile.model ?? HOST_DEFAULT_MODEL } };
 	}
 
 	/** Review submission and verifier submission share this entry; see `review_mediation`. */

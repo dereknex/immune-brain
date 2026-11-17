@@ -246,48 +246,31 @@ Host session never re-enters the batch.
 
 #### Lane Preferences
 
-The Parent reads the layered config through `imm-kernel config --json` before
-the first `start_unattended_batch` call for an Initiative. The resolver reports
-values, their sources and diagnostics; the Parent overlays the literal request.
-Instruction-file lane directives are not read.
+The runtime resolves every Lane choice from the layered configuration
+(`docs/reference/immune-brain-config.md`); the Parent does not. When the user's
+request names an Executor or Review profile for this batch, the Parent passes it
+verbatim as `agents: { executor?, reviewer? }` to the first
+`start_unattended_batch` call, each a profile name, shorthand
+`host[:model][@effort]` or `{ host, model?, effort? }`; otherwise it passes no
+`agents`. It passes `max_parallel` only when the request states one. It never
+passes its own Host or a value it read from the configuration.
 
-| Field | Value | Effect | Without it |
+| Choice | Resolved from | Effect | Without it |
 | --- | --- | --- | --- |
-| `max_parallel` | positive integer | The Parent passes it as `max_parallel` when it starts a batch. The native confirmation shows the Lane capacity. | No `max_parallel`: one Lane at a time |
-| `executor_host` | `claude-code`, `pi` or `antigravity` | Every Lane's Executor Host is that Host. When the `lane-steward` did not report it available in a Lane, that Lane has no Executor Host; the Parent does not fall back to another one. | The Parent's own Host type, else another allowlisted Host the `lane-steward` reported available |
-| `executor_model` | a model identifier of that Executor Host | Passed to the Executor Host as `--model <model>` | The Executor Host's own default |
-| `executor_effort` | a level that Executor Host accepts | Passed as `--effort <level>` to `claude-code` and `antigravity`, and as `--thinking <level>` to `pi` | The Executor Host's own default |
-| `review_host`, `review_model`, `review_effort` | the selected profile's Review fields | The Parent passes them as `review_host`, `review_model` and `review_effort` when it starts a batch. The batch records them as `review_profile`, the native confirmation shows them, and every CLI Review of the batch's Lanes runs on them; a resume keeps the recorded profile. | Review resolves `lanes.active` when it is prepared |
+| Lane capacity | request `max_parallel`, else `batch.max_parallel` | The native confirmation shows it. | One Lane at a time |
+| Executor | request `agents.executor`, else the `executor` role | Every Lane's Executor Host, with `--model` and `--effort` (`--thinking` for `pi`) when the profile sets them. When the `lane-steward` did not report that Host available in a Lane, that Lane has no Executor Host; the Parent does not fall back to another one. | The Parent's own Host type on its default model |
+| Review | request `agents.reviewer`, else the `reviewer` role | Every CLI Review of the batch's Lanes and its findings verification | Review reports `review_profile_required` |
 
-Each field resolves on its own, in order: literal request, selected user Lane
-profile, project `lanes` defaults, then the default above. Select the profile
-named by the request, else `projects[<key>].lanes.active`, else `lanes.active`,
-else none. Use `lanes.profiles.value` for the selected profile and
-`lanes.project_defaults.value` for project values, even when the resolver's
-active profile has shadowed them. Recompute the fields and host-pairing
-warnings for the selected profile and request rather than reusing values or
-`not_applied` warnings computed for a different active profile. A lane batch
-records the Executor fields the Parent passes as `executor_preferences` when it
-starts; every Executor generation of the batch, including one started after a
-Lane decision, runs on them. When they name an `executor_host`, the runtime
-does not consult `lanes.active`, so a model or effort of the active profile is
-not reported as `not_applied`. A request naming an unknown profile is reported
-and starts no batch. Project Lane values are defaults, not caps.
-
-A model or effort applies only with an `executor_host` from the same layer. If
-a higher layer overrides that host, report the model or effort as `not_applied`
-and drop it; never attach it to a default-resolved Host. Report resolver
-diagnostics, including legacy-source warnings. If the `lanes` section fails
-validation (`lanes.valid: false`), start no batch on guessed or default values,
-even when another section resolves successfully. Lane configuration grants no
-permission or trust option.
-
-After resolving, display one non-blocking line with each selected value and its
-per-field source: `request`, `user`, `user:project`, `project`, `legacy:<path>`
-or `default`, as reported by the resolver or supplied by the request. A
-request-selected profile's fields retain the source of `lanes.profiles`, while
-an active profile's fields retain the source of `lanes.active`. On a resume the
-recorded `max_parallel` stands and nothing is passed again.
+A new batch records the resolved Executor profile as `executor_preferences`,
+the Review profile as `review_profile` and the capacity as `max_parallel`;
+every Executor generation, including one started after a Lane decision, and
+every Review of the batch run on them, and a resume keeps them and passes
+nothing again. Every `executor` handoff carries the frozen Executor profile as
+`executor: { host, model?, effort? }`. The batch report and native confirmation show each value with its
+source. A request naming an unknown profile, or any configuration error under
+`agents`, `batch` or `herdr`, is refused as `lane_config_invalid` and starts no
+batch; the Parent reports it with the file and key path and never guesses
+values. Lane configuration grants no permission or trust option.
 
 The `final_verification` commands of a new lane batch take plain commands
 without shell syntax or quoting, at most 8, whatever their source. They are
@@ -333,10 +316,11 @@ A supervised session is defined by what it guarantees, not by a Host's name:
 
 The Parent Host and the Executor Host are chosen independently. The Executor
 Host is any allowlisted Host (`claude-code`, `pi` or `antigravity`) that the
-`lane-steward` reported available in that Lane. An `executor_host` resolved under
-[Lane Preferences](#lane-preferences) decides it; without one, prefer the
-Parent's own Host type, and use another available one when it is not available,
-naming the Host chosen in the report. The child's QA and Review then run under that
+`lane-steward` reported available in that Lane. The `executor` field of the
+`executor` handoff decides it: the batch's frozen profile under
+[Lane Preferences](#lane-preferences) as `{ host, model?, effort? }`. Without
+that field, prefer the Parent's own Host type, and use another available one
+when it is not available, naming the Host chosen in the report. The child's QA and Review then run under that
 Executor Host's own Assurance adapter in the Lane. The Executor Host loads the
 same Immune-Brain plugin or package the Parent runs: a Parent started from a
 local plugin directory passes that same directory to the Executor Host. A Pi
@@ -345,7 +329,7 @@ package both load, the first loaded (the `-e` directory) is used and the other
 registers nothing and shows a notice naming both. The
 Parent adds no permission or trust option of its own; the Executor Host runs
 under the user's own settings, with the model and effort of its own defaults
-unless [Lane Preferences](#lane-preferences) resolve them. How the Parent obtains a supervised session
+unless the handoff's `executor` field sets them. How the Parent obtains a supervised session
 depends on where the Parent runs; the first matching row applies, and the user
 is not asked to choose:
 
@@ -396,15 +380,17 @@ refusal `code` and means nothing beyond its `reason` was done. Each Lane gets a
 tab of its own, so its Executor Host has a full-size terminal the user can
 read. For each `executor` handoff without a live session:
 
-1. Take the Lane from the handoff's `lane_path`. Pick the Executor Host as above.
+1. Take the Lane from the handoff's `lane_path` and the Executor Host from its
+   `executor.host`, else pick it as above.
 2. Create the session, which opens a tab rooted in the Lane in the Parent's own
    Herdr workspace without taking focus, starts the Host there and submits the
    entry and nothing else (later text follows only the instruction rule below):
    `imm-session create --provider herdr --cwd <lane_path> --label <name> --host <executor_host> --entry "<drive entry> <task_id>" -- <host arguments>`.
    `<name>` is a label of at most 32 characters such as the Slice ID; a
    `task_id` is usually too long. Host arguments are only those that load the
-   Parent's plugin and those that [Lane Preferences](#lane-preferences)
-   resolved for model and effort. The entry is the Executor Host's own `drive`
+   Parent's plugin and `--model` and `--effort` (`--thinking` for `pi`)
+   from the handoff's `executor.model` and `executor.effort` when present; the
+   Parent never reads them from the configuration itself. The entry is the Executor Host's own `drive`
    invocation as that Host names it: a Claude Code Host that loaded the plugin
    from a directory names it `/immune-brain:drive`, Pi names it `/skill:drive`
    and Antigravity names it `/drive`. Keep `task_id → handle`
@@ -579,7 +565,7 @@ Spec drive-always-lanes D1 to D11 and ADR 0027 own the details below.
   `/skill:drive <task_id>` in interactive pi in that Lane and calls
   `start_unattended_batch` again when it finishes. Arguments come only from the
   loaded plugin location and [Lane Preferences](#lane-preferences), which the
-  runtime resolves itself; the Parent passes none. Existing runtime-owned tasks
+  runtime resolves itself; the Parent passes only a literal request. Existing runtime-owned tasks
   keep this supervision even when resumed inside Herdr. The report carries `lane_supervision` with `generation`, `state`
   (`running`, `exited`, `unobservable`, `stopped` or `unavailable`) and `exit`.
   When the wait window elapses the call returns `running` for the same

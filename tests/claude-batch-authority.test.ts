@@ -205,10 +205,19 @@ describe("acc-claude-batch-gate", () => {
 		expect(gates).toBe(0); expect(snapshot(f.root)).toEqual(before); noBatchWrites(f.root);
 	});
 
+	it("refuses an Initiative batch on a configuration error before confirmation (ADR 0041)", async () => {
+		const f = fixture("initiative-config-invalid"); let gates = 0;
+		writeFileSync(join(f.root, ".imm/config.json"), JSON.stringify({ contract: "immune_brain/project_config/v2", agents: { executor: "unknown-profile" } }));
+		const before = snapshot(f.root);
+		const runtime = client(f, { requestConfirmation: async () => { gates++; return { decision: "accept", requestId: "unexpected" }; } });
+		expect(await runtime.callTool("start_unattended_batch", { initiative_slug: f.slug, final_verification: ["bun test"] }))
+			.toMatchObject({ state: "rejected", reason: expect.stringContaining("lane_config_invalid") });
+		expect(gates).toBe(0); expect(snapshot(f.root)).toEqual(before); noBatchWrites(f.root);
+	});
 	it("registers the privileged Lane tool, destructive annotation and supported schema", () => {
 		expect(PRIVILEGED_OPERATIONS).toContain("start_unattended_batch"); const tool = listMcpTools().find(t => t.name === "start_unattended_batch")!;
 		expect(tool).toBeDefined(); expect(tool.annotations).toEqual({ destructiveHint: true }); expect(tool.description).toContain("Lane"); expect(tool.description).not.toMatch(/serial/i);
-		expect(tool.inputSchema.required).toEqual([]); expect(Object.keys(tool.inputSchema.properties ?? {})).toEqual(["initiative_slug", "task_id", "stop", "executor_host", "executor_model", "executor_effort", "review_host", "review_model", "review_effort", "max_parallel", "lane_offers", "final_verification", "lane_instruction", "lane_session_close"]);
+		expect(tool.inputSchema.required).toEqual([]); expect(Object.keys(tool.inputSchema.properties ?? {})).toEqual(["initiative_slug", "task_id", "stop", "agents", "max_parallel", "lane_offers", "final_verification", "lane_instruction", "lane_session_close"]);
 	});
 	it.each([false, true])("starts a standalone task after one native confirmation (Herdr=%s)", async herdr => {
 		const f = fixture("single-claude"), taskId = `${f.slug}-c1`;
@@ -222,9 +231,10 @@ describe("acc-claude-batch-gate", () => {
 		const oldPath = process.env.PATH, oldOutput = process.env.LANE_TEST_OUTPUT;
 		process.env.PATH = `${bins}:${oldPath}`; process.env.LANE_TEST_OUTPUT = join(bins, "args");
 		const gates: any[] = [];
+		if (herdr) writeFileSync(join(f.root, ".imm/config.json"), JSON.stringify({ contract: "immune_brain/project_config/v2", herdr: true }));
 		const runtime = client(f, { env: { ...ENV, HERDR_ENV: herdr ? "1" : undefined }, requestConfirmation: async input => { gates.push(input); return { decision: "accept", requestId: "single" }; } });
 		try {
-		const result = await runtime.callTool("start_unattended_batch", { task_id: taskId, executor_host: "claude-code" });
+		const result = await runtime.callTool("start_unattended_batch", { task_id: taskId, agents: { executor: "claude-code" } });
 		expect(gates).toHaveLength(1);
 		expect(elicitationParams(gates[0]).message).toContain("Preparation digest: sha256:");
 		expect(result.state).toBe("started");
@@ -248,7 +258,7 @@ describe("acc-claude-batch-gate", () => {
 		expect(argv).toContain("--plugin-dir"); expect(argv.at(-1)).toBe(`/immune-brain:drive ${taskId}`);
 		expect(result.report.handoffs.filter((h: { role: string }) => h.role === "executor")).toEqual([]);
 		const freshRuntime = client(f, { env: { ...ENV, HERDR_ENV: "1" }, requestConfirmation: async () => ({ decision: "accept", requestId: "fresh" }) });
-		const lost = await freshRuntime.callTool("start_unattended_batch", { task_id: taskId, executor_host: "claude-code" });
+		const lost = await freshRuntime.callTool("start_unattended_batch", { task_id: taskId, agents: { executor: "claude-code" } });
 		expect(lost.report.lane_supervision).toMatchObject({ state: "unobservable", generation: 1, exit: null });
 		const stopped = await runtime.callTool("start_unattended_batch", { task_id: taskId, stop: true });
 		expect(stopped.report.lane_supervision).toMatchObject({ state: "stopped", generation: 1 });
@@ -298,12 +308,13 @@ describe("acc-claude-batch-gate", () => {
 		expect(message).not.toMatch(/delegat/i);
 		noBatchWrites(f.root);
 	});
-	it("#426 F14: shows the requested Review profile at confirmation and refuses a review model without a host", async () => {
+	it("#426 F14: shows the requested Review profile at confirmation and refuses a reviewer that names no Host or profile", async () => {
 		const f = fixture("review-profile"); const confirmations: any[] = [];
 		const runtime = client(f, { requestConfirmation: async input => { confirmations.push(input); return { decision: "decline", requestId: "review" }; } });
-		await expect(runtime.callTool("start_unattended_batch", { initiative_slug: f.slug, review_model: "sonnet" })).rejects.toThrow("require review_host");
+		await expect(runtime.callTool("start_unattended_batch", { initiative_slug: f.slug, agents: { reviewer: "sonnet" } })).rejects.toThrow("invalid agents.reviewer");
+		await expect(runtime.callTool("start_unattended_batch", { initiative_slug: f.slug, review_host: "claude-code" })).rejects.toThrow("unknown parameter: review_host (use agents)");
 		expect(confirmations).toHaveLength(0);
-		const result = await runtime.callTool("start_unattended_batch", { initiative_slug: f.slug, review_host: "claude-code", review_model: "sonnet", review_effort: "low" }, { toolCallId: "review" });
+		const result = await runtime.callTool("start_unattended_batch", { initiative_slug: f.slug, agents: { reviewer: "claude-code:sonnet@low" } }, { toolCallId: "review" });
 		expect(result.state).toBe("rejected"); expect(confirmations).toHaveLength(1);
 		expect(confirmations[0].batchDetails.lane_mode.review_profile).toEqual({ host: "claude-code", model: "sonnet", effort: "low" });
 		expect(elicitationParams(confirmations[0]).message).toContain("Review: claude-code / sonnet / low");
@@ -531,8 +542,9 @@ describe("lane mode parameters and resume", () => {
 	for (const max_parallel of [1, 2, 3]) it(`both Hosts give equal Lane reports at max_parallel=${max_parallel}`, async () => {
 		const slug = `lane-parity-${max_parallel}`, claude = fixture(slug), pi = fixture(slug);
 		const runtime = client(claude, { requestConfirmation: async () => ({ decision: "accept", requestId: "parity" }) });
-		const a = await runtime.callTool("start_unattended_batch", { initiative_slug: slug, max_parallel });
-		const b = await runPiBatch({ root: pi.root, initiativeSlug: slug, max_parallel, readInitiative: async () => pi.observation, confirmBatch: async () => "accept" });
+		// Without a configured executor each Parent defaults to its own Host; name the same one so the reports compare.
+		const a = await runtime.callTool("start_unattended_batch", { initiative_slug: slug, max_parallel, agents: { executor: "pi" } });
+		const b = await runPiBatch({ root: pi.root, initiativeSlug: slug, max_parallel, executor: { executor_host: "pi" }, readInitiative: async () => pi.observation, confirmBatch: async () => "accept" });
 		expect(a.state).toBe("started"); expect(b.state).toBe("started"); if (b.state !== "started") throw new Error(b.reason);
 		expect(a.report.max_parallel).toBe(max_parallel); expect(a.report.handoffs[0]).toMatchObject({ role: "executor", task_id: `${slug}-c1`, next_obligation: "submit_assurance" }); expect(a.report).not.toHaveProperty("handoff");
 		expect(normalize(a.report.handoffs, claude)).toEqual(normalize(b.report.handoffs, pi)); expect(normalize(a.report, claude)).toEqual(normalize(b.report, pi));
@@ -541,7 +553,8 @@ describe("lane mode parameters and resume", () => {
 		const slug = `lane-resume-${max_parallel}`, claude = fixture(slug), pi = fixture(slug); let claudeGates = 0, piGates = 0;
 		const runtime = client(claude, { requestConfirmation: async () => { claudeGates++; return { decision: "accept", requestId: "resume" }; } });
 		const options = { root: pi.root, initiativeSlug: slug, readInitiative: async () => pi.observation, confirmBatch: async () => { piGates++; return "accept" as const; } };
-		const first = await runtime.callTool("start_unattended_batch", { initiative_slug: slug, max_parallel }); await runPiBatch({ ...options, max_parallel });
+		// The new batch freezes the named Executor; the resumed reports compare because both froze the same one.
+		const first = await runtime.callTool("start_unattended_batch", { initiative_slug: slug, max_parallel, agents: { executor: "pi" } }); await runPiBatch({ ...options, max_parallel, executor: { executor_host: "pi" } });
 		const a = await runtime.callTool("start_unattended_batch", { initiative_slug: slug, final_verification: undefined }), b = await runPiBatch({ ...options, final_verification: undefined });
 		expect(a.state).toBe("started"); expect(b.state).toBe("started"); if (b.state !== "started") throw new Error(b.reason);
 		expect(a.batch_id).toBe(first.batch_id); expect(a.report.max_parallel).toBe(max_parallel); expect(b.report.max_parallel).toBe(max_parallel);

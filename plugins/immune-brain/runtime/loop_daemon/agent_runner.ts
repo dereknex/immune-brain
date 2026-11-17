@@ -247,6 +247,9 @@ export async function runAgentSession(
 	);
 }
 
+/** The configured role each loop session runs on (ADR 0041): repair writes code like the executor. */
+const LOOP_AGENT_ROLE: Record<AgentSessionRole | "executor", AgentRole> = { executor: "executor", repair: "executor", clarify: "planner", plan: "planner", judging: "triage" };
+
 export interface CliAgentSessionProfile {
 	host: ExecutorHost;
 	model?: string | null;
@@ -257,8 +260,8 @@ export interface CliAgentSessionProfile {
  * The Host profile bound to one role, or the documented Host fallback when the
  * role is unset (Spec D1). A session never borrows another role's Host.
  */
-export function loopRoleProfile(agents: AgentsSection, role: AgentRole): CliAgentSessionProfile {
-	const resolved = agentRole(agents, role);
+export function loopRoleProfile(agents: AgentsSection, role: AgentSessionRole | "executor"): CliAgentSessionProfile {
+	const resolved = agentRole(agents, LOOP_AGENT_ROLE[role]);
 	return {
 		host: (resolved?.host ?? "claude-code") as ExecutorHost,
 		model: resolved?.model ?? null,

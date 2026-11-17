@@ -98,7 +98,7 @@ function evalSetup(local: unknown, rows: object[]) {
 	const root = tempDir();
 	process.env.XDG_CONFIG_HOME = join(root, "config");
 	mkdirSync(join(root, "config/immune-brain"), { recursive: true });
-	writeFileSync(join(root, "config/immune-brain/config.json"), JSON.stringify({ contract: "immune_brain/user_config/v1", decision_models: { default_profile: "default", ...(local as object ?? {}) } }));
+	writeFileSync(join(root, "config/immune-brain/config.json"), JSON.stringify({ contract: "immune_brain/user_config/v2", decision_models: { default_profile: "default", ...(local as object ?? {}) } }));
 	const corpus = join(root, "corpus.jsonl");
 	writeFileSync(corpus, rows.map((r) => `${JSON.stringify(r)}\n`).join(""));
 	return { root, corpus, out: join(root, "reports") };

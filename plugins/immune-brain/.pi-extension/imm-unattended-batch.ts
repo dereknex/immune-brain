@@ -26,7 +26,8 @@ import {
 	resolveLaneParallel,
 	type LaneOffer,
 } from "../runtime/unattended/batch_lanes";
-import { type BatchLaneRunReport, reviewProfileFromArgs } from "../runtime/unattended/batch_state";
+import { type BatchLaneRunReport } from "../runtime/unattended/batch_state";
+import { parseRequestedAgents } from "../runtime/unattended/agent_profiles";
 import {
 	presentTaskRail,
 	renderStructuredCall,
@@ -335,12 +336,11 @@ export default function (
 			initiative_slug: Type.Optional(Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" })),
 			task_id: Type.Optional(Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" })),
 			stop: Type.Optional(Type.Boolean()),
-			executor_host: Type.Optional(Type.Union([Type.Literal("pi"), Type.Literal("claude-code"), Type.Literal("antigravity")])),
-			executor_model: Type.Optional(Type.String({ minLength: 1 })),
-			executor_effort: Type.Optional(Type.String({ minLength: 1 })),
-			review_host: Type.Optional(Type.Union([Type.Literal("pi"), Type.Literal("claude-code"), Type.Literal("antigravity")])),
-			review_model: Type.Optional(Type.String({ minLength: 1 })),
-			review_effort: Type.Optional(Type.String({ minLength: 1 })),
+			// Whole profile per role: a user profile name, host:model@effort, or { host, model?, effort? } (ADR 0041).
+			agents: Type.Optional(Type.Object({
+				executor: Type.Optional(Type.Union([Type.String({ minLength: 1 }), Type.Object({ host: Type.Union([Type.Literal("pi"), Type.Literal("claude-code"), Type.Literal("antigravity")]), model: Type.Optional(Type.String({ minLength: 1 })), effort: Type.Optional(Type.String({ minLength: 1 })) }, { additionalProperties: false })])),
+				reviewer: Type.Optional(Type.Union([Type.String({ minLength: 1 }), Type.Object({ host: Type.Union([Type.Literal("pi"), Type.Literal("claude-code"), Type.Literal("antigravity")]), model: Type.Optional(Type.String({ minLength: 1 })), effort: Type.Optional(Type.String({ minLength: 1 })) }, { additionalProperties: false })])),
+			}, { additionalProperties: false })),
 			// Integer minimum 1 as Claude Code declares it; multipleOf keeps the schema constructors to Number.
 			max_parallel: Type.Optional(Type.Number({ minimum: 1, multipleOf: 1 })),
 			lane_offers: Type.Optional(Type.Array(
@@ -357,7 +357,7 @@ export default function (
 		}, { additionalProperties: false }),
 		execute: async (
 			_toolCallId: string,
-			params: { initiative_slug?: string; task_id?: string; stop?: boolean; executor_host?: "pi" | "claude-code" | "antigravity"; executor_model?: string; executor_effort?: string; review_host?: "pi" | "claude-code" | "antigravity"; review_model?: string; review_effort?: string; max_parallel?: number; lane_offers?: Array<{ task_id: string; path: string }>; final_verification?: string[]; lane_instruction?: unknown; lane_session_close?: unknown },
+			params: { initiative_slug?: string; task_id?: string; stop?: boolean; agents?: unknown; max_parallel?: number; lane_offers?: Array<{ task_id: string; path: string }>; final_verification?: string[]; lane_instruction?: unknown; lane_session_close?: unknown },
 			signal: AbortSignal | undefined,
 			_onUpdate: unknown,
 			ctx: ExtensionContext,
@@ -391,7 +391,7 @@ export default function (
 			const maxParallel = parseMaxParallel(params.max_parallel);
 			const laneOffers = parseLaneOffers(params.lane_offers);
 			const finalVerification = params.final_verification?.length === 0 ? undefined : parseFinalVerification(params.final_verification);
-			const reviewProfile = reviewProfileFromArgs(params);
+			const requested = parseRequestedAgents(ctx.cwd, params.agents);
 			const laneInstruction = parseLaneInstruction(params.lane_instruction);
 			const laneSessionClose = parseLaneSessionClose(params.lane_session_close);
 
@@ -400,12 +400,12 @@ export default function (
 				...(params.initiative_slug ? { initiativeSlug: params.initiative_slug } : {}),
 				...(params.task_id ? { taskId: params.task_id } : {}),
 				...(params.stop ? { stop: true } : {}),
-				executor: { executor_host: params.executor_host, executor_model: params.executor_model, executor_effort: params.executor_effort },
+				...(requested.executor ? { executor: requested.executor } : {}),
 				supervisor,
 				...(maxParallel !== undefined ? { max_parallel: maxParallel } : {}),
 				...(laneOffers !== undefined ? { lane_offers: laneOffers } : {}),
 				...(finalVerification !== undefined ? { final_verification: finalVerification } : {}),
-				...(reviewProfile !== undefined ? { review_profile: reviewProfile } : {}),
+				...(requested.reviewer ? { review_profile: requested.reviewer } : {}),
 				...(laneInstruction !== undefined ? { lane_instruction: laneInstruction } : {}),
 				...(laneSessionClose !== undefined ? { lane_session_close: laneSessionClose } : {}),
 				interactive: ctx.mode === "tui",

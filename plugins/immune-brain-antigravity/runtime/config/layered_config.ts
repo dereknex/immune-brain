@@ -1,19 +1,21 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { isAbsolute, join } from "node:path";
-import { resolveAgentRoles, type AgentTable } from "./agent_roles.ts";
-import { parseBindings, parseProfiles } from "../decision_model/config.ts";
+import { basename, dirname, isAbsolute, join } from "node:path";
+import { resolveAgents } from "./agent_roles.ts";
+import { parseProfiles } from "../decision_model/config.ts";
 import { PROVIDER_KINDS, SENSITIVE_CATEGORIES, type PointRegistry } from "../decision_model/contract.ts";
 import { POINT_REGISTRY } from "../decision_model/thresholds.ts";
-import { projectIdentity } from "./project_identity.ts";
+
+// Two layers resolve every key (ADR 0041): the project's local, unversioned
+// `.imm/config.json` overrides the user's `config.json`, which overrides the
+// built-in default. Permission keys take the stricter of the two values.
 
 type Obj = Record<string, any>;
 type ResolvedLeaf = { value: unknown; source: string };
 /**
  * Where a reserved Review or Verification round runs: one explicit supervised
- * session the Parent launches inside Herdr. The hidden `--print` process
- * transport is retired (Spec retire-process-review-transport D1, D2).
+ * session the Parent launches inside Herdr (Spec retire-process-review-transport D1, D2).
  */
 export type ReviewTransport = "herdr";
 export type ReviewProfile = {
@@ -22,26 +24,15 @@ export type ReviewProfile = {
 	effort?: string;
 	transport?: ReviewTransport;
 };
-type Diagnostic = { code: string; severity: "error" | "warning"; file: string; key_path: string; message: string };
+export type ConfigDiagnostic = { code: string; severity: "error" | "warning"; file: string; key_path: string; message: string };
 const object = (v: unknown): v is Obj => v !== null && typeof v === "object" && !Array.isArray(v);
-const leaf = (value: unknown, source: string) => ({ value, source });
-const has = (o: Obj | undefined, k: string) => !!o && Object.hasOwn(o, k);
+const leaf = (value: unknown, source: string): ResolvedLeaf => ({ value, source });
+const has = (o: Obj | undefined | null, k: string) => !!o && Object.hasOwn(o, k);
 const envName = /^[A-Z_][A-Z0-9_]*$/;
 
-/** The Review profile `lanes` resolves to, or null when no `review_host` is set. No model-distinctness rule (BR-DEC-2). */
-/** Defaults of the Lane keys that have one; every other key defaults to null. */
-const LANE_DEFAULTS: Record<string, unknown> = { max_parallel: 1, review_transport: "herdr", advisory_transport: "subagent" };
-
-export function chooseReviewer(lanes: {
-	review_host: ResolvedLeaf; review_model: ResolvedLeaf; review_effort: ResolvedLeaf;
-	review_transport?: ResolvedLeaf;
-}): ReviewProfile | null {
-	const host = lanes.review_host.value as ReviewProfile["host"] | null;
-	if (!host) return null;
-	const model = lanes.review_model.value as string | null, effort = lanes.review_effort.value as string | null;
-	const transport = lanes.review_transport?.value as ReviewTransport | null | undefined;
-	return { host, ...(model ? { model } : {}), ...(effort ? { effort } : {}), ...(transport ? { transport } : {}) };
-}
+export const USER_CONFIG_CONTRACT = "immune_brain/user_config/v2";
+export const PROJECT_CONFIG_CONTRACT = "immune_brain/project_config/v2";
+export const BATCH_MAX_PARALLEL = { min: 1, max: 8, default: 1 } as const;
 
 export const LOOP_MODES = ["off", "observe", "assist", "autonomous"] as const;
 export type LoopMode = (typeof LOOP_MODES)[number];
@@ -78,272 +69,199 @@ export const DEFAULT_LOOP_CONFIG: LoopConfig = {
 	budget: { max_ticks_per_day: null, max_dispatches_per_day: null },
 };
 
-export function resolveConfig(root: string, options: { userConfigPath?: string; checkEnv?: boolean; registry?: PointRegistry } = {}) {
+/** The top-level keys either file may set; `profiles` under agents and decision_models stay user-only. */
+const FILE_KEYS = ["contract", "agents", "herdr", "decision_models", "git_integration", "initiative_carrier", "batch", "loop", "review_verifier"];
+
+export function defaultUserConfigPath(): string {
+	return join(process.env.XDG_CONFIG_HOME && isAbsolute(process.env.XDG_CONFIG_HOME) ? process.env.XDG_CONFIG_HOME : join(homedir(), ".config"), "immune-brain/config.json");
+}
+
+/**
+ * The main checkout's root: the project file is local and unversioned, so a Lane
+ * worktree reads the one beside the main checkout instead of its own copy.
+ */
+export function mainCheckoutRoot(root: string): string {
+	try {
+		const common = execFileSync("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+		return basename(common) === ".git" ? dirname(common) : root;
+	} catch { return root; }
+}
+
+export function projectConfigPath(root: string): string {
+	return join(mainCheckoutRoot(root), ".imm/config.json");
+}
+
+export function resolveConfig(root: string, options: { userConfigPath?: string; projectConfigPath?: string; checkEnv?: boolean; registry?: PointRegistry } = {}) {
 	const registry = options.registry ?? POINT_REGISTRY;
-	const diagnostics: Diagnostic[] = [];
+	const diagnostics: ConfigDiagnostic[] = [];
 	const diag = (code: string, severity: "error" | "warning", file: string, key_path: string, message: string) => {
 		diagnostics.push({ code, severity, file, key_path, message: `${file}: ${key_path}: ${message}` });
 	};
 	const invalid = (file: string, key: string, message: string) => diag("config_invalid", "error", file, key, message);
-	const userPath = options.userConfigPath ?? join(process.env.XDG_CONFIG_HOME && isAbsolute(process.env.XDG_CONFIG_HOME) ? process.env.XDG_CONFIG_HOME : join(homedir(), ".config"), "immune-brain/config.json");
-	const projectPath = ".imm/config.json";
-	const tracked = (path: string) => {
-		try { execFileSync("git", ["ls-files", "--error-unmatch", "--", path], { cwd: root, stdio: "ignore" }); return true; } catch { return false; }
-	};
-	const read = (path: string, label: string, contract?: string): Obj | null => {
-		if (!existsSync(path)) return {};
+	const userPath = options.userConfigPath ?? defaultUserConfigPath();
+	const projectPath = options.projectConfigPath ?? projectConfigPath(root);
+	/** A file that fails to parse is void as a whole; a missing file is empty. */
+	const read = (path: string, contract: string): Obj | null => {
+		if (!existsSync(path)) return null;
 		try {
 			const data: unknown = JSON.parse(readFileSync(path, "utf8"));
-			if (!object(data)) { invalid(label, "$", "expected object"); return null; }
-			if (contract && data.contract !== contract) { invalid(label, "contract", "invalid contract"); return null; }
+			if (!object(data)) { invalid(path, "$", "expected object"); return null; }
+			if (data.contract !== contract) {
+				invalid(path, "contract", typeof data.contract === "string" && data.contract.endsWith("/v1")
+					? `${data.contract} is retired; run \`imm-kernel config migrate\` to rewrite it as ${contract}`
+					: `expected ${contract}`);
+				return null;
+			}
+			for (const key of Object.keys(data)) if (!FILE_KEYS.includes(key)) invalid(path, key, "unknown key");
 			return data;
-		} catch { invalid(label, "$", "unreadable or malformed JSON"); return null; }
+		} catch { invalid(path, "$", "unreadable or malformed JSON"); return null; }
 	};
-	let projectKey: string;
-	try { projectKey = projectIdentity(root); } catch { projectKey = ""; invalid(root, "project_key", "cannot determine project identity"); }
-	const user = read(userPath, userPath, "immune_brain/user_config/v1");
-	const project = tracked(projectPath) ? read(join(root, projectPath), projectPath, "immune_brain/project_config/v1") : {};
-	const failed = new Set<string>();
-	const validKeys = (o: Obj, keys: string[], file: string, path: string, section: string) => {
-		for (const key of Object.keys(o)) if (!keys.includes(key)) { invalid(file, path ? `${path}.${key}` : key, "unknown key"); failed.add(section); }
-	};
-	const section = (value: unknown, file: string, path: string, name: string): Obj => {
+	const user = read(userPath, USER_CONFIG_CONTRACT);
+	const project = read(projectPath, PROJECT_CONFIG_CONTRACT);
+	const layers = [["project", project, projectPath], ["user", user, userPath]] as const;
+	/** A nested object of one layer, or {} with an error when it is not one. */
+	const part = (o: Obj | null, file: string, path: string): Obj => {
+		let value: unknown = o;
+		for (const key of path.split(".")) { if (!object(value)) return {}; value = value[key]; }
 		if (value === undefined) return {};
-		if (!object(value)) { invalid(file, path, "expected object"); failed.add(name); return {}; }
+		if (!object(value)) { invalid(file, path, "expected object"); return {}; }
 		return value;
 	};
-	if (user === null) for (const s of ["decision_models", "lanes", "initiative_carrier", "git_integration"]) failed.add(s);
-	if (project === null) for (const s of ["decision_models", "lanes", "git_integration", "initiative_carrier", "batch", "loop", "review_verifier"]) failed.add(s);
-	if (user) validKeys(user, ["contract", "agents", "decision_models", "lanes", "initiative_carrier", "git_integration", "projects"], userPath, "", "user_file");
-	if (project) validKeys(project, ["contract", "agents", "decision_models", "lanes", "initiative_carrier", "git_integration", "batch", "loop", "review_verifier"], projectPath, "", "project_file");
-	const projects = section(user?.projects, userPath, "projects", "user_file");
-	for (const [key, value] of Object.entries(projects)) if (!object(value)) { invalid(userPath, `projects.${key}`, "expected object"); failed.add("user_file"); }
-	const override = section(projects[projectKey], userPath, `projects.${projectKey}`, "user_file");
-	validKeys(override, ["agents", "decision_models", "lanes", "initiative_carrier"], userPath, `projects.${projectKey}`, "user_file");
-	const overrideAgents = section(override.agents, userPath, `projects.${projectKey}.agents`, "agents");
-	validKeys(overrideAgents, ["active"], userPath, `projects.${projectKey}.agents`, "agents");
-	const projectAgents = section(project?.agents, projectPath, "agents", "agents");
-	const ud = section(user?.decision_models, userPath, "decision_models", "decision_models");
-	const od = section(override.decision_models, userPath, `projects.${projectKey}.decision_models`, "decision_models");
-	const pd = section(project?.decision_models, projectPath, "decision_models", "decision_models");
-	const ul = section(user?.lanes, userPath, "lanes", "lanes");
-	const ol = section(override.lanes, userPath, `projects.${projectKey}.lanes`, "lanes");
-	const pl = section(project?.lanes, projectPath, "lanes", "lanes");
-	const batch = section(project?.batch, projectPath, "batch", "batch");
-	const loop = section(project?.loop, projectPath, "loop", "loop");
-	const loopBudget = section(loop.budget, projectPath, "loop.budget", "loop");
-	const loopInteraction = section(loop.interaction, projectPath, "loop.interaction", "loop");
-	validKeys(ud, ["profiles", "default_profile", "bindings", "egress"], userPath, "decision_models", "decision_models");
-	validKeys(od, ["default_profile", "bindings", "egress"], userPath, `projects.${projectKey}.decision_models`, "decision_models");
-	validKeys(pd, ["enabled_points", "egress"], projectPath, "decision_models", "decision_models");
-	validKeys(ul, ["profiles", "active"], userPath, "lanes", "lanes");
-	validKeys(ol, ["active"], userPath, `projects.${projectKey}.lanes`, "lanes");
-	const laneKeys = ["max_parallel", "executor_host", "executor_model", "executor_effort", "review_host", "review_model", "review_effort", "review_transport", "advisory_transport", "review_verifier_model"];
-	validKeys(pl, laneKeys, projectPath, "lanes", "lanes");
-	validKeys(batch, ["final_verification"], projectPath, "batch", "batch");
-	const validateLane = (o: Obj, file: string, path: string) => {
-		validKeys(o, laneKeys, file, path, "lanes");
-		for (const [k, v] of Object.entries(o)) {
-			const ok = k === "max_parallel" ? Number.isSafeInteger(v) && v > 0 : k.endsWith("_host") ? v === "pi" || v === "claude-code" || v === "antigravity" : k.endsWith("_model") || k.endsWith("_effort") ? typeof v === "string" && v.length > 0
-				// ADR 0038: a supervised-session transport names its provider; no value is auto-detected.
-				: k === "review_transport" ? v === "herdr" : k === "advisory_transport" ? v === "subagent" || v === "herdr" : true;
-			if (!ok) { invalid(file, `${path}.${k}`, "invalid value"); failed.add("lanes"); }
+	const knownKeys = (o: Obj, keys: readonly string[], file: string, path: string) => {
+		for (const key of Object.keys(o)) if (!keys.includes(key)) invalid(file, `${path}.${key}`, "unknown key");
+	};
+	/** The first layer whose value passes `ok`; an invalid value counts as unset and records an error. */
+	const pick = (get: (o: Obj) => unknown, key: string, ok: (v: unknown) => boolean, message: string, fallback: unknown = null): ResolvedLeaf => {
+		for (const [layer, o, file] of layers) {
+			const value = o ? get(o) : undefined;
+			if (value === undefined) continue;
+			if (ok(value)) return leaf(value, layer);
+			invalid(file, key, message);
 		}
+		return leaf(fallback, "default");
 	};
-	validateLane(pl, projectPath, "lanes");
-	const laneProfiles = section(ul.profiles, userPath, "lanes.profiles", "lanes");
-	for (const [name, profile] of Object.entries(laneProfiles)) validateLane(section(profile, userPath, `lanes.profiles.${name}`, "lanes"), userPath, `lanes.profiles.${name}`);
-	for (const [o, file, path] of [[ul, userPath, "lanes"], [ol, userPath, `projects.${projectKey}.lanes`]] as const) if (has(o, "active") && (typeof o.active !== "string" || !o.active)) { invalid(file, `${path}.active`, "expected profile name"); failed.add("lanes"); }
-	if (has(ud, "profiles")) {
-		const profiles = section(ud.profiles, userPath, "decision_models.profiles", "decision_models");
-		for (const [name, profile] of Object.entries(profiles)) if (object(profile)) for (const [key, value] of Object.entries(profile)) if (key.endsWith("_env") && (typeof value !== "string" || !envName.test(value))) { invalid(userPath, `decision_models.profiles.${name}.${key}`, "expected environment variable name"); failed.add("decision_models"); }
-		const parsed = parseProfiles({ profiles });
-		if (!parsed.ok) { invalid(userPath, "decision_models.profiles", parsed.error.detail.replace(/^.*?: /, "")); failed.add("decision_models"); }
-	}
-	const validateDecision = (o: Obj, file: string, path: string) => {
-		if (has(o, "default_profile") && (typeof o.default_profile !== "string" || !o.default_profile)) { invalid(file, `${path}.default_profile`, "expected profile name"); failed.add("decision_models"); }
-		const bindings = section(o.bindings, file, `${path}.bindings`, "decision_models");
-		for (const [point, value] of Object.entries(bindings)) if (!Object.hasOwn(registry, point) || typeof value !== "string" || !value) { invalid(file, `${path}.bindings.${point}`, "invalid binding"); failed.add("decision_models"); }
-		const egress = section(o.egress, file, `${path}.egress`, "decision_models");
-		for (const [kind, value] of Object.entries(egress)) if (!(PROVIDER_KINDS as readonly string[]).includes(kind) || !Array.isArray(value) || value.some((v) => !(SENSITIVE_CATEGORIES as readonly unknown[]).includes(v)) || new Set(value).size !== value.length) { invalid(file, `${path}.egress.${kind}`, "invalid egress list"); failed.add("decision_models"); }
+	/** Every layer's valid value for a key, project first. */
+	const valid = (get: (o: Obj) => unknown, key: string, ok: (v: unknown) => boolean, message: string): Array<{ value: any; source: string }> => {
+		const out: Array<{ value: any; source: string }> = [];
+		for (const [layer, o, file] of layers) {
+			const value = o ? get(o) : undefined;
+			if (value === undefined) continue;
+			if (ok(value)) out.push({ value, source: layer });
+			else invalid(file, key, message);
+		}
+		return out;
 	};
-	validateDecision(ud, userPath, "decision_models"); validateDecision(od, userPath, `projects.${projectKey}.decision_models`); validateDecision(pd, projectPath, "decision_models");
-	if (has(pd, "enabled_points") && (!Array.isArray(pd.enabled_points) || pd.enabled_points.some((p: unknown) => typeof p !== "string" || !Object.hasOwn(registry, p)) || new Set(pd.enabled_points).size !== pd.enabled_points.length)) { invalid(projectPath, "decision_models.enabled_points", "invalid point list"); failed.add("decision_models"); }
-	for (const [o, file, path] of [[user, userPath, "initiative_carrier"], [override, userPath, `projects.${projectKey}.initiative_carrier`], [project, projectPath, "initiative_carrier"]] as const) if (o && has(o, "initiative_carrier") && o.initiative_carrier !== "github" && o.initiative_carrier !== "local") { invalid(file, path, "expected github or local"); failed.add("initiative_carrier"); }
-	for (const [o, file, path] of [[user, userPath, "git_integration"], [project, projectPath, "git_integration"]] as const) if (o && has(o, "git_integration") && o.git_integration !== "manual" && o.git_integration !== "auto") { invalid(file, path, "expected manual or auto"); failed.add("git_integration"); }
-	if (project && has(project, "review_verifier") && project.review_verifier !== "off" && project.review_verifier !== "on") { invalid(projectPath, "review_verifier", "expected off or on"); failed.add("review_verifier"); }
-	if (has(batch, "final_verification") && (!Array.isArray(batch.final_verification) || batch.final_verification.length > 8 || batch.final_verification.some((v: unknown) => typeof v !== "string" || !v))) { invalid(projectPath, "batch.final_verification", "expected at most eight command strings"); failed.add("batch"); }
+	const errorsUnder = (prefix: string) => diagnostics.some((d) => d.severity === "error" && (d.key_path === prefix || d.key_path.startsWith(`${prefix}.`)));
 	const integerWithin = (v: unknown, min: number, max = Number.MAX_SAFE_INTEGER) => Number.isSafeInteger(v) && (v as number) >= min && (v as number) <= max;
-	const distinctLogins = (v: unknown) => Array.isArray(v) && v.every((item) => typeof item === "string" && item.trim().length > 0) && new Set(v).size === v.length;
-	validKeys(loop, ["mode", "interval_seconds", "max_concurrent", "max_ready_buffer", "max_pr_buffer", "auto_enroll_max_risk", "allowed_actors", "allowed_associations", "interaction", "budget"], projectPath, "loop", "loop");
-	validKeys(loopBudget, ["max_ticks_per_day", "max_dispatches_per_day"], projectPath, "loop.budget", "loop");
-	// Spec loop-agent-scheduling D4: one channel key, `github` by default.
-	validKeys(loopInteraction, ["channel"], projectPath, "loop.interaction", "loop");
-	const loopChecks: Array<[string, boolean, string]> = [
-		["mode", !has(loop, "mode") || (LOOP_MODES as readonly unknown[]).includes(loop.mode), `expected one of ${LOOP_MODES.join(", ")}`],
-		["interval_seconds", !has(loop, "interval_seconds") || integerWithin(loop.interval_seconds, 15), "expected an integer of at least 15"],
-		["max_concurrent", !has(loop, "max_concurrent") || integerWithin(loop.max_concurrent, 1, 8), "expected an integer between 1 and 8"],
-		["max_ready_buffer", !has(loop, "max_ready_buffer") || integerWithin(loop.max_ready_buffer, 1, 20), "expected an integer between 1 and 20"],
-		["max_pr_buffer", !has(loop, "max_pr_buffer") || integerWithin(loop.max_pr_buffer, 1, 20), "expected an integer between 1 and 20"],
-		["auto_enroll_max_risk", !has(loop, "auto_enroll_max_risk") || (LOOP_AUTO_ENROLL_MAX_RISKS as readonly unknown[]).includes(loop.auto_enroll_max_risk), "expected none or routine; material and critical require tracker_approval"],
-		["allowed_actors", !has(loop, "allowed_actors") || distinctLogins(loop.allowed_actors), "expected distinct non-empty GitHub logins"],
-		["allowed_associations", !has(loop, "allowed_associations") || (distinctLogins(loop.allowed_associations) && loop.allowed_associations.length > 0 && loop.allowed_associations.every((v: string) => (LOOP_ASSOCIATIONS as readonly string[]).includes(v))), `expected a subset of ${LOOP_ASSOCIATIONS.join(", ")}`],
-		["interaction.channel", !has(loopInteraction, "channel") || (LOOP_INTERACTION_CHANNELS as readonly unknown[]).includes(loopInteraction.channel), `expected one of ${LOOP_INTERACTION_CHANNELS.join(", ")}`],
-	];
-	for (const [key, value] of Object.entries(loopBudget)) loopChecks.push([`budget.${key}`, integerWithin(value, 1), "expected a positive integer"]);
-	for (const [key, ok, message] of loopChecks) if (!ok) { invalid(projectPath, `loop.${key}`, message); failed.add("loop"); }
+	const oneOf = (values: readonly unknown[]) => (v: unknown) => values.includes(v);
 
-	for (const [key, entry] of Object.entries(projects)) {
-		if (key === projectKey || !object(entry)) continue;
-		const base = `projects.${key}`;
-		validKeys(entry, ["decision_models", "lanes", "initiative_carrier", "agents"], userPath, base, "user_file");
-		const entryAgents = section(entry.agents, userPath, `${base}.agents`, "agents");
-		validKeys(entryAgents, ["active"], userPath, `${base}.agents`, "agents");
-		if (has(entryAgents, "active") && (typeof entryAgents.active !== "string" || !entryAgents.active)) invalid(userPath, `${base}.agents.active`, "expected preset name");
-		const decision = section(entry.decision_models, userPath, `${base}.decision_models`, "decision_models");
-		validKeys(decision, ["default_profile", "bindings", "egress"], userPath, `${base}.decision_models`, "decision_models");
-		validateDecision(decision, userPath, `${base}.decision_models`);
-		const lanes = section(entry.lanes, userPath, `${base}.lanes`, "lanes");
-		validKeys(lanes, ["active"], userPath, `${base}.lanes`, "lanes");
-		if (has(lanes, "active") && (typeof lanes.active !== "string" || !lanes.active)) { invalid(userPath, `${base}.lanes.active`, "expected profile name"); failed.add("lanes"); }
-		if (has(entry, "initiative_carrier") && entry.initiative_carrier !== "github" && entry.initiative_carrier !== "local") { invalid(userPath, `${base}.initiative_carrier`, "expected github or local"); failed.add("initiative_carrier"); }
-	}
-	if (failed.has("user_file")) for (const s of ["decision_models", "lanes", "initiative_carrier", "git_integration"]) failed.add(s);
-	if (failed.has("project_file")) for (const s of ["decision_models", "lanes", "git_integration", "initiative_carrier", "batch", "loop", "review_verifier"]) failed.add(s);
-	if (failed.has("decision_models")) for (const o of [ud, od, pd]) for (const key of Object.keys(o)) delete o[key];
-	if (failed.has("lanes")) for (const o of [ul, ol, pl, laneProfiles]) for (const key of Object.keys(o)) delete o[key];
-
-	type Target = { layer: "user" | "project"; key: string };
-	const legacy = (path: string, targets: Target[], used: boolean) => {
-		if (!existsSync(join(root, path)) || (path === ".imm/decision-bindings.json" && !tracked(path))) return false;
-		const where = targets.map((t) => `${t.layer} \`${t.key}\` in ${t.layer === "user" ? userPath : projectPath}`).join(" and ");
-		diag(used ? "deprecated_config_source" : "legacy_source_ignored", "warning", path, targets[0].key, used ? `deprecated; move to ${where}` : `ignored because a newer layer sets this section; its replacement is ${where}`);
-		return true;
-	};
-	let legacyLane: Obj = {}, legacyProfiles: Obj = {}, legacyBindings: Obj = {};
-	const useLegacyLane = !has(ul, "profiles") && !has(ul, "active") && !has(ol, "active") && !Object.keys(pl).length && !failed.has("lanes");
-	const useLegacyProfiles = !has(ud, "profiles") && !failed.has("decision_models");
-	const useLegacyBindings = !failed.has("decision_models") && !has(ud, "default_profile") && !has(ud, "bindings") && !has(od, "default_profile") && !has(od, "bindings") && !has(pd, "egress");
-	const readLegacy = (path: string, name: string): Obj => {
-		const value = read(join(root, path), path);
-		if (value === null) { failed.add(name); return {}; }
-		return value;
-	};
-	if (legacy(".imm/lanes.local.json", [{ layer: "user", key: "lanes" }], useLegacyLane) && useLegacyLane) legacyLane = readLegacy(".imm/lanes.local.json", "lanes");
-	if (legacy(".imm/decision-models.local.json", [{ layer: "user", key: "decision_models.profiles" }], useLegacyProfiles) && useLegacyProfiles) legacyProfiles = readLegacy(".imm/decision-models.local.json", "decision_models");
-	if (legacy(".imm/decision-bindings.json", [{ layer: "user", key: "decision_models" }, { layer: "project", key: "decision_models.egress" }], useLegacyBindings) && useLegacyBindings) legacyBindings = readLegacy(".imm/decision-bindings.json", "decision_models");
-	if (object(legacyProfiles.profiles)) for (const [name, profile] of Object.entries(legacyProfiles.profiles)) if (object(profile)) for (const [key, value] of Object.entries(profile)) if (key.endsWith("_env") && (typeof value !== "string" || !envName.test(value))) { invalid(".imm/decision-models.local.json", `profiles.${name}.${key}`, "expected environment variable name"); failed.add("decision_models"); legacyProfiles = {}; }
-	if (Object.keys(legacyProfiles).length && !parseProfiles(legacyProfiles).ok) { invalid(".imm/decision-models.local.json", "profiles", "invalid profiles"); failed.add("decision_models"); legacyProfiles = {}; }
-	if (Object.keys(legacyBindings).length && !parseBindings(legacyBindings, registry).ok) { invalid(".imm/decision-bindings.json", "decision_models", "invalid bindings"); failed.add("decision_models"); legacyBindings = {}; }
-	if (legacyLane.active !== undefined && (typeof legacyLane.active !== "string" || !legacyLane.active)) { invalid(".imm/lanes.local.json", "lanes.active", "expected profile name"); failed.add("lanes"); legacyLane = {}; }
-	if (legacyLane.profiles !== undefined && !object(legacyLane.profiles)) { invalid(".imm/lanes.local.json", "lanes.profiles", "expected object"); failed.add("lanes"); legacyLane = {}; }
-	validKeys(legacyLane, ["active", "profiles"], ".imm/lanes.local.json", "lanes", "lanes");
-	for (const [name, profile] of Object.entries(legacyLane.profiles ?? {})) validateLane(section(profile, ".imm/lanes.local.json", `lanes.profiles.${name}`, "lanes"), ".imm/lanes.local.json", `lanes.profiles.${name}`);
-	const choose = (...items: [unknown, string][]) => { const item = items.find(([v]) => v !== undefined); return item ? leaf(item[0], item[1]) : leaf(null, "default"); };
-	const profiles = has(ud, "profiles") ? ud.profiles : legacyProfiles.profiles ?? {};
-	const active = choose([ol.active, "user:project"], [ul.active, "user"], [legacyLane.active, "legacy:.imm/lanes.local.json"]);
-	const profileName = active.value as string | null;
-	const laneProfile = profileName && (has(laneProfiles, profileName) ? laneProfiles[profileName] : has(legacyLane.profiles, profileName) ? legacyLane.profiles[profileName] : undefined);
-	if (active.value && !laneProfile) { diag("unknown_profile", "error", active.source.startsWith("legacy:") ? ".imm/lanes.local.json" : userPath, "lanes.active", "unknown profile"); failed.add("lanes"); }
-	if (laneProfile && active.source.startsWith("legacy:") && !object(laneProfile)) { invalid(".imm/lanes.local.json", `lanes.profiles.${active.value}`, "expected object"); failed.add("lanes"); }
-	const resolvedLaneProfiles = choose([has(ul, "profiles") ? laneProfiles : undefined, "user"], [legacyLane.profiles, "legacy:.imm/lanes.local.json"], [{}, "default"]);
-	const lanes: Obj = { valid: !failed.has("lanes"), active, profiles: resolvedLaneProfiles, project_defaults: leaf(pl, Object.keys(pl).length ? "project" : "default") };
-	for (const key of laneKeys) {
-		const hostKey = key.startsWith("review_") ? "review_host" : "executor_host";
-		const dependent = key.endsWith("_model") || key.endsWith("_effort");
-		const userValue = laneProfile?.[key];
-		let projectValue = pl[key];
-		if (dependent && projectValue !== undefined && laneProfile?.[hostKey] !== undefined) { diag("not_applied", "warning", projectPath, `lanes.${key}`, "host overridden by higher layer"); projectValue = undefined; }
-		if (dependent && userValue !== undefined && laneProfile?.[hostKey] === undefined) { diag("not_applied", "warning", userPath, `lanes.${key}`, "host must be set in the same layer"); }
-		if (dependent && projectValue !== undefined && pl[hostKey] === undefined) { diag("not_applied", "warning", projectPath, `lanes.${key}`, "host must be set in the same layer"); projectValue = undefined; }
-		lanes[key] = choose([dependent && laneProfile?.[hostKey] === undefined ? undefined : userValue, active.source], [projectValue, "project"], [LANE_DEFAULTS[key], "default"]);
-	}
-	if (failed.has("lanes")) {
-		lanes.active = leaf(null, "default");
-		lanes.profiles = leaf({}, "default");
-		lanes.project_defaults = leaf({}, "default");
-		for (const key of laneKeys) lanes[key] = leaf(LANE_DEFAULTS[key] ?? null, "default");
-	}
-	// Spec loop-agent-scheduling D1: one role table for every agent role. The legacy
-	// `lanes` keys map into the same table, so only the source differs.
-	const laneTable = (): AgentTable | null => {
-		if (failed.has("lanes")) return null;
-		// The legacy keys bind only the roles they drove: the Lane executor (and the loop's
-		// repair, which read the same profile), the Review, its verifier and the advisory
-		// child. The loop's judging, clarify and plan keep their `claude-code` fallback.
-		// Nothing binds `"*"`, so a legacy Lane never silently reviews on its executor.
-		const names = (has(ul, "profiles") ? laneProfiles : object(legacyLane.profiles) ? legacyLane.profiles : {}) as Obj;
-		const roleProfiles: Obj = {}, presets: Obj = {};
-		const laneRoles = (name: string, source: Obj) => {
-			const roles: Obj = {};
-			const bind = (role: string, profile: Obj | null) => { if (profile) { roleProfiles[`lanes.${name}.${role}`] = profile; roles[role] = `lanes.${name}.${role}`; } };
-			// A host, its model and its effort stay in one layer; the project keys are the last fallback.
-			const group = (kind: "executor" | "review") => {
-				const holder = typeof source[`${kind}_host`] === "string" && source[`${kind}_host`] ? source : pl;
-				const host = holder[`${kind}_host`];
-				if (typeof host !== "string" || !host) return null;
-				return { holder, profile: { host, ...(holder[`${kind}_model`] ? { model: holder[`${kind}_model`] } : {}), ...(holder[`${kind}_effort`] ? { effort: holder[`${kind}_effort`] } : {}) } };
-			};
-			const transportOf = (key: string) => (source[key] !== undefined ? source[key] : pl[key]);
-			const executor = group("executor"), review = group("review");
-			bind("executor", executor?.profile ?? null);
-			bind("repair", executor?.profile ?? null);
-			bind("code-review", review ? { ...review.profile, ...(typeof transportOf("review_transport") === "string" && transportOf("review_transport") ? { transport: transportOf("review_transport") } : {}) } : null);
-			if (review && review.holder.review_verifier_model) bind("review-verifier", { host: review.profile.host, model: review.holder.review_verifier_model });
-			// A transport applies without a host: the batch or the request may supply the host later.
-			const reviewTransport = transportOf("review_transport"), advisory = transportOf("advisory_transport");
-			if (!review && typeof reviewTransport === "string" && reviewTransport) bind("code-review", { transport: reviewTransport });
-			const advisoryHost = review?.profile.host ?? executor?.profile.host;
-			if (typeof advisory === "string" && advisory) bind("advisory-reviewer", { ...(advisoryHost ? { host: advisoryHost } : {}), transport: advisory });
-			return roles;
-		};
-		presets.project = { ...(pl.max_parallel !== undefined ? { max_parallel: pl.max_parallel } : {}), roles: laneRoles("project", {}) };
-		for (const [name, value] of Object.entries(names)) if (object(value)) presets[name] = { ...(value.max_parallel !== undefined ? { max_parallel: value.max_parallel } : pl.max_parallel !== undefined ? { max_parallel: pl.max_parallel } : {}), roles: laneRoles(name, value) };
-		if (!Object.values(presets).some((preset) => Object.keys((preset as Obj).roles ?? {}).length)) return null;
-		const layer = lanes.active.source !== "default" ? lanes.active.source : Object.keys(pl).length ? "project" : "user";
-		return { profiles: roleProfiles as AgentTable["profiles"], presets, active: { value: (lanes.active.value as string | null) ?? "project", source: lanes.active.source }, layer, default_preset: null };
-	};
-	const agentLayers = resolveAgentRoles({
-		file: { user: userPath, project: projectPath, override: `projects.${projectKey}` },
-		user: user === null || failed.has("user_file") ? null : section(user.agents, userPath, "agents", "agents"),
-		project: projectAgents,
-		override: overrideAgents,
-		legacy: laneTable(),
-		projectMaxParallel: pl.max_parallel,
-	});
+	// agents
+	const agentLayers = resolveAgents({ user: user ? (user.agents ?? null) : null, project: project ? (project.agents ?? null) : null, files: { user: userPath, project: projectPath } });
 	for (const error of agentLayers.errors) diag(error.code, "error", error.file, error.key_path, error.message);
 	const agents = agentLayers.agents;
-	const laneSources: [Obj, string][] = [[ul, userPath], [ol, userPath], [pl, projectPath]];
-	if (agents.source.value === "agents") {
-		for (const [source, file] of laneSources) if (Object.keys(source).length) diag("legacy_source_ignored", "warning", file, "lanes", `ignored because \`agents\` sets the role table; its replacement is user \`agents\` in ${userPath}`);
-	} else if (agents.source.value === "legacy") {
-		const file = agents.source.source === "project" ? projectPath : agents.source.source.startsWith("legacy:") ? null : userPath;
-		if (file) diag("deprecated_config_source", "warning", file, "lanes", `deprecated; move the role table to user \`agents\` in ${userPath}`);
-	}
+	const herdr = pick((o) => o.herdr, "herdr", (v) => typeof v === "boolean", "expected true or false", false);
 
-	const defaultProfile = choose([od.default_profile, "user:project"], [ud.default_profile, "user"], [legacyBindings.default_profile ?? undefined, "legacy:.imm/decision-bindings.json"]);
-	const bindings: Obj = {};
-	for (const key of new Set([...Object.keys(legacyBindings.bindings ?? {}), ...Object.keys(ud.bindings ?? {}), ...Object.keys(od.bindings ?? {})])) bindings[key] = choose([od.bindings?.[key], "user:project"], [ud.bindings?.[key], "user"], [legacyBindings.bindings?.[key], "legacy:.imm/decision-bindings.json"]);
-	for (const [key, item] of [["default_profile", defaultProfile], ...Object.entries(bindings)] as [string, any][]) if (item.value && !Object.hasOwn(profiles, item.value)) { diag("unknown_profile", "error", item.source.startsWith("legacy:") ? ".imm/decision-bindings.json" : userPath, `decision_models.${key}`, "unknown profile"); failed.add("decision_models"); }
-	const egress: Obj = {};
-	for (const kind of PROVIDER_KINDS) {
-		const ceiling: string[] = pd.egress?.[kind] ?? legacyBindings.egress?.[kind] ?? [];
-		const requested: string[] | undefined = od.egress?.[kind] ?? ud.egress?.[kind];
-		if (requested) for (const category of requested) if (!ceiling.includes(category)) diag("egress_beyond_project_ceiling", "warning", userPath, `decision_models.egress.${kind}.${category}`, "outside project ceiling");
-		egress[kind] = leaf(requested ? ceiling.filter((v) => requested.includes(v)) : ceiling, requested ? has(od.egress, kind) ? "user:project" : "user" : has(pd.egress, kind) ? "project" : has(legacyBindings.egress, kind) ? "legacy:.imm/decision-bindings.json" : "default");
+	// batch
+	for (const [, o, file] of layers) knownKeys(part(o, file, "batch"), ["max_parallel", "final_verification"], file, "batch");
+	const maxParallel = pick((o) => o.batch?.max_parallel, "batch.max_parallel", (v) => integerWithin(v, BATCH_MAX_PARALLEL.min, BATCH_MAX_PARALLEL.max), `expected an integer between ${BATCH_MAX_PARALLEL.min} and ${BATCH_MAX_PARALLEL.max}`, BATCH_MAX_PARALLEL.default);
+	const finalVerification = pick((o) => o.batch?.final_verification, "batch.final_verification", (v) => Array.isArray(v) && v.length <= 8 && v.every((c) => typeof c === "string" && c.length > 0), "expected at most eight command strings");
+
+	// plain keys
+	const reviewVerifier = pick((o) => o.review_verifier, "review_verifier", oneOf(["off", "on"]), "expected off or on", "off");
+	const carrier = pick((o) => o.initiative_carrier, "initiative_carrier", oneOf(["github", "local"]), "expected github or local");
+	// Permission key: `manual` wins wherever it is set, and an invalid value or a void file behaves as `manual`.
+	const git = valid((o) => o.git_integration, "git_integration", oneOf(["manual", "auto"]), "expected manual or auto");
+	const gitBroken = diagnostics.find((d) => d.severity === "error" && ["git_integration", "$", "contract"].includes(d.key_path));
+	const gitIntegration = gitBroken ? { value: "manual", source: gitBroken.file === projectPath ? "project" : "user" }
+		: git.find((g) => g.value === "manual") ?? git[0] ?? { value: "manual", source: "default" };
+
+	// loop
+	const loopKeys = ["mode", "interval_seconds", "max_concurrent", "max_ready_buffer", "max_pr_buffer", "auto_enroll_max_risk", "allowed_actors", "allowed_associations", "interaction", "budget"];
+	for (const [, o, file] of layers) {
+		knownKeys(part(o, file, "loop"), loopKeys, file, "loop");
+		knownKeys(part(o, file, "loop.budget"), ["max_ticks_per_day", "max_dispatches_per_day"], file, "loop.budget");
+		knownKeys(part(o, file, "loop.interaction"), ["channel"], file, "loop.interaction");
 	}
-	const directive = (regex: RegExp): { value: string; file: string } | undefined => {
-		for (const file of ["AGENTS.md", "CLAUDE.md"]) if (tracked(file)) { try { for (const line of readFileSync(join(root, file), "utf8").split(/\r?\n/)) { const match = regex.exec(line); if (match) return { value: match[1].trim().replace(/^`|`$/g, ""), file }; } } catch { invalid(file, "$", "unreadable instruction file"); } }
+	const distinct = (v: unknown) => Array.isArray(v) && v.every((item) => typeof item === "string" && item.trim().length > 0) && new Set(v).size === v.length;
+	const loopPick = (key: string, ok: (v: unknown) => boolean, message: string): any => pick((o) => o.loop?.[key], `loop.${key}`, ok, message, (DEFAULT_LOOP_CONFIG as any)[key]).value;
+	/** Permission lists keep only what both layers allow. */
+	const intersect = (key: string, ok: (v: unknown) => boolean, message: string) => {
+		const values = valid((o) => o.loop?.[key], `loop.${key}`, ok, message);
+		if (!values.length) return (DEFAULT_LOOP_CONFIG as any)[key];
+		return values.map((v) => v.value as string[]).reduce((a, b) => a.filter((item) => b.includes(item)));
 	};
-	const gitLegacy = directive(/^\s*[-*]\s+Git integration:\s*(.*?)\s*$/i);
-	const carrierLegacy = directive(/^\s*[-*]\s+Initiative carrier default:\s*(.*?)\s*$/i);
-	const gitExplicitlySet = has(user ?? undefined, "git_integration") || has(project ?? undefined, "git_integration");
-	if (gitLegacy) legacy(gitLegacy.file, [{ layer: "project", key: "git_integration" }], !gitExplicitlySet);
-	if (carrierLegacy) legacy(carrierLegacy.file, [{ layer: "project", key: "initiative_carrier" }], !has(project ?? undefined, "initiative_carrier") && !has(override, "initiative_carrier") && !has(user ?? undefined, "initiative_carrier"));
-	if (gitLegacy && !gitExplicitlySet && !["manual", "auto"].includes(gitLegacy.value)) { invalid(gitLegacy.file, "git_integration", "invalid legacy directive"); failed.add("git_integration"); }
-	if (carrierLegacy && !has(project ?? undefined, "initiative_carrier") && !has(override, "initiative_carrier") && !has(user ?? undefined, "initiative_carrier") && !["github", "local"].includes(carrierLegacy.value)) { invalid(carrierLegacy.file, "initiative_carrier", "invalid legacy directive"); failed.add("initiative_carrier"); }
-	const decisionModels: Obj = { valid: !failed.has("decision_models"), profiles: leaf(profiles, has(ud, "profiles") ? "user" : Object.keys(legacyProfiles).length ? "legacy:.imm/decision-models.local.json" : "default"), default_profile: defaultProfile, bindings, egress, enabled_points: choose([pd.enabled_points, "project"], [Object.keys(registry), "default"]) };
+	const risks = valid((o) => o.loop?.auto_enroll_max_risk, "loop.auto_enroll_max_risk", oneOf(LOOP_AUTO_ENROLL_MAX_RISKS), "expected none or routine; material and critical require tracker_approval");
+	const budgetPick = (key: string): any => pick((o) => o.loop?.budget?.[key], `loop.budget.${key}`, (v) => integerWithin(v, 1), "expected a positive integer", null).value;
+	const resolvedLoop: LoopConfig = {
+		mode: loopPick("mode", oneOf(LOOP_MODES), `expected one of ${LOOP_MODES.join(", ")}`),
+		interval_seconds: loopPick("interval_seconds", (v) => integerWithin(v, 15), "expected an integer of at least 15"),
+		max_concurrent: loopPick("max_concurrent", (v) => integerWithin(v, 1, 8), "expected an integer between 1 and 8"),
+		max_ready_buffer: loopPick("max_ready_buffer", (v) => integerWithin(v, 1, 20), "expected an integer between 1 and 20"),
+		max_pr_buffer: loopPick("max_pr_buffer", (v) => integerWithin(v, 1, 20), "expected an integer between 1 and 20"),
+		auto_enroll_max_risk: risks.length ? (risks.some((r) => r.value === "none") ? "none" : "routine") : DEFAULT_LOOP_CONFIG.auto_enroll_max_risk,
+		allowed_actors: intersect("allowed_actors", distinct, "expected distinct non-empty GitHub logins"),
+		allowed_associations: intersect("allowed_associations", (v) => distinct(v) && (v as string[]).length > 0 && (v as string[]).every((a) => (LOOP_ASSOCIATIONS as readonly string[]).includes(a)), `expected a subset of ${LOOP_ASSOCIATIONS.join(", ")}`),
+		interaction: { channel: pick((o) => o.loop?.interaction?.channel, "loop.interaction.channel", oneOf(LOOP_INTERACTION_CHANNELS), `expected one of ${LOOP_INTERACTION_CHANNELS.join(", ")}`, "github").value as LoopInteractionChannel },
+		budget: { max_ticks_per_day: budgetPick("max_ticks_per_day"), max_dispatches_per_day: budgetPick("max_dispatches_per_day") },
+	};
+
+	// decision_models
+	for (const [layer, o, file] of layers) knownKeys(part(o, file, "decision_models"), layer === "user" ? ["profiles", "default_profile", "bindings", "egress"] : ["default_profile", "bindings", "egress"], file, "decision_models");
+	let profiles: Obj = {};
+	const rawProfiles = part(user, userPath, "decision_models.profiles");
+	if (has(user?.decision_models, "profiles")) {
+		let ok = true;
+		for (const [name, profile] of Object.entries(rawProfiles)) if (object(profile)) for (const [key, value] of Object.entries(profile)) if (key.endsWith("_env") && (typeof value !== "string" || !envName.test(value))) { invalid(userPath, `decision_models.profiles.${name}.${key}`, "expected environment variable name"); ok = false; }
+		const parsed = parseProfiles({ profiles: rawProfiles });
+		if (!parsed.ok) { invalid(userPath, "decision_models.profiles", parsed.error.detail.replace(/^.*?: /, "")); ok = false; }
+		if (ok) profiles = rawProfiles;
+	}
+	/** A profile name; a project reference to an unknown profile falls back to the user value. */
+	const profileRef = (get: (o: Obj) => unknown, key: string, allowOff: boolean): ResolvedLeaf => {
+		for (const [layer, o, file] of layers) {
+			const value = o ? get(o) : undefined;
+			if (value === undefined) continue;
+			if (typeof value !== "string" || !value) { invalid(file, key, "expected profile name"); continue; }
+			if (allowOff && value === "off") return leaf(value, layer);
+			if (!Object.hasOwn(profiles, value)) { diag("unknown_profile", "error", file, key, `unknown profile ${value}`); continue; }
+			return leaf(value, layer);
+		}
+		return leaf(null, "default");
+	};
+	const defaultProfile = profileRef((o) => o.decision_models?.default_profile, "decision_models.default_profile", false);
+	const bindings: Obj = {};
+	const points = new Set<string>();
+	for (const [, o, file] of layers) for (const point of Object.keys(part(o, file, "decision_models.bindings"))) {
+		if (Object.hasOwn(registry, point)) points.add(point);
+		else invalid(file, `decision_models.bindings.${point}`, "unknown application point");
+	}
+	for (const point of [...points].sort()) bindings[point] = profileRef((o) => o.decision_models?.bindings?.[point], `decision_models.bindings.${point}`, true);
+	for (const [, o, file] of layers) for (const kind of Object.keys(part(o, file, "decision_models.egress"))) if (!(PROVIDER_KINDS as readonly string[]).includes(kind)) invalid(file, `decision_models.egress.${kind}`, "unknown provider kind");
+	const egress: Obj = {};
+	for (const kind of PROVIDER_KINDS) egress[kind] = pick((o) => o.decision_models?.egress?.[kind], `decision_models.egress.${kind}`,
+		(v) => Array.isArray(v) && v.every((c) => (SENSITIVE_CATEGORIES as readonly unknown[]).includes(c)) && new Set(v).size === v.length, "invalid egress list", []);
+	const decisionModels: Obj = { valid: !errorsUnder("decision_models"), profiles: leaf(profiles, Object.keys(profiles).length ? "user" : "default"), default_profile: defaultProfile, bindings, egress };
 	if (options.checkEnv) decisionModels.environment = Object.fromEntries(Object.entries(profiles).map(([name, profile]) => [name, object(profile) ? Object.fromEntries(Object.entries(profile).filter(([k, v]) => k.endsWith("_env") && typeof v === "string" && envName.test(v)).map(([k, v]) => [k, process.env[v as string] !== undefined ? "set" : "unset"])) : {}]));
-	const resolvedLoop: LoopConfig = { ...DEFAULT_LOOP_CONFIG, ...loop, interaction: { ...DEFAULT_LOOP_CONFIG.interaction, ...loopInteraction }, budget: { ...DEFAULT_LOOP_CONFIG.budget, ...loopBudget } } as LoopConfig;
-	return { contract: "immune_brain/effective_config/v1", project_key: projectKey, files: { user: userPath, project: projectPath }, agents, decision_models: decisionModels, lanes, git_integration: failed.has("git_integration") ? leaf("manual", "default") : choose([user?.git_integration, "user"], [project?.git_integration, "project"], [gitLegacy?.value, `legacy:${gitLegacy?.file}`], ["manual", "default"]), initiative_carrier: failed.has("initiative_carrier") ? leaf(null, "default") : choose([project?.initiative_carrier, "project"], [override.initiative_carrier, "user:project"], [user?.initiative_carrier, "user"], [carrierLegacy?.value, `legacy:${carrierLegacy?.file}`]), batch: { final_verification: failed.has("batch") ? leaf(null, "default") : choose([batch.final_verification, "project"]) }, loop: failed.has("loop") ? { valid: false, ...leaf(null, "default") } : { valid: true, ...leaf(resolvedLoop, has(project ?? undefined, "loop") ? "project" : "default") }, review_verifier: failed.has("review_verifier") ? leaf(null, "default") : choose([project?.review_verifier, "project"], ["off", "default"]), diagnostics };
+
+	const loopSource = has(project, "loop") ? "project" : has(user, "loop") ? "user" : "default";
+	return {
+		contract: "immune_brain/effective_config/v2",
+		files: { user: userPath, project: projectPath },
+		agents,
+		herdr,
+		batch: { valid: !errorsUnder("batch"), max_parallel: maxParallel, final_verification: finalVerification },
+		decision_models: decisionModels,
+		git_integration: leaf(gitIntegration.value, gitIntegration.source),
+		initiative_carrier: carrier,
+		loop: { valid: !errorsUnder("loop"), ...leaf(resolvedLoop, loopSource) },
+		review_verifier: reviewVerifier,
+		diagnostics,
+	};
+}
+
+export type EffectiveConfig = ReturnType<typeof resolveConfig>;
+
+/** A batch may start only while `agents` and `batch` resolve without an error. */
+export function batchConfigErrors(config: EffectiveConfig): ConfigDiagnostic[] {
+	return config.diagnostics.filter((d) => d.severity === "error" && (/^(agents|batch|herdr)(\.|$)/.test(d.key_path) || d.key_path === "$" || d.key_path === "contract"));
 }

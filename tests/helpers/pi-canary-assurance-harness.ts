@@ -45,10 +45,10 @@ function prepareReviewRoot(): void {
 		execFileSync("git", ["-c", "user.name=fixture", "-c", "user.email=fixture@example.com", "commit", "-qm", "fixture"], { cwd: ROOT });
 	}
 	writeFileSync(join(ROOT, ".imm", "config.json"), JSON.stringify({
-		contract: "immune_brain/project_config/v1",
-		lanes: { review_host: "pi" },
+		contract: "immune_brain/project_config/v2",
+		agents: { reviewer: "pi" },
 	}) + "\n");
-	for (const entry of ["tracked.ts", ".imm/config.json"]) {
+	for (const entry of ["tracked.ts"]) {
 		try { execFileSync("git", ["ls-files", "--error-unmatch", "--", entry], { cwd: ROOT, stdio: "ignore" }); }
 		catch { execFileSync("git", ["add", "--", entry], { cwd: ROOT }); }
 	}

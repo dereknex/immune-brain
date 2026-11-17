@@ -371,29 +371,24 @@ describe("internal role-prompt bridge", () => {
 		// The steward still knows no workspace tool.
 		expect(/herdr/i.test(read("plugins/immune-brain/runtime/prompts/lane-steward.md"))).toBe(false);
 	});
-	it("resolves Lane Preferences through layered config and passes model and effort as launch arguments", () => {
+	it("leaves Lane Preferences to the runtime and launches the frozen Executor profile from the handoff", () => {
 		const loop = read("plugins/immune-brain/dist/drive-batch.md").replace(/\s+/g, " ");
+		// ADR 0041 / #564: the Parent passes the literal request; the runtime resolves and freezes it.
 		for (const fragment of [
 			"#### Lane Preferences",
-			"The Parent reads the layered config through `imm-kernel config --json`",
-			"literal request, selected user Lane profile, project `lanes` defaults, then the default above",
-			"named by the request, else `projects[<key>].lanes.active`, else `lanes.active`, else none",
-			"A request naming an unknown profile is reported and starts no batch",
-			"A model or effort applies only with an `executor_host` from the same layer",
-			"a higher layer overrides that host, report the model or effort as `not_applied` and drop it",
-			"`request`, `user`, `user:project`, `project`, `legacy:<path>` or `default`",
-			"the `lanes` section fails validation (`lanes.valid: false`), start no batch",
+			"the Parent passes it verbatim as `agents: { executor?, reviewer? }` to the first `start_unattended_batch` call",
+			"It never passes its own Host or a value it read from the configuration.",
+			"It passes `max_parallel` only when the request states one.",
+			"a resume keeps them and passes nothing again",
+			"Every `executor` handoff carries the frozen Executor profile as `executor: { host, model?, effort? }`",
+			"is refused as `lane_config_invalid` and starts no batch",
 			"the Parent does not fall back to another one",
 			"`claude-code`, `pi` or `antigravity`",
-			"Passed as `--effort <level>` to `claude-code` and `antigravity`, and as `--thinking <level>` to `pi`",
-			"display one non-blocking line with each selected value and its per-field source",
-			"On a resume the recorded `max_parallel` stands",
-			"those that [Lane Preferences](#lane-preferences) resolved for model and effort",
+			"from the handoff's `executor.model` and `executor.effort` when present; the Parent never reads them from the configuration itself",
 		]) {
 			expect(loop).toContain(fragment);
 		}
-		expect(loop).not.toContain("The Parent alone reads it");
-		for (const retired of ["Lane max parallel:", "Lane Executor Host:", "Lane Executor model:", "Lane Executor effort:", "Lane Executor Host` directive"])
+		for (const retired of ["`executor_host`", "imm-kernel config --json", "`not_applied`", "`lanes.active`", "Lane max parallel:", "Lane Executor Host:"])
 			expect({ retired, present: loop.includes(retired) }).toEqual({ retired, present: false });
 		expect(read("plugins/immune-brain/skills/drive/SKILL.md")).toContain("../../dist/drive-batch.md#lane-preferences");
 	});

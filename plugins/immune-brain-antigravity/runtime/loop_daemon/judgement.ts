@@ -145,7 +145,7 @@ async function classifyPoint(
 		return {
 			kind: "needs_judging",
 			reason: "point_disabled",
-			detail: `application point ${point} is disabled in decision_models.enabled_points`,
+			detail: `application point ${point} is disabled by decision_models.bindings`,
 			classification: null,
 		};
 	}

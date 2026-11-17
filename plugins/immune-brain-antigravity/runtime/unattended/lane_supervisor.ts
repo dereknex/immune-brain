@@ -5,19 +5,18 @@ import { LANE_EXECUTOR_ENV, LANE_EXECUTOR_HEADLESS, readLaneDecisionRequest } fr
 
 export type ExecutorHost = "claude-code" | "pi" | "antigravity";
 export interface ExecutorPreferences { executor_host?: ExecutorHost; executor_model?: string; executor_effort?: string }
-export interface ExecutorChoice { host: ExecutorHost; model?: string; effort?: string; not_applied: string[] }
+export interface ExecutorChoice { host: ExecutorHost; model?: string; effort?: string }
 
-/** A model and effort are meaningful only in the layer that selected the Host. */
+/**
+ * The first layer that names a Host supplies the whole profile; nothing is
+ * filled in from a later layer. Without one, the fallback Host runs on its own
+ * default model (ADR 0041).
+ */
 export function chooseExecutor(layers: ExecutorPreferences[], fallback: ExecutorHost): ExecutorChoice {
-	const hostLayer = layers.findIndex(layer => layer.executor_host !== undefined);
-	const host = hostLayer < 0 ? fallback : layers[hostLayer]!.executor_host!;
-	const selected = hostLayer < 0 ? {} : layers[hostLayer]!;
-	const not_applied: string[] = [];
-	for (const key of ["executor_model", "executor_effort"] as const) {
-		if (layers.some((layer, i) => i !== hostLayer && layer[key] !== undefined)) not_applied.push(key);
-	}
-	return { host, ...(selected.executor_model ? { model: selected.executor_model } : {}),
-		...(selected.executor_effort ? { effort: selected.executor_effort } : {}), not_applied };
+	const selected = layers.find(layer => layer.executor_host !== undefined);
+	if (!selected) return { host: fallback };
+	return { host: selected.executor_host!, ...(selected.executor_model ? { model: selected.executor_model } : {}),
+		...(selected.executor_effort ? { effort: selected.executor_effort } : {}) };
 }
 
 export function executorArguments(choice: ExecutorChoice, pluginDir: string, taskId: string): string[] {

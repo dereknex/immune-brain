@@ -102,7 +102,7 @@ function makeWorkspace(options: { channel?: "github" | "local" } = {}): Workspac
 		join(root, ".imm/config.json"),
 		JSON.stringify(
 			{
-				contract: "immune_brain/project_config/v1",
+				contract: "immune_brain/project_config/v2",
 				loop: {
 					mode: loopConfig.mode,
 					interval_seconds: loopConfig.interval_seconds,
