@@ -26,6 +26,7 @@ import {
 	createCliAgentSessionProvider,
 	isReadOnlyRole,
 	loopRoleProfile,
+	loopSessionLimits,
 	READ_ONLY_SESSION_ROLES,
 	ROLE_SESSION_LIMITS,
 	runAgentSession,
@@ -35,6 +36,7 @@ import {
 	type AgentSessionRole,
 	type CliAgentSessionProfile,
 } from "../plugins/immune-brain/runtime/loop_daemon/agent_runner.ts";
+import { resolveLoopRoles, type LoopSessionConfig } from "../plugins/immune-brain/runtime/loop_daemon/role_catalog.ts";
 
 const ROLES: AgentSessionRole[] = ["judging", "clarify", "plan", "repair"];
 
@@ -59,6 +61,11 @@ function userAgents(agents: Record<string, unknown> | null): AgentsSection {
 	const resolved = resolveAgents({ user: agents, project: null, files: { user: "user.json", project: "project.json" } });
 	expect(resolved.errors).toEqual([]);
 	return resolved.agents;
+}
+
+/** A resolved config's two session sources: the agents table and a project catalog. */
+function loopConfig(agents: AgentsSection | null, roles: Record<string, unknown> = {}): LoopSessionConfig {
+	return { agents: agents ?? userAgents(null), loop: { value: { roles: resolveLoopRoles({ roles, root: tmpdir() }).roles } } };
 }
 
 function request(kind: AgentSessionRequest["kind"], worktree: string): AgentSessionRequest {
@@ -126,7 +133,7 @@ describe("Loop Daemon: Per-Role Sessions (S2)", () => {
 	});
 
 	it("starts each session on the profile bound to its own role", async () => {
-		// judging runs as triage, clarify/plan as planner, repair as executor (ADR 0041).
+		// judging runs as triage; clarify, plan and repair run as their catalog role (Spec loop-leader D1.6).
 		const agents = userAgents({
 			profiles: {
 				opus: { host: "claude-code", model: "claude-opus-5-5", effort: "high" },
@@ -136,10 +143,17 @@ describe("Loop Daemon: Per-Role Sessions (S2)", () => {
 			planner: "opus",
 			executor: "flash",
 		});
+		const config = loopConfig(agents, {
+			// The user's `agents.planner` binding no longer reaches the loop's plan session.
+			planner: { base: "plan", host: "claude-code", model: "claude-opus-5-5", effort: "high" },
+			repair: { base: "repair", host: "pi", model: "auto/deepseek-v4.1-flash" },
+		});
 
-		expect(loopRoleProfile(agents, "judging")).toEqual({ host: "claude-code", model: "claude-opus-5-5", effort: "high" });
-		expect(loopRoleProfile(agents, "repair")).toEqual({ host: "pi", model: "auto/deepseek-v4.1-flash", effort: null });
-		expect(loopRoleProfile(agents, "executor")).toEqual({ host: "pi", model: "auto/deepseek-v4.1-flash", effort: null });
+		expect(loopRoleProfile(config, "judging")).toEqual({ host: "claude-code", model: "claude-opus-5-5", effort: "high", instructions: null });
+		expect(loopRoleProfile(config, "repair")).toEqual({ host: "pi", model: "auto/deepseek-v4.1-flash", effort: null, instructions: null });
+		expect(loopRoleProfile(config, "plan")).toEqual({ host: "claude-code", model: "claude-opus-5-5", effort: "high", instructions: null });
+		// The Lane Host still comes from `agents.executor` (BR-DEC-8).
+		expect(loopRoleProfile(config, "executor")).toEqual({ host: "pi", model: "auto/deepseek-v4.1-flash", effort: null, instructions: null });
 
 		stubHostsOnPath("claude", "pi");
 		const asked: AgentSessionRole[] = [];
@@ -147,7 +161,7 @@ describe("Loop Daemon: Per-Role Sessions (S2)", () => {
 		const provider = createCliAgentSessionProvider({
 			profileFor: (role) => {
 				asked.push(role);
-				return loopRoleProfile(agents, role);
+				return loopRoleProfile(config, role);
 			},
 			spawn: ((binary: string, argv: string[]) => {
 				spawned.push({ binary, argv });
@@ -194,8 +208,72 @@ describe("Loop Daemon: Per-Role Sessions (S2)", () => {
 	});
 
 	it("falls back to the documented Host only when the role is unset", () => {
-		const unset = userAgents(null);
-		for (const role of ROLES) expect(loopRoleProfile(unset, role)).toEqual({ host: "claude-code", model: null, effort: null });
+		const unset = loopConfig(null);
+		for (const role of ROLES) expect(loopRoleProfile(unset, role)).toEqual({ host: "claude-code", model: null, effort: null, instructions: null });
+	});
+
+	it("takes the catalog role's limits and appends its instructions as advisory text only (S1-AC2)", async () => {
+		const root = worktree();
+		writeFileSync(join(root, "role-notes.md"), "Read the auth module before planning.\n");
+		const config: LoopSessionConfig = {
+			agents: userAgents(null),
+			loop: {
+				value: {
+					roles: resolveLoopRoles({
+						roles: { planner: { base: "plan", host: "pi", model: "m", limits: { turn_budget: 12, timeout_s: 120 }, instructions: "role-notes.md" } },
+						root,
+					}).roles,
+				},
+			},
+		};
+		expect(loopSessionLimits(config, "plan")).toEqual({ turn_budget: 12, timeout_ms: 120_000 });
+		// A session outside the catalog keeps the built-in table.
+		expect(loopSessionLimits(config, "judging")).toEqual(ROLE_SESSION_LIMITS.judging);
+
+		stubHostsOnPath("pi");
+		const spawned: Array<{ argv: string[] }> = [];
+		const provider = createCliAgentSessionProvider({
+			profileFor: (role) => loopRoleProfile(config, role),
+			instructions_root: root,
+			spawn: ((_binary: string, argv: string[]) => {
+				spawned.push({ argv });
+				return { status: 0, stdout: '{"ok":true}', stderr: "", signal: null };
+			}) as never,
+		});
+		const record = await runAgentSession(
+			{ ...request("planning", root), turn_budget: loopSessionLimits(config, "plan").turn_budget, timeout_ms: loopSessionLimits(config, "plan").timeout_ms },
+			provider,
+		);
+		expect(record.status).toBe("completed");
+		const prompt = spawned[0]!.argv.at(-1)!;
+		// The instructions are advisory text in the entry prompt, and the role's own budget was passed.
+		expect(prompt).toContain("Decide something");
+		expect(prompt).toContain("## Advisory project instructions");
+		expect(prompt).toContain("Read the auth module before planning.");
+		expect(spawned[0]!.argv).not.toContain("--dangerously-skip-permissions");
+	});
+
+	it("fails the role with role_host_unavailable when its Host binary is absent, and starts no other Host", async () => {
+		const config = loopConfig(null, { planner: { base: "plan", host: "pi" } });
+		// A PATH with no Host CLI on it: nothing may be spawned, least of all `claude`.
+		const empty = worktree();
+		const previous = process.env.PATH;
+		process.env.PATH = empty;
+		cleanups.push(() => {
+			process.env.PATH = previous;
+		});
+		let spawns = 0;
+		const provider = createCliAgentSessionProvider({
+			profileFor: (role) => loopRoleProfile(config, role),
+			spawn: (() => {
+				spawns += 1;
+				return { status: 0, stdout: "{}", stderr: "", signal: null };
+			}) as never,
+		});
+		const record = await runAgentSession(request("planning", empty), provider);
+		expect(spawns).toBe(0);
+		expect(record.status).toBe("failed");
+		expect(record.reason).toContain("role_host_unavailable: pi");
 	});
 
 	it("keeps the daemon's loop sessions off the legacy executor leaves", () => {

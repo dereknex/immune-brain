@@ -1482,11 +1482,12 @@ export async function runLoopDaemonExecutable(
 	if (needsAgent) {
 		// The judging session runs on the profile bound to the judging role; no
 		// executor Host leaf decides it (Spec D2).
-		const agents = resolveConfig(root).agents;
+		const config = resolveConfig(root);
 		judgingAgent = createSessionJudgingAgent({
 			root,
 			provider: createCliAgentSessionProvider({
-				profileFor: (role) => loopRoleProfile(agents, role),
+				profileFor: (role) => loopRoleProfile(config, role),
+				instructions_root: root,
 				log_dir: join(effectiveStateDir, "session-logs"),
 			}),
 		});

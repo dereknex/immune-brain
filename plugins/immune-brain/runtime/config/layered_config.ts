@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { resolveAgents } from "./agent_roles.ts";
+import { resolveLoopRoles, type ResolvedLoopRole } from "../loop_daemon/role_catalog.ts";
 import { parseProfiles } from "../decision_model/config.ts";
 import { PROVIDER_KINDS, SENSITIVE_CATEGORIES, type PointRegistry } from "../decision_model/contract.ts";
 import { POINT_REGISTRY } from "../decision_model/thresholds.ts";
@@ -56,6 +57,8 @@ export interface LoopConfig {
 	interaction: { channel: LoopInteractionChannel };
 	budget: { max_ticks_per_day: number | null; max_dispatches_per_day: number | null };
 }
+/** The `loop.value` shape: the loop switches plus the project role catalog (Spec loop-leader D1.5). */
+export type LoopValue = LoopConfig & { roles: ResolvedLoopRole[] };
 export const DEFAULT_LOOP_CONFIG: LoopConfig = {
 	mode: "off",
 	interval_seconds: 60,
@@ -190,8 +193,10 @@ export function resolveConfig(root: string, options: { userConfigPath?: string; 
 
 	// loop
 	const loopKeys = ["mode", "interval_seconds", "max_concurrent", "max_ready_buffer", "max_pr_buffer", "auto_enroll_max_risk", "allowed_actors", "allowed_associations", "interaction", "budget"];
-	for (const [, o, file] of layers) {
-		knownKeys(part(o, file, "loop"), loopKeys, file, "loop");
+	// `loop.roles` is project-only: the catalog names roles for this repository's Loop.
+	for (const [layer, o, file] of layers) {
+		knownKeys(part(o, file, "loop"), layer === "project" ? [...loopKeys, "roles"] : loopKeys, file, "loop");
+		if (layer === "user" && has(part(o, file, "loop"), "roles")) invalid(file, "loop.roles", "loop.roles is defined only in the project file");
 		knownKeys(part(o, file, "loop.budget"), ["max_ticks_per_day", "max_dispatches_per_day"], file, "loop.budget");
 		knownKeys(part(o, file, "loop.interaction"), ["channel"], file, "loop.interaction");
 	}
@@ -205,7 +210,9 @@ export function resolveConfig(root: string, options: { userConfigPath?: string; 
 	};
 	const risks = valid((o) => o.loop?.auto_enroll_max_risk, "loop.auto_enroll_max_risk", oneOf(LOOP_AUTO_ENROLL_MAX_RISKS), "expected none or routine; material and critical require tracker_approval");
 	const budgetPick = (key: string): any => pick((o) => o.loop?.budget?.[key], `loop.budget.${key}`, (v) => integerWithin(v, 1), "expected a positive integer", null).value;
-	const resolvedLoop: LoopConfig = {
+	const loopCatalog = resolveLoopRoles({ roles: project?.loop?.roles, root });
+	for (const error of loopCatalog.errors) diag(error.code, "error", projectPath, error.key_path, error.message);
+	const resolvedLoop: LoopValue = {
 		mode: loopPick("mode", oneOf(LOOP_MODES), `expected one of ${LOOP_MODES.join(", ")}`),
 		interval_seconds: loopPick("interval_seconds", (v) => integerWithin(v, 15), "expected an integer of at least 15"),
 		max_concurrent: loopPick("max_concurrent", (v) => integerWithin(v, 1, 8), "expected an integer between 1 and 8"),
@@ -216,7 +223,20 @@ export function resolveConfig(root: string, options: { userConfigPath?: string; 
 		allowed_associations: intersect("allowed_associations", (v) => distinct(v) && (v as string[]).length > 0 && (v as string[]).every((a) => (LOOP_ASSOCIATIONS as readonly string[]).includes(a)), `expected a subset of ${LOOP_ASSOCIATIONS.join(", ")}`),
 		interaction: { channel: pick((o) => o.loop?.interaction?.channel, "loop.interaction.channel", oneOf(LOOP_INTERACTION_CHANNELS), `expected one of ${LOOP_INTERACTION_CHANNELS.join(", ")}`, "github").value as LoopInteractionChannel },
 		budget: { max_ticks_per_day: budgetPick("max_ticks_per_day"), max_dispatches_per_day: budgetPick("max_dispatches_per_day") },
+		roles: loopCatalog.roles,
 	};
+	// BR-DEC-7: an agents binding that used to choose a loop role's profile is ignored
+	// now; the session uses the catalog, so the owner is told once per affected role.
+	const deprecated = [
+		["agents.planner", agentLayers.agents.roles.planner, ["clarify", "plan"]],
+		["agents.executor", agentLayers.agents.roles.executor, ["repair"]],
+	] as const;
+	for (const [key, bound, bases] of deprecated) {
+		if (!bound) continue;
+		for (const base of bases)
+			diag("deprecated_config_source", "warning", bound.source === "project" ? projectPath : userPath, "loop.roles",
+				`${key} no longer chooses the loop ${base} role; bind a base ${base} role under loop.roles in .imm/config.json`);
+	}
 
 	// decision_models
 	for (const [layer, o, file] of layers) knownKeys(part(o, file, "decision_models"), layer === "user" ? ["profiles", "default_profile", "bindings", "egress"] : ["default_profile", "bindings", "egress"], file, "decision_models");
@@ -256,6 +276,8 @@ export function resolveConfig(root: string, options: { userConfigPath?: string; 
 	const decisionModels: Obj = { valid: !errorsUnder("decision_models"), profiles: leaf(profiles, Object.keys(profiles).length ? "user" : "default"), default_profile: defaultProfile, bindings, egress };
 	if (options.checkEnv) decisionModels.environment = Object.fromEntries(Object.entries(profiles).map(([name, profile]) => [name, object(profile) ? Object.fromEntries(Object.entries(profile).filter(([k, v]) => k.endsWith("_env") && typeof v === "string" && envName.test(v)).map(([k, v]) => [k, process.env[v as string] !== undefined ? "set" : "unset"])) : {}]));
 
+	const catalogPrefix = "loop.roles";
+	const loopErrorsOutsideCatalog = () => diagnostics.some((d) => d.severity === "error" && (d.key_path === "loop" || d.key_path.startsWith("loop.")) && d.key_path !== catalogPrefix && !d.key_path.startsWith(`${catalogPrefix}.`));
 	const loopSource = has(project, "loop") ? "project" : has(user, "loop") ? "user" : "default";
 	return {
 		contract: "immune_brain/effective_config/v2",
@@ -266,7 +288,8 @@ export function resolveConfig(root: string, options: { userConfigPath?: string; 
 		decision_models: decisionModels,
 		git_integration: leaf(gitIntegration.value, gitIntegration.source),
 		initiative_carrier: carrier,
-		loop: { valid: !errorsUnder("loop"), ...leaf(resolvedLoop, loopSource) },
+		// A rejected role is excluded and reported, never a reason to stop the daemon.
+		loop: { valid: !loopErrorsOutsideCatalog(), value: resolvedLoop, source: loopSource },
 		review_verifier: reviewVerifier,
 		diagnostics,
 	};

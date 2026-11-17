@@ -217,6 +217,27 @@ test("batchConfigErrors counts only agents, batch, herdr and whole-file errors",
 	expect(batchConfigErrors(f.read())).toContainEqual(expect.objectContaining({ key_path: "$" }));
 });
 
+test("loop.roles resolves from the project file only, and a rejected role never invalidates the loop", () => {
+	const f = fixture();
+	expect(f.read().loop.value.roles).toHaveLength(6);
+	f.project({ loop: { roles: { planner: { base: "plan", host: "pi" } } } });
+	const bound = f.read();
+	expect(bound.loop).toMatchObject({ valid: true, source: "project" });
+	expect(bound.loop.value.roles.find((role) => role.base === "plan")).toMatchObject({ name: "planner", host: "pi", source: "project" });
+	// A user-file catalog is refused: `loop.roles` names this repository's roles.
+	f.user({ loop: { roles: { planner: { base: "plan" } } } });
+	expect(errorAt(f.read(), "loop.roles")).toMatchObject({ code: "config_invalid", file: f.userPath });
+	// A rejected role is excluded and reported, while a loop error outside the catalog still fails it.
+	f.user({});
+	f.project({ loop: { roles: { broken: { base: "review" }, odd: { base: "plan", limits: { max_parallel: 9 } } }, mode: "always" } });
+	const c = f.read();
+	expect(errorAt(c, "loop.roles.broken.base")).toMatchObject({ code: "role_base_unknown" });
+	expect(errorAt(c, "loop.roles.odd.limits.max_parallel")).toMatchObject({ code: "role_limit_out_of_range" });
+	expect(errorAt(c, "loop.mode")).toMatchObject({ code: "config_invalid" });
+	expect(c.loop.valid).toBe(false);
+	expect(c.loop.value.roles.map((role) => role.name)).toEqual(["leader", "clarify", "plan", "execute", "repair", "analyze"]);
+});
+
 test("CLI config --json prints the v2 effective configuration, exits on errors and checks env without values", () => {
 	const f = fixture(), configHome = join(temp, "xdg"); mkdirSync(join(configHome, "immune-brain"), { recursive: true });
 	f.project({ batch: { max_parallel: 2 }, agents: { executor: "pi:project-model" } });
@@ -309,7 +330,13 @@ test("config migrate rewrites v1 user and project files as v2: dry run writes no
 	expect(JSON.parse(readFileSync(userPath, "utf8"))).toEqual(userAfter);
 	expect(JSON.parse(readFileSync(f.projectPath, "utf8"))).toEqual(projectAfter);
 	const c = resolveConfig(f.root, { userConfigPath: userPath });
-	expect(c.diagnostics).toEqual([]);
+	// The migrated file keeps the agents bindings the Loop no longer reads, so each is one notice (S1, BR-DEC-7).
+	expect(c.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+	expect(c.diagnostics.map((d) => [d.code, d.key_path])).toEqual([
+		["deprecated_config_source", "loop.roles"],
+		["deprecated_config_source", "loop.roles"],
+		["deprecated_config_source", "loop.roles"],
+	]);
 	expect(c.agents.roles.executor).toEqual({ host: "claude-code", model: "opus-5-5", effort: "medium", source: "project" });
 	expect(c.decision_models.bindings[other]).toEqual({ value: "off", source: "project" });
 	expect(migrateConfig(f.root, { userConfigPath: userPath }).notes).toContain("both files already use the v2 contract");

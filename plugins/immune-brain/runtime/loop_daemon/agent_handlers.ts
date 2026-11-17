@@ -59,6 +59,7 @@ import {
 import {
 	createCliAgentSessionProvider,
 	loopRoleProfile,
+	loopSessionLimits,
 	ROLE_SESSION_LIMITS,
 	runAgentSession,
 	sessionEnvironment,
@@ -68,6 +69,7 @@ import {
 	type AgentSessionProvider,
 	type AgentSessionRecord,
 } from "./agent_runner.ts";
+import type { LoopSessionConfig } from "./role_catalog.ts";
 import { daemonAdvanceTask, dispatchLoopDrive } from "./drive_dispatcher.ts";
 import { escalationKey, planEscalation } from "./escalation.ts";
 import { createGithubInteractionChannel, withInteractionMarker } from "./interaction/github_channel.ts";
@@ -239,6 +241,8 @@ export interface AgentHandlerPort {
 
 export interface AgentHandlerDeps {
 	sessionProvider: AgentSessionProvider;
+	/** The resolved config, so a session takes its limits from its catalog role (Spec loop-leader D1.6). */
+	loop_config?: LoopSessionConfig;
 	/** The daemon's own GitHub credential, the only one a session receives. */
 	session_credential: string | null;
 	/** Create a daemon-owned worktree (`branch: null` is detached) and return its path. */
@@ -561,8 +565,9 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 			evidence?: AgentSessionEvidence;
 		},
 	): Promise<AgentSessionRecord> {
-		// The role owns the budget: one per-role table, never a caller's default (Spec D2).
-		const limits = ROLE_SESSION_LIMITS[sessionRole(input.kind)];
+		// The role owns the budget: its catalog role's limits, else the built-in per-role table (D1.6).
+		const role = sessionRole(input.kind);
+		const limits = deps.loop_config ? loopSessionLimits(deps.loop_config, role) : ROLE_SESSION_LIMITS[role];
 		return runAgentSession(
 			{
 				kind: input.kind,
@@ -1620,7 +1625,7 @@ export function createDefaultAgentHandlerDeps(
 	const config = resolveConfig(root);
 	// Each session runs on the profile bound to its own loop role; the Lane it may
 	// drive runs on the executor role. Neither reads a `lanes` leaf any more (D2).
-	const executor: { host: ExecutorHost; model?: string | null; effort?: string | null } = loopRoleProfile(config.agents, "executor");
+	const executor: { host: ExecutorHost; model?: string | null; effort?: string | null } = loopRoleProfile(config, "executor");
 	const pluginRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 	const createWorktree: AgentHandlerDeps["createWorktree"] = ({ root: repository, branch, name }) => {
@@ -1680,9 +1685,11 @@ export function createDefaultAgentHandlerDeps(
 
 	return {
 		sessionProvider: createCliAgentSessionProvider({
-			profileFor: (role) => loopRoleProfile(config.agents, role),
+			profileFor: (role) => loopRoleProfile(config, role),
+			instructions_root: root,
 			log_dir: join(stateDir, "sessions"),
 		}),
+		loop_config: config,
 		session_credential: credential,
 		createWorktree,
 		prWorktree,

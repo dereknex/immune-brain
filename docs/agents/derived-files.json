@@ -224,6 +224,7 @@
         "plugins/immune-brain-antigravity/runtime/loop_daemon/rebuild.ts",
         "plugins/immune-brain-antigravity/runtime/loop_daemon/reconcile.ts",
         "plugins/immune-brain-antigravity/runtime/loop_daemon/repair_agent.ts",
+        "plugins/immune-brain-antigravity/runtime/loop_daemon/role_catalog.ts",
         "plugins/immune-brain-antigravity/runtime/loop_daemon/scheduler.ts",
         "plugins/immune-brain-antigravity/runtime/loop_daemon/state.ts",
         "plugins/immune-brain-antigravity/runtime/loop_daemon/status_issue.ts",

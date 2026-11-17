@@ -35,6 +35,7 @@ import {
 	firstBlock,
 } from "../plugins/immune-brain/runtime/loop_daemon/guards.ts";
 import type { LoopHandler } from "../plugins/immune-brain/runtime/loop_daemon/handlers.ts";
+import { LOOP_ROLE_BASES } from "../plugins/immune-brain/runtime/loop_daemon/role_catalog.ts";
 import {
 	detectIdentityPosture,
 	inspectDaemonIdentity,
@@ -166,7 +167,9 @@ describe("loop configuration block", () => {
 		const config = f.read();
 		expect(config.loop.valid).toBe(true);
 		expect(config.loop.source).toBe("project");
-		expect(config.loop.value).toEqual({
+		// The catalog is resolved alongside the switches and never changes them (Spec loop-leader D1.5).
+		expect(config.loop.value.roles.map((role) => role.name)).toEqual([...LOOP_ROLE_BASES]);
+		expect(config.loop.value).toMatchObject({
 			mode: "assist",
 			interval_seconds: 30,
 			max_concurrent: 3,
@@ -183,7 +186,7 @@ describe("loop configuration block", () => {
 	it("admits the local Interaction channel and refuses any other value", () => {
 		const local = fixture();
 		local.project({ loop: { interaction: { channel: "local" } } });
-		expect(local.read().loop).toEqual({
+		expect(local.read().loop).toMatchObject({
 			valid: true,
 			source: "project",
 			value: { ...DEFAULT_LOOP_CONFIG, interaction: { channel: "local" } },
@@ -201,7 +204,7 @@ describe("loop configuration block", () => {
 	it("falls back to the off-by-default loop configuration", () => {
 		const f = fixture();
 		f.project({});
-		expect(f.read().loop).toEqual({ valid: true, value: DEFAULT_LOOP_CONFIG, source: "default" });
+		expect(f.read().loop).toMatchObject({ valid: true, value: DEFAULT_LOOP_CONFIG, source: "default" });
 	});
 
 	it("rejects auto_enroll_max_risk above routine", () => {
