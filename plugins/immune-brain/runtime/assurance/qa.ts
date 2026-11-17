@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { snapshotDigest, QaPreparationError, qaPrepareObservation, type AssuranceVerdict, type SnapshotDescriptor, type QaCheckDiagnostic, type QaPreparationReason, type QaVerificationProgressInput } from "./coordinator";
 export { QaPreparationError, type QaCheckDiagnostic, type QaPreparationReason, type QaVerificationProgressInput } from "./coordinator";
 import { assertDeliveryClean, materializeDeliveryWorkspace, writeDeliveryTree } from "./delivery_workspace";
@@ -15,7 +16,15 @@ function recordForSnapshot(snapshot: SnapshotDescriptor) {
 }
 
 function deliveryTreeForSnapshot(snapshot: SnapshotDescriptor): string {
-	if (snapshot.review_revision?.review_tree) return snapshot.review_revision.review_tree;
+	// The reviewed commit fixes the delivery tree; QA runs its exact bytes.
+	const commit = snapshot.review_revision?.review_commit;
+	if (commit) {
+		try {
+			return execFileSync("git", ["rev-parse", "--verify", `${commit}^{tree}`], { cwd: snapshot.root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+		} catch {
+			throw new Error(`the reviewed commit ${commit} has no readable tree`);
+		}
+	}
 	const record = recordForSnapshot(snapshot);
 	const captured = captureGitTaskRevisionSnapshot(
 		snapshot.root,

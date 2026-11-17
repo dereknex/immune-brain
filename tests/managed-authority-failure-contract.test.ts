@@ -127,14 +127,17 @@ describe("Managed native authority failure contract", () => {
 		expect(loop).toContain("`submit_review` retains the reservation");
 		expect(loop).toContain("A blocked `submit_review` is recovered only through its returned `recovery_action`");
 		expect(loop).not.toContain("The reserved prompt is dispatched verbatim");
-		for (const text of ["review-packet-<operation>.md", "REVIEW_CONTRACT_MISMATCH", "review_tree_changed"])
-			expect(read("docs/reference/subagent-dispatch-protocol.md")).toContain(text);
-		expect(read("docs/reference/subagent-dispatch-protocol.md")).not.toContain("four-line handle");
-		// The retired Agent definition is gone; the skill carries the packet protocol
-		// the CLI reviewer follows (D11).
+		const protocol = read("docs/reference/subagent-dispatch-protocol.md").replace(/\s+/g, " ");
+		for (const text of [".imm/state/sessions/review-<operation>/brief.md", "review_tree_changed", "no reviewer argv carries `--add-dir`"])
+			expect(protocol).toContain(text);
+		for (const text of ["four-line handle", "review-packet-<operation>.md", "REVIEW_CONTRACT_MISMATCH"])
+			expect(protocol).not.toContain(text);
+		// The retired Agent definition is gone; the skill carries the brief protocol
+		// the CLI reviewer follows (D11). #565 retired the contract-hash stamp.
 		const reviewer = read("plugins/immune-brain/skills/authority-review/SKILL.md");
-		expect(reviewer).toContain("review_contract_hash");
-		expect(reviewer).toContain("REVIEW_CONTRACT_MISMATCH");
+		expect(reviewer).toContain("ignored result slot");
+		expect(reviewer).not.toContain("review_contract_hash");
+		expect(reviewer).not.toContain("REVIEW_CONTRACT_MISMATCH");
 		const adr = read("docs/adr/0030-marker-keyed-review-dispatch.md");
 		expect(adr).toContain("branch-boundary-r2-followups");
 		expect(adr).toContain("D2");

@@ -36,9 +36,6 @@ import {
 import {
 } from "../assurance/verification";
 import {
-	writeNativeReviewEvidence,
-} from "../assurance/review_evidence";
-import {
 	projectAssurance,
 	type AssuranceProjection,
 	type AssuranceProjectionResult,
@@ -509,7 +506,6 @@ export class HostRuntime {
 			readTaskRecord: async (root, taskId) => readTaskRecordRaw(root, taskId),
 			readTaskIntent: async (root, taskId) => readTaskIntentForRecord(root, taskId),
 			runQa: (snapshot, descriptors, options) => runDeterministicQa(snapshot, descriptors, options),
-			writeReviewEvidence: (input) => writeNativeReviewEvidence(input.evidence),
 			applyOrdinaryOperation: (ctx, input) => this.executeOrdinary(ctx, input),
 		};
 	}

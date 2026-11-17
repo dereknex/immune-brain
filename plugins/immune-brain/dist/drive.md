@@ -155,7 +155,7 @@ from the [batch contract](drive-batch.md#unattended-batch-opt-in).
    opens one interactive reviewer in the task's working directory with the
    profile it names (`review_profile`), the JSON it prints carries the `handle`,
    and `await_command` waits once for that handle to finish writing the strict
-   JSON verdict to its out-of-tree `output_path`. When `create_command` prints
+   JSON verdict to its `output_path` in the session's ignored result slot. When `create_command` prints
    `entry_submitted: false`, a startup dialog (such as workspace trust) held the
    entry back: relay it to the user, send nothing into the tab, and after they
    answered run `resume_command` with that handle once, then `await_command`.
@@ -370,14 +370,14 @@ foreground Agent envelope exactly. It is not an extra gate on Kernel Assurance.
 Pass the returned Agent envelope through unchanged.
 
 Authority Review is a separate explicit Code Agent session, not an Agent call.
-The runtime writes the review packet beside the evidence manifest and returns
-`review_session` with `review_profile`; `create_command` opens one interactive
-reviewer in the task's working directory, invoking the packaged
-`authority-review` skill on that packet. The packet names the review contract
-hash; the skill compares it with its own and answers
-`REVIEW_CONTRACT_MISMATCH <hash>` instead of reviewing when the reviewer's
-install carries different rules — that line is the whole content of the
-out-of-tree `output_path`, so the round ends instead of waiting. `await_command`
+The runtime writes the review brief into the session's ignored result slot
+`.imm/state/sessions/review-<operation>/` inside the task's working directory
+and returns `review_session` with `review_profile`; `create_command` opens one
+interactive reviewer in that directory, invoking the packaged
+`authority-review` skill on the brief. The brief names `base_head` and the
+immutable `review_commit`, and the reviewer reads the diff with read-only Git.
+The slot is inside the working directory, so the reviewer Host asks no
+directory-trust question. `await_command`
 waits once for the agent to write the strict JSON verdict or verification to
 `output_path`, the only path its write allowlist carries. Terminal text is never
 a receipt, and the same tree guard covers the interactive session. The hidden
@@ -390,14 +390,14 @@ releases the round as `review_session_aborted` / `verification_session_aborted`
 instead of reading as still running. `stop_command` closes the single round
 once the Kernel consumed a valid receipt into a pass, a rework,
 `verification_ready` or `awaiting_user`, and that consuming result carries it; a
-failed round, an aborted session, a contract mismatch, a changed tree or a non-JSON output keeps the
+failed round, an aborted session, a changed tree or a non-JSON output keeps the
 tab open and runs no stop.
-Releasing the reservation removes the packet and the output with the
-session directory; the manifest bytes remain unchanged. A finished review
+Releasing the reservation removes the brief and the output with the
+result slot. A finished review
 releases its reservation without a Review round when the receipt is not one
 strict JSON object (`review_output_invalid`), when HEAD, the index or tracked
 content differ from the reviewed tree (`review_tree_changed` with the changed
-paths), or when the reviewer reports a contract mismatch. Restore the listed
+paths). Restore the listed
 paths to the reviewed state, then call `advance_assurance`. A session that has
 not written its file is not an error: `submit_review` retains the reservation. A
 blocked `submit_review` is recovered only through its returned `recovery_action`.

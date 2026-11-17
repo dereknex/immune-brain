@@ -11,7 +11,7 @@ import {
 	REDUCED_MUTATION_BRAND,
 	type AuthorityAuditDescriptor,
 	type ReducedTaskMutation,
-	type ReviewRevisionIdentityV1,
+	type ReviewRevisionIdentity,
 	type ReviewVerificationHistoryV1,
 	type TaskAction,
 	type TaskFinding,
@@ -139,7 +139,7 @@ function appendHistory(
 	from: string,
 	detail: string | null,
 	audit: AuthorityAuditDescriptor | null,
-	reviewRevision?: ReviewRevisionIdentityV1,
+	reviewRevision?: ReviewRevisionIdentity,
 ): void {
 	if (record.history.some((entry) => entry.id === action.event_id))
 		throw new KernelInvariantError([
@@ -153,7 +153,7 @@ function appendHistory(
 		to_state: string;
 		reason: string;
 		authority?: AuthorityAuditDescriptor;
-		review_revision?: ReviewRevisionIdentityV1;
+		review_revision?: ReviewRevisionIdentity;
 	} = {
 		id: action.event_id,
 		at: action.at,

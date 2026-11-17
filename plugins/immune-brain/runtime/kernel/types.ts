@@ -144,8 +144,12 @@ export const TASK_INTENT_CONTRACT_V1 = "assurance_kernel/task_intent/v1" as cons
 export const TASK_RECORD_CONTRACT_V2 = "assurance_kernel/task_record/v2" as const;
 export const TASK_RECORD_CONTRACT_V3 = "assurance_kernel/task_record/v3" as const;
 export const TASK_RECORD_CONTRACT_V4 = "assurance_kernel/task_record/v4" as const;
-export const REVIEW_REVISION_IDENTITY_CONTRACT =
+/** Read-only: v1 identities persist in history written before #565. */
+export const REVIEW_REVISION_IDENTITY_CONTRACT_V1 =
 	"assurance_kernel/review_revision_identity/v1" as const;
+/** The identity every new Review writes: the commit alone fixes its tree and its single parent. */
+export const REVIEW_REVISION_IDENTITY_CONTRACT =
+	"assurance_kernel/review_revision_identity/v2" as const;
 
 export interface TaskIntentAcceptanceItemV1 {
 	id: string;
@@ -202,7 +206,7 @@ export interface TaskApprovalV2 {
 	 * on a review attestation of a TaskRecord v4; the strict parser rejects it
 	 * anywhere else, so QA and user attestations never carry revision bytes.
 	 */
-	review_revision?: ReviewRevisionIdentityV1;
+	review_revision?: ReviewRevisionIdentity;
 	/** Legal only on a review attestation, alongside its revision identity. */
 	advisory_findings?: ReviewAdvisoryFindingV1[];
 	/**
@@ -215,12 +219,21 @@ export interface TaskApprovalV2 {
 }
 
 export interface ReviewRevisionIdentityV1 {
-	contract: typeof REVIEW_REVISION_IDENTITY_CONTRACT;
+	contract: typeof REVIEW_REVISION_IDENTITY_CONTRACT_V1;
 	base_head: string;
 	review_commit: string;
 	review_tree: string;
 	manifest_digest: string;
 }
+
+export interface ReviewRevisionIdentityV2 {
+	contract: typeof REVIEW_REVISION_IDENTITY_CONTRACT;
+	base_head: string;
+	review_commit: string;
+}
+
+/** What a persisted record may carry; a new Review action carries only v2. */
+export type ReviewRevisionIdentity = ReviewRevisionIdentityV1 | ReviewRevisionIdentityV2;
 
 export interface TaskAttestationV3 extends TaskApprovalV2 {
 	acceptance_results: Array<{
@@ -282,7 +295,7 @@ export interface TaskHistoryEntryV3 {
 	 * The revision a Review-authored rework analyzed. Optional so legacy records
 	 * and QA or user rework stay valid; later rounds derive their delta from it.
 	 */
-	review_revision?: ReviewRevisionIdentityV1;
+	review_revision?: ReviewRevisionIdentity;
 	/** A verification event never grants a Review approval. */
 	verification?: ReviewVerificationHistoryV1;
 	/** Claim and counter-path presented to the literal user. */
@@ -420,7 +433,7 @@ export type TaskAction =
 			type: "request_rework";
 			findings: TaskFinding[];
 			/** Review-authored rework only: the immutable revision that Review analyzed. */
-			review_revision?: ReviewRevisionIdentityV1;
+			review_revision?: ReviewRevisionIdentityV2;
 			/** Verification facts committed atomically with the kept findings. */
 			verification?: ReviewVerificationHistoryV1;
 			review_observation?: ReviewObservationFacts;

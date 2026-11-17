@@ -18,6 +18,19 @@ value. A Host outside Herdr fails closed with `review_preparation_failed`
 the QA attestation already earned is retained. Source:
 `docs/specs/retire-process-review-transport.spec.md` (BR-DEC-1, BR-OUT-1).
 
+**Amendment (#565, review in the task cwd):** the receipt is no longer
+out-of-tree. The packet (now a brief) and the receipt live in the session's
+ignored result slot `<cwd>/.imm/state/sessions/review-<operation>/` (ADR 0038
+addendum #565), so no reviewer argv carries `--add-dir` and the Write rule
+names only the slot's `result.json`. The evidence manifest file, its
+`manifest_digest` and the reviewer's provenance self-check are removed: the
+brief states the base head and the immutable `review_commit`, and the reviewer
+reads the diff itself with read-only Git. Decision 8's stamped hash and
+`REVIEW_CONTRACT_MISMATCH` line are retired; `currentReviewContractHash()`
+stays, because Kernel Review-retry authority still keys on it. Reviews require
+a TaskRecord v4 `git_base_head`; the v3 working-tree bundle path is retired.
+Source: issue #565.
+
 **Status update:** this ADR partially supersedes
 [ADR 0006](0006-unattended-review-dispatch-authority.md) (its rejected
 alternative "the runtime invokes the reviewer model" is not the shape here, but

@@ -43,7 +43,7 @@ import { createAntigravityMcpRuntime } from "../plugins/immune-brain/runtime/ant
 import { createMcpRuntime as createMcpRuntimeUngated, handleJsonRpc, serveStdio } from "../plugins/immune-brain/runtime/claude/mcp_server";
 import { PHASE_ENTRY_RECOVERY, RUN_ENTRY_REQUIRED } from "../plugins/immune-brain/runtime/assurance/phase_entry";
 import { consumePhaseAdmission, laneGuardHookOutput, phaseEntryGateHookOutput, recordPhaseEntryPrompt, type GatedTool } from "../plugins/immune-brain/runtime/claude/lane_guard";
-import type { ReviewBundle } from "../plugins/immune-brain/runtime/assurance/review_evidence";
+import type { ReviewFacts } from "../plugins/immune-brain/runtime/assurance/review_evidence";
 import type { AssuranceHostPort, HostReviewReservation } from "../plugins/immune-brain/runtime/assurance/host_port";
 import { BATCH_REASONS, batchReason } from "../plugins/immune-brain/runtime/unattended/batch_reasons";
 import { batchTopologyDigest, prepareBatchRunState, writeBatchRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
@@ -531,22 +531,20 @@ function snapshot(role: "qa" | "review", risk: Risk = "material"): SnapshotDescr
 		stale_attestation_ids: [],
 		acceptance: [{ id: "A1", assertion: "the contract holds", verification: "{}" }],
 		dirty_files: ["src/change.ts"],
-		review_bundle_digest: role === "review" ? "sha256:bundle" : null,
+		...(role === "review" ? { review_revision: { contract: "assurance_kernel/review_revision_identity/v2" as const, base_head: "a".repeat(40), review_commit: "b".repeat(40) } } : {}),
 		root: ROOT,
 	};
 }
 
-function reviewBundle(): ReviewBundle {
+function reviewFacts(path = "src/change.ts"): ReviewFacts {
 	return {
-		contract: "assurance_kernel/review_bundle/v4",
-		root: ROOT,
-		head: "a".repeat(40),
-		scope: ["src/change.ts"],
-		diff_hash: "sha256:diff",
-		dirty_files: {},
+		revision: { contract: "assurance_kernel/review_revision/v1", base_head: "a".repeat(40), review_tree: "c".repeat(40),
+			review_commit: "b".repeat(40), review_ref: `refs/imm/review/${TASK}`, diff_hash: "sha256:diff" },
+		changed_paths: [path],
+		beyond_estimate: [],
+		outside_routine_allowlist: [],
 		outcomes: { A1: { status: "passed", summary: "fresh" } },
-		bundle_digest: "sha256:bundle",
-	} as unknown as ReviewBundle;
+	} as unknown as ReviewFacts;
 }
 
 function passVerdict(s: SnapshotDescriptor): AssuranceVerdict {
@@ -607,15 +605,15 @@ function sharedKernel(
 				"A1",
 				{ contract: "assurance_kernel/verification_descriptor/v2", command: { executable: "bun", argv: ["test"], cwd: ".", timeout_ms: 1000, max_output_bytes: 1024 }, environment: { prepare: null, writable_paths: [] } },
 			]] as never),
-			reviewBundle: role === "review" ? reviewBundle() : null,
+			reviewFacts: role === "review" ? reviewFacts() : null,
 		}),
+		ensureReviewRevision: async () => reviewFacts().revision,
 		runQa: async (s, _descriptors, options) => {
 			executionCounts.qa += 1;
 			hooks.onQaStart?.();
 			if (hooks.holdQa) await hooks.holdQa(options?.signal);
 			return passVerdict(s);
 		},
-		writeReviewEvidence: () => ({ writePacket: writeTestReviewPacket, path: `${ROOT}/review.json`, remove: () => undefined }),
 		applyVerdict: async (_ctx, input) => {
 			if (locked) throw new Error("concurrent continuation rejected");
 			locked = true;
@@ -2620,10 +2618,10 @@ function cliReviewPorts(root: string): { ports: AssuranceCoordinatorPorts; appli
 				command: { executable: "bun", argv: ["test"], cwd: ".", timeout_ms: 1000, max_output_bytes: 1024 },
 				environment: { prepare: null, writable_paths: [] },
 			}]] as never),
-			reviewBundle: role === "review" ? { ...reviewBundle(), root } : null,
+			reviewFacts: role === "review" ? reviewFacts("src.ts") : null,
 		}),
+		ensureReviewRevision: async () => reviewFacts("src.ts").revision,
 		runQa: async (s: SnapshotDescriptor) => passVerdict(s),
-		writeReviewEvidence: () => ({ path: join(root, "review-evidence.json"), writePacket: writeTestReviewPacket, remove: () => undefined }),
 		applyVerdict: async (_ctx: HostContext, input: { snapshot: { role: string } }) => {
 			applied.push(input.snapshot.role);
 			if (input.snapshot.role === "qa") obligation = "run_review";

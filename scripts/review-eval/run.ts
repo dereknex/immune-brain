@@ -4,7 +4,7 @@ import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSyn
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { buildReviewSnapshotPrompt, parseChildVerdict, type SnapshotDescriptor } from "../../plugins/immune-brain/runtime/assurance/coordinator.ts";
+import { buildReviewBrief, parseChildVerdict, type SnapshotDescriptor } from "../../plugins/immune-brain/runtime/assurance/coordinator.ts";
 import { STATIC_REVIEW_RULES, currentReviewContractHash } from "../../plugins/immune-brain/runtime/role_prompt_bridge.ts";
 import { caseSchema } from "./extract.ts";
 import { anchorForEvidence } from "../../plugins/immune-brain/runtime/kernel/refutation.ts";
@@ -142,11 +142,8 @@ export function evaluateCases(root: string, cases: readonly EvalCase[], config: 
 				changedPaths[path] = { status: before ? after ? "modified" : "deleted" : "added", mode: after?.mode ?? null, oid: after?.oid ?? null, base_mode: before?.mode ?? null, base_oid: before?.oid ?? null };
 			}
 			const recordRevision = digest(recordBytes), diffHash = digest(JSON.stringify(changedPaths)), intentHash = record.intent_ref?.content_hash ?? digest(JSON.stringify(record.intent_snapshot));
-			const unsigned = { contract: "assurance_kernel/review_manifest/v5", task_id: c.task_id, intent_revision: record.intent_snapshot.revision, intent_content_hash: intentHash, scope: record.intent_snapshot.scope_hint ?? [], base_head: c.base_head, review_tree: c.review_tree, review_commit: c.review_commit, review_ref: "offline-eval", changed_paths: changedPaths, diff_hash: diffHash, outcomes: {}, record_revision: recordRevision, workspace_revision: recordRevision, lifecycle: "active", artifact_state: "frozen", risk: record.intent_snapshot.risk ?? "material" };
-			const manifest = { ...unsigned, manifest_digest: digest(JSON.stringify(unsigned)) };
-			const manifestPath = join(temp, "review-manifest.json"); writeFileSync(manifestPath, JSON.stringify(manifest));
-			const snapshot: SnapshotDescriptor = { contract: "assurance_kernel/assurance_snapshot/v2", task_id: c.task_id, run_id: null, role: "review", record_revision: recordRevision, workspace_revision: recordRevision, intent_revision: unsigned.intent_revision, intent_content_hash: intentHash, diff_hash: diffHash, lifecycle: "active", artifact_state: "frozen", risk: unsigned.risk, fresh_acceptance_ids: [], missing_acceptance_ids: [], stale_attestation_ids: [], acceptance, dirty_files: paths, review_bundle_digest: null, review_revision: { contract: "assurance_kernel/review_revision_identity/v1", base_head: c.base_head, review_commit: c.review_commit, review_tree: c.review_tree, manifest_digest: manifest.manifest_digest }, root: checkout };
-			const prompt = `Offline evaluation replay. Manifest state and hashes are synthetic evaluation metadata, not live authority.\n${buildReviewSnapshotPrompt(snapshot, manifestPath)}`;
+			const snapshot: SnapshotDescriptor = { contract: "assurance_kernel/assurance_snapshot/v2", task_id: c.task_id, run_id: null, role: "review", record_revision: recordRevision, workspace_revision: recordRevision, intent_revision: record.intent_snapshot.revision, intent_content_hash: intentHash, diff_hash: diffHash, lifecycle: "active", artifact_state: "frozen", risk: record.intent_snapshot.risk ?? "material", fresh_acceptance_ids: [], missing_acceptance_ids: [], stale_attestation_ids: [], acceptance, dirty_files: paths, review_revision: { contract: "assurance_kernel/review_revision_identity/v2", base_head: c.base_head, review_commit: c.review_commit }, root: checkout };
+			const prompt = `Offline evaluation replay. Snapshot state and hashes are synthetic evaluation metadata, not live authority.\n${buildReviewBrief(snapshot, { beyond_estimate: [], outside_routine_allowlist: [], outcomes: {} })}`;
 			// A transport fault is never a verdict: one retry, then the case is named as failed and the replay continues.
 			// A slow reviewer is not retried: a retry costs another full timeout for the same case.
 			const dispatchWithRetry = () => { try { return dispatch({ cwd: checkout, model: config.model, rolePrompt: config.rolePrompt, prompt }); }

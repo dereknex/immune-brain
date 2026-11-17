@@ -27,8 +27,8 @@ import {
 } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
 import { readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
 import { readTaskRecordRaw } from "../plugins/immune-brain/runtime/kernel/storage";
-import { captureReviewManifest } from "../plugins/immune-brain/runtime/assurance/review_evidence";
-import { taskRevisionDiffHash } from "../plugins/immune-brain/runtime/workspace_scope";
+import { reviewDelta } from "../plugins/immune-brain/runtime/assurance/verdict_authority";
+import type { TaskRecord } from "../plugins/immune-brain/runtime/kernel/types";
 
 const TASK = "canary-rework-task";
 const INTENT = {
@@ -228,11 +228,9 @@ function reworkCapability(kind: "review" | "qa" | "user", overrides: Record<stri
 
 function reviewRevision(overrides: Record<string, string> = {}) {
 	return {
-		contract: "assurance_kernel/review_revision_identity/v1" as const,
+		contract: "assurance_kernel/review_revision_identity/v2" as const,
 		base_head: execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim(),
 		review_commit: "c".repeat(40),
-		review_tree: "d".repeat(40),
-		manifest_digest: "sha256:" + "e".repeat(64),
 		...overrides,
 	};
 }
@@ -906,75 +904,41 @@ describe("review rework persists the reviewed revision", () => {
 	});
 });
 
-describe("review manifest rework delta", () => {
-	const HEAD = () => execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
-	function manifestFor(round: number, prior: { review_commit: string; review_tree: string } | null) {
-		const scope = [`docs/specs/${TASK}.spec.md`, "src/task.ts"];
-		return captureReviewManifest(root, {
-			taskId: TASK,
-			baseHead: HEAD(),
-			scopeHint: scope,
-			expectedDiffHash: taskRevisionDiffHash(root, scope, HEAD()),
-			intentRevision: 1,
-			intentContentHash: currentIntentHash(),
-			recordRevision: "r:" + "1".repeat(64),
-			workspaceRevision: "w:" + "2".repeat(64),
-			lifecycle: "active",
-			artifactState: "frozen",
-			risk: "material",
-			outcomes: {},
-			delta: { round, prior },
-		});
-	}
-	function stage(path: string, text: string) {
+describe("review rework delta", () => {
+	function commit(path: string, text: string): string {
 		writeFileSync(join(root, path), text);
 		execFileSync("git", ["add", "-A"], { cwd: root });
+		execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", path], { cwd: root });
+		return execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+	}
+	/** A record whose latest Review rework closed round `round - 1` on `prior`. */
+	function recordAt(round: number, prior: string | null): TaskRecord {
+		return {
+			findings: round > 1 ? [{ source: "review", review_round: round - 1 }] : [],
+			history: round > 1
+				? [{ type: "request_rework", reason: `review_round_${round - 1}\naction`, ...(prior ? { review_revision: { contract: "assurance_kernel/review_revision_identity/v2", base_head: "0".repeat(40), review_commit: prior } } : {}) }]
+				: [],
+		} as unknown as TaskRecord;
 	}
 
 	test("round 3 lists exactly the paths the latest rework changed", () => {
-		stage("src/task.ts", "export const a = 1;\n");
-		stage(`docs/specs/${TASK}.spec.md`, "# v1\n");
-		const round2 = manifestFor(2, null);
-		expect(round2.delta_paths).toBeUndefined();
-		expect(round2.delta_skipped).toBeUndefined();
+		commit("src/task.ts", "export const a = 1;\n");
+		const prior = commit(`docs/specs/${TASK}.spec.md`, "# v1\n");
 		// Rework touches only the spec; src/task.ts is byte-identical to round 2.
-		stage(`docs/specs/${TASK}.spec.md`, "# v2\n");
-		const round3 = manifestFor(3, { review_commit: round2.review_commit, review_tree: round2.review_tree });
-		expect(round3.prior_review_commit).toBe(round2.review_commit);
-		expect(round3.delta_paths).toEqual([`docs/specs/${TASK}.spec.md`]);
-		expect(round3.manifest_digest).not.toBe(round2.manifest_digest);
+		const current = commit(`docs/specs/${TASK}.spec.md`, "# v2\n");
+		expect(reviewDelta(root, recordAt(3, prior), current)).toEqual({ round: 3, prior_review_commit: prior, delta_paths: [`docs/specs/${TASK}.spec.md`] });
 	});
 
 	test("a missing or unresolvable prior revision skips the rule instead of blocking", () => {
-		stage("src/task.ts", "export const a = 1;\n");
-		const legacy = manifestFor(3, null);
-		expect(legacy.delta_skipped).toBe("prior_review_revision_absent");
-		expect(legacy.delta_paths).toBeUndefined();
-		const pruned = manifestFor(3, { review_commit: "a".repeat(40), review_tree: "b".repeat(40) });
-		expect(pruned.delta_skipped).toBe("prior_review_revision_unresolvable");
+		const current = commit("src/task.ts", "export const a = 1;\n");
+		expect(reviewDelta(root, recordAt(3, null), current)).toEqual({ round: 3, prior_review_commit: null });
+		expect(reviewDelta(root, recordAt(3, "a".repeat(40)), current)).toEqual({ round: 3, prior_review_commit: null });
 	});
 
-	test("rounds 1 and 2 add no delta fields so their digest is unchanged", () => {
-		stage("src/task.ts", "export const a = 1;\n");
-		const withoutDelta = (() => {
-			const scope = [`docs/specs/${TASK}.spec.md`, "src/task.ts"];
-			return captureReviewManifest(root, {
-				taskId: TASK,
-				baseHead: HEAD(),
-				scopeHint: scope,
-				expectedDiffHash: taskRevisionDiffHash(root, scope, HEAD()),
-				intentRevision: 1,
-				intentContentHash: currentIntentHash(),
-				recordRevision: "r:" + "1".repeat(64),
-				workspaceRevision: "w:" + "2".repeat(64),
-				lifecycle: "active",
-				artifactState: "frozen",
-				risk: "material",
-				outcomes: {},
-			});
-		})();
-		expect(manifestFor(1, null).manifest_digest).toBe(withoutDelta.manifest_digest);
-		expect(manifestFor(2, null).manifest_digest).toBe(withoutDelta.manifest_digest);
+	test("rounds 1 and 2 carry no delta", () => {
+		const current = commit("src/task.ts", "export const a = 1;\n");
+		expect(reviewDelta(root, recordAt(1, null), current)).toBeUndefined();
+		expect(reviewDelta(root, recordAt(2, current), current)).toBeUndefined();
 	});
 });
 

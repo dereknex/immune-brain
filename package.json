@@ -97,6 +97,7 @@
     "plugins/immune-brain/runtime/loop_contract.ts",
     "plugins/immune-brain/runtime/plugin_version.ts",
     "plugins/immune-brain/runtime/plugin_source_skew.ts",
+    "plugins/immune-brain/runtime/session_result_slot.ts",
     "plugins/immune-brain/runtime/assurance",
     "plugins/immune-brain/runtime/unattended",
     "plugins/immune-brain/runtime/session",

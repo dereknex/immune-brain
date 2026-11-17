@@ -499,7 +499,6 @@ export async function verifyCandidateDescriptors(input: {
 	}
 	if (acceptance.length === 0)
 		throw new BatchIntegrationError("batch_integration_check_failed", "batch_integration_check_failed: no descriptor to rerun");
-	const tree = gitOut(root, ["rev-parse", `${candidate}^{tree}`], `failed to read the tree of ${candidate}`).trim();
 	const snapshot: SnapshotDescriptor = {
 		contract: "assurance_kernel/assurance_snapshot/v2",
 		task_id: input.child.task_id,
@@ -518,13 +517,10 @@ export async function verifyCandidateDescriptors(input: {
 		stale_attestation_ids: [],
 		acceptance,
 		dirty_files: [],
-		review_bundle_digest: null,
 		review_revision: {
-			contract: "assurance_kernel/review_revision_identity/v1",
+			contract: "assurance_kernel/review_revision_identity/v2",
 			base_head: input.lane_base,
 			review_commit: candidate,
-			review_tree: tree,
-			manifest_digest: "",
 		},
 		root,
 	};

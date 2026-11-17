@@ -7,7 +7,6 @@ import { randomUUID } from "node:crypto";
 import { stampPluginManifest, validateManifests } from "./plugin_versioning";
 import {
 	STATIC_REVIEW_RULES,
-	currentReviewContractHash,
 } from "../plugins/immune-brain/runtime/role_prompt_bridge";
 import {
 	CLAUDE_READONLY_ROLE_AGENTS,
@@ -42,25 +41,22 @@ export function generateVerifierDefinition(root: string): string {
  *
  * Its body is the `code-review` role prompt and the static review rules — the
  * same inputs `currentReviewContractHash()` hashes — so a reviewer reading the
- * skill carries exactly the contract the Kernel bound. The stamp is how a
- * reviewer whose install differs notices: it compares the packet's line with
- * its own and answers with the mismatch line instead of reviewing.
+ * skill carries exactly the contract the Kernel bound. The CLI reviewer loads it
+ * through `--plugin-dir` from the runtime's own build, so no in-band contract
+ * self-check is needed (#565 retired ADR 0037 D8).
  */
 export function generateAuthorityReviewSkill(root: string): string {
 	const rolePrompt = readFileSync(resolve(root, REVIEWER_PROMPT_SRC), "utf8").trim();
-	const hash = currentReviewContractHash();
 	return [
 		[
 			"---",
 			"name: authority-review",
-			"description: Invoked by the drive Review stage with one per-task review packet path. Read that packet and return its structured verdict.",
+			"description: Invoked by the drive Review stage with one per-task review brief path. Read that brief and return its structured verdict.",
 			"---",
 		].join("\n"),
 		rolePrompt,
 		...STATIC_REVIEW_RULES,
-		`Review contract hash: ${hash}`,
-		`The packet's first line reads \`review_contract_hash: <hash>\`. Compare it with ${hash} before reading any other line. If it differs, answer with exactly \`REVIEW_CONTRACT_MISMATCH ${hash}\` and stop — as the reply, or as the whole content of the reservation's \`output_path\` when one is named; your install carries different review instructions than the Host that bound this Review.`,
-		"The packet states the Review turn budget and the verdict shapes. Return exactly one JSON object, never prose around it; if coverage cannot finish inside the turn budget, return the incomplete shape instead of a coverage finding.",
+		"The brief states the revision to diff, the Review turn budget and the verdict shapes. Return exactly one JSON object, never prose around it; if coverage cannot finish inside the turn budget, return the incomplete shape instead of a coverage finding.",
 		"",
 	].join("\n\n");
 }

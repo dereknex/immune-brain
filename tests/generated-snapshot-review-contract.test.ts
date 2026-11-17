@@ -26,13 +26,17 @@ const snapshot: SnapshotDescriptor = {
 	stale_attestation_ids: [],
 	acceptance: [{ id: "A1", assertion: "migration preserves the schema", verification: "{}" }],
 	dirty_files: ["migrations/meta/0001_snapshot.json"],
-	review_bundle_digest: "sha256:bundle",
+	review_revision: {
+		contract: "assurance_kernel/review_revision_identity/v2",
+		base_head: "0".repeat(40),
+		review_commit: "1".repeat(40),
+	},
 	root,
 };
 
 describe("generated snapshot Review coverage contract", () => {
 	test("both Hosts receive the same narrowly scoped, fail-closed proof rules", () => {
-		const pi = buildReviewPrompt(snapshot);
+		const pi = buildReviewPrompt(snapshot, { beyond_estimate: [], outside_routine_allowlist: [], outcomes: {} });
 		const claude = read("plugins/immune-brain/skills/authority-review/SKILL.md");
 		for (const prompt of [pi, claude]) {
 			expect(prompt).toContain(role);

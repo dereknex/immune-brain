@@ -1,4 +1,3 @@
-import { writeTestReviewPacket } from "./helpers/review-packet-fixture";
 import { installCliReviewer, runReservedReview } from "./helpers/cli-reviewer";
 // Phase 3 foreground Tool and native Review bridge contract.
 
@@ -8,7 +7,7 @@ import { afterAll, describe, expect, mock, setDefaultTimeout, spyOn, test } from
 // run 3-4s interactively, so bun's 5s default makes them flake under load (a CI
 // runner or the Kernel QA environment). Bound them explicitly instead.
 setDefaultTimeout(60_000);
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, existsSync, statSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readdirSync, readFileSync, writeFileSync, rmSync, existsSync, statSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
@@ -27,7 +26,7 @@ import { createMutationAuthorityCapabilityForTest } from "./fixtures/mutation-au
 import { readTaskRecordRaw } from "../plugins/immune-brain/runtime/kernel/storage";
 import { PLUGIN_VERSION } from "../plugins/immune-brain/runtime/plugin_version";
 import { createMcpRuntime } from "../plugins/immune-brain/runtime/claude/mcp_server";
-import { captureReviewManifest } from "../plugins/immune-brain/.pi-extension/pi-canary-review-bundle";
+import { captureReviewFacts, type ReviewFacts } from "../plugins/immune-brain/.pi-extension/pi-canary-review-bundle";
 import { snapshotDigest, type SnapshotDescriptor } from "../plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts";
 import { mockHostSdkForDeliveryTree } from "./helpers/pi-canary-assurance-harness";
 import { QaPreparationError } from "../plugins/immune-brain/runtime/assurance/qa";
@@ -310,43 +309,32 @@ function loadSurface(dependencies: Record<string, unknown> = {}) {
 	};
 }
 
-function minimalSnapshot(role: "qa" | "review", root: string, current?: { projection?: Record<string, any> }): SnapshotDescriptor {
+function minimalAssurance(role: "qa" | "review", root: string, current?: { projection?: Record<string, any> }): { snapshot: SnapshotDescriptor; descriptors: Map<string, never>; reviewFacts: ReviewFacts | null } {
 	const state = current?.projection ?? {};
 	const record = readTaskRecordRaw(root, TASK).record;
-	const reviewRevision = role === "review" && record?.contract === "assurance_kernel/task_record/v4"
-		? (() => {
-				const manifest = captureReviewManifest(root, {
-					taskId: TASK,
-					baseHead: record.git_base_head,
-					scopeHint: record.intent_snapshot.scope_hint,
-					expectedDiffHash: state.diff_hash ?? "sha256:diff",
-					intentRevision: state.intent_revision ?? record.intent_snapshot.revision,
-					intentContentHash: state.intent_content_hash ?? record.intent_ref.content_hash,
-					recordRevision: state.record_revision ?? "record-1",
-					workspaceRevision: state.workspace_revision ?? "workspace-1",
-					lifecycle: state.lifecycle ?? "active",
-					artifactState: state.artifact_state ?? "frozen",
-					risk: record.intent_snapshot.risk,
-					// Mirror the production snapshot builder: the manifest binds the
-					// outcomes of the settled QA attestation, not a synthesized
-					// stand-in. Re-deriving them keeps this double's digest equal to
-					// the one the adapter republishes at submission.
-					outcomes: Object.fromEntries(
-						record.attestations.filter((item) => item.kind === "qa")
-							.flatMap((item) => item.acceptance_results)
-							.map((result) => [result.acceptance_id, { status: result.status, summary: result.summary }]),
-					),
-				});
-				return {
-					contract: "assurance_kernel/review_revision_identity/v1" as const,
-					base_head: manifest.base_head,
-					review_commit: manifest.review_commit,
-					review_tree: manifest.review_tree,
-					manifest_digest: manifest.manifest_digest,
-				};
-			})()
+	const reviewFacts = role === "review" && record?.contract === "assurance_kernel/task_record/v4"
+		? captureReviewFacts(root, {
+				taskId: TASK,
+				baseHead: record.git_base_head,
+				scopeHint: record.intent_snapshot.scope_hint,
+				expectedDiffHash: state.diff_hash ?? "sha256:diff",
+				// Mirror the production snapshot builder: the brief states the
+				// outcomes of the settled QA attestation, not a synthesized stand-in.
+				outcomes: Object.fromEntries(
+					record.attestations.filter((item) => item.kind === "qa")
+						.flatMap((item) => item.acceptance_results)
+						.map((result) => [result.acceptance_id, { status: result.status, summary: result.summary }]),
+				),
+			})
+		: null;
+	const reviewRevision = reviewFacts
+		? {
+				contract: "assurance_kernel/review_revision_identity/v2" as const,
+				base_head: reviewFacts.revision.base_head,
+				review_commit: reviewFacts.revision.review_commit,
+			}
 		: undefined;
-	return {
+	const snapshot: SnapshotDescriptor = {
 		contract: "assurance_kernel/assurance_snapshot/v2",
 		task_id: TASK,
 		role,
@@ -363,10 +351,10 @@ function minimalSnapshot(role: "qa" | "review", root: string, current?: { projec
 		stale_attestation_ids: [],
 		acceptance: [{ id: "A1", assertion: "a1", verification: "{}" }],
 		dirty_files: ["plugins/immune-brain/.pi-extension/task.ts"],
-		review_bundle_digest: role === "review" ? "sha256:bundle" : null,
 		...(reviewRevision ? { review_revision: reviewRevision } : {}),
 		root,
 	};
+	return { snapshot, descriptors: new Map(), reviewFacts };
 }
 
 describe("registered request_stop settlement and UI", () => {
@@ -432,26 +420,21 @@ describe("registered request_stop settlement and UI", () => {
 	for (const stagingFailure of [false, true]) {
 		test(`real stop releases Review and preserves terminal evidence (stagingFailure=${stagingFailure})`, async () => {
 			const root = makeEnrolledRoot();
-			let evidenceRemoved = 0;
 			try {
 				let latestReviewSnapshot!: SnapshotDescriptor;
 		const { tools } = loadSurface({
-					buildAssurance: async (rootPath: string, _task: string, role: "qa" | "review", current: { projection?: Record<string, any> }) => ({
-						snapshot: minimalSnapshot(role, rootPath, current), descriptors: new Map(),
-						reviewBundle: role === "review" ? { dirty_files: {}, outcomes: {}, bundle_digest: "sha256:bundle" } : null,
-					}),
+					buildAssurance: async (rootPath: string, _task: string, role: "qa" | "review", current: { projection?: Record<string, any> }) =>
+						minimalAssurance(role, rootPath, current),
 					runQa: async (snapshot: SnapshotDescriptor) => ({
 						contract: "assurance_kernel/assurance_verdict/v2", role: "qa", task_id: TASK,
 						snapshot_digest: snapshotDigest(snapshot), decision: "pass",
 						approval: { kind: "qa", authority_role: "qa", summary: "passed" },
 					}),
-					writeReviewEvidence: () => ({ writePacket: writeTestReviewPacket, path: join(root, "review.json"), remove: () => { evidenceRemoved++; } }),
 				});
 				const tool = tools[0];
 				const context = makeCtx(root, makeUI());
 				const ready = JSON.parse((await tool.execute("qa", { task_id: TASK, action: { op: "advance_assurance" } }, undefined, undefined, context)).content[0].text);
 				expect(ready.state).toBe("review_ready");
-				expect(evidenceRemoved).toBe(0);
 				const stopContext = makeCtx(root, makeUI());
 				const custom = stopContext.ui.custom;
 				stopContext.ui.custom = async (factory: any) => {
@@ -463,7 +446,6 @@ describe("registered request_stop settlement and UI", () => {
 				expect(stopped).toMatchObject({ state: "applied", operation: "stop", lifecycle: "stopped" });
 				if (stagingFailure) expect(stopped.delivery_error).toContain("index.lock");
 				else expect(stopped.delivery_error).toBeUndefined();
-				expect(evidenceRemoved).toBe(1);
 				expect(readBackendClaim(root)).toBeNull();
 				const evidence = auditEvidencePaths(root, TASK);
 				const recordPath = join(root, evidence.record);
@@ -483,7 +465,6 @@ describe("registered request_stop settlement and UI", () => {
 				} } }, undefined, undefined, context));
 				expect(readFileSync(recordPath, "utf8")).toBe(record);
 				expect(readFileSync(proofPath, "utf8")).toBe(proof);
-				expect(evidenceRemoved).toBe(1);
 			} finally { rmSync(root, { recursive: true, force: true }); }
 		});
 	}
@@ -516,16 +497,12 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 		const root = makeEnrolledRoot();
 		let qaRuns = 0;
 		const dependencies = {
-			buildAssurance: async (rootPath: string, _task: string, role: "qa" | "review", current: { projection?: Record<string, any> }) => ({
-				snapshot: minimalSnapshot(role, rootPath, current),
-				descriptors: new Map(),
-				reviewBundle: role === "review" ? ({ dirty_files: {}, outcomes: {}, bundle_digest: "sha256:bundle" } as never) : null,
-			}),
+			buildAssurance: async (rootPath: string, _task: string, role: "qa" | "review", current: { projection?: Record<string, any> }) =>
+				minimalAssurance(role, rootPath, current),
 			runQa: async (snapshot: SnapshotDescriptor) => {
 				qaRuns += 1;
 				return { contract: "assurance_kernel/assurance_verdict/v2", role: "qa", task_id: TASK, snapshot_digest: snapshotDigest(snapshot), decision: "pass", approval: { kind: "qa", authority_role: "qa", summary: "passed" } };
 			},
-			writeReviewEvidence: () => ({ writePacket: writeTestReviewPacket, path: join(root, "review.json"), remove: () => {} }),
 		};
 		try {
 			const first = loadSurface(dependencies);
@@ -1248,9 +1225,7 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 		const ownRoot = makeEnrolledRoot(enrolled);
 		const foreignRoot = makeEnrolledRoot(enrolled);
 		try {
-			const ownTool = loadSurface({
-				writeReviewEvidence: () => ({ writePacket: writeTestReviewPacket, path: join(ownRoot, "review.json"), remove: () => {} }),
-			}).tools[0];
+			const ownTool = loadSurface().tools[0];
 			await ownTool.execute("revise", {
 				task_id: TASK,
 				action: {
@@ -1278,10 +1253,7 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 			// planning, so it is delivered and disclosed beyond the estimate.
 			writeFileSync(join(foreignRoot, "docs", "plans", "other-task.intent.json"), "{}\n");
 			execFileSync("git", ["add", "--", "docs/plans/other-task.intent.json"], { cwd: foreignRoot });
-			let foreignEvidence: unknown;
-			const foreignTool = loadSurface({
-				writeReviewEvidence: (payload) => { foreignEvidence = payload; return { writePacket: writeTestReviewPacket, path: join(foreignRoot, "review.json"), remove: () => {} }; },
-			}).tools[0];
+			const foreignTool = loadSurface().tools[0];
 			const foreign = await foreignTool.execute(
 				"advance",
 				{ task_id: TASK, action: { op: "advance_assurance" } },
@@ -1290,7 +1262,10 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 				makeCtx(foreignRoot, makeUI()),
 			);
 			expect(JSON.parse(foreign.content[0].text)).toMatchObject({ state: "review_ready" });
-			expect(JSON.stringify(foreignEvidence)).toMatch(/"beyond_estimate":\[[^\]]*"docs\/plans\/other-task\.intent\.json"/);
+			const sessions = join(foreignRoot, ".imm", "state", "sessions");
+			const slot = readdirSync(sessions).find((name) => name.startsWith("review-"));
+			expect(slot).toBeDefined();
+			expect(readFileSync(join(sessions, slot!, "brief.md"), "utf8")).toMatch(/Delivered paths outside the TaskIntent estimate: [^\n]*docs\/plans\/other-task\.intent\.json/);
 		} finally {
 			rmSync(ownRoot, { recursive: true, force: true });
 			rmSync(foreignRoot, { recursive: true, force: true });
@@ -1419,11 +1394,7 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 		let latestReviewSnapshot!: SnapshotDescriptor;
 		const { tools } = loadSurface({
 			buildAssurance: async (rootPath: string, _task: string, role: "qa" | "review", current: { projection?: Record<string, any> }) => {
-				const built = {
-					snapshot: minimalSnapshot(role, rootPath, current),
-					descriptors: new Map(),
-					reviewBundle: role === "review" ? ({ dirty_files: {}, outcomes: {}, bundle_digest: "sha256:bundle" } as never) : null,
-				};
+				const built = minimalAssurance(role, rootPath, current);
 				if (role === "review") latestReviewSnapshot = built.snapshot;
 				return built;
 			},
@@ -1431,7 +1402,6 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 				options.onProgress?.({ index: 1, total: 1, acceptance_id: "A1", phase: "passed", elapsed_ms: 1 });
 				return { contract: "assurance_kernel/assurance_verdict/v2", role: "qa", task_id: TASK, snapshot_digest: snapshotDigest(snapshot), decision: "pass", approval: { kind: "qa", authority_role: "qa", summary: "passed" } };
 			},
-			writeReviewEvidence: () => ({ writePacket: writeTestReviewPacket, path: join(root, "review.json"), remove: () => {} }),
 			applyVerdict: async (_ctx: unknown, input: { hooks?: { onCommit?: () => void } }) => input.hooks?.onCommit?.(),
 		});
 		const tool = tools[0];
@@ -1470,11 +1440,8 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 		try {
 			let latestReviewSnapshot!: SnapshotDescriptor;
 		const { tools } = loadSurface({
-				buildAssurance: async (rootPath: string, _task: string, role: "qa" | "review", current: { projection?: Record<string, any> }) => ({
-					snapshot: minimalSnapshot(role, rootPath, current),
-					descriptors: new Map(),
-					reviewBundle: role === "review" ? ({ dirty_files: {}, outcomes: {}, bundle_digest: "sha256:bundle" } as never) : null,
-				}),
+				buildAssurance: async (rootPath: string, _task: string, role: "qa" | "review", current: { projection?: Record<string, any> }) =>
+					minimalAssurance(role, rootPath, current),
 				runQa: async (snapshot: SnapshotDescriptor) => ({
 					contract: "assurance_kernel/assurance_verdict/v2",
 					role: "qa",
@@ -1499,46 +1466,6 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});
 
-	test("cancellation while constructing a Review reservation removes its evidence", { timeout: 15000 }, async () => {
-		const root = makeEnrolledRoot();
-		const controller = new AbortController();
-		const evidencePath = join(root, "review-construction.json");
-		let removed = false;
-		try {
-			let latestReviewSnapshot!: SnapshotDescriptor;
-		const { tools } = loadSurface({
-				buildAssurance: async (rootPath: string, _task: string, role: "qa" | "review", current: { projection?: Record<string, any> }) => ({
-					snapshot: minimalSnapshot(role, rootPath, current),
-					descriptors: new Map(),
-					reviewBundle: role === "review" ? ({ dirty_files: {}, outcomes: {}, bundle_digest: "sha256:bundle" } as never) : null,
-				}),
-				runQa: async (snapshot: SnapshotDescriptor) => ({
-					contract: "assurance_kernel/assurance_verdict/v2",
-					role: "qa",
-					task_id: TASK,
-					snapshot_digest: snapshotDigest(snapshot),
-					decision: "pass",
-					approval: { kind: "qa", authority_role: "qa", summary: "passed" },
-				}),
-				writeReviewEvidence: () => {
-					controller.abort();
-					return { writePacket: writeTestReviewPacket, path: evidencePath, remove: () => { removed = true; } };
-				},
-			});
-			const tool = tools[0];
-			const result = await capturedToolFailure(tool.execute(
-				"advance",
-				{ task_id: TASK, action: { op: "advance_assurance" } },
-				controller.signal,
-				undefined,
-				makeCtx(root, makeUI()),
-			));
-			expect(result.state).toBe("review_preparation_failed");
-			expect(removed).toBe(true);
-		} finally { rmSync(root, { recursive: true, force: true }); }
-	});
-
-
 	test("host cancellation reaches the foreground QA Tool and performs no QA authority write", { timeout: 15000 }, async () => {
 		const root = makeEnrolledRoot();
 		try {
@@ -1548,9 +1475,8 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 			const controller = new AbortController();
 			let latestReviewSnapshot!: SnapshotDescriptor;
 		const { tools } = loadSurface({
-				buildAssurance: async (rootPath: string, _task: string, role: "qa" | "review", current: { projection?: Record<string, any> }) => ({ snapshot: minimalSnapshot(role, rootPath, current), descriptors: new Map(), reviewBundle: role === "review" ? ({ dirty_files: {}, outcomes: {}, bundle_digest: "sha256:bundle" } as never) : null }),
+				buildAssurance: async (rootPath: string, _task: string, role: "qa" | "review", current: { projection?: Record<string, any> }) => minimalAssurance(role, rootPath, current),
 				runQa: async () => { await gate; throw new DOMException("aborted", "AbortError"); },
-				writeReviewEvidence: () => ({ writePacket: writeTestReviewPacket, path: join(root, "review.json"), remove: () => {} }),
 				applyVerdict: async () => { applyCount += 1; },
 			});
 			const tool = tools[0];

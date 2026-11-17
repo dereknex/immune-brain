@@ -1,17 +1,14 @@
-// Host-captured immutable review evidence.
+// Host-captured immutable Review revision (#565).
+//
+// Review reads one immutable synthetic Git revision whose only parent is the
+// Enrollment base. The reviewer runs `git diff <base_head> <review_commit>`
+// itself, so no evidence file or manifest is handed to it; the runtime keeps
+// only the facts Git cannot show (QA outcomes, estimate escapes) for the brief.
 
 import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import {
-	mkdtempSync,
-	rmSync,
-	writeFileSync,
-	statSync,
-	readFileSync,
-	realpathSync,
-	chmodSync,
-} from "node:fs";
-import type { ReviewEvidence } from "./host_port";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import type { ReviewPacketWriter } from "./host_port";
 import { routineAllowlistEscapes } from "../kernel/completion";
 import { readRiskFloor } from "../kernel/risk_floor";
 import type { TaskIntentV1 } from "../kernel/types";
@@ -19,211 +16,19 @@ import { packetDigest } from "./review_packet";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-	captureGitTaskSnapshot,
 	captureGitTaskRevisionSnapshot,
 	pathMatchesScope,
-	taskDiffHash,
-	type GitTaskIndexEntry,
 	type GitTaskRevisionSnapshot,
 } from "../workspace_scope";
 import { currentRunId } from "../kernel/storage";
-
-const MAX_REVIEW_BUNDLE_BYTES = 2 * 1024 * 1024;
+import { freshSlotDirectory } from "../session_result_slot";
 
 export interface ReviewOutcome {
 	status: "passed" | "failed" | "blocked";
 	summary: string;
 }
 
-export interface ReviewNeighborhoodFile {
-	mode: "100644" | "100755" | "120000";
-	oid: string;
-	base_mode: "100644" | "100755" | "120000";
-	base_oid: string;
-	fingerprint: string;
-	current_content: string;
-}
-
-export interface ReviewBundle {
-	contract: "assurance_kernel/review_bundle/v4";
-	root: string;
-	head: string;
-	scope: string[];
-	diff_hash: string;
-	dirty_files: Record<string, GitTaskIndexEntry & {
-		fingerprint: string;
-		current_content: string | null;
-	}>;
-	/** Present on newly captured bundles; optional only for legacy in-memory test fixtures. */
-	neighborhood_files?: Record<string, ReviewNeighborhoodFile>;
-	/** Explicit provenance for every bundled path. */
-	path_provenance?: Record<string, "diff" | "neighborhood">;
-	outcomes: Record<string, ReviewOutcome>;
-	bundle_digest: string;
-}
-
-function bundleDigest(bundle: Omit<ReviewBundle, "bundle_digest">): string {
-	return `sha256:${createHash("sha256").update(JSON.stringify(bundle)).digest("hex")}`;
-}
-
 const reviewUtf8 = new TextDecoder("utf-8", { fatal: true });
-
-function readIndexBlob(
-	root: string,
-	path: string,
-	entry: Pick<GitTaskIndexEntry, "oid">,
-): string | null {
-	if (!entry.oid) return null;
-	const type = execFileSync("git", ["cat-file", "-t", entry.oid], {
-		cwd: root,
-		encoding: "utf8",
-		stdio: ["ignore", "pipe", "ignore"],
-		maxBuffer: 16,
-		timeout: 10_000,
-	}).trim();
-	if (type !== "blob") throw new Error(`index object is not a blob for ${path}`);
-	const sizeText = execFileSync("git", ["cat-file", "-s", entry.oid], {
-		cwd: root,
-		encoding: "utf8",
-		stdio: ["ignore", "pipe", "ignore"],
-		maxBuffer: 64,
-		timeout: 10_000,
-	}).trim();
-	const size = Number(sizeText);
-	if (!Number.isSafeInteger(size) || size < 0 || size > MAX_REVIEW_BUNDLE_BYTES)
-		throw new Error(`review file exceeds bounded size: ${path}`);
-	const bytes = execFileSync("git", ["cat-file", "blob", entry.oid], {
-		cwd: root,
-		encoding: "buffer",
-		stdio: ["ignore", "pipe", "ignore"],
-		maxBuffer: MAX_REVIEW_BUNDLE_BYTES + 1,
-		timeout: 10_000,
-	}) as Buffer;
-	if (bytes.length !== size) throw new Error(`index blob size changed during capture: ${path}`);
-	let content: string;
-	try {
-		content = reviewUtf8.decode(bytes);
-	} catch {
-		throw new Error(`review file is not valid UTF-8: ${path}`);
-	}
-	if (!Buffer.from(content, "utf8").equals(bytes))
-		throw new Error(`review file does not round-trip through UTF-8: ${path}`);
-	return content;
-}
-
-const GIT_OBJECT_ID = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
-const REVIEW_MODES = new Set(["100644", "100755", "120000"] as const);
-
-function nullRecords(bytes: Buffer): Buffer[] {
-	if (bytes.length === 0) return [];
-	if (bytes[bytes.length - 1] !== 0) throw new Error("git index listing is not NUL-terminated");
-	const records: Buffer[] = [];
-	let start = 0;
-	for (let index = 0; index < bytes.length; index += 1) {
-		if (bytes[index] !== 0) continue;
-		if (index === start) throw new Error("git index listing contains an empty record");
-		records.push(bytes.subarray(start, index));
-		start = index + 1;
-	}
-	return records;
-}
-
-function scopedNeighborhoodFiles(
-	root: string,
-	scope: string[],
-	dirtyPaths: Set<string>,
-): Record<string, ReviewNeighborhoodFile> {
-	const listing = execFileSync("git", ["ls-files", "--stage", "-z"], {
-		cwd: root,
-		encoding: "buffer",
-		stdio: ["ignore", "pipe", "ignore"],
-		maxBuffer: 32 * 1024 * 1024,
-		timeout: 10_000,
-	}) as Buffer;
-	const entries: Array<[string, ReviewNeighborhoodFile]> = [];
-	for (const record of nullRecords(listing)) {
-		const tab = record.indexOf(9);
-		if (tab < 0) throw new Error("git index entry is malformed");
-		const [mode, oid, stage] = record.subarray(0, tab).toString("ascii").split(" ");
-		let path: string;
-		try {
-			path = reviewUtf8.decode(record.subarray(tab + 1));
-		} catch {
-			throw new Error("git index path is not valid UTF-8");
-		}
-		if (!Buffer.from(path, "utf8").equals(record.subarray(tab + 1)))
-			throw new Error("git index path does not round-trip through UTF-8");
-		if (!scope.some((scopePath) => pathMatchesScope(path, scopePath)) || dirtyPaths.has(path)) continue;
-		if (!REVIEW_MODES.has(mode as "100644" | "100755" | "120000"))
-			throw new Error(`review neighborhood file has unsupported mode: ${path}`);
-		if (!GIT_OBJECT_ID.test(oid ?? "") || /^0+$/.test(oid ?? "") || stage !== "0")
-			throw new Error(`review neighborhood file has invalid index identity: ${path}`);
-		const content = readIndexBlob(root, path, { oid });
-		if (content === null) throw new Error(`review neighborhood file is missing index content: ${path}`);
-		entries.push([path, {
-			mode: mode as ReviewNeighborhoodFile["mode"],
-			oid,
-			base_mode: mode as ReviewNeighborhoodFile["base_mode"],
-			base_oid: oid,
-			fingerprint: `index:${mode}:${oid}`,
-			current_content: content,
-		}]);
-	}
-	entries.sort(([left], [right]) => left.localeCompare(right));
-	return Object.fromEntries(entries);
-}
-
-export function captureReviewBundle(
-	root: string,
-	scopeHint: unknown,
-	expectedDiffHash: string,
-	outcomes: Record<string, ReviewOutcome>,
-): ReviewBundle {
-	const before = captureGitTaskSnapshot(root, scopeHint);
-	if (taskDiffHash(root, before.scope) !== expectedDiffHash)
-		throw new Error("review task snapshot does not match assurance snapshot");
-	const dirtyFiles = Object.fromEntries(
-		Object.entries(before.staged_files).map(([path, entry]) => [path, {
-			...entry,
-			fingerprint: `index:${entry.mode ?? "missing"}:${entry.oid ?? "missing"}`,
-			current_content: readIndexBlob(before.repository_root, path, entry),
-		}]),
-	);
-	const neighborhoodFiles = scopedNeighborhoodFiles(
-		before.repository_root,
-		before.scope,
-		new Set(Object.keys(dirtyFiles)),
-	);
-	const pathProvenance = Object.fromEntries([
-		...Object.keys(dirtyFiles).map((path) => [path, "diff"] as const),
-		...Object.keys(neighborhoodFiles).map((path) => [path, "neighborhood"] as const),
-	].sort(([left], [right]) => left.localeCompare(right)));
-	const after = captureGitTaskSnapshot(root, before.scope);
-	if (
-		JSON.stringify(after) !== JSON.stringify(before) ||
-		taskDiffHash(root, before.scope) !== expectedDiffHash
-	) {
-		throw new Error("task snapshot changed while capturing immutable review bundle");
-	}
-	const unsigned = {
-		contract: "assurance_kernel/review_bundle/v4" as const,
-		root: before.repository_root,
-		head: before.head,
-		scope: before.scope,
-		diff_hash: expectedDiffHash,
-		dirty_files: dirtyFiles,
-		neighborhood_files: neighborhoodFiles,
-		path_provenance: pathProvenance,
-		// Defensive copies so later caller mutation cannot alter the frozen record.
-		outcomes: Object.fromEntries(
-			Object.entries(outcomes).map(([id, outcome]) => [id, { ...outcome }]),
-		),
-	};
-	if (Buffer.byteLength(JSON.stringify(unsigned)) > MAX_REVIEW_BUNDLE_BYTES) {
-		throw new Error("immutable review bundle exceeds bounded output limit");
-	}
-	return { ...unsigned, bundle_digest: bundleDigest(unsigned) };
-}
 
 // ---------------------------------------------------------------------------
 // TaskRecord v4 transport: the reviewed bytes are an immutable synthetic Git
@@ -253,94 +58,6 @@ export interface ReviewRevisionCommit {
 	review_commit: string;
 	review_ref: string;
 	diff_hash: string;
-}
-
-/**
- * The full Review revision identity a host port must return.
- *
- * `manifest_digest` was optional here, which is the type-level hole that let a
- * host return the bare commit identity and still satisfy
- * `AssuranceCoordinatorPorts.ensureReviewRevision`. `submitReview` compares all
- * four identity fields against the reservation, so an absent digest compared
- * against a real one and failed every v4 submission at runtime instead of at
- * build time. Requiring it makes that omission a compile error.
- */
-export interface ReviewRevision extends ReviewRevisionCommit {
-	manifest_digest: string;
-}
-
-export interface ReviewManifestV5 {
-	contract: "assurance_kernel/review_manifest/v5";
-	task_id: string;
-	intent_revision: number;
-	intent_content_hash: string;
-	scope: string[];
-	base_head: string;
-	review_tree: string;
-	review_commit: string;
-	review_ref: string;
-	changed_paths: Record<string, GitTaskIndexEntry>;
-	/** Delivered paths outside the TaskIntent estimate. */
-	beyond_estimate?: string[];
-	/** Present only when non-empty: delivered paths that keep a `routine` declaration from standing (ADR 0038). */
-	outside_routine_allowlist?: string[];
-	diff_hash: string;
-	outcomes: Record<string, ReviewOutcome>;
-	record_revision: string;
-	workspace_revision: string;
-	lifecycle: string;
-	artifact_state: string;
-	risk: string;
-	/** Round 3 and later only: the prior round's reviewed commit. */
-	prior_review_commit?: string;
-	/** Paths whose tree entries differ between the prior and current review trees. */
-	delta_paths?: string[];
-	/** Round 3 and later only: why no delta is available, so the rule is skipped. */
-	delta_skipped?: "prior_review_revision_absent" | "prior_review_revision_unresolvable";
-	manifest_digest: string;
-}
-
-/** The first Review round that judges only the rework delta. */
-export const REVIEW_DELTA_FROM_ROUND = 3;
-
-export interface ReviewDeltaInput {
-	/** The round this Review opens, derived from the Kernel's review findings. */
-	round: number;
-	/** The revision the previous round reviewed; null for a legacy record. */
-	prior: { review_commit: string; review_tree: string } | null;
-}
-
-function reviewDeltaFields(
-	root: string,
-	delta: ReviewDeltaInput | undefined,
-	currentTree: string,
-): Pick<ReviewManifestV5, "prior_review_commit" | "delta_paths" | "delta_skipped"> {
-	if (!delta || delta.round < REVIEW_DELTA_FROM_ROUND) return {};
-	if (!delta.prior) return { delta_skipped: "prior_review_revision_absent" };
-	try {
-		gitEvidence(root, ["cat-file", "-e", `${delta.prior.review_commit}^{commit}`]);
-		gitEvidence(root, ["cat-file", "-e", `${delta.prior.review_tree}^{tree}`]);
-		const names = gitEvidenceBytes(root, [
-			"diff-tree",
-			"-r",
-			"--name-only",
-			"--no-renames",
-			"-z",
-			delta.prior.review_tree,
-			currentTree,
-		]).toString("utf8");
-		return {
-			prior_review_commit: delta.prior.review_commit,
-			delta_paths: names.split("\0").filter(Boolean).sort(),
-		};
-	} catch {
-		// A pruned or unreachable prior revision must never block Review.
-		return { delta_skipped: "prior_review_revision_unresolvable" };
-	}
-}
-
-function manifestDigest(manifest: Omit<ReviewManifestV5, "manifest_digest">): string {
-	return `sha256:${createHash("sha256").update(JSON.stringify(manifest)).digest("hex")}`;
 }
 
 function gitEvidenceBytes(root: string, args: string[], extraEnv: Record<string, string> = {}): Buffer {
@@ -519,59 +236,43 @@ function publishInput(
 	return { snapshot, revision: publishReviewRevision(snapshot.repository_root, snapshot, recomputed, input.taskId) };
 }
 
-export function captureReviewManifest(
+/**
+ * The facts a Review brief carries that Git cannot show the reviewer: which
+ * delivered paths escape the TaskIntent estimate or keep a `routine`
+ * declaration from standing (ADR 0038), and the settled QA outcomes. The
+ * changed paths themselves are `git diff --name-status base review_commit`.
+ */
+export interface ReviewFacts {
+	revision: ReviewRevisionCommit;
+	changed_paths: string[];
+	beyond_estimate: string[];
+	outside_routine_allowlist: string[];
+	outcomes: Record<string, ReviewOutcome>;
+}
+
+export function captureReviewFacts(
 	root: string,
 	input: {
 		taskId: string;
 		baseHead: string;
 		scopeHint: unknown;
 		expectedDiffHash: string;
-		intentRevision: number;
-		intentContentHash: string;
-		recordRevision: string;
-		workspaceRevision: string;
-		lifecycle: string;
-		artifactState: string;
-		risk: string;
 		outcomes: Record<string, ReviewOutcome>;
-		/** Present once the task has a Review history; absent keeps rounds 1-2 byte-identical. */
-		delta?: ReviewDeltaInput;
 		/** The task's intent, so a `routine` declaration raised by the allowlist names its paths. */
 		intent?: TaskIntentV1;
 	},
-): ReviewManifestV5 {
+): ReviewFacts {
 	const { snapshot, revision } = publishInput(root, input);
-	const outsideRoutine = input.intent
-		? routineAllowlistEscapes(input.intent, Object.keys(snapshot.changed_paths), readRiskFloor(root)).sort(compareRevisionPaths)
-		: [];
-	const unsigned = {
-		contract: "assurance_kernel/review_manifest/v5" as const,
-		task_id: input.taskId,
-		intent_revision: input.intentRevision,
-		intent_content_hash: input.intentContentHash,
-		scope: snapshot.scope,
-		base_head: revision.base_head,
-		review_tree: revision.review_tree,
-		review_commit: revision.review_commit,
-		review_ref: revision.review_ref,
-		changed_paths: snapshot.changed_paths,
-		beyond_estimate: Object.keys(snapshot.changed_paths).filter(path => !snapshot.scope.some(entry => pathMatchesScope(path, entry))).sort(compareRevisionPaths),
-		...(outsideRoutine.length > 0 ? { outside_routine_allowlist: outsideRoutine } : {}),
-		diff_hash: revision.diff_hash,
-		outcomes: Object.fromEntries(
-			Object.entries(input.outcomes).map(([id, outcome]) => [id, { ...outcome }]),
-		),
-		record_revision: input.recordRevision,
-		workspace_revision: input.workspaceRevision,
-		lifecycle: input.lifecycle,
-		artifact_state: input.artifactState,
-		risk: input.risk,
-		...reviewDeltaFields(root, input.delta, revision.review_tree),
+	const changed = Object.keys(snapshot.changed_paths).sort(compareRevisionPaths);
+	return {
+		revision,
+		changed_paths: changed,
+		beyond_estimate: changed.filter(path => !snapshot.scope.some(entry => pathMatchesScope(path, entry))),
+		outside_routine_allowlist: input.intent
+			? routineAllowlistEscapes(input.intent, changed, readRiskFloor(root)).sort(compareRevisionPaths)
+			: [],
+		outcomes: Object.fromEntries(Object.entries(input.outcomes).map(([id, outcome]) => [id, { ...outcome }])),
 	};
-	const manifest = { ...unsigned, manifest_digest: manifestDigest(unsigned) };
-	if (Buffer.byteLength(JSON.stringify(manifest)) > MAX_REVIEW_BUNDLE_BYTES)
-		throw new Error("immutable review manifest metadata exceeds bounded output limit");
-	return manifest;
 }
 
 export function listReviewRefs(root: string): Array<{ ref: string; commit: string; taskId: string }> {
@@ -615,48 +316,25 @@ export function reconcileReviewRefs(
 	return { removed, failed };
 }
 
-export function writeNativeReviewEvidence(payload: unknown): ReviewEvidence {
-	const rawDirectory = mkdtempSync(join(tmpdir(), "imm-canary-native-review-"));
-	try {
-		const directory = realpathSync(rawDirectory);
-		chmodSync(directory, 0o755);
-		const path = join(directory, "evidence.json");
-		writeFileSync(path, JSON.stringify(payload), { encoding: "utf8", mode: 0o644, flag: "wx" });
-		// Fail-closed artifact check: the immutable evidence must be readable
-		// before a reserved review is dispatched.
-		assertReviewArtifact(path);
-		return {
-			path,
-			writePacket(name, content) {
-				if (!/^[A-Za-z0-9._-]+$/.test(name)) throw new Error("invalid review packet name");
-				const packetPath = join(directory, `review-packet-${name}.md`);
-				writeFileSync(packetPath, content, { encoding: "utf8", mode: 0o644, flag: "wx" });
-				assertReviewArtifact(packetPath);
-				return { path: packetPath, sha256: packetDigest(content) };
-			},
-			remove: () => rmSync(directory, { recursive: true, force: true }),
-		};
-	} catch (error) {
-		rmSync(rawDirectory, { recursive: true, force: true });
-		throw error;
-	}
-}
-
 /**
- * Fail-closed artifact check: the immutable evidence file must exist and be
- * readable before a reserved review is dispatched. Missing or unreadable
- * artifacts throw so dispatch writes zero authority and exposes an explicit
- * re-reserve path.
+ * Packets for a Host that dispatches findings Verification in-process. They live
+ * in an ignored session slot directory inside the task root, never `$TMPDIR`.
+ * The directory is created on the first packet only, so a Review round that
+ * never verifies, and every CLI round (which writes its own result slot), leaves none.
  */
-export function assertReviewArtifact(path: string): void {
-	const targetPath = realpathSync(path);
-	let stat;
-	try {
-		stat = statSync(targetPath);
-	} catch {
-		throw new Error(`review evidence artifact is missing or empty: ${path}`);
-	}
-	if (!stat.isFile() || stat.size === 0) throw new Error(`review evidence artifact is missing or empty: ${path}`);
-	const read = readFileSync(targetPath, { encoding: "utf8" });
-	if (read.trim().length === 0) throw new Error(`review evidence artifact is empty: ${path}`);
+export function createReviewPacketWriter(root: string): ReviewPacketWriter {
+	let directory: string | null = null;
+	return {
+		writePacket(name, content) {
+			if (!/^[A-Za-z0-9._-]+$/.test(name)) throw new Error("invalid review packet name");
+			directory ??= freshSlotDirectory(root, `packets-${randomUUID()}`);
+			const path = join(directory, `review-packet-${name}.md`);
+			writeFileSync(path, content, { encoding: "utf8", mode: 0o644, flag: "wx" });
+			return { path, sha256: packetDigest(content) };
+		},
+		remove() {
+			if (directory) rmSync(directory, { recursive: true, force: true });
+			directory = null;
+		},
+	};
 }

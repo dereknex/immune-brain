@@ -2322,19 +2322,22 @@ describe("verifier via real hook dispatch", () => {
 			intent_content_hash: "sha256:intent", diff_hash: "sha256:diff", lifecycle: "active", artifact_state: "frozen",
 			risk: "material", fresh_acceptance_ids: ["A1"], missing_acceptance_ids: [], stale_attestation_ids: [],
 			acceptance: [{ id: "A1", assertion: "the change satisfies the acceptance", verification: "{}" }],
-			dirty_files: ["src.ts"], review_bundle_digest: role === "review" ? "sha256:bundle" : null,
-			review_revision: { contract: "assurance_kernel/review_revision_identity/v1", base_head: "a".repeat(40),
-				review_commit: "b".repeat(40), review_tree: "c".repeat(40), manifest_digest: `sha256:${"d".repeat(64)}` },
+			dirty_files: ["src.ts"],
+			review_revision: { contract: "assurance_kernel/review_revision_identity/v2", base_head: "a".repeat(40),
+				review_commit: "b".repeat(40) },
 			root,
 		} as coordinator.SnapshotDescriptor;
 	}
 
-	function reviewBundle(root: string): coordinator.ReviewBundle {
+	function reviewFacts() {
 		return {
-			contract: "assurance_kernel/review_bundle/v4", root, head: "a".repeat(40), scope: ["src.ts"],
-			diff_hash: "sha256:diff", dirty_files: {}, outcomes: { A1: { status: "passed", summary: "fresh" } },
-			bundle_digest: "sha256:bundle",
-		} as unknown as coordinator.ReviewBundle;
+			revision: { contract: "assurance_kernel/review_revision/v1", base_head: "a".repeat(40), review_tree: "c".repeat(40),
+				review_commit: "b".repeat(40), review_ref: `refs/imm/review/${TASK}`, diff_hash: "sha256:diff" },
+			changed_paths: ["src.ts"],
+			beyond_estimate: [],
+			outside_routine_allowlist: [],
+			outcomes: { A1: { status: "passed", summary: "fresh" } },
+		};
 	}
 
 	function reworkVerdict(snapshot: coordinator.SnapshotDescriptor): coordinator.AssuranceVerdict {
@@ -2381,19 +2384,13 @@ describe("verifier via real hook dispatch", () => {
 					command: { executable: "bun", argv: ["test"], cwd: ".", timeout_ms: 1000, max_output_bytes: 1024 },
 					environment: { prepare: null, writable_paths: [] },
 				}]] as never),
-				reviewBundle: role === "review" ? reviewBundle(root) : null,
+				reviewFacts: role === "review" ? reviewFacts() : null,
 			}),
 			runQa: async (s: coordinator.SnapshotDescriptor) => ({
 				contract: "assurance_kernel/assurance_verdict/v2", role: s.role, task_id: TASK,
 				snapshot_digest: coordinator.snapshotDigest(s), decision: "pass",
 				approval: { kind: "qa", authority_role: "qa", summary: "passed" },
 			} as coordinator.AssuranceVerdict),
-			writeReviewEvidence: () => {
-				const dir = scratchDir("evidence");
-				const path = join(dir, "evidence.json");
-				writeFileSync(path, "{}");
-				return { path, writePacket: writeTestReviewPacket, remove: () => rmSync(dir, { recursive: true, force: true }) };
-			},
 			applyOrdinaryOperation: async () => undefined,
 		} as unknown as Partial<coordinator.AssuranceCoordinatorPorts>;
 		const authority = {
@@ -2404,7 +2401,7 @@ describe("verifier via real hook dispatch", () => {
 						actor: input.verification.facts.verifier_actor, ...(input.verification.facts.failure ? { failure: input.verification.facts.failure } : {}) } : {}) });
 				obligation = input.snapshot.role === "qa" ? "run_review" : input.verdict.decision === "rework" ? "run_qa" : "complete";
 			},
-			ensureReviewRevision: async () => snapshotOf(root, "review").review_revision!,
+			ensureReviewRevision: async () => reviewFacts().revision,
 		} as unknown as Partial<coordinator.VerdictAuthority>;
 		return { ports, authority };
 	}

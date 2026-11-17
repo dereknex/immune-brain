@@ -13,13 +13,13 @@ import type { VerdictAuthority } from "../plugins/immune-brain/runtime/assurance
 import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { readdirSync, readFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { writeNativeReviewEvidence } from "../plugins/immune-brain/runtime/assurance/review_evidence";
+import { createReviewPacketWriter, type ReviewFacts } from "../plugins/immune-brain/runtime/assurance/review_evidence";
 import { reviewPacketHandle, parseReviewPacketHandle } from "../plugins/immune-brain/runtime/assurance/review_packet";
 import { submitMediatedReview, digestOfReviewerBytes } from "../plugins/immune-brain/runtime/assurance/review_mediation";
 import {
 	AssuranceCoordinator,
 	buildReviewPrompt,
-	buildReviewSnapshotPrompt,
+	buildReviewBrief,
 	buildReviewVerificationPacket,
 	prepareReviewVerificationDispatch,
 	consumeReviewVerification,
@@ -40,7 +40,6 @@ import { PiRuntime } from "../plugins/immune-brain/.pi-extension/pi-host-runtime
 import { ClaudeReviewHost } from "../plugins/immune-brain/runtime/claude/review_host";
 import type { AssuranceHostPort, HostReviewReservation, ReviewRequest } from "../plugins/immune-brain/runtime/assurance/host_port";
 import type { AssuranceProjectionResult } from "../plugins/immune-brain/runtime/kernel/assurance_projection";
-import type { ReviewBundle } from "../plugins/immune-brain/runtime/assurance/review_evidence";
 import { taskDeliveryIdentity } from "../plugins/immune-brain/runtime/workspace_scope";
 import { VerificationAbortedError } from "../plugins/immune-brain/runtime/assurance/verification";
 import { QaPreparationError, runDeterministicQa } from "../plugins/immune-brain/runtime/assurance/qa";
@@ -100,23 +99,22 @@ function snapshot(role: "qa" | "review"): SnapshotDescriptor {
 		stale_attestation_ids: [],
 		acceptance: [{ id: "A1", assertion: "the contract holds", verification: "{}" }],
 		dirty_files: ["src/change.ts"],
-		review_bundle_digest: role === "review" ? "sha256:bundle" : null,
+		...(role === "review" ? { review_revision: { contract: "assurance_kernel/review_revision_identity/v2" as const, base_head: "a".repeat(40), review_commit: "b".repeat(40) } } : {}),
 		root: ROOT,
 	};
 }
 
-function reviewBundle(): ReviewBundle {
+function reviewFacts(): ReviewFacts {
 	return {
-		contract: "assurance_kernel/review_bundle/v4",
-		root: ROOT,
-		head: "a".repeat(40),
-		scope: ["src/change.ts"],
-		diff_hash: "sha256:diff",
-		dirty_files: {},
+		revision: { contract: "assurance_kernel/review_revision/v1", base_head: "a".repeat(40), review_tree: "c".repeat(40),
+			review_commit: "b".repeat(40), review_ref: `refs/imm/review/${TASK}`, diff_hash: "sha256:diff" },
+		changed_paths: ["src/change.ts"],
+		beyond_estimate: [],
+		outside_routine_allowlist: [],
 		outcomes: { A1: { status: "passed", summary: "fresh" } },
-		bundle_digest: "sha256:bundle",
-	} as unknown as ReviewBundle;
+	} as unknown as ReviewFacts;
 }
+const BRIEF_FACTS = reviewFacts();
 
 function passVerdict(s: SnapshotDescriptor): AssuranceVerdict {
 	return {
@@ -185,7 +183,7 @@ function makeCoordinator(overrides: {
 	const ports: AssuranceCoordinatorPorts & Partial<VerdictAuthority> = {
 		host,
 		...(overrides.mode ? { reviewVerifierMode: () => overrides.mode! } : {}),
-		...(overrides.ensureRevision ? { ensureReviewRevision: overrides.ensureRevision } : {}),
+		ensureReviewRevision: overrides.ensureRevision ?? (async () => reviewFacts().revision),
 		...(overrides.recordVerification ? { recordVerification: overrides.recordVerification } : {}),
 		...(overrides.recordDispute ? { recordReviewDispute: overrides.recordDispute } : {}),
 		confirmationReference: ({ actorId }) => `fixture:${actorId}`,
@@ -202,7 +200,7 @@ function makeCoordinator(overrides: {
 				"A1",
 				{ contract: "assurance_kernel/verification_descriptor/v2", command: { executable: "tool", argv: ["test"], cwd: ".", timeout_ms: 1000, max_output_bytes: 1024 }, environment: { prepare: null, writable_paths: [] } },
 			]] as never),
-			reviewBundle: role === "review" ? reviewBundle() : null,
+			reviewFacts: role === "review" ? reviewFacts() : null,
 		})),
 		runQa: async (s, descriptors, options) => {
 			qaRuns += 1;
@@ -210,7 +208,6 @@ function makeCoordinator(overrides: {
 		},
 		...(overrides.qaJobTimeoutMs !== undefined ? { qaJobTimeoutMs: overrides.qaJobTimeoutMs } : {}),
 		...(overrides.reviewVerificationTimeoutMs !== undefined ? { reviewVerificationTimeoutMs: overrides.reviewVerificationTimeoutMs } : {}),
-		writeReviewEvidence: () => ({ writePacket: writeTestReviewPacket, path: `${ROOT}/review.json`, remove: () => undefined }),
 		applyVerdict: async (_ctx, input) => {
 			applyCount += 1;
 			lastApplied = input;
@@ -259,8 +256,7 @@ describe("review verification packet", () => {
 	rmSync(join(root, "src/change.ts"));
 	afterAll(() => { transcripts.cleanup(); rmSync(root, { recursive: true, force: true }); });
 	const s: SnapshotDescriptor = { ...snapshot("review"), root, review_revision: {
-		contract: "assurance_kernel/review_revision_identity/v1", base_head: commit, review_commit: commit,
-		review_tree: tree, manifest_digest: `sha256:${"d".repeat(64)}`,
+		contract: "assurance_kernel/review_revision_identity/v2", base_head: commit, review_commit: commit,
 	} };
 	const verdict = parseAssuranceVerdict({ contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: TASK,
 		snapshot_digest: snapshotDigest(s), decision: "rework", findings: [{ id: "f1", kind: "blocking", acceptance_id: "A1",
@@ -385,7 +381,7 @@ describe("review verification packet", () => {
 		const pi = makePiReviewHost(root);
 		const host = new FakeReviewHost(pi);
 		const h = makeCoordinator({ host, mode: "on", project: async () => projection("active", "run_review"),
-			assurance: async () => ({ snapshot: s, descriptors: new Map(), reviewBundle: reviewBundle() }),
+			assurance: async () => ({ snapshot: s, descriptors: new Map(), reviewFacts: reviewFacts() }),
 			ensureRevision: async () => s.review_revision! });
 		const ready = await h.coordinator.advance(TASK, { cwd: root });
 		expect(ready.state).toBe("review_ready");
@@ -425,7 +421,7 @@ describe("review verification packet", () => {
 		const h = makeCoordinator({ host, mode: "on", project: async () => {
 			const value = projection("active", "run_review"); value.projection.record_revision = revision; return value;
 		}, record: async () => ({ revision, record: { findings: [], history } }),
-			assurance: async () => ({ snapshot: currentSnapshot(), descriptors: new Map(), reviewBundle: reviewBundle() }),
+			assurance: async () => ({ snapshot: currentSnapshot(), descriptors: new Map(), reviewFacts: reviewFacts() }),
 			ensureRevision: async () => s.review_revision!,
 			recordVerification: async (_ctx, input) => { history = [{ type: "verification", reason: "checked", verification: input.verification.facts }]; revision = "record-2"; },
 			recordDispute: async (_ctx, input) => { disputed = input; } });
@@ -459,7 +455,7 @@ describe("review verification packet", () => {
 		const pi = makePiReviewHost(root);
 		const host = new FakeReviewHost(pi);
 		const h = makeCoordinator({ host, mode: "on", project: async () => projection("active", "run_review"),
-			assurance: async () => ({ snapshot: s, descriptors: new Map(), reviewBundle: reviewBundle() }),
+			assurance: async () => ({ snapshot: s, descriptors: new Map(), reviewFacts: reviewFacts() }),
 			ensureRevision: async () => s.review_revision!, ...(failure === "timeout" ? { reviewVerificationTimeoutMs: 0 } : {}) });
 		await h.coordinator.advance(TASK, { cwd: root });
 		const submitted = { contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: TASK,
@@ -486,7 +482,7 @@ describe("review verification packet", () => {
 		const pi = makePiReviewHost(root);
 		const host = new FakeReviewHost(pi);
 		const h = makeCoordinator({ host, mode: "on", project: async () => projection("active", "run_review"),
-			assurance: async () => ({ snapshot: s, descriptors: new Map(), reviewBundle: reviewBundle() }), ensureRevision: async () => s.review_revision! });
+			assurance: async () => ({ snapshot: s, descriptors: new Map(), reviewFacts: reviewFacts() }), ensureRevision: async () => s.review_revision! });
 		await h.coordinator.advance(TASK, { cwd: root });
 		const submitted = { contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: TASK,
 			snapshot_digest: snapshotDigest(s), decision: "rework", findings: [{ id: "claim", kind: "blocking", acceptance_id: "A1", summary: "claim",
@@ -502,7 +498,7 @@ describe("review verification packet", () => {
 		const pi = makePiReviewHost(root);
 		const host = new FakeReviewHost(pi);
 		const h = makeCoordinator({ host, mode: "on", project: async () => projection("active", "run_review"),
-			assurance: async () => ({ snapshot: s, descriptors: new Map(), reviewBundle: reviewBundle() }), ensureRevision: async () => s.review_revision! });
+			assurance: async () => ({ snapshot: s, descriptors: new Map(), reviewFacts: reviewFacts() }), ensureRevision: async () => s.review_revision! });
 		await h.coordinator.advance(TASK, { cwd: root });
 		const submitted = { contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: TASK,
 			snapshot_digest: snapshotDigest(s), decision: "rework", findings: [{ id: "claim", kind: "blocking", acceptance_id: "A1", summary: "claim",
@@ -517,7 +513,7 @@ describe("review verification packet", () => {
 		const pi = makePiReviewHost(root);
 		const host = new FakeReviewHost(pi);
 		const h = makeCoordinator({ host, mode: "on", ensureRevision: async () => s.review_revision!,
-			assurance: async (_root, _task, role) => ({ snapshot: role === "review" ? s : snapshot("qa"), descriptors: new Map(), reviewBundle: role === "review" ? reviewBundle() : null }) });
+			assurance: async (_root, _task, role) => ({ snapshot: role === "review" ? s : snapshot("qa"), descriptors: new Map(), reviewFacts: role === "review" ? reviewFacts() : null }) });
 		expect((await h.coordinator.advance(TASK, { cwd: root })).state).toBe("review_ready");
 		const result = await h.coordinator.submitReview(TASK, { cwd: root }, passVerdict(s));
 		expect(result.state).toBe("completed");
@@ -528,7 +524,7 @@ describe("review verification packet", () => {
 		const pi = makePiReviewHost(root);
 		const host = new FakeReviewHost(pi);
 		const h = makeCoordinator({ host, mode: "off", project: async () => projection("active", "run_review"),
-			assurance: async () => ({ snapshot: s, descriptors: new Map(), reviewBundle: reviewBundle() }), ensureRevision: async () => s.review_revision! });
+			assurance: async () => ({ snapshot: s, descriptors: new Map(), reviewFacts: reviewFacts() }), ensureRevision: async () => s.review_revision! });
 		await h.coordinator.advance(TASK, { cwd: root });
 		const submitted = { contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: TASK,
 			snapshot_digest: snapshotDigest(s), decision: "rework", findings: [{ id: "claim", kind: "blocking", acceptance_id: "A1", summary: "claim",
@@ -548,7 +544,7 @@ describe("review verification packet", () => {
 		const host = new FakeReviewHost(pi);
 		const h = makeCoordinator({ host, mode: "on", project: async () => projection("active", "run_review"),
 			record: async () => ({ revision: "record-1", record: { findings: [], intent_snapshot: { scope_hint: ["docs/specs/test.spec.md"] } as never } }),
-			assurance: async () => ({ snapshot: s, descriptors: new Map(), reviewBundle: reviewBundle() }), ensureRevision: async () => s.review_revision! });
+			assurance: async () => ({ snapshot: s, descriptors: new Map(), reviewFacts: reviewFacts() }), ensureRevision: async () => s.review_revision! });
 		await h.coordinator.advance(TASK, { cwd: root });
 		const submitted = { contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: TASK,
 			snapshot_digest: snapshotDigest(s), decision: "rework", findings: [{ id: "security", kind: "blocking", acceptance_id: null, summary: "security claim",
@@ -594,10 +590,13 @@ describe("host-neutral assurance coordinator", () => {
 	for (const release of ["stop", "unbound submit", "snapshot change"] as const) {
 		test(`packet lifecycle follows evidence on ${release}`, async () => {
 			const h = makeCoordinator();
-			h.ports.writeReviewEvidence = ({ evidence }) => writeNativeReviewEvidence(evidence);
+			// The coordinator's per-reservation packet writer is what a verifier Host
+			// writes through; its packets must not outlive the reservation.
+			let writer!: ReturnType<typeof createReviewPacketWriter>;
+			h.ports.reviewPackets = (root) => (writer = createReviewPacketWriter(root));
 			h.host.prepareReview = request => ({ id: request.operationId, dispatch: {
 				prompt: reviewPacketHandle({ taskId: request.taskId, operationId: request.operationId,
-					packet: request.writePacket(request.operationId, request.snapshotPrompt) }),
+					packet: writer.writePacket(request.operationId, request.snapshotPrompt) }),
 			} });
 			const first = await h.coordinator.advance(TASK, ctx);
 			expect(first.state).toBe("review_ready");
@@ -644,21 +643,22 @@ describe("host-neutral assurance coordinator", () => {
 		expect((result as any).recovery.next_action).not.toContain("authorization");
 		expect(h.counts().applyCount).toBe(0);
 	});
-	for (const stage of ["build", "write", "reserve"] as const) test(`Review ${stage} failure preserves fresh QA and resumes only run_review after repair`, async () => {
+	for (const stage of ["build", "facts", "reserve"] as const) test(`Review ${stage} failure preserves fresh QA and resumes only run_review after repair`, async () => {
 		const h = makeCoordinator();
-		const originalBuild = h.authority.buildAssurance, originalWrite = h.ports.writeReviewEvidence, originalReserve = h.host.prepareReview;
+		const originalBuild = h.authority.buildAssurance, originalReserve = h.host.prepareReview;
 		h.authority.buildAssurance = async (...args) => {
 			if (stage === "build" && args[2] === "review") throw new Error("fixture Review preparation unavailable");
-			return originalBuild(...args);
+			const built = await originalBuild(...args);
+			// A Review snapshot whose revision facts are missing cannot be dispatched.
+			return stage === "facts" && args[2] === "review" ? { ...built, reviewFacts: null } : built;
 		};
-		if (stage === "write") h.ports.writeReviewEvidence = () => { throw new Error("fixture evidence unavailable"); };
 		if (stage === "reserve") h.host.prepareReview = () => { throw new Error("fixture reservation unavailable"); };
 		expect(await h.coordinator.advance(TASK, ctx)).toMatchObject({ state: "review_preparation_failed", recovery: {
 			category: "environment", task_id: TASK, next_obligation: "run_review", acceptance_ids: ["A1"], finding_ids: [],
 			next_action: expect.stringContaining("retain fresh QA"),
 		} });
 		expect(h.coordinator.active(TASK)).toBeNull(); expect(h.qaRuns()).toBe(1); expect(h.counts().applyCount).toBe(1);
-		h.authority.buildAssurance = originalBuild; h.ports.writeReviewEvidence = originalWrite; h.host.prepareReview = originalReserve;
+		h.authority.buildAssurance = originalBuild; h.host.prepareReview = originalReserve;
 		expect((await h.coordinator.advance(TASK, ctx)).state).toBe("review_ready");
 		expect(h.qaRuns()).toBe(1); expect(h.counts().applyCount).toBe(1);
 	});
@@ -674,7 +674,9 @@ describe("host-neutral assurance coordinator", () => {
 
 		// D6: the per-dispatch facts are the only prompt a Host receives. A second
 		// full prompt would duplicate static instructions the role definition owns.
-		expect(request.snapshotPrompt).toBe(buildReviewSnapshotPrompt(snapshot("review"), request.evidencePath, request.maxTurns));
+		expect(request.snapshotPrompt).toBe(buildReviewBrief(snapshot("review"), BRIEF_FACTS, request.maxTurns));
+		expect(Object.hasOwn(request, "evidencePath")).toBe(false);
+		expect(Object.hasOwn(request, "writePacket")).toBe(false);
 		expect(Object.hasOwn(request, "prompt")).toBe(false);
 		const call = /host\.prepareReview\(\{[\s\S]*?\}\);/.exec(readFileSync(resolve(__dirname, "../plugins/immune-brain/runtime/assurance/coordinator.ts"), "utf8"));
 		expect(call).not.toBeNull();
@@ -683,8 +685,7 @@ describe("host-neutral assurance coordinator", () => {
 
 	test("the verifier packet keeps its own non-empty prompt", async () => {
 		const snap: SnapshotDescriptor = { ...snapshot("review"), review_revision: {
-			contract: "assurance_kernel/review_revision_identity/v1", base_head: "a".repeat(40), review_commit: "a".repeat(40),
-			review_tree: "a".repeat(40), manifest_digest: `sha256:${"d".repeat(64)}` } };
+			contract: "assurance_kernel/review_revision_identity/v2", base_head: "a".repeat(40), review_commit: "a".repeat(40) } };
 		let verification: Parameters<NonNullable<AssuranceHostPort["prepareVerification"]>>[0] | null = null;
 		const verifier: AssuranceHostPort = {
 			host: "fake",
@@ -696,7 +697,7 @@ describe("host-neutral assurance coordinator", () => {
 			releaseReview: () => undefined,
 		};
 		const h = makeCoordinator({ host: new FakeReviewHost(verifier), mode: "on", project: async () => projection("active", "run_review"),
-			assurance: async () => ({ snapshot: snap, descriptors: new Map(), reviewBundle: reviewBundle() }),
+			assurance: async () => ({ snapshot: snap, descriptors: new Map(), reviewFacts: reviewFacts() }),
 			ensureRevision: async () => snap.review_revision! });
 		await h.coordinator.advance(TASK, ctx);
 		const submitted = { contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: TASK,
@@ -963,21 +964,21 @@ describe("host-neutral assurance coordinator", () => {
 		});
 
 		test("only a computed delta round attests the paths outside the delta by carry-forward", () => {
-			const carryForward = /outside delta_paths were inspected by earlier rounds at b{40}; list them in approval\.inspected_paths by carry-forward.*never a blocking finding/s;
-			expect(buildReviewSnapshotPrompt(inDelta)).toMatch(carryForward);
-			expect(buildReviewPrompt(inDelta)).toMatch(carryForward);
-			for (const s of [deltaSnapshot(undefined), deltaSnapshot({ round: 3, skipped: "prior_review_revision_absent" })])
-				expect(buildReviewSnapshotPrompt(s)).not.toContain("carry-forward");
+			const carryForward = /outside the delta paths were inspected by earlier rounds at b{40}; list them in approval\.inspected_paths by carry-forward.*never a blocking finding/s;
+			expect(buildReviewBrief(inDelta, BRIEF_FACTS)).toMatch(carryForward);
+			expect(buildReviewBrief(inDelta, BRIEF_FACTS)).toContain(`git diff --name-only ${"b".repeat(40)} ${"b".repeat(40)}: ["runtime/kernel/reducer.ts"]`);
+			expect(buildReviewPrompt(inDelta, BRIEF_FACTS)).toMatch(carryForward);
+			for (const s of [deltaSnapshot(undefined), deltaSnapshot({ round: 3, prior_review_commit: null })])
+				expect(buildReviewBrief(s, BRIEF_FACTS)).not.toContain("carry-forward");
+			expect(buildReviewBrief(deltaSnapshot({ round: 3, prior_review_commit: null }), BRIEF_FACTS)).toContain("no prior reviewed revision is recorded; the delta admission rule does not apply");
 		});
 
-		test("rounds without a delta and a skipped delta never block on the missing fact", () => {
+		test("rounds without a delta and a delta without a prior commit never block on the missing fact", () => {
 			const outside = [blocking("old-1", ["runtime/kernel/other.ts"], { kind: "acceptance", ref: "A1" })];
 			const round2 = deltaSnapshot(undefined);
 			expect(parseAssuranceVerdict(reworkFor(round2, outside), round2).findings).toHaveLength(1);
-			for (const skipped of ["prior_review_revision_absent", "prior_review_revision_unresolvable"] as const) {
-				const s = deltaSnapshot({ round: 3, skipped });
-				expect(parseAssuranceVerdict(reworkFor(s, outside), s).findings).toHaveLength(1);
-			}
+			const s = deltaSnapshot({ round: 3, prior_review_commit: null });
+			expect(parseAssuranceVerdict(reworkFor(s, outside), s).findings).toHaveLength(1);
 		});
 	});
 	describe("rework convergence", () => {
@@ -1242,23 +1243,23 @@ describe("host-neutral assurance coordinator", () => {
 
 	test("the complete Review prompt is the static block followed by the snapshot facts", () => {
 		const s = snapshot("review");
-		const complete = buildReviewPrompt(s, "/tmp/evidence.json");
-		const facts = buildReviewSnapshotPrompt(s, "/tmp/evidence.json");
+		const complete = buildReviewPrompt(s, BRIEF_FACTS);
+		const facts = buildReviewBrief(s, BRIEF_FACTS);
 
 		// The complete prompt is exactly static text plus the facts, so no
 		// sentence can exist in only one of the two dispatch shapes.
 		expect(complete.endsWith(facts)).toBe(true);
 		expect(complete.length).toBeGreaterThan(facts.length);
 
-		// The facts alone carry everything a reviewer needs to act: the evidence
-		// contract, the revision it pins, the acceptances and both verdict shapes.
+		// The facts alone carry everything a reviewer needs to act: the revision
+		// to diff, the settled QA outcomes, the acceptances and both verdict shapes.
 		expect(facts).toContain(snapshotDigest(s));
-		expect(facts).toContain("TaskRecord revision: record-1");
+		expect(facts).toContain(`git diff ${"a".repeat(40)} ${"b".repeat(40)}`);
 		expect(facts).toContain("Acceptance assertions:");
 		expect(facts).toContain("- A1: the contract holds");
 		expect(facts).toContain("PASS shape:");
 		expect(facts).toContain("REWORK shape:");
-		expect(facts).toContain("/tmp/evidence.json");
+		expect(facts).toContain(`Settled QA outcomes (deterministic, already run; do not rerun them): ${JSON.stringify(BRIEF_FACTS.outcomes)}`);
 
 		// And they carry no static instruction: the role prompt and every static
 		// rule belong to the reviewer definition the plugin build generates.
@@ -1275,34 +1276,26 @@ describe("host-neutral assurance coordinator", () => {
 	test("redispatch prompts carry only the supplied counter-evidence in both host forms", () => {
 		const s = snapshot("review");
 		const counterEvidence = [{ anchor: `sha256:${"a".repeat(64)}`, counter_path: "src/change.ts rejects this input before it reaches the caller." }];
-		const facts = buildReviewSnapshotPrompt(s, "/tmp/evidence.json", 16, counterEvidence);
+		const facts = buildReviewBrief(s, BRIEF_FACTS, 16, counterEvidence);
 		expect(facts).toContain(JSON.stringify(counterEvidence));
 		expect(facts).toContain("return pass with full coverage or rework");
-		expect(buildReviewPrompt(s, "/tmp/evidence.json", 16, counterEvidence).endsWith(facts)).toBe(true);
-		expect(buildReviewSnapshotPrompt(s, "/tmp/evidence.json", 16, [])).toBe(buildReviewSnapshotPrompt(s, "/tmp/evidence.json", 16));
+		expect(buildReviewPrompt(s, BRIEF_FACTS, 16, counterEvidence).endsWith(facts)).toBe(true);
+		expect(buildReviewBrief(s, BRIEF_FACTS, 16, [])).toBe(buildReviewBrief(s, BRIEF_FACTS, 16));
 	});
 
-	test("the snapshot facts prompt is built for a review revision as well as a legacy bundle", () => {
-		const s = {
-			...snapshot("review"),
-			review_revision: {
-				contract: "assurance_kernel/review_revision_identity/v1" as const,
-				base_head: "a".repeat(40),
-				review_commit: "b".repeat(40),
-				review_tree: "c".repeat(40),
-				manifest_digest: `sha256:${"d".repeat(64)}`,
-			},
-		};
-		const facts = buildReviewSnapshotPrompt(s, "/tmp/evidence.json");
-		expect(facts).toContain("assurance_kernel/review_manifest/v5");
-		expect(facts).toContain(`git diff ${"a".repeat(40)} ${"b".repeat(40)}`);
-		expect(facts).not.toContain("neighborhood_files");
-		expect(facts).not.toContain("current_content");
-		expect(buildReviewPrompt(s, "/tmp/evidence.json").endsWith(facts)).toBe(true);
+	test("the brief requires a review revision and states only what Git cannot show", () => {
+		const s = snapshot("review");
+		const { review_revision: _revision, ...legacy } = s;
+		expect(() => buildReviewBrief(legacy, BRIEF_FACTS)).toThrow("Review requires an immutable review revision");
+		const facts = buildReviewBrief(s, { ...BRIEF_FACTS, beyond_estimate: ["src/extra.ts"], outside_routine_allowlist: ["src/risky.ts"] });
+		expect(facts).toContain("Delivered paths outside the TaskIntent estimate: src/extra.ts.");
+		expect(facts).toContain("Delivered paths that keep the routine declaration from standing: src/risky.ts.");
+		for (const retired of ["assurance_kernel/review_manifest/v5", "manifest", "neighborhood_files", "current_content", "Verify immutable bundle provenance"])
+			expect(facts).not.toContain(retired);
 	});
 
 	test("buildReviewPrompt states the evidence contract and discloses no prior finding", () => {
-		const prompt = buildReviewPrompt(snapshot("review"));
+		const prompt = buildReviewPrompt(snapshot("review"), BRIEF_FACTS);
 		expect(prompt).toContain("evidence.trigger");
 		expect(prompt).toContain("caller_chain");
 		expect(prompt).toContain("security_boundary");
@@ -1327,7 +1320,7 @@ describe("host-neutral assurance coordinator", () => {
 			environment: { prepare: command(`prepare-${id}`), writable_paths: [] },
 		}])) as never;
 		const h = makeCoordinator({
-			assurance: async (_root, _task, role) => ({ snapshot: snapshot(role), descriptors, reviewBundle: null }),
+			assurance: async (_root, _task, role) => ({ snapshot: snapshot(role), descriptors, reviewFacts: null }),
 		});
 		const result = await h.coordinator.advance(TASK, ctx);
 		expect(result).toMatchObject({ state: "failed", operation: "qa" });
@@ -1368,7 +1361,7 @@ describe("host-neutral assurance coordinator", () => {
 		let diff = "sha256:diff";
 		const h = makeCoordinator({
 			qa: async () => { throw new Error("fixture execution failure"); },
-			assurance: async (_root, _task, role) => ({ snapshot: { ...snapshot(role), diff_hash: diff }, descriptors: new Map([["A1", { contract: "assurance_kernel/verification_descriptor/v2", command: { executable: "tool", argv: ["test"], cwd: ".", timeout_ms: 1000, max_output_bytes: 1024 }, environment: { prepare: null, writable_paths: [] } }]] as never), reviewBundle: null }),
+			assurance: async (_root, _task, role) => ({ snapshot: { ...snapshot(role), diff_hash: diff }, descriptors: new Map([["A1", { contract: "assurance_kernel/verification_descriptor/v2", command: { executable: "tool", argv: ["test"], cwd: ".", timeout_ms: 1000, max_output_bytes: 1024 }, environment: { prepare: null, writable_paths: [] } }]] as never), reviewFacts: null }),
 		});
 		await h.coordinator.advance(TASK, ctx);
 		await h.coordinator.advance(TASK, ctx);
@@ -1433,7 +1426,7 @@ test("submitted Review and verifier receipts persist kept-only rework through th
   projectTask: (root, task) => projectAssurance(root, task), readTaskRecord: async (root, task) => readTaskRecordRaw(root, task),
   readTaskIntent: async () => ({}), runQa: async snapshot => ({ contract: "assurance_kernel/assurance_verdict/v2", role: "qa", task_id: f.taskId,
    snapshot_digest: snapshotDigest(snapshot), decision: "pass", approval: { kind: "qa", authority_role: "qa", summary: "passed" } }),
-  writeReviewEvidence: ({ evidence }) => writeNativeReviewEvidence(evidence), applyOrdinaryOperation: async () => {} });
+  applyOrdinaryOperation: async () => {} });
  const ready = await coordinator.advance(f.taskId, { cwd: f.root });
  if (ready.state !== "review_ready") throw new Error(`expected review_ready, got ${ready.state}`);
  const snapshot = (await buildAssuranceSnapshot(f.root, f.taskId, "review", await projectAssurance(f.root, f.taskId))).snapshot;
@@ -1469,7 +1462,7 @@ test.each(["repeated", "new"] as const)("all-refuted Review redispatches and %s 
   projectTask: (root, task) => projectAssurance(root, task), readTaskRecord: async (root, task) => readTaskRecordRaw(root, task),
   readTaskIntent: async () => ({}), runQa: async snapshot => ({ contract: "assurance_kernel/assurance_verdict/v2", role: "qa", task_id: f.taskId,
    snapshot_digest: snapshotDigest(snapshot), decision: "pass", approval: { kind: "qa", authority_role: "qa", summary: "passed" } }),
-  writeReviewEvidence: ({ evidence }) => writeNativeReviewEvidence(evidence), applyOrdinaryOperation: async () => {} });
+  applyOrdinaryOperation: async () => {} });
  const ready = await coordinator.advance(f.taskId, { cwd: f.root });
  if (ready.state !== "review_ready") throw new Error(`expected review_ready, got ${ready.state}`);
  let snapshot = (await buildAssuranceSnapshot(f.root, f.taskId, "review", await projectAssurance(f.root, f.taskId))).snapshot;
@@ -1524,7 +1517,7 @@ describe("shared verdict authority through host-configured coordinators", () => 
    const coordinator = new AssuranceCoordinator({ host: { host, prepareReview: () => { throw new Error("unused"); }, releaseReview: () => {} },
     confirmationReference: source, projectTask: (r,t) => projectAssurance(r,t),
     readTaskRecord: async (r,t) => readTaskRecordRaw(r,t), readTaskIntent: async () => ({}),
-    runQa: async () => { throw new Error("unused"); }, writeReviewEvidence: () => { throw new Error("unused"); }, applyOrdinaryOperation: async () => {},
+    runQa: async () => { throw new Error("unused"); }, applyOrdinaryOperation: async () => {},
    });
    const authority = createVerdictAuthority({ confirmationReference: source, commitInvocation: t => coordinator.commitInvocation(t) }, registry);
    Object.assign(coordinator.authority, authority);
@@ -1637,7 +1630,7 @@ describe("QA prepare failure through the real Kernel", () => {
    readTaskRecord: async (r, t) => readTaskRecordRaw(r, t), readTaskIntent: async () => ({}),
    runQa: (s, d, o) => runDeterministicQa(s, d, { ...o,
     _runFixedVerification: async () => ({ exit_code: 1, timed_out: true, output_limited: false, stdout: "", stderr: `resolving\n${secret}\n` }) }),
-   writeReviewEvidence: () => { throw new Error("unused"); }, applyOrdinaryOperation: async () => {},
+   applyOrdinaryOperation: async () => {},
   });
   Object.assign(coordinator.authority, createVerdictAuthority({ confirmationReference: ({ actorId }) => `fixture:${actorId}`,
    commitInvocation: t => coordinator.commitInvocation(t) }, createMutationAuthorityRegistry()));

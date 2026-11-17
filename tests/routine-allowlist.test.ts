@@ -9,9 +9,9 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { captureReviewManifest } from "../plugins/immune-brain/runtime/assurance/review_evidence";
+import { captureReviewFacts } from "../plugins/immune-brain/runtime/assurance/review_evidence";
 import { resolveProjectedRisk, routineAllowlistEscapes } from "../plugins/immune-brain/runtime/kernel/completion";
-import { canonicalIntentHash, classifyTaskRisk, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
+import { classifyTaskRisk, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import {
 	applyScopeRiskFloor,
 	NO_RISK_FLOOR,
@@ -180,10 +180,8 @@ describe("Review evidence", () => {
 		git(root, "add", ...Object.keys(delivered));
 		const taskIntent = intent({ risk });
 		const identity = taskRevisionIdentity(root, taskIntent.scope_hint, baseHead, taskIntent.task_id);
-		return captureReviewManifest(root, { taskId: taskIntent.task_id, baseHead, scopeHint: taskIntent.scope_hint,
-			expectedDiffHash: identity.diff_hash, intentRevision: 1, intentContentHash: canonicalIntentHash(taskIntent),
-			recordRevision: "record", workspaceRevision: "workspace", lifecycle: "active", artifactState: "frozen",
-			risk, intent: taskIntent, outcomes: {} });
+		return captureReviewFacts(root, { taskId: taskIntent.task_id, baseHead, scopeHint: taskIntent.scope_hint,
+			expectedDiffHash: identity.diff_hash, intent: taskIntent, outcomes: {} });
 	}
 
 	it("names the paths that raised a routine declaration beside beyond_estimate", () => {
@@ -192,9 +190,9 @@ describe("Review evidence", () => {
 		expect(manifest.outside_routine_allowlist).toEqual(["src/feature.ts"]);
 	});
 
-	it("omits the field when nothing escapes or the declaration is not routine", () => {
-		expect("outside_routine_allowlist" in manifestFor("routine", { "docs/guide/intro.md": "changed\n" })).toBe(false);
-		expect("outside_routine_allowlist" in manifestFor("material", { "src/feature.ts": "export {};\n" })).toBe(false);
+	it("leaves the list empty when nothing escapes or the declaration is not routine", () => {
+		expect(manifestFor("routine", { "docs/guide/intro.md": "changed\n" }).outside_routine_allowlist).toEqual([]);
+		expect(manifestFor("material", { "src/feature.ts": "export {};\n" }).outside_routine_allowlist).toEqual([]);
 	});
 });
 

@@ -30,7 +30,6 @@ import { registerPiRunContinuation } from "./pi-run-continuation";
 import {
 	listReviewRefs,
 	reconcileReviewRefs,
-	writeNativeReviewEvidence,
 } from "./pi-canary-review-bundle";
 import { localSkillExists, readAliasFile } from "../runtime/assurance/alias_file";
 import { runDeterministicQa } from "../runtime/assurance/qa";
@@ -186,7 +185,6 @@ export type AuthorizeOperation =
 export interface CanaryWorkExtensionDependencies {
 	buildAssurance?: typeof buildAssuranceSnapshot;
 	runQa?: typeof runDeterministicQa;
-	writeReviewEvidence?: typeof writeNativeReviewEvidence;
 	advanceBeforeProjection?: () => Promise<void>;
 	qaBeforeProjection?: () => Promise<void>;
 	qaBeforeAuthorityCommit?: () => Promise<void>;
@@ -235,8 +233,6 @@ export function createPiAssuranceProgressionPorts(
 		readTaskIntent: async (root, taskId) => readTaskIntentForRecord(root, taskId),
 		runQa: (snapshot, descriptors, options) =>
 			(dependencies.runQa ?? runDeterministicQa)(snapshot, descriptors, options),
-		writeReviewEvidence: (input) =>
-			(dependencies.writeReviewEvidence ?? writeNativeReviewEvidence)(input),
 		applyOrdinaryOperation: async (ctx, input) => {
 			const runtime = await getSharedPiProgression();
 			return runtime.executeOrdinary(ctx, input);

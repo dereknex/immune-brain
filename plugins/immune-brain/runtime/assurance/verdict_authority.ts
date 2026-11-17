@@ -9,11 +9,12 @@ import { projectAssurance, type AssuranceProjectionResult } from "../kernel/assu
 import { capabilityActionFor, createCanaryApplication } from "../kernel/canary_application";
 import { createMutationAuthorityRegistry, digestOfAction } from "../kernel/authority_port";
 import { findingsDigestV2 } from "../kernel/reducer";
+import { GIT_OBJECT_ID } from "../kernel/validation";
 import type { TaskRecord, TaskApprovalV2, ReviewObservationFacts, ReviewVerificationHistoryV1, ReviewVerifierDisputeV1, TaskFinding } from "../kernel/types";
 import { captureGitTaskSnapshot } from "../workspace_scope";
 import { parseVerificationDescriptor } from "../verification_descriptor";
 import type { VerificationDescriptor } from "./verification";
-import { captureReviewBundle, captureReviewManifest, REVIEW_DELTA_FROM_ROUND, type ReviewBundle, type ReviewDeltaInput, type ReviewManifestV5, type ReviewRevision } from "./review_evidence";
+import { captureReviewFacts, type ReviewFacts, type ReviewRevisionCommit } from "./review_evidence";
 import { reviewReworkFindings, reviewAdvisoryRecords, snapshotDigest, type SnapshotDescriptor, type AssuranceRole, type AssuranceVerdict, type HostContext } from "./coordinator";
 import type { InvocationToken } from "./invocations";
 import type { ConfirmationReferenceSource } from "./host_port";
@@ -36,15 +37,12 @@ export interface SnapshotDescriptorInput {
 	stale_attestation_ids: string[];
 	acceptance: Array<{ id: string; assertion: string; verification: string }>;
 	dirty_files?: string[];
-	review_bundle_digest?: string | null;
 	review_delta?: SnapshotDescriptor["review_delta"];
 	/** Present only when Review authority binds an immutable Git revision (v4). */
 	review_revision?: {
-		contract: "assurance_kernel/review_revision_identity/v1";
+		contract: "assurance_kernel/review_revision_identity/v2";
 		base_head: string;
 		review_commit: string;
-		review_tree: string;
-		manifest_digest: string;
 	};
 }
 
@@ -67,7 +65,6 @@ export function buildSnapshot(input: SnapshotDescriptorInput): SnapshotDescripto
 		stale_attestation_ids: input.stale_attestation_ids,
 		acceptance: input.acceptance,
 		dirty_files: [...(input.dirty_files ?? [])].sort(),
-		review_bundle_digest: input.review_bundle_digest ?? null,
 		...(input.review_revision ? { review_revision: input.review_revision } : {}),
 		...(input.review_delta ? { review_delta: input.review_delta } : {}),
 		root: resolve(input.root),
@@ -75,70 +72,62 @@ export function buildSnapshot(input: SnapshotDescriptorInput): SnapshotDescripto
 }
 
 
+/** Review round 3 and later reviews only the latest rework delta. */
+const REVIEW_DELTA_FROM_ROUND = 3;
+
 /**
- * The Review round the next dispatch opens and the revision the previous round
- * analyzed. Both ensureReviewRevision and the snapshot read it through here so
- * the manifest digest they bind cannot diverge. A record with no persisted
- * prior revision yields `prior: null`, which skips the delta rule.
+ * The Review round the next dispatch opens and the commit the previous round
+ * analyzed, read from its Review rework. A record with no persisted prior
+ * revision yields `prior_review_commit: null`, which skips the delta rule.
  */
-function reviewDeltaInput(record: TaskRecord): ReviewDeltaInput {
+export function reviewDelta(root: string, record: TaskRecord, reviewCommit: string): SnapshotDescriptor["review_delta"] {
 	const round = Math.max(
 		0,
 		...record.findings.filter((item) => item.source === "review").map((item) => item.review_round ?? 0),
 	) + 1;
+	if (round < REVIEW_DELTA_FROM_ROUND) return undefined;
 	const prior = [...record.history]
 		.reverse()
 		.find((entry) => entry.type === "request_rework" && entry.reason.split("\n")[0] === `review_round_${round - 1}`);
-	return {
-		round,
-		prior: prior?.review_revision
-			? { review_commit: prior.review_revision.review_commit, review_tree: prior.review_revision.review_tree }
-			: null,
-	};
+	const priorCommit = prior?.review_revision?.review_commit;
+	if (!priorCommit || !GIT_OBJECT_ID.test(priorCommit)) return { round, prior_review_commit: null };
+	try {
+		const output = execFileSync("git", ["diff", "--no-renames", "--name-only", "-z", priorCommit, reviewCommit], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+		return { round, prior_review_commit: priorCommit, delta_paths: output.split("\0").filter(Boolean).sort() };
+	} catch {
+		// A pruned prior commit leaves nothing to diff; the rule does not apply.
+		return { round, prior_review_commit: null };
+	}
 }
 
+function reviewFactsFor(root: string, taskId: string, record: TaskRecord, baseHead: string, diffHash: string): ReviewFacts {
+	return captureReviewFacts(root, {
+		taskId,
+		baseHead,
+		scopeHint: record.intent_snapshot.scope_hint,
+		expectedDiffHash: diffHash,
+		intent: record.intent_snapshot,
+		outcomes: qaOutcomes(record),
+	});
+}
+
+/**
+ * Publish the immutable synthetic commit the next Review analyzes. A v3 record
+ * has no Enrollment base and cannot be reviewed (#565 retired the bundle path).
+ */
 export async function ensureReviewRevision(
 	root: string,
 	taskId: string,
 	projection: AssuranceProjectionResult,
-): Promise<ReviewRevision | null> {
+): Promise<ReviewRevisionCommit> {
 	const current = await readTaskRecordRaw(root, taskId);
 	const record = current.record;
 	if (!record) throw new Error(`task ${taskId} has no TaskRecord before Review preparation`);
 	if (current.revision !== projection.projection.record_revision)
 		throw new Error("TaskRecord changed before Review preparation");
-	if (record.contract !== "assurance_kernel/task_record/v4") return null;
-	if (!record.git_base_head)
-		throw new Error("Review revision requires a TaskRecord v4 git_base_head");
-	const manifest = captureReviewManifest(root, {
-		taskId,
-		baseHead: record.git_base_head,
-		scopeHint: record.intent_snapshot.scope_hint,
-		expectedDiffHash: projection.projection.diff_hash,
-		intentRevision: projection.projection.intent_revision,
-		intentContentHash: projection.projection.intent_content_hash,
-		recordRevision: projection.projection.record_revision,
-		workspaceRevision: projection.projection.workspace_revision,
-		lifecycle: projection.projection.lifecycle,
-		artifactState: projection.projection.artifact_state,
-		risk: record.intent_snapshot.risk,
-		intent: record.intent_snapshot,
-		// The same outcomes the Review snapshot is built from. A preflight stand-in
-		// only matched the settled QA attestation because deterministic QA happens to
-		// write that exact summary, so the submit-time digest comparison held by
-		// coincidence rather than by construction.
-		outcomes: qaOutcomes(record),
-		delta: reviewDeltaInput(record),
-	});
-	return {
-		contract: "assurance_kernel/review_revision/v1",
-		base_head: manifest.base_head,
-		review_tree: manifest.review_tree,
-		review_commit: manifest.review_commit,
-		review_ref: manifest.review_ref,
-		diff_hash: manifest.diff_hash,
-		manifest_digest: manifest.manifest_digest,
-	};
+	if (record.contract !== "assurance_kernel/task_record/v4" || !record.git_base_head)
+		throw new Error("Review requires a TaskRecord v4 git_base_head; re-enroll the task");
+	return reviewFactsFor(root, taskId, record, record.git_base_head, projection.projection.diff_hash).revision;
 }
 
 export async function buildAssuranceSnapshot(
@@ -150,8 +139,7 @@ export async function buildAssuranceSnapshot(
 ): Promise<{
 	snapshot: SnapshotDescriptor;
 	descriptors: Map<string, VerificationDescriptor>;
-	reviewBundle: ReviewBundle | null;
-	reviewManifest: ReviewManifestV5 | null;
+	reviewFacts: ReviewFacts | null;
 }> {
 	const record = await readRecord(root, taskId);
 	if (
@@ -177,49 +165,14 @@ export async function buildAssuranceSnapshot(
 		: undefined;
 	if (record.record.contract === "assurance_kernel/task_record/v4" && !baseHead)
 		throw new Error("TaskRecord v4 is missing its Enrollment git_base_head");
-	const reviewRevision = baseHead
-		? {
-			contract: "assurance_kernel/review_revision_identity/v1" as const,
-			base_head: baseHead,
-			review_commit: "",
-			review_tree: "",
-			manifest_digest: "",
-		}
+	if (role === "review" && !baseHead)
+		throw new Error("Review requires a TaskRecord v4 git_base_head; re-enroll the task");
+	const reviewFacts = role === "review"
+		? reviewFactsFor(root, taskId, record.record, baseHead!, projection.projection.diff_hash)
 		: null;
-	const reviewBundle = role === "review" && !reviewRevision
-		? captureReviewBundle(
-				root,
-				intent.scope_hint,
-				projection.projection.diff_hash,
-				qaOutcomes(record.record),
-			)
-		: null;
-	const reviewManifest = role === "review" && reviewRevision
-		? captureReviewManifest(root, {
-				taskId,
-				baseHead: reviewRevision.base_head,
-				scopeHint: intent.scope_hint,
-				expectedDiffHash: projection.projection.diff_hash,
-				intentRevision: projection.projection.intent_revision,
-				intentContentHash: projection.projection.intent_content_hash,
-				recordRevision: projection.projection.record_revision,
-				workspaceRevision: projection.projection.workspace_revision,
-				lifecycle: projection.projection.lifecycle,
-				artifactState: projection.projection.artifact_state,
-				risk: intent.risk,
-				intent,
-				outcomes: qaOutcomes(record.record),
-				delta: reviewDeltaInput(record.record),
-			})
-		: null;
-	const taskSnapshot = !reviewBundle && !reviewManifest
-		? captureGitTaskSnapshot(root, intent.scope_hint, taskId)
-		: null;
-	const dirtyFiles = reviewManifest
-		? Object.keys(reviewManifest.changed_paths)
-		: reviewBundle
-			? Object.keys(reviewBundle.dirty_files)
-			: Object.keys(taskSnapshot!.staged_files);
+	const dirtyFiles = reviewFacts
+		? reviewFacts.changed_paths
+		: Object.keys(captureGitTaskSnapshot(root, intent.scope_hint, taskId).staged_files);
 	return {
 		snapshot: buildSnapshot({
 				root,
@@ -239,33 +192,18 @@ export async function buildAssuranceSnapshot(
 				stale_attestation_ids: projection.projection.stale_attestation_ids,
 				acceptance,
 				dirty_files: dirtyFiles,
-				review_bundle_digest: reviewManifest?.manifest_digest ?? reviewBundle?.bundle_digest ?? null,
-				review_revision: reviewManifest
+				review_revision: reviewFacts
 					? {
-							contract: "assurance_kernel/review_revision_identity/v1",
-							base_head: reviewManifest.base_head,
-							review_commit: reviewManifest.review_commit,
-							review_tree: reviewManifest.review_tree,
-							manifest_digest: reviewManifest.manifest_digest,
+							contract: "assurance_kernel/review_revision_identity/v2",
+							base_head: reviewFacts.revision.base_head,
+							review_commit: reviewFacts.revision.review_commit,
 						}
-						: undefined,
-				review_delta: reviewManifest ? reviewDeltaOf(reviewManifest, record.record) : undefined,
+					: undefined,
+				review_delta: reviewFacts ? reviewDelta(root, record.record, reviewFacts.revision.review_commit) : undefined,
 		}),
 		descriptors,
-		reviewBundle,
-		reviewManifest,
+		reviewFacts,
 	};
-}
-
-function reviewDeltaOf(
-	manifest: ReviewManifestV5,
-	record: TaskRecord,
-): SnapshotDescriptor["review_delta"] {
-	const { round } = reviewDeltaInput(record);
-	if (round < REVIEW_DELTA_FROM_ROUND) return undefined;
-	return manifest.delta_paths
-		? { round, prior_review_commit: manifest.prior_review_commit!, delta_paths: manifest.delta_paths }
-		: { round, skipped: manifest.delta_skipped ?? "prior_review_revision_absent" };
 }
 
 function qaOutcomes(
