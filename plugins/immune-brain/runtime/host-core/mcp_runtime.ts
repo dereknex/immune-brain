@@ -41,6 +41,7 @@ import { deliveryOf, type AssuranceCoordinatorPorts } from "../assurance/coordin
 import type { VerdictAuthority } from "../assurance/verdict_authority";
 import type { SettleCommitResult } from "../assurance/workflow_autocommit";
 import { readSettledTaskEvidence } from "../kernel/storage";
+import { writeSlotResult } from "../session_result_slot";
 import { watchBundleIdentity, type BundleIdentityWatch } from "../plugin_source_skew";
 import { parseReworkChoice, reworkExitLines, type ReworkChoice } from "../kernel/assurance_projection";
 
@@ -151,6 +152,8 @@ export const TOOLS = [
 	{ name: "refute_finding", description: "Refute one open finding by binding the fresh passing QA attestation that contradicts it.", privileged: false },
 	{ name: "loop_interactions", description: "List the local Loop Interaction requests this checkout's daemon is waiting on.", privileged: false, optionalTaskId: true },
 	{ name: "answer_loop_interaction", description: "Answer one pending local Loop Interaction request under the native confirmation.", privileged: true, optionalTaskId: true },
+	// Spec review-receipt-mcp-submission D4: the reviewer's own receipt channel, appended after every pre-existing Tool.
+	{ name: "submit_session_result", description: "Write one supervised session's JSON result into its allocated result slot.", privileged: false },
 ] as const;
 
 export function listMcpTools() {
@@ -205,7 +208,8 @@ export function listMcpTools() {
 							: {}),
 						}
 					: {
-						task_id: { type: "string" },
+						...(tool.name === "submit_session_result" ? {} : { task_id: { type: "string" } }),
+						...(tool.name === "submit_session_result" ? { slot_id: { type: "string" }, result: { type: "string" } } : {}),
 						...(tool.name === "answer_loop_interaction"
 							? { interaction_id: { type: "string" }, answer: { type: "string" } }
 							: {}),
@@ -228,6 +232,8 @@ export function listMcpTools() {
 			},
 			required: tool.name === "start_unattended_batch" ? [] : tool.name === "retire_stale_batch"
 				? ["initiative_slug"]
+				: tool.name === "submit_session_result"
+					? ["slot_id", "result"]
 				: tool.name === "loop_interactions"
 					? []
 					: tool.name === "answer_loop_interaction"
@@ -489,8 +495,7 @@ export function createMcpRuntime(profile: McpHostProfile, options: McpRuntimeOpt
 					typeof args.task_id === "string" && args.task_id ? args.task_id : undefined,
 				);
 			}
-			if (name === "answer_loop_interaction") {
-				refuseSuppliedAuthority(args);
+			if (name === "answer_loop_interaction") {				refuseSuppliedAuthority(args);
 				if (typeof args.interaction_id !== "string" || !args.interaction_id) throw new Error("interaction_id is required");
 				if (typeof args.answer !== "string" || !args.answer) throw new Error("answer is required");
 				requireTrustedHost(true);
@@ -502,6 +507,15 @@ export function createMcpRuntime(profile: McpHostProfile, options: McpRuntimeOpt
 					interactive: meta.interactive ?? options.interactive ?? negotiatedInteractive,
 					signal: meta.signal,
 				});
+			}
+			// Spec review-receipt-mcp-submission D4: the reviewer's receipt. Workspace
+			// scoped, never privileged (a native gate would be denied under `dontAsk`),
+			// so it names no task and dispatches before the trusted-host check.
+			if (name === "submit_session_result") {
+				refuseSuppliedAuthority(args);
+				if (typeof args.slot_id !== "string") throw new Error("slot_id is required");
+				if (typeof args.result !== "string") throw new Error("result is required");
+				return { contract: "immune_brain/session_result/v1", slot_id: args.slot_id, sha256: writeSlotResult(workspace, args.slot_id, args.result) };
 			}
 			const taskId = String(args.task_id ?? "");
 			if (!taskId) throw new Error("task_id is required");

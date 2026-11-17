@@ -261,6 +261,8 @@ describe("claude host package", () => {
       // Spec loop-agent-scheduling D4: appended after every pre-existing Tool.
       "loop_interactions",
       "answer_loop_interaction",
+      // Spec review-receipt-mcp-submission D4: appended after every pre-existing Tool.
+      "submit_session_result",
     ]);
     const init = await handleJsonRpc({ jsonrpc: "2.0", id: 1, method: "initialize" });
     expect(init?.result).toMatchObject({

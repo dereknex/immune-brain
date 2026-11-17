@@ -1,0 +1,239 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "review-receipt-mcp-submission",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "review-receipt-mcp-submission",
+    "goal": "Implement docs/specs/review-receipt-mcp-submission.spec.md: Claude Code and Antigravity Review and findings-verification sessions deliver their JSON receipt through the Immune-Brain MCP tool submit_session_result, which validates it and writes the existing result slot, so the reviewer holds no file-write permission and a Lane worktree under .git/imm/worktrees/ no longer makes the receipt unwritable.",
+    "acceptance": [
+      {
+        "id": "RRS-A1",
+        "assertion": "Per D1, D5, D6 and the entry rule of D3 in docs/specs/review-receipt-mcp-submission.spec.md: sessionHostArguments for claude-code passes --tools exactly Read,Grep,Glob,Bash, and its --allowedTools are exactly REVIEW_GIT_ALLOWED_TOOLS followed by mcp__plugin_immune-brain_immune-brain__submit_session_result, with no Edit( rule and no --add-dir; REVIEW_GIT_ALLOWED_TOOLS contains Bash(git grep:*) and Bash(git --no-pager grep:*); hooks stay disabled and the permission mode stays dontAsk. A prepared claude-code verification reservation's host arguments carry --plugin-dir like the Review reservation. The Pi argv still carries read,grep,find,ls,bash,write and the Antigravity argv is unchanged. The claude-code and Antigravity session entries tell the agent to call submit_session_result with the reservation's slot id and to create no file; the Pi entry still tells it to write the slot's result file.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/cli-review-dispatch.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "RRS-A2",
+        "assertion": "Per D2, D3 and D4 in docs/specs/review-receipt-mcp-submission.spec.md, exercised through createMcpRuntime().callTool: submit_session_result with a valid slot_id of an allocated slot and a strict JSON object string writes exactly those bytes to that slot's result.json, readSlotResult returns them, and the response carries their sha256. Each of these leaves the slot unchanged and returns its named error: slot_id \"../x\" or \"\" (session_result_slot_invalid); an id with no allocated directory, and a slot directory that is a symlink (session_result_slot_unknown); a second call after a successful one, keeping the first bytes (session_result_already_submitted); result \"[1]\", \"pass\" and a fenced JSON block (session_result_not_json). listMcpTools lists submit_session_result after answer_loop_interaction, requires slot_id and result, declares no task_id, and the tool is not privileged.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/session-result-slot.test.ts tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "RRS-A3",
+        "assertion": "Per D7 in docs/specs/review-receipt-mcp-submission.spec.md: a receipt written through the same slot writer the tool uses, for a reserved CLI Review and for a reserved CLI verification, is observed by the existing inspection with exactly those bytes and settles as before; the strict-JSON check, tree guard and release decisions are unchanged.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/cli-review-dispatch.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "RRS-A4",
+        "assertion": "Per D8 in docs/specs/review-receipt-mcp-submission.spec.md: when a reviewer or verifier session ends without a receipt, the released reason still starts with review_session_aborted or verification_session_aborted and states that the session ended without submitting its receipt and that its tab should be inspected for a denied or failed tool call before another session is dispatched; a still-running session's pending reason keeps the reservation, carries no aborted code, and no longer says the agent writes the file.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/cli-review-dispatch.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "RRS-A5",
+        "assertion": "Per D9, D10 and D11 in docs/specs/review-receipt-mcp-submission.spec.md: the authority-review skill no longer tells the reviewer to write or create the output file and names no Host-only tool, so the packaged contract tool-surface check passes; docs/adr/0038-supervised-session-port.md's #565 addendum and docs/reference/supervised-session-port.md state that on Claude Code and Antigravity the runtime writes the slot through submit_session_result while the slot location and transport-only role stay; the generated Claude bundle and the Antigravity mirror match their sources.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/packaged-contract-tool-surface.test.ts tests/skill-dist-consistency.test.ts && bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/review-receipt-mcp-submission.md",
+      "docs/adr/0038-supervised-session-port.md",
+      "docs/plans/review-receipt-mcp-submission.intent.json",
+      "docs/reference/supervised-session-port.md",
+      "docs/specs/review-receipt-mcp-submission.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/assurance/cli_review.ts",
+      "plugins/immune-brain/runtime/host-core/mcp_runtime.ts",
+      "plugins/immune-brain/runtime/session_result_slot.ts",
+      "plugins/immune-brain/skills/authority-review/SKILL.md",
+      "tests/claude-host-package.test.ts",
+      "tests/cli-review-dispatch.test.ts",
+      "tests/session-result-slot.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/review-receipt-mcp-submission.intent.json",
+    "content_hash": "sha256:40d975c56da4dba6d1c7f96c220894240b5a6aeafa8ec689cb5facbf820548b6"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:40d975c56da4dba6d1c7f96c220894240b5a6aeafa8ec689cb5facbf820548b6",
+  "git_base_head": "aab2879ea593c76139be036980fa5c75f20726fc",
+  "attestations": [
+    {
+      "id": "approval-qa-2911f929",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:40d975c56da4dba6d1c7f96c220894240b5a6aeafa8ec689cb5facbf820548b6",
+      "diff_hash": "sha256:0fe84255becf21568af79ff20870d02ccc2032e96519f58ecb4cf85c22eaeb7c",
+      "actor_id": "deterministic-qa",
+      "summary": "all 6 project verification check(s) passed; execution=sha256:5fa382f4d1e7474c28a1dd1d1688c0fca472a806075acef89c9310657d3e9307",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RRS-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:5fa382f4d1e7474c28a1dd1d1688c0fca472a806075acef89c9310657d3e9307"
+        },
+        {
+          "acceptance_id": "RRS-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:5fa382f4d1e7474c28a1dd1d1688c0fca472a806075acef89c9310657d3e9307"
+        },
+        {
+          "acceptance_id": "RRS-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:5fa382f4d1e7474c28a1dd1d1688c0fca472a806075acef89c9310657d3e9307"
+        },
+        {
+          "acceptance_id": "RRS-A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:5fa382f4d1e7474c28a1dd1d1688c0fca472a806075acef89c9310657d3e9307"
+        },
+        {
+          "acceptance_id": "RRS-A5",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:5fa382f4d1e7474c28a1dd1d1688c0fca472a806075acef89c9310657d3e9307"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-80272438",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:40d975c56da4dba6d1c7f96c220894240b5a6aeafa8ec689cb5facbf820548b6",
+      "diff_hash": "sha256:e384dbadc3891f184fb34b3d1c70429c55062c497c55fc1af06689af99d3ff52",
+      "actor_id": "deterministic-qa",
+      "summary": "all 6 project verification check(s) passed; execution=sha256:fb6254ad6acf7cba7ae850c8c65ed3fed1e38f7b649593414b7ffe0ed6e6d3a3",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RRS-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:fb6254ad6acf7cba7ae850c8c65ed3fed1e38f7b649593414b7ffe0ed6e6d3a3"
+        },
+        {
+          "acceptance_id": "RRS-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:fb6254ad6acf7cba7ae850c8c65ed3fed1e38f7b649593414b7ffe0ed6e6d3a3"
+        },
+        {
+          "acceptance_id": "RRS-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:fb6254ad6acf7cba7ae850c8c65ed3fed1e38f7b649593414b7ffe0ed6e6d3a3"
+        },
+        {
+          "acceptance_id": "RRS-A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:fb6254ad6acf7cba7ae850c8c65ed3fed1e38f7b649593414b7ffe0ed6e6d3a3"
+        },
+        {
+          "acceptance_id": "RRS-A5",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:fb6254ad6acf7cba7ae850c8c65ed3fed1e38f7b649593414b7ffe0ed6e6d3a3"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-b4690a19",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:40d975c56da4dba6d1c7f96c220894240b5a6aeafa8ec689cb5facbf820548b6",
+      "diff_hash": "sha256:e384dbadc3891f184fb34b3d1c70429c55062c497c55fc1af06689af99d3ff52",
+      "actor_id": "cli:claude-code:eefcf07e-6aa9-411b-ab7e-fd8bafc7729e",
+      "summary": "RRS-A1..A5 satisfied: claude-code argv drops Write/Edit rule and allows git grep plus the one submit_session_result rule, verifier gains --plugin-dir, entries name the per-Host channel, writeSlotResult validates id/symlink/brief/existing/strict-JSON and writes wx with sha256, aborted/pending reasons updated, skill/ADR/reference Host-neutral and bundles/mirror match sources; blast radius medium (cli_review.ts reviewer permission boundary, shared MCP TOOLS surface in mcp_runtime.ts, session_result_slot.ts, generated bundles).",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "aab2879ea593c76139be036980fa5c75f20726fc",
+        "review_commit": "98ddaae9458c15e5f41c701a3282cd7d2aeaed8c"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-16ec65cd7eb2-1-review-1",
+          "acceptance_id": "RRS-A2",
+          "summary": "submit_session_result is dispatched after the plugin_bundle_stale check in callTool, so a bundle rebuilt while a reviewer runs refuses the receipt and the round ends as review_session_aborted; D4 places it only before the trusted-host check.",
+          "anchor": "sha256:3d27f42fa83e5bfb0cdacca450cb10f16950535248859fbffe3302aa7b9a4d0f",
+          "evidence": {
+            "trigger": "dist/claude/mcp-server.mjs changes on disk while a claude-code reviewer session is open → its submit_session_result call throws plugin_bundle_stale, nothing is written, and the round releases as review_session_aborted",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/host-core/mcp_runtime.ts:createMcpRuntime.callTool",
+              "bundle.stale",
+              "writeSlotResult"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "RRS-A2"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:4df49079bd590e44d46836a49d3cfd912ba8d9ab07789d3af46b96703c225f4f"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:review-receipt-mcp-submission:2026-11-17T09:33:18.872Z",
+      "at": "2026-11-17T09:33:18.872Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/review-receipt-mcp-submission.intent.json"
+    },
+    {
+      "id": "record_approval:review-receipt-mcp-submission:2026-11-17T09:33:59.461Z",
+      "at": "2026-11-17T09:33:59.461Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-2911f929\naction_v2_sha256:2524d48a55ab1580a2506ad73c5e617e56e0e9e6d26696e5ecededed5b2cf9d6",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-17T09:33:59.461Z"
+      }
+    },
+    {
+      "id": "record_approval:review-receipt-mcp-submission:2026-11-17T09:38:17.880Z",
+      "at": "2026-11-17T09:38:17.880Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-80272438\naction_v2_sha256:8d8f8d6c64b6169a5512d88295196e390bbc3163f59eddd8b83ac696cc92dcd0",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-17T09:38:17.880Z"
+      }
+    },
+    {
+      "id": "record_approval:review-receipt-mcp-submission:2026-11-17T09:45:10.418Z",
+      "at": "2026-11-17T09:45:10.418Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-b4690a19\naction_v2_sha256:b25366c6a54765a51bdc6a26cb92e2cf05bf6eed41d7eabd4141cc3ba9baabfa",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:eefcf07e-6aa9-411b-ab7e-fd8bafc7729e",
+        "confirmation_ref": "pi:cli:claude-code:eefcf07e-6aa9-411b-ab7e-fd8bafc7729e",
+        "issued_at": "2026-11-17T09:45:10.418Z"
+      },
+      "review_started_at": "2026-11-17T09:43:11.212Z",
+      "review_submitted_at": "2026-11-17T09:45:08.415Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:review-receipt-mcp-submission:2026-11-17T09:45:15.886Z",
+      "at": "2026-11-17T09:45:15.886Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:f949e57fe3394ef754d19161829f82f00a4b3e72acbcf5ac9b8311b873d1a2ac"
+    }
+  ]
+}
