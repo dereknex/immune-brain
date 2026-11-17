@@ -1,0 +1,50 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "loop-leader-s2-leader-briefing",
+  "owner": "user",
+  "goal": "Compile a deterministic local leader briefing every imm-loop tick, wake a read-only catalog leader session only on a changed briefing fingerprint within loop.budget.max_leader_wakes_per_day, strictly parse loop_leader_proposal/v1, and journal wakes and proposals under .imm/state/loop/leader/ without executing them, per D2 of docs/specs/loop-leader.spec.md. No user-visible change: proposals are parsed and journaled only; nothing executes until S3.",
+  "acceptance": [
+    {
+      "id": "S2-AC1",
+      "assertion": "Source BR-REQ-2, BR-DEC-3, BR-OUT-5; meet D2.1-D2.3 in docs/specs/loop-leader.spec.md. Agreed seam: tests/loop-leader-briefing.test.ts. Done looks like: a tick whose briefing fingerprint differs from the last journaled wake starts exactly one read-only leader session from the catalog leader role in a disposable worktree holding only .imm-loop/briefing.json and .imm-loop/journal-tail.jsonl, journals wake and proposal entries, and counts once against max_leader_wakes_per_day and max_dispatches_per_day. Negative: an unchanged fingerprint starts zero sessions; after one wake, two further ticks with no new external or local fact start zero sessions because leader wake counts, the leader's own journal entries and exact budget counters are excluded from the fingerprint; max_leader_wakes_per_day 0 or an exhausted max_dispatches_per_day starts zero sessions; --dry-run and loop.mode observe start zero sessions; the leader modules import nothing from github_port.ts; the session environment carries no GitHub token. Bound: a briefing over 64 KiB drops oldest outcomes first and never drops a work item; derived-output checks and typecheck pass.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/loop-leader-briefing.test.ts tests/layered-config.test.ts && bun scripts/sync-dist-docs.ts --check && bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "S2-AC2",
+      "assertion": "Source BR-REQ-2, BR-REQ-3, BR-DEC-3; meet D2.4-D2.6 in docs/specs/loop-leader.spec.md. Agreed seam: tests/loop-leader-briefing.test.ts. Done looks like: a valid loop_leader_proposal/v1 parses into typed next, priority, shape, dispatch, resolve and note items that are journaled while no WorkItem, interaction or GitHub write occurs. Negative: prose output, a wrong contract or a briefing_fingerprint mismatch rejects the whole proposal; an unknown target, unknown handler, unknown role, a brief over 16 KiB, or ask_owner without context rejects only that item and journals a rejected entry. Bound: deleting .imm/state/loop/leader/ yields an empty journal and the next tick wakes once; journal rotation at 2 MiB keeps one previous file.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-leader-briefing.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/loop-leader-s2-leader-briefing.md",
+    "docs/agents/derived-files.json",
+    "docs/plans/loop-leader-s2-leader-briefing.intent.json",
+    "docs/reference/immune-brain-config.md",
+    "docs/specs/loop-leader.spec.md",
+    "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+    "plugins/immune-brain-antigravity/dist/docs/reference/immune-brain-config.md",
+    "plugins/immune-brain-antigravity/runtime/config/layered_config.ts",
+    "plugins/immune-brain-antigravity/runtime/loop_daemon/agent_runner.ts",
+    "plugins/immune-brain-antigravity/runtime/loop_daemon/cli.ts",
+    "plugins/immune-brain-antigravity/runtime/loop_daemon/dispatch.ts",
+    "plugins/immune-brain-antigravity/runtime/loop_daemon/leader_agent.ts",
+    "plugins/immune-brain-antigravity/runtime/loop_daemon/leader_briefing.ts",
+    "plugins/immune-brain-antigravity/runtime/loop_daemon/leader_journal.ts",
+    "plugins/immune-brain-antigravity/runtime/loop_daemon/leader_proposal.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/docs/reference/immune-brain-config.md",
+    "plugins/immune-brain/runtime/config/layered_config.ts",
+    "plugins/immune-brain/runtime/loop_daemon/agent_runner.ts",
+    "plugins/immune-brain/runtime/loop_daemon/cli.ts",
+    "plugins/immune-brain/runtime/loop_daemon/dispatch.ts",
+    "plugins/immune-brain/runtime/loop_daemon/leader_agent.ts",
+    "plugins/immune-brain/runtime/loop_daemon/leader_briefing.ts",
+    "plugins/immune-brain/runtime/loop_daemon/leader_journal.ts",
+    "plugins/immune-brain/runtime/loop_daemon/leader_proposal.ts",
+    "tests/layered-config.test.ts",
+    "tests/loop-leader-briefing.test.ts"
+  ],
+  "scope_size_reason": "Four of the counted paths are generated Antigravity mirrors of the four new leader modules, which only become declared derived outputs once this Slice adds them to docs/agents/derived-files.json; the source change itself is 13 paths.",
+  "risk": "material",
+  "revision": 1
+}
