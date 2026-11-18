@@ -1,0 +1,68 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "session-provider-registry",
+  "owner": "user",
+  "goal": "unified-lane-sessions S2 (#570; Spec docs/specs/unified-lane-sessions.spec.md D5, D6, D7, D10, D19, BR-DEC-3, BR-DEC-5, BR-REQ-3, BR-REQ-4). Add role-indexed runtime/session/provider_registry.ts (roles: executor, authority, advisory) and pure resolveSessionProvider({ role, providers, host, env, registry }): herdr requires HERDR_ENV=1 and non-empty HERDR_WORKSPACE_ID and declares executor hosts claude-code, pi, antigravity with workspace local_path, find_by_key true, and exit_proof true; herdr-core declares executor hosts [] and exit_proof false until #495; fake stays test-only. Extend SupervisedSessionPort with optional CreateSessionInput.session_key ([a-z0-9-], 1-64 chars), trailing-12-char herdrAgentName suffix uniqueness, findSession(session_key) (using herdr tab list --workspace on herdr), and idempotent closeWithProof(handle, session_key) that verifies live [imm:<session_key>] ownership before pane/tab close and proves crash re-entry via pane_not_found + findSession === not_found. Enforce across all registered descriptors in tests/supervised-session-conformance.test.ts.",
+  "acceptance": [
+    {
+      "id": "SPR-A1",
+      "assertion": "In tests/session-provider-registry.test.ts and tests/supervised-session-herdr.test.ts: the config-visible registry lists exactly herdr and herdr-core; herdr requires HERDR_ENV=1 and non-empty HERDR_WORKSPACE_ID and declares roles.executor with claude-code, pi, antigravity, workspace local_path, find_by_key true, and exit_proof true; herdr-core declares roles.executor hosts [] and exit_proof false; runSessionCli builds adapters from the registry and rejects --provider fake or --provider unknown_name with invalid_input.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/session-provider-registry.test.ts\",\n      \"tests/supervised-session-herdr.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "SPR-A2",
+      "assertion": "In tests/session-provider-registry.test.ts: resolveSessionProvider for role executor with [\"herdr\", \"herdr-core\"] selects herdr when HERDR_ENV=1 and HERDR_WORKSPACE_ID=ws1, refuses lane_session_unavailable listing both providers and recoveries when HERDR_ENV is unset or HERDR_WORKSPACE_ID is empty, selects herdr-core outside Herdr when an injected descriptor admits pi while refusing claude-code, skips descriptors with find_by_key false (reason no find_by_key), and invokes zero adapter factory, probe, or createSession calls.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/session-provider-registry.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "SPR-A3",
+      "assertion": "In tests/supervised-session-conformance.test.ts, across every registered descriptor under its fake CLI and fake: createSession with session_key binds it into session identity and rejects uppercase, underscore, empty, or 65-char keys with invalid_input; findSession returns that handle or not_found; repeated closeWithProof(handle, session_key) calls return the same exited proof bound to handle and session_key while a mismatched session_key returns not_owned; an injected descriptor claiming find_by_key or exit_proof without implementing the method fails.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/supervised-session-conformance.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "SPR-A4",
+      "assertion": "In tests/supervised-session-herdr.test.ts: createSession with session_key writes [imm:<session_key>] into the tab label; herdrAgentName uses the trailing 12 characters so two sibling keys sharing a 20-character prefix produce distinct agent names; findSession queries herdr tab list --workspace; closeWithProof verifies live [imm:<session_key>] before closing pane and tab, returns exited proof on crash re-entry when pane get is pane_not_found and tab list finds no matching key, and refuses not_owned without closing when a live tab carries another key. Existing herdr-core and advisory tests pass.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/supervised-session-herdr.test.ts\",\n      \"tests/supervised-session-herdr-core.test.ts\",\n      \"tests/supervised-session-advisory.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "SPR-A5",
+      "assertion": "docs/reference/supervised-session-port.md, docs/adr/0038-supervised-session-port.md, and CONTEXT.md document resolveSessionProvider, session_key, findSession, closeWithProof, and lane_session_unavailable.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"r=docs/reference/supervised-session-port.md; a=docs/adr/0038-supervised-session-port.md; grep -q resolveSessionProvider $r && grep -q findSession $r && grep -q closeWithProof $r && grep -q session_key $r && grep -q lane_session_unavailable $r && grep -q session_providers $a && grep -q session_key $a && grep -q 'Session Provider' CONTEXT.md\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "SPR-A6",
+      "assertion": "Claude bundle, Antigravity artifact, dist reference mirrors, and repository typecheck are current.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun scripts/sync-dist-docs.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "SPR-A7",
+      "assertion": "In tests/supervised-session-boundary.test.ts: runtime/session/ imports only its own modules and node:* builtins, session imports stay inside allowed callers, and no runtime file outside runtime/session/ compares a provider name literal.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/supervised-session-boundary.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/session-provider-registry.md",
+    "CONTEXT.md",
+    "docs/adr/0038-supervised-session-port.md",
+    "docs/plans/session-provider-registry.intent.json",
+    "docs/reference/supervised-session-port.md",
+    "docs/specs/unified-lane-sessions.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/docs/reference/supervised-session-port.md",
+    "plugins/immune-brain/runtime/session/cli.ts",
+    "plugins/immune-brain/runtime/session/fake_provider.ts",
+    "plugins/immune-brain/runtime/session/herdr_core_provider.ts",
+    "plugins/immune-brain/runtime/session/herdr_provider.ts",
+    "plugins/immune-brain/runtime/session/provider_registry.ts",
+    "plugins/immune-brain/runtime/session/supervised_session_port.ts",
+    "tests/session-provider-registry.test.ts",
+    "tests/supervised-session-advisory.test.ts",
+    "tests/supervised-session-boundary.test.ts",
+    "tests/supervised-session-conformance.test.ts",
+    "tests/supervised-session-herdr-core.test.ts",
+    "tests/supervised-session-herdr.test.ts"
+  ],
+  "scope_size_reason": "Role-indexed provider descriptors, the Port primitives honoring them (session_key, findSession, closeWithProof) across herdr, herdr-core, and fake, and the conformance suite verifying declaration-to-adapter parity form one atomic session contract alongside its ADR and reference docs.",
+  "risk": "material",
+  "revision": 1
+}

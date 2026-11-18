@@ -1,0 +1,72 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "loop-daemon-drives-via-port",
+  "owner": "user",
+  "goal": "unified-lane-sessions S8 (#570; Spec docs/specs/unified-lane-sessions.spec.md D2, D13, D15, D18, D19, BR-DEC-1, BR-DEC-2, BR-DEC-4, BR-REQ-1, BR-SCN-7). Switch Loop daemon drive to authorizeBatch (LOOP_DAEMON_ACTOR_ID, tracker_approval or policy_auto, return_policy retain_branch, interaction_mode parent_relayed) + startLanes on creation and advanceLanes(root, batch_id) on every tick and post-decision relay, escalating startup blocked/entry_submitted=false dialogs via planEscalation. Replace exit_recorder.ts in loop_daemon/dispatch.ts PR creation with reading the integrated child commit from the v3 Batch Record and verification_evidence_digest from settled .imm/audit/<task_id>/ on retained refs/heads/imm/<task_id>. Require sessions port on advanceBatch and delete startBatch, batch_runner.ts, lane_supervisor.ts, exit_recorder.ts, tests/lane-supervisor.test.ts, and .imm/state/lane-supervisors/. Accepted regression (D18, OD-6, confirmed 2026-11-18): daemon drive outside Herdr refuses lane_session_unavailable until #495 instead of running --print Executors.",
+  "acceptance": [
+    {
+      "id": "LDP-A1",
+      "assertion": "In tests/loop-daemon-drive-pr.test.ts: with HERDR_ENV=1, HERDR_WORKSPACE_ID=ws1, and an injected herdr adapter behind runtime/lane_sessions/, daemon drive builds its agreement via authorizeBatch (LOOP_DAEMON_ACTOR_ID, policy_auto, retain_branch, parent_relayed) and calls startLanes (passing LANE_EXECUTOR_ENV=headless), calls advanceLanes(root, batch_id) on subsequent ticks (rotating a stalled g1 to g2 without waiting for Kernel settlement, and posting planEscalation when open returns entry_submitted false), removes the Lane worktree and imm-lane/ upon settlement while retaining refs/heads/imm/<task_id>, and opens the PR citing the v3 Batch Record commit and .imm/audit/<task_id>/ verification digest.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-daemon-drive-pr.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "LDP-A2",
+      "assertion": "In tests/loop-daemon-drive-pr.test.ts: with HERDR_ENV unset under default config, daemon drive reports lane_session_unavailable and creates zero Lane worktrees, zero sessions, and zero child processes; PR creation in dispatch.ts fails closed when the batch record has no integrated commit or .imm/audit/<task_id>/ evidence is absent (negative controls).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-daemon-drive-pr.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "LDP-A3",
+      "assertion": "In tests/loop-daemon-decisions.test.ts and tests/loop-daemon-dispatch.test.ts: verified GitHub decision and stop replies apply via relayLaneDecision + advanceLanes on the active batch_id; a restarted daemon reconstructs completion and PR eligibility from the v3 Batch Record and .imm/audit/ with zero exit-recorder files; non-drive daemon agents still use agent_runner.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-daemon-decisions.test.ts\",\n      \"tests/loop-daemon-dispatch.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "LDP-A4",
+      "assertion": "No lane_supervisor.ts, batch_runner.ts, or exit_recorder.ts remains under plugins/immune-brain/runtime and tests/lane-supervisor.test.ts is deleted; zero runtime files mention LaneSupervisor, startBatch, executor_mode, or lane_executor_requires_tui; tests/loop-daemon-boundary.test.ts proves loop_daemon/ imports neither runtime/session/ nor unattended/batch_lanes.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"test -z \\\"$(find plugins/immune-brain/runtime -name lane_supervisor.ts -o -name batch_runner.ts -o -name exit_recorder.ts)\\\" && test ! -e tests/lane-supervisor.test.ts && ! grep -rnE 'LaneSupervisor|startBatch|executor_mode|lane_executor_requires_tui' plugins/immune-brain/runtime && bun test tests/loop-daemon-boundary.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "LDP-A5",
+      "assertion": "docs/adr/0039-loop-daemon.md Decisions 2 and 14 and docs/adr/0041-simplified-configuration.md Decision 4 describe driving via runtime/lane_sessions/ and gating PRs on Batch Record commits plus .imm/audit/ digests, with zero LaneSupervisor references.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"! grep -q LaneSupervisor docs/adr/0039-loop-daemon.md && grep -q 'runtime/lane_sessions/' docs/adr/0039-loop-daemon.md && grep -qi 'audit' docs/adr/0039-loop-daemon.md && ! grep -q LaneSupervisor docs/adr/0041-simplified-configuration.md\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "LDP-A6",
+      "assertion": "After the retirement: single-task, lane-sessions, cleanup, batch-session-port, agent-roles, daemon, and layering suites pass; Claude bundle, Antigravity artifact, dist mirrors, and typecheck are current.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/single-task-lane-batch.test.ts tests/single-task-lane-cleanup.test.ts tests/lane-sessions.test.ts tests/session-lane-cleanup.test.ts tests/batch-session-port.test.ts tests/agent-roles-config.test.ts tests/loop-daemon-agent-handlers.test.ts tests/runtime-layering-boundary.test.ts && bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun scripts/sync-dist-docs.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/loop-daemon-drives-via-port.md",
+    "docs/adr/0039-loop-daemon.md",
+    "docs/adr/0041-simplified-configuration.md",
+    "docs/plans/loop-daemon-drives-via-port.intent.json",
+    "docs/specs/unified-lane-sessions.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/host-core/mcp_runtime.ts",
+    "plugins/immune-brain/runtime/lane_sessions/index.ts",
+    "plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts",
+    "plugins/immune-brain/runtime/loop_daemon/dispatch.ts",
+    "plugins/immune-brain/runtime/loop_daemon/drive_dispatcher.ts",
+    "plugins/immune-brain/runtime/loop_daemon/exit_recorder.ts",
+    "plugins/immune-brain/runtime/unattended/agent_profiles.ts",
+    "plugins/immune-brain/runtime/unattended/batch_final_report.ts",
+    "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+    "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+    "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+    "plugins/immune-brain/runtime/unattended/batch_state.ts",
+    "plugins/immune-brain/runtime/unattended/lane_decision.ts",
+    "plugins/immune-brain/runtime/unattended/lane_supervisor.ts",
+    "tests/agent-roles-config.test.ts",
+    "tests/lane-supervisor.test.ts",
+    "tests/loop-daemon-agent-handlers.test.ts",
+    "tests/loop-daemon-boundary.test.ts",
+    "tests/loop-daemon-decisions.test.ts",
+    "tests/loop-daemon-dispatch.test.ts",
+    "tests/loop-daemon-drive-pr.test.ts",
+    "tests/single-task-lane-batch.test.ts",
+    "tests/single-task-lane-cleanup.test.ts"
+  ],
+  "scope_size_reason": "Deleting startBatch, batch_runner.ts, lane_supervisor.ts, and exit_recorder.ts requires updating every daemon consumer, moving completedParentReport/batchQaFailureFacts, and removing retired supervisor tests in one atomic compilation unit.",
+  "risk": "material",
+  "revision": 1
+}

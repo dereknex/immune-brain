@@ -1,0 +1,51 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "session-provider-config",
+  "owner": "user",
+  "goal": "unified-lane-sessions S1 (#570; Spec docs/specs/unified-lane-sessions.spec.md D9, D16, D19, BR-REQ-1, BR-REQ-3, BR-REQ-5, BR-SCN-4). Retire the top-level herdr configuration key: herdr in a user or project .imm/config.json is ignored and emits one non-blocking warning diagnostic retired_key at key path herdr, is omitted from resolved config, and is never written by imm-kernel config migrate (--write removes it). Add top-level session_providers: a non-empty ordered list of distinct registered provider names (herdr, herdr-core), default [\"herdr\"], project replacing user; empty lists, unknown or test-only names (fake, process), duplicates, and non-arrays emit a blocking config_invalid error diagnostic. Remove the herdr gate at host-core/runtime.ts:1438 so inside Herdr (HERDR_ENV=1) Host single-task entries return an interactive Herdr-tab handoff without lane_executor_requires_tui. Update ADR 0041 Decision 4 and docs/reference/immune-brain-config.md (plus dist mirror and bundles).",
+  "acceptance": [
+    {
+      "id": "SPC-A1",
+      "assertion": "In tests/layered-config.test.ts: herdr: true and herdr: \"yes\" in user and project config files each produce one warning diagnostic with code retired_key at key path herdr, zero error diagnostics, an empty batchConfigErrors result, and a resolved config with no herdr field; unknown_top_key: 1 still produces a config_invalid error diagnostic (negative control).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/layered-config.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "SPC-A2",
+      "assertion": "In tests/layered-config.test.ts: imm-kernel config migrate on a v1 config whose transport chose herdr writes no herdr key; migrate --write on a v2 config containing herdr deletes only herdr and preserves every other key verbatim.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/layered-config.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "SPC-A3",
+      "assertion": "In tests/layered-config.test.ts: absent session_providers resolves to [\"herdr\"] with source default; project [\"herdr\", \"herdr-core\"] overrides user [\"herdr-core\"]; [], [\"process\"], [\"fake\"], [\"herdr\", \"herdr\"], and \"herdr\" each produce a config_invalid error diagnostic at session_providers and a non-empty batchConfigErrors result.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/layered-config.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "SPC-A4",
+      "assertion": "In tests/pi-batch-authority.test.ts and tests/claude-batch-authority.test.ts: a Host single-task start_unattended_batch with HERDR_ENV=1, a Pi or Claude Code Executor, and either no herdr key or herdr: false (negative control) returns an interactive executor handoff, never reports lane_executor_requires_tui, and spawns zero Executor processes.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-batch-authority.test.ts\",\n      \"tests/claude-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "SPC-A5",
+      "assertion": "docs/reference/immune-brain-config.md documents session_providers and retired_key without describing herdr as an active switch; docs/adr/0041-simplified-configuration.md Decision 4 matches; dist mirrors, Claude bundle, Antigravity artifact, and typecheck are current.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"grep -q session_providers docs/reference/immune-brain-config.md && grep -q retired_key docs/reference/immune-brain-config.md && ! grep -nE 'herdr.*(default\\\\\\\\)|opt-in|With .true.)' docs/reference/immune-brain-config.md && grep -q session_providers docs/adr/0041-simplified-configuration.md && bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun scripts/sync-dist-docs.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/session-provider-config.md",
+    "docs/adr/0041-simplified-configuration.md",
+    "docs/plans/session-provider-config.intent.json",
+    "docs/reference/immune-brain-config.md",
+    "docs/specs/unified-lane-sessions.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/docs/reference/immune-brain-config.md",
+    "plugins/immune-brain/runtime/config/layered_config.ts",
+    "plugins/immune-brain/runtime/config/migrate.ts",
+    "plugins/immune-brain/runtime/host-core/runtime.ts",
+    "tests/agent-roles-config.test.ts",
+    "tests/claude-batch-authority.test.ts",
+    "tests/layered-config.test.ts",
+    "tests/pi-batch-authority.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

@@ -1,0 +1,41 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "per-child-lane-decisions",
+  "owner": "user",
+  "goal": "unified-lane-sessions S7 (#570; Spec docs/specs/unified-lane-sessions.spec.md D12, D19, BR-DEC-1, BR-DEC-4, BR-SCN-6). Authority-path change. Add findActiveLaneBatchForTask(root, taskId) (failing closed on corrupt or ambiguous multi-batch matches) so findLaneRelayTarget and breaking-revision approval reach any child of a single-task or Initiative v3 batch through the record-level rebindBatchChildIdentity and hasContiguousLaneRebind proven in S3; trigger advanceLanes after relayLaneDecision so answered decisions reset no_progress and resume, native-gated stop closes only that child's session and retains its Lane, and coordinator: correct rotates to g(n+1).",
+  "acceptance": [
+    {
+      "id": "PLD-A1",
+      "assertion": "In tests/single-task-lane-decision.test.ts: findActiveLaneBatchForTask locates Child 2 in a two-child Initiative batch; relaying a literal-user decision resumes Child 2 via advanceLanes with no_progress reset to 0 while Child 1 is untouched; native-gated stop stops Child 2's session via BatchSessionPort.stop, parks Child 2 lane_executor_stopped, retains Child 2's Lane, and leaves Child 1 running; a coordinator: correct instruction closes g1 with proof and opens g2; an unknown task returns relayed false, and two active batches claiming the same task_id fail closed.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-lane-decision.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "PLD-A2",
+      "assertion": "In tests/single-task-lane-decision.test.ts and tests/unattended-contracts.test.ts: approving a breaking intent revision for one child in a two-child Initiative calls rebindBatchChildIdentity, appends lane_rebinds, advances plan_digest, and continues without batch_plan_changed or retire_stale_batch (including after a Revision Delegation reseal), while refusing a stale from_digest.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-lane-decision.test.ts\",\n      \"tests/unattended-contracts.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "PLD-A3",
+      "assertion": "lane_decision.ts never mentions plan_source; drive-batch.md and drive.md describe per-child decision relay, native-gated stop, and lane_rebinds; dist consistency, bundles, mirrors, and typecheck pass.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"! grep -n plan_source plugins/immune-brain/runtime/unattended/lane_decision.ts && grep -q lane_rebinds plugins/immune-brain/dist/drive-batch.md && bun test tests/runtime-layering-boundary.test.ts tests/skill-dist-consistency.test.ts && bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun scripts/sync-dist-docs.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/per-child-lane-decisions.md",
+    "docs/plans/per-child-lane-decisions.intent.json",
+    "docs/specs/unified-lane-sessions.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/drive-batch.md",
+    "plugins/immune-brain/dist/drive.md",
+    "plugins/immune-brain/runtime/host-core/runtime.ts",
+    "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+    "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+    "plugins/immune-brain/runtime/unattended/batch_state.ts",
+    "plugins/immune-brain/runtime/unattended/lane_decision.ts",
+    "tests/runtime-layering-boundary.test.ts",
+    "tests/single-task-lane-decision.test.ts",
+    "tests/unattended-contracts.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

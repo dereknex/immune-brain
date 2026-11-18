@@ -1,0 +1,71 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "host-entries-via-lane-sessions",
+  "owner": "user",
+  "goal": "unified-lane-sessions S5 (#570; Spec docs/specs/unified-lane-sessions.spec.md D1, D10, D14, D19, D20, BR-DEC-1, BR-DEC-5, BR-SCN-3). Add runtime/lane_sessions/ (startLanes(agreement), advanceLanes(root, batch_id), observeLanes(root, batch_id, options), and SessionPortAdapter) as the sole module importing both runtime/session/ and runtime/unattended/, with no side-door steerLane. Switch Claude Code, Pi, and Antigravity start_unattended_batch in host-core/runtime.ts to authorizeBatch + startLanes on creation and advanceLanes on continuation, removing Host calls to startBatch and executor_mode. Route read-only imm-session await --batch <id> in v4_runtime.ts directly to runtime/lane_sessions/ while rejecting ungated send|stop --batch flags and keeping runtime/session/ pure. observeLanes returns at the D20 wake set with next_action (advance | relay_dialog | ask_user | wait | complete), and SessionPortAdapter maps provider pane_not_found to exited and other provider failures to unknown. runtime/lane_sessions/ is a composition root, not a domain term. Update drive-batch.md (next_action table), drive.md, ADR 0005 Decision 4, ADR 0038 Decisions 2 and 4, and CONTEXT.md (Batch Agreement; no Lane Session Coordinator term).",
+  "acceptance": [
+    {
+      "id": "HLS-A1",
+      "assertion": "In tests/lane-sessions.test.ts: with HERDR_ENV=1, HERDR_WORKSPACE_ID=ws1, default config, and an injected herdr adapter, Claude Code, Pi, and Antigravity Host start_unattended_batch for both a single task (checkout_delivery) and a two-child Initiative (retain_branch) open one session per runnable child in its Lane path, record session_provider herdr, and emit zero executor handoffs and zero --print processes.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/lane-sessions.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "HLS-A2",
+      "assertion": "In tests/lane-sessions.test.ts: with HERDR_ENV unset or HERDR_WORKSPACE_ID empty and default config, single-task and Initiative Host entries return lane_session_unavailable listing herdr and herdr-core reasons and recoveries, create zero Lane worktrees and zero sessions, and never return lane_executor_requires_tui.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/lane-sessions.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "HLS-A3",
+      "assertion": "In tests/lane-sessions.test.ts: an active v3 batch recorded with session_provider herdr re-entered via advanceLanes with HERDR_ENV unset under an injected registry where herdr-core admits the Host refuses lane_session_unavailable naming herdr without switching providers; re-entered with HERDR_ENV=1 and HERDR_WORKSPACE_ID=ws1 it reconciles existing handles via observe/find and opens zero duplicate tabs; with the fake herdr CLI, the SessionPortAdapter reports a pane_not_found handle as exited and any other provider failure as unknown.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/lane-sessions.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "HLS-A4",
+      "assertion": "In tests/lane-sessions.test.ts through v4_runtime imm-session dispatch with fake provider: imm-session await --batch <id> waits read-only and returns at the first D20 wake event (a child observed idle, done, blocked, or exited; entry_submitted false; a Kernel settlement or pending user decision) or at timeout, reporting next_action advance after a settlement, relay_dialog for a blocked startup dialog, ask_user for an interactive_host child stalled at baseline, wait on a timeout with nothing pending, and complete for a terminal batch; imm-session send --batch <id> and imm-session stop --batch <id> fail with usage exit code 2 (negative controls); an unknown batch id returns a refusal with exit code 1.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/lane-sessions.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "HLS-A5",
+      "assertion": "plugins/immune-brain/dist/drive-batch.md has no claude --print Executor row and no Parent imm-session create or close step for Lanes, documents imm-session await --batch and its next_action table; ADR 0005 names runtime/lane_sessions/ as the composition root; ADR 0038 names BatchSessionPort and persisted orchestration handles; CONTEXT.md defines Batch Agreement and does not define a Lane Session Coordinator term.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"f=plugins/immune-brain/dist/drive-batch.md; ! grep -n 'claude --print' $f && ! grep -nE 'imm-session (create|close)' $f && grep -q 'imm-session await --batch' $f && grep -q next_action $f && grep -q 'runtime/lane_sessions/' docs/adr/0005-unattended-initiative-batch-run.md && grep -q BatchSessionPort docs/adr/0038-supervised-session-port.md && ! grep -q 'Lane Session Coordinator' CONTEXT.md && grep -q 'Batch Agreement' CONTEXT.md\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "HLS-A6",
+      "assertion": "host-core/runtime.ts never mentions startBatch or executor_mode; tests/runtime-layering-boundary.test.ts and tests/supervised-session-boundary.test.ts prove only runtime/lane_sessions/ imports both runtime/session/ and runtime/unattended/ and runtime/session/ remains node:*-only; Host authority and dist consistency suites pass.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"! grep -nE 'startBatch|executor_mode' plugins/immune-brain/runtime/host-core/runtime.ts && bun test tests/runtime-layering-boundary.test.ts tests/supervised-session-boundary.test.ts tests/claude-batch-authority.test.ts tests/pi-batch-authority.test.ts tests/single-task-lane-batch.test.ts tests/unattended-contracts.test.ts tests/pi-only-current-contracts.test.ts tests/skill-dist-consistency.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "HLS-A7",
+      "assertion": "Claude bundle, Antigravity artifact, dist reference mirrors, and repository typecheck are current.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun scripts/sync-dist-docs.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/host-entries-via-lane-sessions.md",
+    "CONTEXT.md",
+    "docs/adr/0005-unattended-initiative-batch-run.md",
+    "docs/adr/0038-supervised-session-port.md",
+    "docs/plans/host-entries-via-lane-sessions.intent.json",
+    "docs/reference/supervised-session-port.md",
+    "docs/specs/unified-lane-sessions.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/docs/reference/supervised-session-port.md",
+    "plugins/immune-brain/dist/drive-batch.md",
+    "plugins/immune-brain/dist/drive.md",
+    "plugins/immune-brain/runtime/host-core/runtime.ts",
+    "plugins/immune-brain/runtime/lane_sessions/index.ts",
+    "plugins/immune-brain/runtime/lane_sessions/session_port_adapter.ts",
+    "plugins/immune-brain/runtime/v4_runtime.ts",
+    "tests/claude-batch-authority.test.ts",
+    "tests/lane-sessions.test.ts",
+    "tests/pi-batch-authority.test.ts",
+    "tests/pi-only-current-contracts.test.ts",
+    "tests/runtime-layering-boundary.test.ts",
+    "tests/single-task-lane-batch.test.ts",
+    "tests/supervised-session-boundary.test.ts",
+    "tests/unattended-contracts.test.ts"
+  ],
+  "scope_size_reason": "Switching Host entries to startLanes/advanceLanes, routing imm-session await --batch in v4_runtime, and removing Parent session creation prose in drive-batch.md must land together so Host and Parent model never both open or neither opens a Lane session.",
+  "risk": "material",
+  "revision": 1
+}

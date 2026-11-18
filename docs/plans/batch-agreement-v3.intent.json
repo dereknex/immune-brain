@@ -1,0 +1,77 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "batch-agreement-v3",
+  "owner": "user",
+  "goal": "unified-lane-sessions S3 (#570; Spec docs/specs/unified-lane-sessions.spec.md D2 transitional, D3, D4, D12 rebind proof, D17, OD-15, BR-DEC-2, BR-DEC-4, BR-DEC-5). First prove on a two-child Initiative fixture that record-level rebindBatchChildIdentity (generalized from rebindSingleTaskIdentity) appends a contiguous lane_rebinds entry for any child, and that hasContiguousLaneRebind and batch_git.ts final verification keep the pre-rebind Parent identity; if that cannot hold, stop for re-planning before any later Slice relies on the v3 shape. Then export BatchAgreement + authorizeBatch (confirmation, final_verification { required, commands }, return_policy checkout_delivery | retain_branch, interaction_mode interactive_host | parent_relayed) from runtime/unattended/batch_agreement.ts; write Lane records as batch_run_state/v3 carrying agreement policies, batch-level session_provider and per-child session (both null until S4), and per-child lane_removed / lane_retained / lane_rebinds; refuse v2 with batch_record_retired; decide completion by final_verification and coordinator return by return_policy, removing plan_source from batch_lanes.ts, batch_git.ts, lane_cleanup.ts, and assurance/run_continuation.ts; migrate the stored-record contract assertions of existing suites from v2 to v3; keep startBatch as a transitional adapter.",
+  "acceptance": [
+    {
+      "id": "AGR-A1",
+      "assertion": "In tests/batch-agreement.test.ts and tests/batch-completion-verifier.test.ts: on a two-child Initiative v3 record, rebindBatchChildIdentity for Child 2 appends exactly one contiguous lane_rebinds entry naming Child 2's task_id, from_digest, and to_digest and advances plan_digest while Child 1's record is byte-identical; a stale from_digest is refused with no write; after the rebind, Parent final verification in batch_git.ts passes under the Parent identity established before the rebind.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-agreement.test.ts\",\n      \"tests/batch-completion-verifier.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AGR-A2",
+      "assertion": "In tests/claude-run-continuation.test.ts: hasContiguousLaneRebind accepts a contiguous lane_rebinds chain for an Initiative child and for a single task, and refuses a chain with a gap, a foreign task_id, or a target digest off the chain (negative controls).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-run-continuation.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AGR-A3",
+      "assertion": "In tests/batch-agreement.test.ts: authorizeBatch produces valid agreements for Host (native_gate, checkout_delivery or retain_branch, interactive_host) and daemon (policy_auto or tracker_approval, LOOP_DAEMON_ACTOR_ID, retain_branch, parent_relayed) accepted by the batch authority registry; unknown confirmation.source, return_policy, interaction_mode, or non-array final_verification.commands each return batch_agreement_invalid and write zero files.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-agreement.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AGR-A4",
+      "assertion": "In tests/batch-agreement.test.ts and tests/batch-completion-verifier.test.ts: completion is decided by final_verification.required (false completes on delivery; true requires passing commands) and coordinator return follows return_policy (checkout_delivery stages delta; retain_branch keeps refs/heads/imm/<slug>) for both 1-child and 2-child agreements.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-agreement.test.ts\",\n      \"tests/batch-completion-verifier.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AGR-A5",
+      "assertion": "In tests/unattended-batch-lanes.test.ts and tests/single-task-lane-batch.test.ts: new Lane batch records carry assurance_kernel/batch_run_state/v3 with agreement policies, session_provider null, and every children[].session null; stored v2 Lane records are refused with batch_record_retired naming retire_stale_batch; v1 records still read.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-lanes.test.ts\",\n      \"tests/single-task-lane-batch.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AGR-A6",
+      "assertion": "batch_lanes.ts, batch_git.ts, lane_cleanup.ts, and assurance/run_continuation.ts never mention plan_source, and tests/runtime-layering-boundary.test.ts enforces that rule for those files and proves runtime/unattended/ imports neither runtime/session/ nor runtime/lane_sessions/.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"u=plugins/immune-brain/runtime/unattended; ! grep -n plan_source $u/batch_lanes.ts $u/batch_git.ts $u/lane_cleanup.ts plugins/immune-brain/runtime/assurance/run_continuation.ts && bun test tests/runtime-layering-boundary.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AGR-A7",
+      "assertion": "Transitional startBatch-based Host and daemon callers pass their existing focused suites; the only assertion changes are stored-record contract expectations moved from assurance_kernel/batch_run_state/v2 to v3 (tests/claude-batch-authority.test.ts:160,528; tests/batch-stale-disposition.test.ts:45,207,461; and any other stored v2 Lane fixture in these suites), with no assertion removed or weakened.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-lane-decision.test.ts\",\n      \"tests/single-task-lane-cleanup.test.ts\",\n      \"tests/claude-batch-authority.test.ts\",\n      \"tests/pi-batch-authority.test.ts\",\n      \"tests/loop-daemon-drive-pr.test.ts\",\n      \"tests/batch-final-report.test.ts\",\n      \"tests/batch-stale-disposition.test.ts\",\n      \"tests/batch-serial-retirement.test.ts\",\n      \"tests/pi-batch-acceptance-integration.test.ts\",\n      \"tests/unattended-contracts.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AGR-A8",
+      "assertion": "Claude bundle, Antigravity artifact, dist reference mirrors, and repository typecheck are current.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun scripts/sync-dist-docs.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/batch-agreement-v3.md",
+    "docs/plans/batch-agreement-v3.intent.json",
+    "docs/specs/unified-lane-sessions.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/assurance/run_continuation.ts",
+    "plugins/immune-brain/runtime/unattended/batch_agreement.ts",
+    "plugins/immune-brain/runtime/unattended/batch_git.ts",
+    "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+    "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+    "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+    "plugins/immune-brain/runtime/unattended/batch_state.ts",
+    "plugins/immune-brain/runtime/unattended/lane_cleanup.ts",
+    "tests/batch-agreement.test.ts",
+    "tests/batch-completion-verifier.test.ts",
+    "tests/batch-final-report.test.ts",
+    "tests/batch-serial-retirement.test.ts",
+    "tests/batch-stale-disposition.test.ts",
+    "tests/claude-batch-authority.test.ts",
+    "tests/claude-run-continuation.test.ts",
+    "tests/pi-batch-acceptance-integration.test.ts",
+    "tests/runtime-layering-boundary.test.ts",
+    "tests/single-task-lane-batch.test.ts",
+    "tests/unattended-batch-lanes.test.ts",
+    "tests/unattended-contracts.test.ts"
+  ],
+  "scope_size_reason": "The v3 record contract, the Initiative rebind it must carry, and the suites that persist Lane records change atomically: v2 records fail closed as soon as v3 is written, so every stored-record fixture moves in the same Slice. The session port and reconciler moved to S4 so this Slice holds only the agreement and record contract.",
+  "risk": "material",
+  "revision": 1
+}

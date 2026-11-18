@@ -1,0 +1,60 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "batch-session-port",
+  "owner": "user",
+  "goal": "unified-lane-sessions S4 (#570; Spec docs/specs/unified-lane-sessions.spec.md D2 transitional, D8, OD-15, BR-DEC-1, BR-DEC-3). Export BatchSessionPort (provider, open, resume, find, observe, send, stop, closeWithProof) with its own SessionObservation (working | blocked | idle | done | exited | unknown) and structural SessionExitProof in runtime/unattended/batch_session_port.ts, and child_session_reconciler.ts driven by advanceBatch (the exported runLaneBatch): bounded laneSessionKey <=36 chars with trailing 12-hex hash, write-ahead key + baseline, find recovery, HoldForDialog vs resume, baseline revision progress, interaction_mode-dependent stall handling (exited in either mode or idle/done under parent_relayed: closeWithProof + g(n+1), park at no_progress 2; idle/done under interactive_host: hold as stalled_idle with no send, close, or open), holds on unknown or observe refusal, and recorded instruction/correction interventions. The S3 v3 record shape is unchanged; the sessions port stays optional (executor handoffs when absent) until S8.",
+  "acceptance": [
+    {
+      "id": "BSP-A1",
+      "assertion": "In tests/batch-session-port.test.ts: advanceBatch over a two-child Initiative agreement with an in-memory BatchSessionPort records batch-level session_provider, creates each Lane worktree before open, writes session { key: laneSessionKey(...), generation: 1, baseline, handle: null } before open runs (key matching ^imm-[a-z0-9-]+-g1-[0-9a-f]{12}$, <=36 chars, distinct trailing 12-hex per child), records handle and entry_submitted on return, and passes LANE_EXECUTOR_ENV=headless in env when interaction_mode is parent_relayed.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-session-port.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "BSP-A2",
+      "assertion": "In tests/batch-session-port.test.ts: interrupting after open returns and before handle is persisted causes the next advanceBatch to call find(key), adopt the handle, and call open zero more times (1 total); find returning not_found calls open once with the same stored key; re-entering with a BatchSessionPort whose provider differs from recorded session_provider refuses lane_session_unavailable before any port call.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-session-port.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "BSP-A3",
+      "assertion": "In tests/batch-session-port.test.ts, for single-task and two-child Initiative agreements alike: entry_submitted false or observed blocked holds without incrementing no_progress and calls resume once observed idle; observed idle or done with record_revision != baseline resets no_progress to 0, updates baseline, and calls resume; under parent_relayed, observed idle or done at unchanged baseline with no pending decision calls closeWithProof, increments no_progress to 1, and opens g2, and a second consecutive stall parks lane_executor_no_progress with no g3; under interactive_host the same idle or done stall calls none of send, closeWithProof, or open, leaves no_progress at 0, and reports the child stalled_idle; observed exited at unchanged baseline closes with proof and opens g2 under either mode; a recorded instruction calls send once; a recorded correction closes g1 with proof and opens g2.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-session-port.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "BSP-A4",
+      "assertion": "In tests/batch-session-port.test.ts: observed working, observed unknown, and an observe PortRefusal each leave no_progress, baseline, generation, and handle unchanged and call none of send, resume, open, or closeWithProof, and the next advanceBatch observes again; SessionObservation and SessionExitProof are declared in batch_session_port.ts without importing runtime/session/.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-session-port.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "BSP-A5",
+      "assertion": "batch_session_port.ts and child_session_reconciler.ts never mention plan_source, and tests/runtime-layering-boundary.test.ts enforces that rule for both files and proves runtime/unattended/ imports neither runtime/session/ nor runtime/lane_sessions/.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"u=plugins/immune-brain/runtime/unattended; ! grep -n plan_source $u/batch_session_port.ts $u/child_session_reconciler.ts && bun test tests/runtime-layering-boundary.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "BSP-A6",
+      "assertion": "Transitional startBatch-based Host and daemon callers pass their existing focused suites unchanged.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-lane-decision.test.ts\",\n      \"tests/single-task-lane-cleanup.test.ts\",\n      \"tests/claude-batch-authority.test.ts\",\n      \"tests/pi-batch-authority.test.ts\",\n      \"tests/loop-daemon-drive-pr.test.ts\",\n      \"tests/batch-final-report.test.ts\",\n      \"tests/batch-stale-disposition.test.ts\",\n      \"tests/batch-serial-retirement.test.ts\",\n      \"tests/pi-batch-acceptance-integration.test.ts\",\n      \"tests/unattended-contracts.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "BSP-A7",
+      "assertion": "Claude bundle, Antigravity artifact, dist reference mirrors, and repository typecheck are current.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun scripts/sync-dist-docs.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/batch-session-port.md",
+    "docs/plans/batch-session-port.intent.json",
+    "docs/specs/unified-lane-sessions.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+    "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+    "plugins/immune-brain/runtime/unattended/batch_session_port.ts",
+    "plugins/immune-brain/runtime/unattended/batch_state.ts",
+    "plugins/immune-brain/runtime/unattended/child_session_reconciler.ts",
+    "tests/batch-session-port.test.ts",
+    "tests/runtime-layering-boundary.test.ts",
+    "tests/unattended-batch-lanes.test.ts"
+  ],
+  "scope_size_reason": "The port, the reconciler, and advanceBatch's call into it land together so every session state transition has exactly one writer from the first commit.",
+  "risk": "material",
+  "revision": 1
+}

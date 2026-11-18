@@ -1,0 +1,61 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "session-lane-cleanup",
+  "owner": "user",
+  "goal": "unified-lane-sessions S6 (#570; Spec docs/specs/unified-lane-sessions.spec.md D11, D19, BR-DEC-2, BR-DEC-3, BR-SCN-1, BR-SCN-2, BR-SCN-5). Implement two-tier proof-based cleanup: (1) per integrated child of any agreement, advanceBatch calls BatchSessionPort.closeWithProof(handle, key) and removes that child's Lane worktree and refs/heads/imm-lane/<slug>/<task_id> once exit proof and per-child Git cleanliness hold, recording lane_removed while leaving sibling Lanes and refs/heads/imm/<slug> untouched; (2) only when the whole batch completes under return_policy checkout_delivery and deliverSingleTask succeeds is refs/heads/imm/<slug> deleted (retained under retain_branch). Any failed proof or Git check retains the Lane with named batch_lane_retained; parked, stopped, and redo Lanes are never removed. Retire session_closes and closeRecordUnproven.",
+  "acceptance": [
+    {
+      "id": "SLC-A1",
+      "assertion": "In tests/session-lane-cleanup.test.ts: (a) for a single-task checkout_delivery agreement with Pi Executor, after integration and checkout staging, closeWithProof closes the handle and cleanup removes the Lane worktree, imm-lane/<task_id>/<task_id>, and refs/heads/imm/<task_id>, recording lane_removed; (b) for Child 1 of a two-child Initiative retain_branch agreement while Child 2 is still running, closeWithProof closes Child 1's handle and removes Child 1's worktree and imm-lane/<slug>/<child_1>, while Child 2's Lane/session and shared refs/heads/imm/<slug> remain intact.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/session-lane-cleanup.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "SLC-A2",
+      "assertion": "In tests/session-lane-cleanup.test.ts: each negative control keeps the Lane worktree and branches and reports batch_lane_retained naming the failed condition: provider with exit_proof false; unproven closeWithProof (unknown, timeout, events_lost, mismatched session_key, or superseded handle); untracked or modified file in the Lane worktree (naming the file); parked child; stopped child.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/session-lane-cleanup.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "SLC-A3",
+      "assertion": "In tests/single-task-lane-cleanup.test.ts, tests/unattended-batch-lanes.test.ts, and tests/supervised-session-herdr.test.ts: lane_removed (with SessionExitProof) and lane_retained validate for Initiative children as well as single tasks, integrated Initiative children no longer emit the static no-exit-evidence notice, and closeRecordUnproven and session_closes are removed from runtime/session/cli.ts and runtime/unattended/batch_lanes.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"! grep -n 'closeRecordUnproven' plugins/immune-brain/runtime/session/cli.ts && ! grep -n 'recordClosableSessions' plugins/immune-brain/runtime/unattended/batch_lanes.ts && bun test tests/single-task-lane-cleanup.test.ts tests/unattended-batch-lanes.test.ts tests/supervised-session-herdr.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "SLC-A4",
+      "assertion": "docs/adr/0027-parent-branch-merge-queue.md, docs/adr/0038-supervised-session-port.md, and plugins/immune-brain/dist/drive-batch.md document two-tier closeWithProof cleanup, lane_removed, and batch_lane_retained; boundary and lane-sessions tests pass.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"grep -q lane_removed docs/adr/0027-parent-branch-merge-queue.md && grep -qi 'exit proof' docs/adr/0027-parent-branch-merge-queue.md && grep -q lane_removed plugins/immune-brain/dist/drive-batch.md && grep -q batch_lane_retained plugins/immune-brain/dist/drive-batch.md && bun test tests/runtime-layering-boundary.test.ts tests/supervised-session-boundary.test.ts tests/lane-sessions.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "SLC-A5",
+      "assertion": "Claude bundle, Antigravity artifact, dist reference mirrors, and repository typecheck are current.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun scripts/sync-dist-docs.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/session-lane-cleanup.md",
+    "docs/adr/0027-parent-branch-merge-queue.md",
+    "docs/adr/0038-supervised-session-port.md",
+    "docs/plans/session-lane-cleanup.intent.json",
+    "docs/reference/supervised-session-port.md",
+    "docs/specs/unified-lane-sessions.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/docs/reference/supervised-session-port.md",
+    "plugins/immune-brain/dist/drive-batch.md",
+    "plugins/immune-brain/runtime/session/cli.ts",
+    "plugins/immune-brain/runtime/session/herdr_core_provider.ts",
+    "plugins/immune-brain/runtime/session/herdr_provider.ts",
+    "plugins/immune-brain/runtime/session/supervised_session_port.ts",
+    "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+    "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+    "plugins/immune-brain/runtime/unattended/batch_state.ts",
+    "plugins/immune-brain/runtime/unattended/lane_cleanup.ts",
+    "tests/lane-sessions.test.ts",
+    "tests/session-lane-cleanup.test.ts",
+    "tests/single-task-lane-cleanup.test.ts",
+    "tests/supervised-session-boundary.test.ts",
+    "tests/supervised-session-herdr.test.ts",
+    "tests/unattended-batch-lanes.test.ts"
+  ],
+  "scope_size_reason": "Two-tier cleanup in unattended/ and retiring the superseded session_closes / closeRecordUnproven close guard in runtime/session/ must land together so integrated child sessions close through one proven contract without leaving dead session_closes checks.",
+  "risk": "material",
+  "revision": 1
+}
