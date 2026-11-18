@@ -116,6 +116,12 @@ Admission requires `hc schema --json` to state version 0.1.19 or newer, protocol
 | `subscribeEvents`, `snapshot`, `manageWorktree`, `waitForState` | Not implemented | Degrade as above; core offers `events.subscribe`, and no snapshot |
 | `reportState` | Not applicable | The Host reports OSC 7501 itself |
 
+## Provider registry and session keys (S2)
+
+`runtime/session/provider_registry.ts` registers one descriptor per provider with a pure environment check, recovery text, adapter factory, and role admissions. `resolveSessionProvider({ role, providers, host, env, registry })` is pure (zero I/O): it selects the first configured provider whose env check holds and whose `roles.executor` admits `host` with `find_by_key: true` and `workspace: "local_path"`, or returns `lane_session_unavailable` listing per-provider reasons and recoveries. `herdr` requires `HERDR_ENV=1` and non-empty `HERDR_WORKSPACE_ID` and admits `claude-code`, `pi`, `antigravity` with `find_by_key: true` and `exit_proof: true`; `herdr-core` admits no executor host and `exit_proof: false` until #495; `fake` stays test-only and excluded from config registration.
+
+`CreateSessionInput` gains optional `session_key` (`[a-z0-9-]{1,64}`) bound into session identity (`herdr`: tab label suffix `[imm:<session_key>]`; omitting keeps random-token behavior). `herdrAgentName` uses the trailing 12 characters so sibling keys sharing a prefix never collide. The port gains `findSession(session_key)`, which returns the live handle or `not_found`, and idempotent `closeWithProof(handle, session_key)`, which verifies live `[imm:<session_key>]` ownership before closing and proves exit on crash re-entry when the pane is gone and `findSession` reports `not_found`; a mismatched key returns `not_owned` without closing.
+
 ## Admission matrix
 
 A role is admitted per provider, not globally. The close rule is a Kernel fact on every provider.

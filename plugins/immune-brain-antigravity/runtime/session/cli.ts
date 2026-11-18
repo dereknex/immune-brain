@@ -10,9 +10,8 @@
 import { lstatSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { createHerdrCoreSessionProvider } from "./herdr_core_provider";
 import { extractMarkedResult } from "./marked_result";
-import { createHerdrSessionProvider, createHerdrViewer } from "./herdr_provider";
+import { SESSION_PROVIDER_REGISTRY } from "./provider_registry";
 import {
 	admitSessionProvider,
 	EXECUTOR_HOSTS,
@@ -48,9 +47,8 @@ const USAGE = [
 ].join("\n");
 
 export function resolveSessionProvider(name: string | undefined, env: Record<string, string | undefined>): SupervisedSessionPort | Refusal {
-	if (name === "herdr") return createHerdrSessionProvider({ env });
-	// Inside Herdr, a core session gets an unfocused viewer tab; `hc attach` would take over the caller's terminal.
-	if (name === "herdr-core") return createHerdrCoreSessionProvider({ env, viewer: createHerdrViewer({ env }) ?? undefined });
+	const descriptor = SESSION_PROVIDER_REGISTRY.find(d => d.name === name);
+	if (descriptor) return descriptor.factory(env);
 	return refuse("invalid_input", `unknown session provider ${JSON.stringify(name ?? "")}; name one explicitly (herdr, herdr-core); there is no fallback`);
 }
 

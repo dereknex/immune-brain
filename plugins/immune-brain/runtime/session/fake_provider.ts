@@ -8,10 +8,12 @@ import {
 	resumeRefusal,
 	SUPERVISED_SESSION_PROTOCOL,
 	validateCreateInput,
+	validateSessionKey,
 	type AwaitResult,
 	type CloseRecord,
 	type CreateSessionInput,
 	type SessionHandle,
+	type SessionKey,
 	type SessionState,
 	type SupervisedSessionPort,
 } from "./supervised_session_port";
@@ -19,6 +21,7 @@ import {
 interface FakeSession {
 	handle: SessionHandle;
 	input: CreateSessionInput;
+	sessionKey?: SessionKey;
 	state: SessionState;
 	exited: boolean;
 	closed: boolean;
@@ -63,6 +66,7 @@ export function createFakeSessionProvider(): { port: SupervisedSessionPort; cont
 			if (!available) return refuse("provider_unavailable", "fake provider set unavailable");
 			const invalid = validateCreateInput(input);
 			if (invalid) return invalid;
+			const sessionKey = input.session_key;
 			if (input.resume !== undefined) {
 				const session = owned(input.resume);
 				if (!session) return notOwned(input.resume);
@@ -74,7 +78,7 @@ export function createFakeSessionProvider(): { port: SupervisedSessionPort; cont
 				return { ok: true, handle: session.handle, entry_submitted: true, state: session.state, provenance: "detected" };
 			}
 			const handle = `fake:${++next}`;
-			const session: FakeSession = { handle, input, state: "idle", exited: false, closed: false, submitted: [], output: "", keys: [] };
+			const session: FakeSession = { handle, input, ...(sessionKey !== undefined ? { sessionKey } : {}), state: "idle", exited: false, closed: false, submitted: [], output: "", keys: [] };
 			sessions.set(handle, session);
 			if (blockStart) {
 				blockStart = false;
@@ -162,6 +166,25 @@ export function createFakeSessionProvider(): { port: SupervisedSessionPort; cont
 				return { handle, state: session.state, provenance: session.state === "unknown" ? "none" as const : "detected" as const };
 			});
 			return { ok: true, sessions: entries };
+		},
+		async findSession(session_key) {
+			const bad = validateSessionKey(session_key);
+			if (bad) return bad;
+			for (const session of sessions.values()) {
+				if (!session.closed && session.sessionKey === session_key) return { ok: true as const, handle: session.handle };
+			}
+			return { ok: true as const, not_found: true as const };
+		},
+		async closeWithProof(handle, session_key) {
+			const bad = validateSessionKey(session_key);
+			if (bad) return bad;
+			const session = owned(handle);
+			if (!session) return notOwned(handle);
+			if (session.sessionKey !== session_key) return notOwned(handle);
+			session.closed = true;
+			session.exited = true;
+			notify();
+			return { ok: true as const, exited: true as const, handle, session_key };
 		},
 		async sendKeys(handle, key) {
 			const session = owned(handle);

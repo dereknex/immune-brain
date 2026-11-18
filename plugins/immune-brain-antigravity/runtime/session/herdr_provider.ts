@@ -28,6 +28,7 @@ import {
 	resumeRefusal,
 	SUPERVISED_SESSION_PROTOCOL,
 	validateCreateInput,
+	validateSessionKey,
 	type AwaitResult,
 	type CloseRecord,
 	type ExecutorHostKind,
@@ -57,7 +58,7 @@ const HOST_KIND: Record<ExecutorHostKind, string> = { "claude-code": "claude", p
  * of the session's ownership token so repeated or concurrent labels never collide.
  */
 export function herdrAgentName(label: string, token: string): string {
-	const suffix = token.toLowerCase().replace(/[^a-z0-9_-]+/g, "").slice(0, 12);
+	const suffix = token.toLowerCase().replace(/[^a-z0-9_-]+/g, "").slice(-12);
 	const folded = label.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^[^a-z]+/, "").replace(/[-_]+$/g, "") || "lane";
 	if (!suffix) return folded.slice(0, 32).replace(/[-_]+$/g, "") || "lane";
 	const prefixBudget = 32 - 1 - suffix.length;
@@ -67,6 +68,7 @@ export function herdrAgentName(label: string, token: string): string {
 
 export const HERDR_CLI = {
 	schema: () => ["api", "schema", "--json"],
+	tabList: (workspace: string) => ["tab", "list", "--workspace", workspace],
 	tabCreate: (workspace: string, cwd: string, label: string, env: Record<string, string> = {}) => [
 		"tab", "create", "--workspace", workspace, "--cwd", cwd, "--label", label,
 		...Object.entries(env).flatMap(([key, value]) => ["--env", `${key}=${value}`]),
@@ -335,7 +337,7 @@ export function createHerdrSessionProvider(options: HerdrProviderOptions): Super
 				return submitEntry(handle, pane, input.entry);
 			}
 			if (!workspace) return refuse("provider_unavailable", "HERDR_WORKSPACE_ID is not set");
-			const token = randomBytes(6).toString("hex");
+			const token = input.session_key ?? randomBytes(6).toString("hex");
 			const created = await run(HERDR_CLI.tabCreate(workspace, input.cwd, `${input.label} ${herdrTokenMark(token)}`, input.env));
 			if (isRefusal(created)) return created;
 			if (created.code !== 0) return refuse("start_failed", `herdr tab create failed: ${failure(created)}`);
@@ -424,6 +426,65 @@ export function createHerdrSessionProvider(options: HerdrProviderOptions): Super
 			if (closed.code !== 0 && found.gone) return { ok: true };
 			if (closed.code !== 0) return refuse("provider_error", `herdr tab close failed: ${failure(closed)}`, handle);
 			return { ok: true };
+		},
+		async findSession(session_key) {
+			const bad = validateSessionKey(session_key);
+			if (bad) return bad;
+			if (!workspace) return refuse("provider_unavailable", "HERDR_WORKSPACE_ID is not set");
+			const listed = await run(HERDR_CLI.tabList(workspace));
+			if (isRefusal(listed)) return listed;
+			if (listed.code !== 0) return refuse("provider_error", `herdr tab list failed: ${failure(listed)}`);
+			const parsed = parseJson(listed.stdout);
+			const tabs = (pick(parsed, ["result", "tabs"]) ?? pick(parsed, ["tabs"])) as unknown;
+			if (!Array.isArray(tabs)) return refuse("provider_error", "herdr tab list returned no tabs");
+			for (const tab of tabs) {
+				if (!String(pick(tab, ["label"]) ?? "").endsWith(herdrTokenMark(session_key))) continue;
+				const tabId = pick(tab, ["tab_id"]);
+				if (typeof tabId !== "string" || !tabId) continue;
+				if (typeof pick(tab, ["workspace_id"]) === "string" && pick(tab, ["workspace_id"]) !== workspace) continue;
+				const paneId = pick(tab, ["root_pane", "pane_id"]) ?? pick(tab, ["pane_id"]);
+				if (typeof paneId !== "string" || !paneId) continue;
+				return { ok: true as const, handle: encodeHerdrHandle({ workspace, tab: tabId, pane: paneId, token: session_key }) };
+			}
+			return { ok: true as const, not_found: true as const };
+		},
+		async closeWithProof(handle, session_key) {
+			const bad = validateSessionKey(session_key);
+			if (bad) return bad;
+			const ids = decodeHerdrHandle(handle);
+			if (!ids || !workspace || ids.workspace !== workspace || ids.token !== session_key) {
+				return refuse("not_owned", "handle was not created for this session key", handle);
+			}
+			const found = await own(handle);
+			if (isRefusal(found)) return found;
+			if (found.gone) {
+				const listed = await run(HERDR_CLI.tabList(workspace));
+				if (isRefusal(listed)) return listed;
+				if (listed.code !== 0) return refuse("provider_error", `herdr tab list failed: ${failure(listed)}`, handle);
+				const parsed = parseJson(listed.stdout);
+				const tabs = (pick(parsed, ["result", "tabs"]) ?? pick(parsed, ["tabs"])) as unknown;
+				if (!Array.isArray(tabs)) return refuse("provider_error", "herdr tab list returned no tabs", handle);
+					const survivor = (tabs as unknown[]).find(tab => String(pick(tab as unknown, ["label"]) ?? "").endsWith(herdrTokenMark(session_key)));
+				if (!survivor) return { ok: true as const, exited: true as const, handle, session_key };
+				// A live tab still carries the key. Only the handle's own tab may close:
+				// another tab means the key now belongs to a different session.
+				const survivorTab = pick(survivor as unknown, ["tab_id"]);
+				if (survivorTab !== ids.tab) return refuse("not_owned", "a live tab carries this session key for another session; nothing was closed", handle);
+				const closing = await run(HERDR_CLI.tabClose(ids.tab));
+				if (isRefusal(closing)) return closing;
+				if (closing.code !== 0) return refuse("provider_error", `herdr tab close failed: ${failure(closing)}`, handle);
+				return { ok: true as const, exited: true as const, handle, session_key };
+			}
+			const paneClosed = await run(HERDR_CLI.paneClose(found.ids.pane));
+			if (isRefusal(paneClosed)) return paneClosed;
+			if (paneClosed.code !== 0) return refuse("provider_error", `herdr pane close failed: ${failure(paneClosed)}`, handle);
+			const gone = await run(HERDR_CLI.paneGet(found.ids.pane));
+			if (!isRefusal(gone) && gone.code === 0) return refuse("provider_error", "herdr pane close did not end the pane", handle);
+			if (!isRefusal(gone) && herdrErrorCode(gone) !== "pane_not_found") return refuse("provider_error", `herdr pane get failed: ${failure(gone)}`, handle);
+			const tabClosed = await run(HERDR_CLI.tabClose(found.ids.tab));
+			if (isRefusal(tabClosed)) return tabClosed;
+			if (tabClosed.code !== 0) return refuse("provider_error", `herdr tab close failed: ${failure(tabClosed)}`, handle);
+			return { ok: true as const, exited: true as const, handle, session_key };
 		},
 		async reconcile(handles) {
 			const sessions = [];

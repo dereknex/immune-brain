@@ -208,6 +208,54 @@ describe.each(SUBJECTS)("Supervised Session Port conformance: %s", (_name, make)
 			],
 		});
 	});
+
+	it("binds session_key into identity and rejects malformed keys", async () => {
+		const { port } = start();
+		const createdKeyed = await port.createSession({ ...INPUT, session_key: "lane-1" });
+		expect(createdKeyed).toMatchObject({ ok: true, entry_submitted: true });
+		for (const bad of ["Upper", "under_score", "", "x".repeat(65)]) {
+			expect(await port.createSession({ ...INPUT, session_key: bad })).toMatchObject({ ok: false, code: "invalid_input" });
+		}
+	});
+
+	it("finds a keyed session and reports not_found otherwise", async () => {
+		const { port } = start();
+		if (!port.findSession) throw new Error("findSession missing");
+		const made = await port.createSession({ ...INPUT, session_key: "find-me-1" });
+		if (!made.ok) throw new Error(made.reason);
+		expect(await port.findSession("find-me-1")).toEqual({ ok: true, handle: made.handle });
+		expect(await port.findSession("missing-key")).toEqual({ ok: true, not_found: true });
+	});
+
+	it("closeWithProof is idempotent and refuses a mismatched key without closing", async () => {
+		const { port } = start();
+		if (!port.closeWithProof) throw new Error("closeWithProof missing");
+		const made = await port.createSession({ ...INPUT, session_key: "proof-key-1" });
+		if (!made.ok) throw new Error(made.reason);
+		expect(await port.closeWithProof(made.handle, "other-key")).toMatchObject({ ok: false, code: "not_owned" });
+		const first = await port.closeWithProof(made.handle, "proof-key-1");
+		expect(first).toEqual({ ok: true, exited: true, handle: made.handle, session_key: "proof-key-1" });
+		expect(await port.closeWithProof(made.handle, "proof-key-1")).toEqual(first);
+	});
+});
+
+describe("provider conformance against the registry", () => {
+	it("every registered descriptor under its fake CLI passes, and a claimed capability without the method fails", async () => {
+		const { SESSION_PROVIDER_REGISTRY, checkProviderConformance } = await import("../plugins/immune-brain/runtime/session/provider_registry");
+		expect(SESSION_PROVIDER_REGISTRY.map(d => d.name).sort()).toEqual(["herdr", "herdr-core"]);
+		const subjects: Record<string, () => Subject> = { herdr: () => herdrSubject(), "herdr-core": () => herdrCoreSubject() };
+		for (const descriptor of SESSION_PROVIDER_REGISTRY) {
+			const subject = subjects[descriptor.name]!();
+			try {
+				expect(checkProviderConformance(descriptor, subject.port)).toEqual({ ok: true });
+			} finally {
+				subject.cleanup();
+			}
+		}
+		const { port } = fakeSubject();
+		const without = { ...port, findSession: undefined, closeWithProof: undefined } as unknown as SupervisedSessionPort;
+		expect(checkProviderConformance(SESSION_PROVIDER_REGISTRY[0]!, without).ok).toBe(false);
+	});
 });
 
 describe("Supervised Session Port admission", () => {

@@ -47,6 +47,16 @@ if (group === "tab" && verb === "get") {
 	if (!tab) fail("tab_not_found", `tab ${args[0]} not found`);
 	ok({ type: "tab_info", tab: { tab_id: args[0], workspace_id: tab.workspace, label: tab.label } });
 }
+if (group === "tab" && verb === "list") {
+	const workspace = flag(args, "--workspace");
+	const tabs = Object.entries(state.tabs ?? {})
+		.filter(([, tab]) => !workspace || tab.workspace === workspace)
+		.map(([tab_id, tab]) => {
+			const paneEntry = Object.entries(state.panes ?? {}).find(([, pane]) => pane.tab === tab_id && !pane.closed) ?? Object.entries(state.panes ?? {}).find(([, pane]) => pane.tab === tab_id);
+			return { tab_id, workspace_id: tab.workspace, label: tab.label, ...(paneEntry ? { root_pane: { pane_id: paneEntry[0] } } : {}) };
+		});
+	ok({ tabs });
+}
 if (group === "pane" && verb === "get") {
 	const value = pane(args[0]);
 	ok({ type: "pane_info", pane: { pane_id: args[0], tab_id: value.tab, workspace_id: value.workspace, agent_status: value.agent ? value.state : "unknown" } });

@@ -217,3 +217,9 @@ A session that ends without submitting its receipt keeps #565's report:
 receipt was submitted and that the session's tab must be inspected for a denied
 or failed tool call before another session is dispatched. Pi keeps its `write`
 tool and its file-only entry sentence.
+
+## Addendum: role-indexed provider registry and session keys (S2, 2026-11-18)
+
+Unified-lane-sessions S2 (#570, Spec D5/D10) adds `runtime/session/provider_registry.ts`: one descriptor per provider with a pure environment check, recovery text, adapter factory, and `roles.executor/authority/advisory`. `resolveSessionProvider` selects the first configured entry of top-level `session_providers` (`["herdr"]` by default, project replaces user) whose env check holds and whose executor role admits the host with `find_by_key: true` and `workspace: "local_path"`, else refuses `lane_session_unavailable`. `herdr` admits all three executor hosts with exit proof; `herdr-core` admits none until #495.
+
+`CreateSessionInput.session_key` (`[a-z0-9-]{1,64}`) binds caller identity into the session (`herdr` tab label suffix `[imm:<session_key>]`), with trailing-12-char agent names so sibling keys never collide. New port verbs `findSession(session_key)` and idempotent `closeWithProof(handle, session_key)` own lookup and proven exit without a `CloseRecord`; a mismatched key is `not_owned`. The conformance suite runs every registered descriptor under its fake CLI plus `fake` against this contract, and the boundary test pins `runtime/session/` to `node:*` imports with no provider-literal comparison outside.

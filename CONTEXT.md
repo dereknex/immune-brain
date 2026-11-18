@@ -163,7 +163,7 @@ The capability contract for the session a Parent launches a Lane Executor in: ei
 _Avoid_: session framework, host registry, terminal adapter
 
 **Session Provider**:
-One implementation of the Supervised Session Port, such as `herdr`, named explicitly on every call and admitted per role. A provider missing a required capability is refused, never substituted by another.
+One implementation of the Supervised Session Port, such as `herdr`, named explicitly on every call and admitted per role through the role-indexed provider registry (`resolveSessionProvider`, `session_key`, `findSession`, `closeWithProof`). A provider missing a required capability is refused, never substituted by another.
 _Avoid_: Host, Executor Host, backend
 
 **HEAD Lineage**:
