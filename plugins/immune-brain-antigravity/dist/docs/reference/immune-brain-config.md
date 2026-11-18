@@ -37,7 +37,7 @@ file:
     "planner": "opus",
     "triage": "claude-code:<model id>@low"
   },
-  "herdr": true,
+  "session_providers": ["herdr"],
   "batch": { "max_parallel": 3 },
   "decision_models": {
     "profiles": { "edge": { "kind": "clef", "model": "clef", "account_id_env": "CLOUDFLARE_ACCOUNT_ID", "token_env": "CLOUDFLARE_AUTH_TOKEN" } },
@@ -61,17 +61,26 @@ file:
 }
 ```
 
-- The top-level keys are `contract`, `agents`, `herdr`, `batch`,
+- The top-level keys are `contract`, `agents`, `session_providers`, `batch`,
   `decision_models`, `git_integration`, `initiative_carrier`, `loop` and
   `review_verifier`. Every key is optional except `contract`. An unknown key at
-  any level is invalid.
+  any level is invalid. The retired `herdr` key is still accepted so existing
+  files warn instead of failing, but it is never resolved (see below).
 - `agents.profiles` and `decision_models.profiles` exist only in the user file.
   The project file refers to a user profile by name.
 - A `*_env` value names an environment variable (`^[A-Z_][A-Z0-9_]*$`); the file
   never holds the credential itself.
-- `herdr` is `true` or `false` (default). With `true`, a Lane Executor started
-  inside Herdr (`HERDR_ENV=1`) runs in an interactive Herdr tab; otherwise it is
-  a runtime-supervised process. Authority Review and its findings verification
+- `session_providers` is a non-empty ordered list of distinct registered
+  provider names (`herdr`, `herdr-core`; default `["herdr"]`). The project
+  file replaces the user file. An empty list, an unknown or test-only name
+  (`fake`, `process`), a duplicate entry, or a non-array is a blocking
+  `config_invalid` error. `imm-kernel config migrate --write` removes a stored
+  `herdr` key and preserves every other key.
+- `herdr` is retired: setting it in either file produces one non-blocking
+  `retired_key` warning diagnostic at key path `herdr`, is ignored by the
+  resolver, and is omitted from the effective configuration. A Lane Executor
+  started inside Herdr (`HERDR_ENV=1`) runs in an interactive Herdr tab.
+  Authority Review and its findings verification
   always run in a Herdr session; the Loop roles always run as processes.
 - `batch.max_parallel` is an integer in 1..8 (default 1).
   `batch.final_verification` holds at most 8 plain command strings.
@@ -137,7 +146,7 @@ value winning. **Request** values come from the literal current request (see
 | `agents.<role>` | per role; a whole profile from one layer |
 | `decision_models.default_profile`, `decision_models.bindings.<point>` | per key |
 | `decision_models.egress.<kind>` | per provider kind |
-| `herdr`, `batch.max_parallel`, `batch.final_verification`, `initiative_carrier`, `review_verifier` | first set value |
+| `session_providers`, `batch.max_parallel`, `batch.final_verification`, `initiative_carrier`, `review_verifier` | first set value |
 | `git_integration` | stricter wins: `manual` if either file sets it |
 | `loop.auto_enroll_max_risk` | stricter wins: the lower risk |
 | `loop.allowed_actors`, `loop.allowed_associations` | stricter wins: the intersection of the layers that set them |
@@ -165,14 +174,15 @@ The status Tool on both Hosts carries the same object as `config` and adds every
 `error` diagnostic to its warnings as `config_invalid`.
 
 Each diagnostic is `{ code, severity, file, key_path, message }` with code
-`config_invalid` or `unknown_profile`. Messages never contain a configured
+`config_invalid`, `unknown_profile` or `retired_key` (`retired_key` is always a
+non-blocking warning). Messages never contain a configured
 `*_env` value or any environment variable's value. An invalid value counts as
 unset, so the next layer or the default applies, and its diagnostic stays an
 error:
 
 - `decision_models` profiles invalid: a decision returns `unavailable` /
   `config_invalid`;
-- any error under `agents`, `batch` or `herdr`, or a file that is not JSON or
+- any error under `agents`, `batch` or `session_providers`, or a file that is not JSON or
   has the wrong `contract`: no batch starts (`lane_config_invalid`), and Review
   reports `review_config_invalid` naming the file and key path;
 - `git_integration` invalid: `manual`;
@@ -190,7 +200,7 @@ yourself:
 { "contract": "immune_brain/project_config/v2", "initiative_carrier": "github" }
 ```
 
-A configured `github` value is standing opt-in for GitHub projection, but the
+A configured `github` value is standing approval for GitHub projection, but the
 literal user still confirms the Initiative name, immutable slug, complete
 Parent/Child decomposition, granularity, and dependencies before the first remote
 mutation. Planner reports the selected carrier and its source. After confirmation
@@ -213,7 +223,7 @@ request through and never resolves configuration for a batch.
   batch, each a profile name, shorthand or object as in [Agents](#agents). A
   request value replaces that role whole, for that batch alone.
 - Every Lane runs the resolved `executor` host with no fallback to another Host.
-- Any configuration error under `agents`, `batch` or `herdr` starts no batch.
+- Any configuration error under `agents`, `batch` or `session_providers` starts no batch.
 
 Lane-mode agents only create: they close no tab, stop no session and remove no
 Lane. The full contract is `plugins/immune-brain/dist/drive-batch.md#lane-preferences`.

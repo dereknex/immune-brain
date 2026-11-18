@@ -1,0 +1,204 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "session-provider-config",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "session-provider-config",
+    "goal": "unified-lane-sessions S1 (#570; Spec docs/specs/unified-lane-sessions.spec.md D9, D16, D19, BR-REQ-1, BR-REQ-3, BR-REQ-5, BR-SCN-4). Retire the top-level herdr configuration key: herdr in a user or project .imm/config.json is ignored and emits one non-blocking warning diagnostic retired_key at key path herdr, is omitted from resolved config, and is never written by imm-kernel config migrate (--write removes it). Add top-level session_providers: a non-empty ordered list of distinct registered provider names (herdr, herdr-core), default [\"herdr\"], project replacing user; empty lists, unknown or test-only names (fake, process), duplicates, and non-arrays emit a blocking config_invalid error diagnostic. Remove the herdr gate at host-core/runtime.ts:1438 so inside Herdr (HERDR_ENV=1) Host single-task entries return an interactive Herdr-tab handoff without lane_executor_requires_tui. Update ADR 0041 Decision 4 and docs/reference/immune-brain-config.md (plus dist mirror and bundles).",
+    "acceptance": [
+      {
+        "id": "SPC-A1",
+        "assertion": "In tests/layered-config.test.ts: herdr: true and herdr: \"yes\" in user and project config files each produce one warning diagnostic with code retired_key at key path herdr, zero error diagnostics, an empty batchConfigErrors result, and a resolved config with no herdr field; unknown_top_key: 1 still produces a config_invalid error diagnostic (negative control).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/layered-config.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "SPC-A2",
+        "assertion": "In tests/layered-config.test.ts: imm-kernel config migrate on a v1 config whose transport chose herdr writes no herdr key; migrate --write on a v2 config containing herdr deletes only herdr and preserves every other key verbatim.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/layered-config.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "SPC-A3",
+        "assertion": "In tests/layered-config.test.ts: absent session_providers resolves to [\"herdr\"] with source default; project [\"herdr\", \"herdr-core\"] overrides user [\"herdr-core\"]; [], [\"process\"], [\"fake\"], [\"herdr\", \"herdr\"], and \"herdr\" each produce a config_invalid error diagnostic at session_providers and a non-empty batchConfigErrors result.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/layered-config.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "SPC-A4",
+        "assertion": "In tests/pi-batch-authority.test.ts and tests/claude-batch-authority.test.ts: a Host single-task start_unattended_batch with HERDR_ENV=1, a Pi or Claude Code Executor, and either no herdr key or herdr: false (negative control) returns an interactive executor handoff, never reports lane_executor_requires_tui, and spawns zero Executor processes.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-batch-authority.test.ts\",\n      \"tests/claude-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "SPC-A5",
+        "assertion": "docs/reference/immune-brain-config.md documents session_providers and retired_key without describing herdr as an active switch; docs/adr/0041-simplified-configuration.md Decision 4 matches; dist mirrors, Claude bundle, Antigravity artifact, and typecheck are current.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"grep -q session_providers docs/reference/immune-brain-config.md && grep -q retired_key docs/reference/immune-brain-config.md && ! grep -nE 'herdr.*(default\\\\\\\\)|opt-in|With .true.)' docs/reference/immune-brain-config.md && grep -q session_providers docs/adr/0041-simplified-configuration.md && bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun scripts/sync-dist-docs.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/session-provider-config.md",
+      "docs/adr/0041-simplified-configuration.md",
+      "docs/plans/session-provider-config.intent.json",
+      "docs/reference/immune-brain-config.md",
+      "docs/specs/unified-lane-sessions.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/docs/reference/immune-brain-config.md",
+      "plugins/immune-brain/runtime/config/layered_config.ts",
+      "plugins/immune-brain/runtime/config/migrate.ts",
+      "plugins/immune-brain/runtime/host-core/runtime.ts",
+      "tests/agent-roles-config.test.ts",
+      "tests/claude-batch-authority.test.ts",
+      "tests/layered-config.test.ts",
+      "tests/pi-batch-authority.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/session-provider-config.intent.json",
+    "content_hash": "sha256:e5c7a27971a2d868de6931694c74e7264eb599fb071ba36e2a5b404c805b6e3f"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:e5c7a27971a2d868de6931694c74e7264eb599fb071ba36e2a5b404c805b6e3f",
+  "git_base_head": "cbd1ce434e8595d1e587bae1ecf0989eaf776c70",
+  "attestations": [
+    {
+      "id": "approval-qa-b54d6767",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e5c7a27971a2d868de6931694c74e7264eb599fb071ba36e2a5b404c805b6e3f",
+      "diff_hash": "sha256:85aef2a3c839d467e417143490fcfa866f496b5b1c4e08398d2fb468385e5dd4",
+      "actor_id": "deterministic-qa",
+      "summary": "all 6 project verification check(s) passed; execution=sha256:0d92600c6308c7828b31c67e5b81cab4706fc8d4ee4c6f3e4fcc72b3657af699",
+      "acceptance_results": [
+        {
+          "acceptance_id": "SPC-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:0d92600c6308c7828b31c67e5b81cab4706fc8d4ee4c6f3e4fcc72b3657af699"
+        },
+        {
+          "acceptance_id": "SPC-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:0d92600c6308c7828b31c67e5b81cab4706fc8d4ee4c6f3e4fcc72b3657af699"
+        },
+        {
+          "acceptance_id": "SPC-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:0d92600c6308c7828b31c67e5b81cab4706fc8d4ee4c6f3e4fcc72b3657af699"
+        },
+        {
+          "acceptance_id": "SPC-A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:0d92600c6308c7828b31c67e5b81cab4706fc8d4ee4c6f3e4fcc72b3657af699"
+        },
+        {
+          "acceptance_id": "SPC-A5",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:0d92600c6308c7828b31c67e5b81cab4706fc8d4ee4c6f3e4fcc72b3657af699"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-8a6da1e6",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e5c7a27971a2d868de6931694c74e7264eb599fb071ba36e2a5b404c805b6e3f",
+      "diff_hash": "sha256:85aef2a3c839d467e417143490fcfa866f496b5b1c4e08398d2fb468385e5dd4",
+      "actor_id": "cli:claude-code:3889ed39-6628-44a5-963d-c2911fa20bd4",
+      "summary": "SPC-A1..A5 met: herdr retired as a per-layer retired_key warning excluded from batchConfigErrors and the effective config, session_providers validated (non-empty, distinct, registered herdr/herdr-core, default [herdr]) and blocking, migrate never writes herdr and --write strips it from v2 files, runtime HERDR_ENV gate no longer reads config, mirrors/bundles/docs identical; blast radius medium (layered_config.ts effective-config shape, host-core/runtime.ts executor_mode gate, migrate.ts persisted files).",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "cbd1ce434e8595d1e587bae1ecf0989eaf776c70",
+        "review_commit": "68a639892d60448d875ca890c4c2440336c6f12e"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-d0901092f4c9-1-review-1",
+          "acceptance_id": "SPC-A2",
+          "summary": "migrate on a v2 user file containing herdr pushes the 'user file: removed the retired herdr key' note twice (once from the userAfter loop, once from the userReported block).",
+          "anchor": "sha256:8d0b96138e7e56ae254f06e31ed8f1bfe6061adc4af5a57a8f012bfbb3f01924",
+          "evidence": {
+            "trigger": "v2 user file {contract, herdr: true} → migrateConfig notes contain the same removal note twice; written bytes are correct",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/config/migrate.ts:migrateConfig"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "SPC-A2"
+            }
+          }
+        },
+        {
+          "id": "review-d0901092f4c9-2-review-2",
+          "acceptance_id": "SPC-A5",
+          "summary": "Reference doc also rewords 'standing opt-in' to 'standing approval' for initiative_carrier github, a change outside the session_providers/retired_key scope.",
+          "anchor": "sha256:8e850da75379d2ae5c1b703c0af317f3624fc377f2b70f9ea94c6eb1c3561447",
+          "evidence": {
+            "trigger": "docs/reference/immune-brain-config.md initiative_carrier paragraph changed with no acceptance requiring it → unrelated doc wording drift in this task's diff",
+            "caller_chain": [
+              "docs/reference/immune-brain-config.md",
+              "plugins/immune-brain/dist/docs/reference/immune-brain-config.md"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "SPC-A5"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:4ee9f88528491daa83f07a3fe8359f0ec033621959c8cdc1dc019474b02d4aad"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:session-provider-config:2026-11-18T09:33:48.716Z",
+      "at": "2026-11-18T09:33:48.716Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/session-provider-config.intent.json"
+    },
+    {
+      "id": "record_approval:session-provider-config:2026-11-18T09:35:42.221Z",
+      "at": "2026-11-18T09:35:42.221Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-b54d6767\naction_v2_sha256:b7312749fb4426b967a3467f7242b18b408d2dead39c373272e16896ce2df12e",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-18T09:35:42.221Z"
+      }
+    },
+    {
+      "id": "record_approval:session-provider-config:2026-11-18T09:48:46.578Z",
+      "at": "2026-11-18T09:48:46.578Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-8a6da1e6\naction_v2_sha256:9e7f72c4f8f6fbc688e7ce9ed10eb9ee5d3902d80bd9943cd19d83785a4b4163",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:3889ed39-6628-44a5-963d-c2911fa20bd4",
+        "confirmation_ref": "pi:cli:claude-code:3889ed39-6628-44a5-963d-c2911fa20bd4",
+        "issued_at": "2026-11-18T09:48:46.578Z"
+      },
+      "review_started_at": "2026-11-18T09:37:02.947Z",
+      "review_submitted_at": "2026-11-18T09:48:45.556Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:session-provider-config:2026-11-18T09:48:49.393Z",
+      "at": "2026-11-18T09:48:49.393Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:6adaacecf6004b4abcc23ee7e1f96f4ff83ff8ee36b6b8db56952e71f74c549e"
+    }
+  ]
+}

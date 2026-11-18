@@ -8359,7 +8359,10 @@ function resolveConfig(root, options = {}) {
   for (const error of agentLayers.errors)
     diag(error.code, "error", error.file, error.key_path, error.message);
   const agents = agentLayers.agents;
-  const herdr = pick((o) => o.herdr, "herdr", (v) => typeof v === "boolean", "expected true or false", false);
+  for (const [, o, file] of layers)
+    if (o && Object.hasOwn(o, "herdr"))
+      diag("retired_key", "warning", file, "herdr", "herdr is retired and ignored; remove it (imm-kernel config migrate --write deletes it)");
+  const sessionProviders = pick((o) => o.session_providers, "session_providers", (v) => Array.isArray(v) && v.length > 0 && v.every((name) => REGISTERED_SESSION_PROVIDERS.includes(name)) && new Set(v).size === v.length, `expected a non-empty list of distinct registered providers (${REGISTERED_SESSION_PROVIDERS.join(", ")})`, ["herdr"]);
   for (const [, o, file] of layers)
     knownKeys(part(o, file, "batch"), ["max_parallel", "final_verification"], file, "batch");
   const maxParallel = pick((o) => o.batch?.max_parallel, "batch.max_parallel", (v) => integerWithin(v, BATCH_MAX_PARALLEL.min, BATCH_MAX_PARALLEL.max), `expected an integer between ${BATCH_MAX_PARALLEL.min} and ${BATCH_MAX_PARALLEL.max}`, BATCH_MAX_PARALLEL.default);
@@ -8465,7 +8468,7 @@ function resolveConfig(root, options = {}) {
     contract: "immune_brain/effective_config/v2",
     files: { user: userPath, project: projectPath },
     agents,
-    herdr,
+    session_providers: sessionProviders,
     batch: { valid: !errorsUnder("batch"), max_parallel: maxParallel, final_verification: finalVerification },
     decision_models: decisionModels,
     git_integration: leaf(gitIntegration.value, gitIntegration.source),
@@ -8476,9 +8479,9 @@ function resolveConfig(root, options = {}) {
   };
 }
 function batchConfigErrors(config) {
-  return config.diagnostics.filter((d) => d.severity === "error" && (/^(agents|batch|herdr)(\.|$)/.test(d.key_path) || d.key_path === "$" || d.key_path === "contract"));
+  return config.diagnostics.filter((d) => d.severity === "error" && (/^(agents|batch|session_providers)(\.|$)/.test(d.key_path) || d.key_path === "$" || d.key_path === "contract"));
 }
-var object3 = (v) => v !== null && typeof v === "object" && !Array.isArray(v), leaf = (value, source) => ({ value, source }), has = (o, k) => !!o && Object.hasOwn(o, k), envName, USER_CONFIG_CONTRACT = "immune_brain/user_config/v2", PROJECT_CONFIG_CONTRACT = "immune_brain/project_config/v2", BATCH_MAX_PARALLEL, LOOP_MODES, LOOP_AUTO_ENROLL_MAX_RISKS, LOOP_ASSOCIATIONS, LOOP_INTERACTION_CHANNELS, DEFAULT_LOOP_CONFIG, FILE_KEYS;
+var object3 = (v) => v !== null && typeof v === "object" && !Array.isArray(v), leaf = (value, source) => ({ value, source }), has = (o, k) => !!o && Object.hasOwn(o, k), envName, USER_CONFIG_CONTRACT = "immune_brain/user_config/v2", PROJECT_CONFIG_CONTRACT = "immune_brain/project_config/v2", BATCH_MAX_PARALLEL, LOOP_MODES, LOOP_AUTO_ENROLL_MAX_RISKS, LOOP_ASSOCIATIONS, LOOP_INTERACTION_CHANNELS, DEFAULT_LOOP_CONFIG, FILE_KEYS, REGISTERED_SESSION_PROVIDERS;
 var init_layered_config = __esm(() => {
   init_agent_roles();
   init_config();
@@ -8502,7 +8505,8 @@ var init_layered_config = __esm(() => {
     interaction: { channel: "github" },
     budget: { max_ticks_per_day: null, max_dispatches_per_day: null }
   };
-  FILE_KEYS = ["contract", "agents", "herdr", "decision_models", "git_integration", "initiative_carrier", "batch", "loop", "review_verifier"];
+  FILE_KEYS = ["contract", "agents", "herdr", "session_providers", "decision_models", "git_integration", "initiative_carrier", "batch", "loop", "review_verifier"];
+  REGISTERED_SESSION_PROVIDERS = ["herdr", "herdr-core"];
 });
 
 // plugins/immune-brain/runtime/git_integration_preference.ts
@@ -24429,7 +24433,7 @@ class HostRuntime {
     });
     let report = await startBatch({
       plan_source: options.plan_source,
-      ...options.plan_source && this.env.HERDR_ENV === "1" && resolveConfig(this.cwd).herdr.value === true ? { executor_mode: "interactive" } : {},
+      ...options.plan_source && this.env.HERDR_ENV === "1" ? { executor_mode: "interactive" } : {},
       ...options.plan_source ? { supervision: {
         supervisor: this.laneSupervisor,
         parentHost: this.parentHost,

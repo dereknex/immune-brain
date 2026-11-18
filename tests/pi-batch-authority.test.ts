@@ -192,6 +192,38 @@ describe("acc-pi-batch-gate", () => {
 		}
 	}, 30000);
 	// Issue #426 F9: `pi --print` can never write the Kernel, so the Parent hands the Lane to the user.
+	it.each(["absent", "retired-false"] as const)("returns an interactive Herdr-tab handoff inside Herdr with %s herdr key", async key => {
+		const f = fixture("herdr-handoff-pi"), taskId = `${f.slug}-c1`;
+		const path = join(f.root, `docs/plans/${taskId}.intent.json`);
+		const intent = JSON.parse(readFileSync(path, "utf8"));
+		intent.scope_hint = ["delivery.txt"];
+		intent.acceptance[0].verification = JSON.stringify({ contract: "assurance_kernel/verification_descriptor/v2", command: { executable: "bun", argv: ["-e", ""], cwd: ".", timeout_ms: 60000, max_output_bytes: 4096 }, environment: { prepare: null, writable_paths: [] } });
+		writeFileSync(path, JSON.stringify(intent)); git(f.root, "add", `docs/plans/${taskId}.intent.json`);
+		const bins = mkdtempSync(join(tmpdir(), "lane-fake-executor-"));
+		for (const name of ["claude", "pi"]) { writeFileSync(join(bins, name), "#!/bin/sh\nprintf '%s\\n' \"$PWD\" \"$@\" > \"$LANE_TEST_OUTPUT\"\nexec /bin/sleep 30\n"); chmodSync(join(bins, name), 0o755); }
+		const oldPath = process.env.PATH, oldOutput = process.env.LANE_TEST_OUTPUT, oldHerdr = process.env.HERDR_ENV;
+		process.env.HERDR_ENV = "1";
+		if (key === "retired-false") writeFileSync(join(f.root, ".imm/config.json"), JSON.stringify({ contract: "immune_brain/project_config/v2", herdr: false }));
+		process.env.PATH = `${bins}:${oldPath}`; process.env.LANE_TEST_OUTPUT = join(bins, "args");
+		try {
+			const result = await executePiUnattendedBatch({ root: f.root, taskId, executor: { executor_host: "pi" }, confirmBatch: async () => "accept" });
+			expect(result.state).toBe("started");
+			if (result.state !== "started") throw new Error(result.reason);
+			const report = result.report as any;
+			expect(report.lane_supervision).toBeUndefined();
+			expect(report.reason).not.toBe("lane_executor_requires_tui");
+			expect(JSON.stringify(report)).not.toContain("lane_executor_requires_tui");
+			expect(report.handoffs).toContainEqual(expect.objectContaining({ role: "executor", task_id: taskId }));
+			const { readAnyBatchRunState } = await import("../plugins/immune-brain/runtime/unattended/batch_state");
+			expect(readAnyBatchRunState(f.root, result.batch_id)).toMatchObject({ executor_mode: "interactive", plan_source: "single_task" });
+			expect(existsSync(join(bins, "args"))).toBe(false);
+		} finally {
+			await executePiUnattendedBatch({ root: f.root, taskId, stop: true });
+			process.env.PATH = oldPath; if (oldOutput === undefined) delete process.env.LANE_TEST_OUTPUT; else process.env.LANE_TEST_OUTPUT = oldOutput;
+			if (oldHerdr === undefined) delete process.env.HERDR_ENV; else process.env.HERDR_ENV = oldHerdr;
+			rmSync(bins, { recursive: true, force: true });
+		}
+	}, 30000);
 	it("hands a Pi Executor outside Herdr to the user instead of spawning it", async () => {
 		const f = fixture("single-pi"), taskId = `${f.slug}-c1`;
 		const path = join(f.root, `docs/plans/${taskId}.intent.json`);

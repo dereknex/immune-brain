@@ -32,8 +32,13 @@ project without editing a shared file.
    from one layer. Profiles are defined only in the user file. Presets,
    `active`, `"*"`, per-profile `transport`, the separate verifier model and
    `not_applied` are removed.
-4. **One transport switch.** Top-level `herdr: true` runs Lane Executors in
-   interactive Herdr tabs when the Parent runs in Herdr. Review always uses
+4. **Explicit session-provider selection.** Top-level `session_providers` holds a
+   non-empty ordered list of distinct registered provider names (`herdr`,
+   `herdr-core`), default `["herdr"]`, with the project file replacing the user
+   file. Inside Herdr, single-task Lane Executors run in interactive Herdr tabs;
+   the former top-level `herdr` switch is retired: setting it warns
+   (`retired_key`) and is ignored, and `imm-kernel config migrate --write`
+   deletes it. Review always runs in
    Herdr; Loop roles always run as processes.
 5. **The runtime is the only resolver.** `start_unattended_batch` takes
    `agents: { executor?, reviewer? }`, each replacing that role whole; the
@@ -44,8 +49,8 @@ project without editing a shared file.
    bind a point to a user profile by name. `bindings.<point>: "off"` replaces
    `enabled_points`. Egress resolves project over user per provider kind.
 7. **One failure rule.** An invalid value counts as unset and stays an error
-   diagnostic. A batch is refused while `agents`, `batch` or `herdr` has an
-   error, or a file is unreadable or has the wrong contract.
+   diagnostic. A batch is refused while `agents`, `batch` or `session_providers`
+   has an error, or a file is unreadable or has the wrong contract.
 8. **Contract v2 and one migration.** Both files move to `v2`; a `v1` file is
    `config_invalid` with a pointer to `imm-kernel config migrate [--write]`.
    Every legacy reader is deleted: `lanes`, `.imm/lanes.local.json`,

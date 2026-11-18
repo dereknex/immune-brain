@@ -141,14 +141,17 @@ test("the Lane executor and the frozen batch profiles read the resolved roles", 
 	expect(frozenReviewProfile(f.root, { host: "pi" })).toEqual({ host: "pi" });
 });
 
-test("an agents, batch or herdr error stops the configured Lane executor", () => {
+test("an agents, batch or session_providers error stops the configured Lane executor", () => {
 	const f = fixture();
-	for (const data of [{ agents: { executor: "codex" } }, { batch: { max_parallel: 0 } }, { herdr: "on" }]) {
+	for (const data of [{ agents: { executor: "codex" } }, { batch: { max_parallel: 0 } }, { session_providers: [] }]) {
 		f.user({ ...data });
 		expect(laneExecutorChoice(f.root, undefined, "claude-code")).toBeNull();
 		expect(frozenExecutorPreferences(f.root, undefined, "claude-code")).toBeUndefined();
 	}
 	f.user({ loop: { mode: "always" } });
+	expect(laneExecutorChoice(f.root, undefined, "claude-code")).toMatchObject({ host: "claude-code" });
+	// A retired herdr key warns but never blocks the Lane executor.
+	f.user({ herdr: true });
 	expect(laneExecutorChoice(f.root, undefined, "claude-code")).toMatchObject({ host: "claude-code" });
 });
 

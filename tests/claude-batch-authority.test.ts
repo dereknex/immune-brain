@@ -272,6 +272,34 @@ describe("acc-claude-batch-gate", () => {
 			rmSync(bins, { recursive: true, force: true });
 		}
 	}, 30000);
+	it.each(["absent", "retired-false"] as const)("returns an interactive Herdr-tab handoff inside Herdr with %s herdr key", async key => {
+		const f = fixture("herdr-handoff-claude"), taskId = `${f.slug}-c1`;
+		const path = join(f.root, `docs/plans/${taskId}.intent.json`);
+		const intent = JSON.parse(readFileSync(path, "utf8"));
+		intent.scope_hint = ["delivery.txt"];
+		intent.acceptance[0].verification = JSON.stringify({ contract: "assurance_kernel/verification_descriptor/v2", command: { executable: "bun", argv: ["-e", ""], cwd: ".", timeout_ms: 60000, max_output_bytes: 4096 }, environment: { prepare: null, writable_paths: [] } });
+		writeFileSync(path, JSON.stringify(intent)); git(f.root, "add", `docs/plans/${taskId}.intent.json`);
+		const bins = mkdtempSync(join(tmpdir(), "lane-fake-executor-"));
+		for (const name of ["claude", "pi"]) { writeFileSync(join(bins, name), "#!/bin/sh\nprintf '%s\\n' \"$PWD\" \"$@\" > \"$LANE_TEST_OUTPUT\"\nexec /bin/sleep 30\n"); chmodSync(join(bins, name), 0o755); }
+		const oldPath = process.env.PATH, oldOutput = process.env.LANE_TEST_OUTPUT;
+		process.env.PATH = `${bins}:${oldPath}`; process.env.LANE_TEST_OUTPUT = join(bins, "args");
+		if (key === "retired-false") writeFileSync(join(f.root, ".imm/config.json"), JSON.stringify({ contract: "immune_brain/project_config/v2", herdr: false }));
+		const runtime = client(f, { env: { ...ENV, HERDR_ENV: "1" }, requestConfirmation: async () => ({ decision: "accept", requestId: "single" }) });
+		try {
+			const result = await runtime.callTool("start_unattended_batch", { task_id: taskId, agents: { executor: "claude-code" } });
+			expect(result.state).toBe("started");
+			expect(result.report.lane_supervision).toBeUndefined();
+			expect(result.report.reason ?? null).not.toBe("lane_executor_requires_tui");
+			expect(JSON.stringify(result.report)).not.toContain("lane_executor_requires_tui");
+			expect(result.report.handoffs).toContainEqual(expect.objectContaining({ role: "executor", task_id: taskId }));
+			expect(readAnyBatchRunState(f.root, result.batch_id)).toMatchObject({ executor_mode: "interactive", plan_source: "single_task" });
+			expect(existsSync(join(bins, "args"))).toBe(false);
+		} finally {
+			await runtime.callTool("start_unattended_batch", { task_id: taskId, stop: true });
+			process.env.PATH = oldPath; if (oldOutput === undefined) delete process.env.LANE_TEST_OUTPUT; else process.env.LANE_TEST_OUTPUT = oldOutput;
+			rmSync(bins, { recursive: true, force: true });
+		}
+	}, 30000);
 	it("refuses ambiguous task and Initiative selectors without opening confirmation", async () => {
 		const f = fixture("ambiguous-claude"); let gates = 0;
 		const runtime = client(f, { requestConfirmation: async () => { gates++; return { decision: "accept", requestId: "unexpected" }; } });

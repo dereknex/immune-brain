@@ -1434,8 +1434,8 @@ export class HostRuntime {
 		});
 		let report = await startBatch({
 			plan_source: options.plan_source,
-			// The `herdr` switch opts Executors into Herdr tabs; it takes effect only inside Herdr (ADR 0041).
-			...(options.plan_source && this.env.HERDR_ENV === "1" && resolveConfig(this.cwd).herdr.value === true ? { executor_mode: "interactive" as const } : {}),
+			// Inside Herdr, single-task Executors run in interactive Herdr tabs (retired `herdr` switch: no config gate).
+			...(options.plan_source && this.env.HERDR_ENV === "1" ? { executor_mode: "interactive" as const } : {}),
 			...(options.plan_source ? { supervision: { supervisor: this.laneSupervisor, parentHost: this.parentHost, pluginDir: resolve(dirname(fileURLToPath(import.meta.url)), "../.."),
 				waitMs: laneWaitMs(this.env), signal: meta.signal, stop: options.stop, request: options.executor } } : {}),
 			executor_freeze: { ...(options.executor ? { request: options.executor } : {}), ...(this.parentHost ? { parentHost: this.parentHost } : {}) },

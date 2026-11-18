@@ -69,8 +69,12 @@ export const DEFAULT_LOOP_CONFIG: LoopConfig = {
 	budget: { max_ticks_per_day: null, max_dispatches_per_day: null },
 };
 
-/** The top-level keys either file may set; `profiles` under agents and decision_models stay user-only. */
-const FILE_KEYS = ["contract", "agents", "herdr", "decision_models", "git_integration", "initiative_carrier", "batch", "loop", "review_verifier"];
+/** The top-level keys either file may set; `profiles` under agents and decision_models stay user-only.
+ * `herdr` is retired (warning only, never resolved); `session_providers` selects the Lane session provider. */
+const FILE_KEYS = ["contract", "agents", "herdr", "session_providers", "decision_models", "git_integration", "initiative_carrier", "batch", "loop", "review_verifier"];
+
+/** Provider names a user may configure in `session_providers` (test-only `fake`/`process` excluded). */
+const REGISTERED_SESSION_PROVIDERS = ["herdr", "herdr-core"] as const;
 
 export function defaultUserConfigPath(): string {
 	return join(process.env.XDG_CONFIG_HOME && isAbsolute(process.env.XDG_CONFIG_HOME) ? process.env.XDG_CONFIG_HOME : join(homedir(), ".config"), "immune-brain/config.json");
@@ -159,7 +163,13 @@ export function resolveConfig(root: string, options: { userConfigPath?: string; 
 	const agentLayers = resolveAgents({ user: user ? (user.agents ?? null) : null, project: project ? (project.agents ?? null) : null, files: { user: userPath, project: projectPath } });
 	for (const error of agentLayers.errors) diag(error.code, "error", error.file, error.key_path, error.message);
 	const agents = agentLayers.agents;
-	const herdr = pick((o) => o.herdr, "herdr", (v) => typeof v === "boolean", "expected true or false", false);
+	// Retired top-level `herdr` switch: ignored, warned once per layer that sets it, never resolved.
+	for (const [, o, file] of layers) if (o && Object.hasOwn(o, "herdr"))
+		diag("retired_key", "warning", file, "herdr", "herdr is retired and ignored; remove it (imm-kernel config migrate --write deletes it)");
+	// Ordered session-provider list: project replaces user, default is the Herdr tab provider.
+	const sessionProviders = pick((o) => o.session_providers, "session_providers",
+		(v) => Array.isArray(v) && v.length > 0 && v.every((name) => (REGISTERED_SESSION_PROVIDERS as readonly string[]).includes(name)) && new Set(v).size === v.length,
+		`expected a non-empty list of distinct registered providers (${REGISTERED_SESSION_PROVIDERS.join(", ")})`, ["herdr"]);
 
 	// batch
 	for (const [, o, file] of layers) knownKeys(part(o, file, "batch"), ["max_parallel", "final_verification"], file, "batch");
@@ -248,7 +258,7 @@ export function resolveConfig(root: string, options: { userConfigPath?: string; 
 		contract: "immune_brain/effective_config/v2",
 		files: { user: userPath, project: projectPath },
 		agents,
-		herdr,
+		session_providers: sessionProviders,
 		batch: { valid: !errorsUnder("batch"), max_parallel: maxParallel, final_verification: finalVerification },
 		decision_models: decisionModels,
 		git_integration: leaf(gitIntegration.value, gitIntegration.source),
@@ -261,7 +271,7 @@ export function resolveConfig(root: string, options: { userConfigPath?: string; 
 
 export type EffectiveConfig = ReturnType<typeof resolveConfig>;
 
-/** A batch may start only while `agents` and `batch` resolve without an error. */
+/** A batch may start only while `agents`, `batch` and `session_providers` resolve without an error. */
 export function batchConfigErrors(config: EffectiveConfig): ConfigDiagnostic[] {
-	return config.diagnostics.filter((d) => d.severity === "error" && (/^(agents|batch|herdr)(\.|$)/.test(d.key_path) || d.key_path === "$" || d.key_path === "contract"));
+	return config.diagnostics.filter((d) => d.severity === "error" && (/^(agents|batch|session_providers)(\.|$)/.test(d.key_path) || d.key_path === "$" || d.key_path === "contract"));
 }
