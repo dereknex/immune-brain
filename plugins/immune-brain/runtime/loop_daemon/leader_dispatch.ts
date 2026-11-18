@@ -37,6 +37,7 @@ import {
 	markPlanPublished,
 	readWorkItem,
 	recordWorkItemOutcome,
+	workItemGate,
 	writeWorkItem,
 	type WorkItem,
 } from "./work_items.ts";
@@ -328,6 +329,10 @@ async function applyItem(
 	if (item.action === "note") {
 		return { index, target: item.target, action: "note", outcome: "noted", reason: item.text, handler: null, session_id: null };
 	}
+	// D5.2: a paused or abandoned target yields no candidate from leader dispatch,
+	// so every action but a note is refused before it can start anything.
+	const gate = workItemGate(readWorkItem(deps.stateDir, item.target));
+	if (gate) return reject(index, item, gate);
 	// D3.1 lists next, priority, shape and dispatch; `resolve` is D4's replanning
 	// contract (S4) and is guarded by the target's authority gates.
 	switch (item.action) {

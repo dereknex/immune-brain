@@ -44,6 +44,7 @@ import { readSettledTaskEvidence } from "../kernel/storage";
 import { writeSlotResult } from "../session_result_slot";
 import { watchBundleIdentity, type BundleIdentityWatch } from "../plugin_source_skew";
 import { parseReworkChoice, reworkExitLines, type ReworkChoice } from "../kernel/assurance_projection";
+import { isLoopSteeringAction } from "../loop_daemon/steering";
 
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
 
@@ -154,6 +155,7 @@ export const TOOLS = [
 	{ name: "answer_loop_interaction", description: "Answer one pending local Loop Interaction request under the native confirmation.", privileged: true, optionalTaskId: true },
 	// Spec review-receipt-mcp-submission D4: the reviewer's own receipt channel, appended after every pre-existing Tool.
 	{ name: "submit_session_result", description: "Write one supervised session's JSON result into its allocated result slot.", privileged: false },
+	{ name: "steer_loop_work_item", description: "Pause, resume or abandon one Loop work item under the native confirmation; the daemon applies it on its next tick.", privileged: true, optionalTaskId: true },
 ] as const;
 
 export function listMcpTools() {
@@ -213,6 +215,13 @@ export function listMcpTools() {
 						...(tool.name === "answer_loop_interaction"
 							? { interaction_id: { type: "string" }, answer: { type: "string" } }
 							: {}),
+						...(tool.name === "steer_loop_work_item"
+							? {
+									target: { type: "string", description: "One WorkItem target, e.g. issue-42 or pr-17." },
+									action: { type: "string", enum: ["pause", "resume", "abandon"] },
+									reason: { type: "string" },
+								}
+							: {}),
 						...(tool.name === "approve_breaking_intent_revision" || tool.name === "revise_intent" ? { next_intent: { type: "object" } } : {}),
 						...(tool.name === "stop" || tool.name === "request_authorization" ? { reason: { type: "string" } } : {}),
 						...(tool.name === "request_authorization"
@@ -238,6 +247,8 @@ export function listMcpTools() {
 					? []
 					: tool.name === "answer_loop_interaction"
 						? ["interaction_id", "answer"]
+						: tool.name === "steer_loop_work_item"
+							? ["target", "action"]
 				: tool.name === "resolve_finding"
 					? ["task_id", "finding_id"]
 					: tool.name === "refute_finding"
@@ -521,6 +532,21 @@ export function createMcpRuntime(profile: McpHostProfile, options: McpRuntimeOpt
 				if (typeof args.result !== "string") throw new Error("result is required");
 				return { contract: "immune_brain/session_result/v1", slot_id: args.slot_id, sha256: writeSlotResult(workspace, args.slot_id, args.result) };
 			}
+			if (name === "steer_loop_work_item") {
+				refuseSuppliedAuthority(args);
+				if (typeof args.target !== "string" || !args.target) throw new Error("target is required");
+				if (!isLoopSteeringAction(args.action)) throw new Error("action must be one of pause, resume, abandon");
+				if (args.reason !== undefined && typeof args.reason !== "string") throw new Error("reason must be a string");
+				requireTrustedHost(true);
+				return runtime.steerLoopWorkItem(args.target, args.action, (args.reason as string | undefined) ?? null, {
+					sessionId: hookSessionId ?? meta.sessionId ?? connectionId,
+					toolCallId: meta.toolCallId ?? `call-${name}`,
+					taskId: typeof args.task_id === "string" ? args.task_id : "",
+					...(meta.workspace ? { workspace: meta.workspace } : {}),
+					interactive: meta.interactive ?? options.interactive ?? negotiatedInteractive,
+					signal: meta.signal,
+				});
+			}
 			const taskId = String(args.task_id ?? "");
 			if (!taskId) throw new Error("task_id is required");
 			refuseSuppliedAuthority(args);
@@ -795,6 +821,22 @@ async function writeReply(output: Writable, reply: JsonRpc): Promise<void> {
 }
 
 export function elicitationParams(input: NativeConfirmationInput) {
+	// Spec loop-leader D5.2: the owner sees the exact target and action before the
+	// request reaches `.imm/state/loop/steering/`.
+	if (input.steering) {
+		const s = input.steering;
+		return {
+			mode: "form",
+			message: `Apply this local Loop steering action?\n\n${[
+				`Operation: ${input.operation}`,
+				`Target: ${s.target}`,
+				`Action: ${s.action}`,
+				s.reason ? `Reason: ${s.reason}` : null,
+				"Confirming writes one request under .imm/state/loop/steering/ and the daemon applies it on its next tick. Declining or cancelling writes nothing.",
+			].filter(Boolean).join("\n")}`,
+			requestedSchema: { type: "object", properties: {} },
+		};
+	}
 	if (input.interaction) {
 		const i = input.interaction;
 		return {

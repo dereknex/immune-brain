@@ -57,6 +57,7 @@ import {
 	GITHUB_LOCAL_ONLY_LANE_OPERATIONS,
 	isGithubLocalOnlyLaneOperation,
 	localOnlyNotice,
+	ownerCommandNotice,
 } from "./interaction/protocol.ts";
 export type { RelayInputFactory };
 import {
@@ -68,7 +69,8 @@ import type { LoopHandler } from "./handlers.ts";
 import { activeLoopJob } from "./jobs.ts";
 import { appendLoopLabel, loadLoopLabels } from "./labels.ts";
 import { acquireLoopLease, releaseLoopLease } from "./leases.ts";
-import { resolveOwnerCommand } from "./owner_commands.ts";
+import { appendLeaderJournal } from "./leader_journal.ts";
+import { isLocalOnlyOwnerCommand, ownerHintText, resolveOwnerCommand } from "./owner_commands.ts";
 import {
 	openLoopPullRequest,
 	type LoopPullRequestRequest,
@@ -93,7 +95,7 @@ import {
 	rollDailyStats,
 	saveLoopState,
 } from "./state.ts";
-import { plannedWorkItemCount, readWorkItem, workItemScopeHint } from "./work_items.ts";
+import { isWorkItemGate, plannedWorkItemCount, readWorkItem, workItemGate, workItemScopeHint } from "./work_items.ts";
 import {
 	planStatusIssue,
 	type LoopStatusSnapshot,
@@ -112,6 +114,7 @@ export const LOOP_DISPATCH_RECORD_CONTRACT = "assurance_kernel/loop_dispatch_rec
 
 export type LoopDispatchOutcome =
 	| "executed"
+	| "skipped"
 	| "skipped_mode"
 	| "held"
 	| "agent_port_unavailable"
@@ -556,20 +559,44 @@ export async function dispatchDecisions(
 					guardFacts,
 				);
 				if (resolved.accepted && resolved.command) {
-					if (resolved.command === "pause") {
-						state.paused = true;
-						state.pause_reason = "owner pause";
-						state.updated_at = now;
-						saveLoopState(stateDir, state);
-						emitDispatch(decision.decision_id, decision.handler, "executed", "daemon paused by owner command");
+					// BR-DEC-11: a GitHub pause/resume/abandon is one notice naming the local
+					// action; it changes neither the WorkItem nor `state.paused`.
+					if (isLocalOnlyOwnerCommand(resolved.command)) {
+						const event = evt as Extract<NormalizedLoopEvent, { kind: "E3_OWNER_COMMENT" }>;
+						const posted = await createGithubInteractionChannel({
+							port: gitHubPort,
+							comments: () => snapshot.issues.find((issue) => issue.number === event.issue_number)?.comments ?? [],
+							binding: () => ({}),
+							guardFacts,
+						}).post(
+							ownerCommandNotice({
+								interaction_id: `owner-command:${event.comment_id}:${resolved.command}`,
+								command: resolved.command,
+								subject: { issue: event.issue_number },
+							}),
+						);
+						emitDispatch(
+							decision.decision_id,
+							decision.handler,
+							"executed",
+							`notice posted for local @imm-loop ${resolved.command} (${posted})`,
+						);
 						continue;
 					}
-					if (resolved.command === "resume") {
-						state.paused = false;
-						state.pause_reason = null;
-						state.updated_at = now;
-						saveLoopState(stateDir, state);
-						emitDispatch(decision.decision_id, decision.handler, "executed", "daemon resumed by owner command");
+					// D5.1: an advisory hint lands in the journal the next briefing reads,
+					// and moves no WorkItem state.
+					const hint = ownerHintText(resolved.command, resolved.argument);
+					if (hint !== null) {
+						const event = evt as Extract<NormalizedLoopEvent, { kind: "E3_OWNER_COMMENT" }>;
+						appendLeaderJournal(stateDir, [
+							{
+								at: now,
+								kind: "owner_hint",
+								fingerprint: null,
+								payload: { text: hint, command: resolved.command, issue: event.issue_number, comment_id: event.comment_id },
+							},
+						]);
+						emitDispatch(decision.decision_id, decision.handler, "executed", `recorded ${resolved.command} owner hint`);
 						continue;
 					}
 					if (resolved.command === "retry") {
@@ -595,6 +622,8 @@ export async function dispatchDecisions(
 			event_kind: evt?.kind,
 			// D7: the scope the work item's TaskIntents cover, never an event field.
 			scope_hint: workItemScopeHint(root, stateDir, targetId),
+			// D5.2: a paused or abandoned item yields no candidate from this path either.
+			work_item_gate: workItemGate(readWorkItem(stateDir, targetId)),
 			// Spec loop-leader D3.1: the leader's rank only breaks ties inside one class.
 			leader_rank: readWorkItem(stateDir, targetId)?.leader_rank ?? null,
 			candidate_id: candidateId,
@@ -640,7 +669,8 @@ export async function dispatchDecisions(
 		const { decision, event, candidate } = mapping;
 
 		if (entry.action === "hold") {
-			emitDispatch(decision.decision_id, decision.handler, "held", entry.reason);
+			// D5.2: a steer gate is a skip, not a pass that ran out of room.
+			emitDispatch(decision.decision_id, decision.handler, isWorkItemGate(entry.reason) ? "skipped" : "held", entry.reason);
 			continue;
 		}
 

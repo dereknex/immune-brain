@@ -69,12 +69,15 @@ import { rebuildLoopState } from "./rebuild.ts";
 import { reconcileSkippedDecisions, shouldRunScheduledReconcile } from "./reconcile.ts";
 import {
 	ensureWorkItems,
+	listWorkItems,
 	pendingClarifyInteractions,
 	recordJudgedEvents,
 	recordWorkItemOutcome,
 	selectUnjudgedEvents,
 	type JudgedEventSelection,
 } from "./work_items.ts";
+import { readLeaderJournal } from "./leader_journal.ts";
+import { applySteeringRequests } from "./steering.ts";
 import { loadRepairRetries } from "./repair_agent.ts";
 import { budgetExhausted, type ScheduleBudget } from "./scheduler.ts";
 import {
@@ -518,12 +521,26 @@ Options:
 		const updatedAt = snapshot.updated_at ?? fallbackState!.updated_at;
 		const mode = resolved.loop?.valid === false ? "invalid" : loopConfig.mode;
 
+		// S5/D5.4: the paused items the owner set locally, and what the leader last did.
+		const leaderJournal = readLeaderJournal(stateDir);
+		const lastWake = [...leaderJournal].reverse().find((entry) => entry.kind === "wake") ?? null;
+		const lastProposal = [...leaderJournal].reverse().find((entry) => entry.kind === "proposal") ?? null;
 		const projection = {
 			daemon_running: snapshot.daemon_running,
 			lock: snapshot.lock,
 			mode,
 			paused: snapshot.paused,
 			pause_reason: snapshot.pause_reason,
+			paused_items: listWorkItems(stateDir)
+				.filter((item) => item.paused === true)
+				.map((item) => ({ target: item.target, state: item.state, updated_at: item.updated_at })),
+			leader: {
+				last_wake_at: lastWake?.at ?? null,
+				wakes_today: stats.leader_wakes_today ?? 0,
+				last_proposal_items: Array.isArray((lastProposal?.payload as { items?: unknown } | null)?.items)
+					? ((lastProposal!.payload as { items: unknown[] }).items.length)
+					: 0,
+			},
 			watermarks,
 			active_leases: snapshot.active_leases,
 			// D3.5: the catalog role sessions still running, with what they run for.
@@ -1212,6 +1229,9 @@ Options:
 			// level event is judged only when its fact fingerprint changed.
 			if (!isDryRun) {
 				ensureWorkItems(absoluteRoot, stateDir, obs.snapshot, loadPublishedPlanDigests(stateDir), recordedAt);
+				// D5.2: a natively confirmed steer request lands before this tick judges,
+				// dispatches and briefs, so the gate sees it once and the file is removed.
+				applySteeringRequests(stateDir, recordedAt);
 			}
 			const judged: JudgedEventSelection = isDryRun
 				? { events: obs.events, pending: [] }

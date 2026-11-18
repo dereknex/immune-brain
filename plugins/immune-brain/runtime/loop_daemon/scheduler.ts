@@ -15,6 +15,7 @@
 import { scopesOverlap } from "../unattended/batch_schedule.ts";
 import type { LoopHandler } from "./handlers.ts";
 import type { LoopEventKind, LoopLease } from "./types.ts";
+import type { WorkItemGate } from "./work_items.ts";
 
 export const LOOP_SCHEDULE_CONTRACT = "assurance_kernel/loop_schedule/v1";
 
@@ -69,6 +70,8 @@ export interface ScheduleCandidate {
 	candidate_id?: string;
 	/** The leader's tie-break inside one class (Spec loop-leader D3.1); `null` sorts last. */
 	leader_rank?: number | null;
+	/** Spec loop-leader D5.2: a paused or abandoned target admits no candidate at all. */
+	work_item_gate?: WorkItemGate | null;
 }
 
 /**
@@ -208,6 +211,12 @@ export function scheduleLoopWork(input: ScheduleInput): ScheduleResult {
 		const entry = { target_id: candidate.target_id, handler: candidate.handler, priority, candidate_id: candidate.candidate_id };
 		if (guard !== null) {
 			hold(entry, `${guard.id}: ${guard.detail}`);
+			continue;
+		}
+		// D5.2: the steer gate comes before every other admission rule, so a paused
+		// or abandoned target yields no candidate from any dispatch path.
+		if (candidate.work_item_gate) {
+			hold(entry, candidate.work_item_gate);
 			continue;
 		}
 		if (priority === null) {

@@ -96,10 +96,23 @@ import {
 	readLocalRequest,
 	writeLocalAnswer,
 } from "../loop_daemon/interaction/local_channel";
-import { LANE_EXECUTOR_ENV, LANE_EXECUTOR_HEADLESS, writeLaneDecisionRequest } from "../unattended/lane_decision_request";
+import {
+	LANE_EXECUTOR_ENV,
+	LANE_EXECUTOR_HEADLESS,
+	writeLaneDecisionRequest,
+} from "../unattended/lane_decision_request";
 import { createBatchKernelPort } from "../unattended/batch_kernel_port";
 import { createBatchTrackerPort, laneRuntimeContractRefusal, type LaneInstructionRequest, type LaneOffer, type LaneSessionCloseRequest } from "../unattended/batch_lanes";
 import { retireStaleBatch } from "../unattended/batch_disposition";
+import {
+	LOOP_STEERING_ACTIONS,
+	LOOP_STEERING_REQUEST_CONTRACT,
+	STEER_LOOP_WORK_ITEM_TOOL,
+	isLoopSteeringAction,
+	steeringBindingDigest,
+	writeSteeringRequest,
+	type LoopSteeringRequest,
+} from "../loop_daemon/steering";
 import { runEntryManifest, type RunEntryManifest } from "../unattended/run_entry_manifest";
 import { batchTopologyDigest, isLaneBatchRecord, parkLaneForExecutor, type BatchLaneRunReport } from "../unattended/batch_state";
 import {
@@ -541,6 +554,7 @@ export class HostRuntime {
 		verifierDispute?: NativeConfirmationInput["verifierDispute"];
 		reviewRetryNotice?: string;
 		interaction?: NativeConfirmationInput["interaction"];
+		steering?: NativeConfirmationInput["steering"];
 	} = {}): Promise<{ confirmation_ref: string; reworkChoice?: ReworkChoice; verifierChoice?: NativeConfirmationResult["verifierChoice"] }> {
 		throwIfCancelled(meta.signal);
 		const probe = this.probeHost();
@@ -554,7 +568,7 @@ export class HostRuntime {
 		throwIfCancelled(meta.signal);
 		const gate = evaluateNativeGate({ operation, interactive, decision: result.decision });
 		if (!gate.ok) throw gate.error;
-		const { reworkExits: _exits, verifierDispute: _dispute, ...refBinding } = binding;
+		const { reworkExits: _exits, verifierDispute: _dispute, steering: _steering, ...refBinding } = binding;
 		return {
 			confirmation_ref: this.profile.confirmationRef({
 				connectionId: meta.sessionId,
@@ -716,6 +730,50 @@ export class HostRuntime {
 				actor_id: "executor",
 			},
 		});
+	}
+
+	/**
+	 * D5.2: the local owner steering Tool. A natively confirmed request is written
+	 * under `.imm/state/loop/steering/` and the daemon applies it on its next tick;
+	 * a declined or cancelled gate writes nothing.
+	 */
+	async steerLoopWorkItem(target: string, action: string, reason: string | null, meta: ToolMeta) {
+		if (!target) throw new Error("target is required");
+		if (!isLoopSteeringAction(action))
+			throw new Error(`action must be one of ${LOOP_STEERING_ACTIONS.join(", ")}`);
+		const normalized = reason && reason.trim().length > 0 ? reason.trim() : null;
+		// The confirmation binds the exact target and action, so one accepted gate
+		// cannot be replayed for another item.
+		const gate = await this.gate(
+			STEER_LOOP_WORK_ITEM_TOOL,
+			{ ...meta },
+			{ bindingDigest: steeringBindingDigest(target, action, normalized), steering: { target, action, reason: normalized } },
+		);
+		const request: LoopSteeringRequest = {
+			contract: LOOP_STEERING_REQUEST_CONTRACT,
+			target,
+			action,
+			reason: normalized,
+			requested_at: new Date().toISOString(),
+			confirmation: {
+				tool: STEER_LOOP_WORK_ITEM_TOOL,
+				confirmed_at: new Date().toISOString(),
+				confirmation_ref: gate.confirmation_ref,
+			},
+		};
+		const path = writeSteeringRequest(loopInteractionStateDir(this.cwd), request);
+		return {
+			state: "steering_requested",
+			target,
+			action,
+			reason: normalized,
+			request_path: path,
+			confirmation_ref: gate.confirmation_ref,
+			next:
+				action === "abandon"
+					? "The daemon moves this item to `abandoned` on its next tick and leaves any running Kernel run untouched; do not repeat the request."
+					: `The daemon applies this \`${action}\` on its next tick and removes the request file; do not repeat it.`,
+		};
 	}
 
 	/**

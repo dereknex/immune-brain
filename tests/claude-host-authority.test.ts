@@ -1434,6 +1434,8 @@ describe("claude host resolve_finding", () => {
 				"answer_loop_interaction",
 				// Spec review-receipt-mcp-submission D4: the reviewer's receipt channel.
 				"submit_session_result",
+				// Spec loop-leader D5.2: the privileged local steering Tool.
+				"steer_loop_work_item",
 			]);
 			expect([...PRIVILEGED_OPERATIONS]).toEqual([
 				"request_authorization",
@@ -1442,6 +1444,7 @@ describe("claude host resolve_finding", () => {
 				"start_unattended_batch",
 				"retire_stale_batch",
 				"answer_loop_interaction",
+				"steer_loop_work_item",
 			]);
 			const submitReview = listMcpTools().find((tool) => tool.name === "submit_review");
 			expect(submitReview?.inputSchema.required).toEqual(["task_id"]);

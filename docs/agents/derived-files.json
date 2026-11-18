@@ -233,6 +233,7 @@
         "plugins/immune-brain-antigravity/runtime/loop_daemon/role_sessions.ts",
         "plugins/immune-brain-antigravity/runtime/loop_daemon/scheduler.ts",
         "plugins/immune-brain-antigravity/runtime/loop_daemon/state.ts",
+        "plugins/immune-brain-antigravity/runtime/loop_daemon/steering.ts",
         "plugins/immune-brain-antigravity/runtime/loop_daemon/status_issue.ts",
         "plugins/immune-brain-antigravity/runtime/loop_daemon/types.ts",
         "plugins/immune-brain-antigravity/runtime/loop_daemon/waiting.ts",

@@ -31,7 +31,7 @@ import type { NormalizedLoopEvent, ObservationInput } from "./types.ts";
 
 export const LOOP_WORK_ITEM_CONTRACT = "assurance_kernel/loop_work_item/v1" as const;
 
-/** The D5 state machine. */
+/** The D5 state machine. `abandoned` is the S5 terminal state a steer request writes. */
 export type WorkItemState =
 	| "triage"
 	| "clarifying"
@@ -43,7 +43,8 @@ export type WorkItemState =
 	| "repairing"
 	| "ready_for_merge"
 	| "closed"
-	| "escalated";
+	| "escalated"
+	| "abandoned";
 
 export const WORK_ITEM_TRANSITIONS: Readonly<Record<WorkItemState, readonly WorkItemState[]>> = {
 	triage: ["clarifying", "planning", "escalated"],
@@ -61,6 +62,8 @@ export const WORK_ITEM_TRANSITIONS: Readonly<Record<WorkItemState, readonly Work
 	// D4.2: an accepted `resume` returns a transiently escalated item to its
 	// still-running batch, so the next tick observes it again.
 	escalated: ["triage", "driving"],
+	// S5/D5.2: only a steer request abandons an item, and nothing leaves that state.
+	abandoned: [],
 };
 
 /** The state one handler moves its target to; `null` handlers move nothing. */
@@ -115,6 +118,8 @@ export interface WorkItem {
 	leader_rank?: number;
 	/** D4.3: accepted `resume`/`release`/`replan` rounds; the cap forces `ask_owner`. */
 	replan_rounds?: number;
+	/** D5.2: a natively confirmed `pause` holds every dispatch path, not the state machine. */
+	paused?: boolean;
 	updated_at: string;
 }
 
@@ -190,6 +195,23 @@ export function newWorkItem(target: string, state: WorkItemState, now: string): 
 
 export function isLegalWorkItemTransition(from: WorkItemState, to: WorkItemState): boolean {
 	return from === to || WORK_ITEM_TRANSITIONS[from].includes(to);
+}
+
+/** The reason a steer request holds one target out of every dispatch path (D5.2). */
+export type WorkItemGate = "work_item_paused" | "work_item_abandoned";
+
+export function isWorkItemGate(value: unknown): value is WorkItemGate {
+	return value === "work_item_paused" || value === "work_item_abandoned";
+}
+
+/**
+ * The one dispatch gate: a paused or abandoned item yields no candidate from
+ * Tier-1/2 dispatch, leader dispatch or scheduler admission.
+ */
+export function workItemGate(item: WorkItem | null | undefined): WorkItemGate | null {
+	if (!item) return null;
+	if (item.state === "abandoned") return "work_item_abandoned";
+	return item.paused === true ? "work_item_paused" : null;
 }
 
 /** Move one item; an illegal transition is recorded and refused, leaving the state unchanged. */

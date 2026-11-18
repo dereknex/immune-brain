@@ -312,6 +312,40 @@ export function localOnlyNotice(input: {
 }
 
 /**
+ * BR-DEC-11: the local action each GitHub-only owner command names. The daemon
+ * posts exactly this one `notice` and changes neither the WorkItem nor
+ * `state.paused`.
+ */
+export const GITHUB_LOCAL_ONLY_OWNER_COMMANDS = {
+	pause: "run `imm-loop pause` in your local checkout to pause every target",
+	resume: "run `imm-loop resume` in your local checkout to resume every target",
+	abandon: "run `steer_loop_work_item` with `action: abandon` in your local Host session to abandon one item",
+} as const;
+
+export type GithubLocalOnlyOwnerCommand = keyof typeof GITHUB_LOCAL_ONLY_OWNER_COMMANDS;
+
+/** One notice naming the local action for a GitHub `pause`/`resume`/`abandon` command. */
+export function ownerCommandNotice(input: {
+	interaction_id: string;
+	command: GithubLocalOnlyOwnerCommand;
+	subject: InteractionSubject;
+}): InteractionRequest {
+	return {
+		contract: INTERACTION_REQUEST_CONTRACT,
+		interaction_id: input.interaction_id,
+		kind: "notice",
+		subject: input.subject,
+		binding: {},
+		prompt: [
+			`\`@imm-loop ${input.command}\` changes nothing from GitHub: ${GITHUB_LOCAL_ONLY_OWNER_COMMANDS[input.command]}.`,
+			"This GitHub comment is a notice only; a reply here is never applied.",
+		].join("\n\n"),
+		answer: "none",
+		authority: interactionAuthority("notice"),
+	};
+}
+
+/**
  * The `clarify` question of one Issue (D8): the questions are the whole prompt,
  * the answer is free text and the request is advisory, so any allowlisted answer
  * re-runs `clarify` with it.
