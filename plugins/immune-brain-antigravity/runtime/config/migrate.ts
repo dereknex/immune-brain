@@ -127,7 +127,7 @@ export function migrateConfig(root: string, options: { userConfigPath?: string; 
 	}
 	// The retired `herdr` switch is never written: a v1 transport that chose Herdr tabs simply migrates
 	// to the `session_providers` default, and `--write` deletes a stored `herdr` key (handled below).
-	if (herdrRequested(v1Profiles, [lanes, ...Object.values(laneProfiles), p.lanes ?? {}])) notes.push("a v1 transport chose herdr: the herdr switch is retired, session_providers defaults to [herdr]");
+	if (herdrRequested(v1Profiles, [lanes, ...Object.values(laneProfiles), p.lanes ?? {}])) notes.push("a v1 transport chose herdr: the herdr switch is retired, session_providers defaults to [herdr, herdr-core]");
 	const rolesFor = (active: string | undefined, laneActive: string | undefined, flatLane: Obj): Partial<Record<AgentRole, unknown>> => {
 		if (Object.keys(agents).length) return presetRoles(agents, active ?? "default", notes);
 		const lane = laneActive && object(laneProfiles[laneActive]) ? laneProfiles[laneActive] : flatLane;

@@ -34,7 +34,7 @@ import { parseLaneInstruction, parseLaneOffers, parseLaneSessionClose, parseMaxP
 import { parseRequestedAgents } from "../unattended/agent_profiles";
 import type { ExecutorHost } from "../unattended/lane_supervisor";
 import type { InitiativeObservationReader } from "../unattended/types";
-import type { BatchRunnerKernelPort } from "../unattended/batch_runner";
+import type { BatchRunnerKernelPort, BatchTrackerPort } from "../unattended/batch_runner";
 import type { BatchRunnerGitPort } from "../unattended/batch_git";
 import type { AssuranceHostPort } from "../assurance/host_port";
 import { deliveryOf, type AssuranceCoordinatorPorts } from "../assurance/coordinator";
@@ -267,7 +267,9 @@ export interface McpRuntimeOptions {
 	requestConfirmation?: NativeConfirmationPort;
 	batchKernel?: Partial<BatchRunnerKernelPort>;
 	batchGit?: BatchRunnerGitPort;
+	batchTracker?: BatchTrackerPort;
 	readInitiative?: InitiativeObservationReader;
+	sessionPortFactory?: (provider: string, env: Record<string, string | undefined>) => unknown;
 	/**
 	 * Takes the admission the PreToolUse hook wrote for one
 	 * `start_unattended_batch` or `retire_stale_batch` call. Defaults to the
@@ -322,7 +324,9 @@ export function createMcpRuntime(profile: McpHostProfile, options: McpRuntimeOpt
 		requestConfirmation: options.requestConfirmation ?? profile.requestConfirmation,
 		batchKernel: options.batchKernel,
 		batchGit: options.batchGit,
+		...(options.batchTracker ? { batchTracker: options.batchTracker } : {}),
 		readInitiative: options.readInitiative,
+		...(options.sessionPortFactory ? { sessionPortFactory: options.sessionPortFactory } : {}),
 	});
 	// Trusted Host evidence negotiated on this JSON-RPC connection. Absent
 	// handshake evidence means unversioned and non-interactive: fail closed.

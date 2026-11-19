@@ -71,7 +71,7 @@ file:
 - A `*_env` value names an environment variable (`^[A-Z_][A-Z0-9_]*$`); the file
   never holds the credential itself.
 - `session_providers` is a non-empty ordered list of distinct registered
-  provider names (`herdr`, `herdr-core`; default `["herdr"]`). The project
+  provider names (`herdr`, `herdr-core`; default `["herdr", "herdr-core"]`). The project
   file replaces the user file. An empty list, an unknown or test-only name
   (`fake`, `process`), a duplicate entry, or a non-array is a blocking
   `config_invalid` error. `imm-kernel config migrate --write` removes a stored

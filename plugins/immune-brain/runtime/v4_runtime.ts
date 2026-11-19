@@ -244,6 +244,55 @@ async function runCli(command: string, args: string[], root: string): Promise<{
 	if (command === "imm-plan") return runPlanCli(args, root);
 	if (command === "imm-tracker") return runGithubTrackerCli(args, root);
 	if (command === "imm-session") {
+		const verb = args[0];
+		const batchIdx = args.indexOf("--batch");
+		if (batchIdx !== -1) {
+			if (verb === "send" || verb === "stop") {
+				return {
+					stdout: "",
+					stderr: `invalid_session_command: imm-session ${verb} --batch is not supported; Host tools own Lane sessions\n`,
+					returncode: 2,
+				};
+			}
+			if (verb === "await") {
+				const batchId = args[batchIdx + 1];
+				if (!batchId || batchId.startsWith("--")) {
+					return { stdout: "", stderr: "invalid_session_command: imm-session await --batch <batch_id> needs a batch id\n", returncode: 2 };
+				}
+				let timeoutMs: number | undefined;
+				const timeoutIdx = args.indexOf("--timeout-ms");
+				if (timeoutIdx !== -1) {
+					const raw = args[timeoutIdx + 1];
+					if (!raw || !/^\d+$/.test(raw)) {
+						return { stdout: "", stderr: "invalid_session_command: --timeout-ms must be a whole number of milliseconds\n", returncode: 2 };
+					}
+					timeoutMs = Number(raw);
+				}
+				const { observeLanes } = await import("./lane_sessions/index");
+				const { resolveConfig } = await import("./config/layered_config");
+				const { projectAssurance } = await import("./kernel/assurance_projection");
+				// Pass the configured list through: `herdr` is admitted only inside
+				// Herdr, so outside Herdr this refuses with every reason and opens
+				// no session. Fall back only to the layered-config default.
+				let providers: string[] = ["herdr", "herdr-core"];
+				try {
+					const resolved = resolveConfig(root).session_providers as unknown as { value?: unknown };
+					const value = (resolved as { value?: unknown }).value;
+					if (Array.isArray(value)) providers = value as string[];
+				} catch { /* keep the default; observe opens no session either way */ }
+				const kernel = {
+					projectTask: async (laneRoot: string, taskId: string) => projectAssurance(laneRoot, taskId),
+				} as never;
+				const result = await observeLanes(root, batchId, {
+					kernel,
+					env: process.env as Record<string, string | undefined>,
+					host: "pi",
+					providers,
+				} as never, { wait: true, ...(timeoutMs !== undefined ? { timeoutMs } : {}) });
+				if (!result.ok) return { stdout: `${JSON.stringify(result)}\n`, stderr: "", returncode: 1 };
+				return { stdout: `${JSON.stringify(result)}\n`, stderr: "", returncode: 0 };
+			}
+		}
 		const { runSessionCli } = await import("./session/cli");
 		return runSessionCli(args, process.env);
 	}

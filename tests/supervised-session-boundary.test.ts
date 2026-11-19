@@ -63,16 +63,16 @@ describe("Supervised Session Port boundary", () => {
 		const importers = runtime
 			.filter(file => !file.path.startsWith(`${SESSION}/`))
 			.filter(file => targets(file.path, file.source).some(target => target === SESSION || target.startsWith(`${SESSION}/`)))
-			.map(file => file.path);
-		expect(importers).toEqual([ROUTER]);
+			.map(file => file.path).sort();
+		expect(importers).toEqual(["plugins/immune-brain/runtime/lane_sessions/index.ts", "plugins/immune-brain/runtime/lane_sessions/session_port_adapter.ts", ROUTER].sort());
 	});
 
 	test("session imports stay inside allowed callers", () => {
 		const importers = runtime
 			.filter(file => !file.path.startsWith(`${SESSION}/`))
 			.filter(file => targets(file.path, file.source).some(target => target === SESSION || target.startsWith(`${SESSION}/`)))
-			.map(file => file.path);
-		expect(importers).toEqual([ROUTER]);
+			.map(file => file.path).sort();
+		expect(importers).toEqual(["plugins/immune-brain/runtime/lane_sessions/index.ts", "plugins/immune-brain/runtime/lane_sessions/session_port_adapter.ts", ROUTER].sort());
 	});
 
 	test("no runtime file outside runtime/session compares a provider name literal", () => {

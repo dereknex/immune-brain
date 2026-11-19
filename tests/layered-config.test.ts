@@ -34,7 +34,7 @@ const point = Object.keys(POINT_REGISTRY)[0]!, other = Object.keys(POINT_REGISTR
 const PLAIN: Array<[string, (v: unknown) => object, unknown, unknown, unknown, (c: Config) => unknown]> = [
 	["initiative_carrier", (v) => ({ initiative_carrier: v }), "local", "github", null, (c) => c.initiative_carrier],
 	["review_verifier", (v) => ({ review_verifier: v }), "on", "off", "off", (c) => c.review_verifier],
-	["session_providers", (v) => ({ session_providers: v }), ["herdr-core"], ["herdr", "herdr-core"], ["herdr"], (c) => c.session_providers],
+	["session_providers", (v) => ({ session_providers: v }), ["herdr-core"], ["herdr", "herdr-core"], ["herdr", "herdr-core"], (c) => c.session_providers],
 	["batch.max_parallel", (v) => ({ batch: { max_parallel: v } }), 3, 5, 1, (c) => c.batch.max_parallel],
 	["batch.final_verification", (v) => ({ batch: { final_verification: v } }), ["bun test"], ["bun run typecheck"], null, (c) => c.batch.final_verification],
 ];
@@ -90,7 +90,7 @@ test.each([[[]], [["process"]], [["fake"]], [["herdr", "herdr"]], ["herdr"]] as 
 	const f = fixture();
 	f.user({ session_providers: value });
 	const c = f.read();
-	expect(c.session_providers).toEqual({ value: ["herdr"], source: "default" });
+	expect(c.session_providers).toEqual({ value: ["herdr", "herdr-core"], source: "default" });
 	expect(errorAt(c, "session_providers")).toMatchObject({ code: "config_invalid", file: f.userPath });
 	expect(batchConfigErrors(c).length).toBeGreaterThan(0);
 });

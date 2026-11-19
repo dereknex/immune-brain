@@ -83,8 +83,10 @@ import {
 	findExistingActiveBatch,
 	findSettledBatchRecord,
 } from "../unattended/batch_preflight";
+import { authorizeBatch as authorizeAgreement } from "../unattended/batch_agreement";
+import { advanceLanes, startLanes } from "../lane_sessions/index";
 import {
-	startBatch, completedParentReport, stopSingleTaskSupervisor,
+	completedParentReport, stopSingleTaskSupervisor,
 	type BatchRunnerKernelPort,
 	type BatchRunReport,
 	type BatchTrackerPort,
@@ -384,6 +386,7 @@ export interface HostRuntimeOptions {
 	batchGit?: BatchRunnerGitPort;
 	batchTracker?: BatchTrackerPort;
 	readInitiative?: InitiativeObservationReader;
+	sessionPortFactory?: (provider: string, env: Record<string, string | undefined>) => unknown;
 	/** Set only on the runtime a decision relay builds at a Lane root; it never relays again. */
 	laneRoot?: boolean;
 }
@@ -432,6 +435,7 @@ export class HostRuntime {
 	private readonly batchGit?: BatchRunnerGitPort;
 	private readonly batchTracker?: BatchTrackerPort;
 	private readonly readInitiative?: InitiativeObservationReader;
+	private readonly sessionPortFactory?: (provider: string, env: Record<string, string | undefined>) => unknown;
 
 	constructor(readonly profile: HostRuntimeProfile, options: HostRuntimeOptions) {
 		this.cwd = options.cwd;
@@ -444,6 +448,7 @@ export class HostRuntime {
 		this.batchGit = options.batchGit;
 		this.batchTracker = options.batchTracker;
 		this.readInitiative = options.readInitiative;
+		this.sessionPortFactory = options.sessionPortFactory;
 		this.host = options.host ?? profile.createHost();
 		this.reviewHost = new CliReviewHost(this.host, { env: this.env });
 		this.coordinator = new AssuranceCoordinator({
@@ -1398,7 +1403,7 @@ export class HostRuntime {
 		if (confirmationPreview) return batchReason("confirmation_no_decision");
 		const { binding, batch_id: batchId } = authorization;
 
-		// review-1: verify cancellation signal right before authority issuance and startBatch
+		// review-1: verify cancellation signal right before authority issuance and Lane entry
 		if (meta.signal?.aborted) return batchReason("cancelled_before_execution");
 
 		now = new Date().toISOString();
@@ -1432,39 +1437,76 @@ export class HostRuntime {
 			resume: { isResuming, existingBatch, batchBranch },
 			overrides: this.batchKernel,
 		});
-		let report = await startBatch({
-			plan_source: options.plan_source,
-			// Inside Herdr, single-task Executors run in interactive Herdr tabs (retired `herdr` switch: no config gate).
-			...(options.plan_source && this.env.HERDR_ENV === "1" ? { executor_mode: "interactive" as const } : {}),
-			...(options.plan_source ? { supervision: { supervisor: this.laneSupervisor, parentHost: this.parentHost, pluginDir: resolve(dirname(fileURLToPath(import.meta.url)), "../.."),
-				waitMs: laneWaitMs(this.env), signal: meta.signal, stop: options.stop, request: options.executor } } : {}),
-			executor_freeze: { ...(options.executor ? { request: options.executor } : {}), ...(this.parentHost ? { parentHost: this.parentHost } : {}) },
-			topology_digest: preflight.projection.topology_digest,
+		const sessionProviders = (() => {
+			// The configured list passes through untouched: `herdr` is admitted
+			// only when this env runs inside Herdr (resolveSessionProvider's
+			// pure env check), so outside Herdr the entry refuses with every
+			// provider's reason and recovery and opens no session. Only an
+			// unreadable config falls back, to the layered-config default.
+			try {
+				const resolved = resolveConfig(this.cwd).session_providers as unknown as { value?: unknown };
+				const value = (resolved as { value?: unknown }).value;
+				return Array.isArray(value) ? (value as string[]) : ["herdr", "herdr-core"];
+			} catch {
+				return ["herdr", "herdr-core"];
+			}
+		})();
+		const laneDeps = {
 			root: this.cwd,
-			batch_id: batchId,
-			initiative_slug: initiativeSlug,
 			registry: this.batchRegistry,
 			capability,
-			children: recoveryChildren,
-			plan_digest: planDigest,
-			base_head: binding.base_head,
-			confirmation_time: now,
-			budget,
-			now,
 			kernel: kernelPort,
-			git: this.batchGit,
-			...(options.final_verification ? { final_verification: options.final_verification } : {}),
-			...(options.review_profile ? { review_profile: options.review_profile } : {}),
-			...(options.max_parallel !== undefined
-				? {
-						max_parallel: options.max_parallel,
-						...(options.plan_source ? {} : { tracker: this.batchTracker ?? createBatchTrackerPort(this.cwd, initiativeSlug) }),
-						...(options.lane_instruction ? { lane_instruction: options.lane_instruction } : {}),
-						...(options.lane_session_close ? { lane_session_close: options.lane_session_close } : {}),
-					}
-				: {}),
+			...(this.batchGit ? { git: this.batchGit } : {}),
+			...(!options.plan_source ? { tracker: this.batchTracker ?? createBatchTrackerPort(this.cwd, initiativeSlug) } : {}),
+			providers: sessionProviders,
+			host: this.parentHost,
+			env: this.env,
+			...(options.max_parallel !== undefined ? { max_parallel: options.max_parallel } : { max_parallel: options.plan_source ? 1 : (resolveConfig(this.cwd).batch.max_parallel.value as number) }),
+			now,
+			confirmation_time: now,
+			topology_digest: preflight.projection.topology_digest,
+			...(options.lane_instruction ? { lane_instruction: options.lane_instruction } : {}),
+			...(options.lane_session_close ? { lane_session_close: options.lane_session_close } : {}),
 			...(options.lane_offers !== undefined ? { lane_offers: options.lane_offers } : {}),
-		});
+			...(options.review_profile ? { review_profile: options.review_profile } : {}),
+			...(options.final_verification ? { final_verification: options.final_verification } : {}),
+			...(options.executor ? { executor: options.executor } : {}),
+			...(this.sessionPortFactory ? { createPort: this.sessionPortFactory as never } : {}),
+		};
+		let report: any;
+		if (isResuming && existingBatch && isLaneBatchRecord(existingBatch)) {
+			const resumed = await advanceLanes(this.cwd, (existingBatch as { batch_id: string }).batch_id, laneDeps as never);
+			if (resumed && typeof resumed === "object" && (resumed as { ok?: unknown }).ok === false) {
+				const refusal = resumed as { code: string; reason: string; recovery: string };
+				return { state: "rejected", reason: refusal.reason, recovery_action: refusal.recovery };
+			}
+			report = resumed;
+		} else {
+			const singleTask = options.plan_source === "single_task";
+			const confirmationRef = binding.confirmation_ref ?? `native_gate:${batchId}`;
+			const agreementInput = {
+				batch_id: batchId,
+				initiative_slug: initiativeSlug,
+				children: recoveryChildren,
+				base_head: binding.base_head,
+				budget,
+				confirmation: { source: "native_gate", ref: confirmationRef },
+				final_verification: {
+					required: (options.final_verification?.length ?? 0) > 0 ? true : singleTask ? false : true,
+					commands: options.final_verification ? [...options.final_verification] : [],
+				},
+				return_policy: singleTask ? "checkout_delivery" : "retain_branch",
+				interaction_mode: "interactive_host",
+			};
+			const agreement = authorizeAgreement(agreementInput as never);
+			if (!agreement.ok) return batchReason("batch_run_rejected", agreement.reason);
+			const started = await startLanes(agreement.agreement, laneDeps as never);
+			if (started && typeof started === "object" && (started as { ok?: unknown }).ok === false) {
+				const refusal = started as { code: string; reason: string; recovery: string };
+				return { state: "rejected", reason: refusal.reason, recovery_action: refusal.recovery };
+			}
+			report = started;
+		}
 
 		// review-3 & review-batch-preflight-recovery-is-diagnostic: map rejected batch state to rejected result with same-Host recovery action
 		if (report.batch_state === "rejected") return batchReason("batch_run_rejected", report.reason ?? "");

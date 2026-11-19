@@ -166,10 +166,13 @@ export function resolveConfig(root: string, options: { userConfigPath?: string; 
 	// Retired top-level `herdr` switch: ignored, warned once per layer that sets it, never resolved.
 	for (const [, o, file] of layers) if (o && Object.hasOwn(o, "herdr"))
 		diag("retired_key", "warning", file, "herdr", "herdr is retired and ignored; remove it (imm-kernel config migrate --write deletes it)");
-	// Ordered session-provider list: project replaces user, default is the Herdr tab provider.
+	// Ordered session-provider list: project replaces user. The default names
+	// both providers so a refusal outside Herdr lists every reason and recovery;
+	// resolution still admits `herdr` only when HERDR_ENV is 1, so no session
+	// opens outside Herdr.
 	const sessionProviders = pick((o) => o.session_providers, "session_providers",
 		(v) => Array.isArray(v) && v.length > 0 && v.every((name) => (REGISTERED_SESSION_PROVIDERS as readonly string[]).includes(name)) && new Set(v).size === v.length,
-		`expected a non-empty list of distinct registered providers (${REGISTERED_SESSION_PROVIDERS.join(", ")})`, ["herdr"]);
+		`expected a non-empty list of distinct registered providers (${REGISTERED_SESSION_PROVIDERS.join(", ")})`, ["herdr", "herdr-core"]);
 
 	// batch
 	for (const [, o, file] of layers) knownKeys(part(o, file, "batch"), ["max_parallel", "final_verification"], file, "batch");

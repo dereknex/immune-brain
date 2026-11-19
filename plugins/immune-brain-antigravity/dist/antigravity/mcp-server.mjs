@@ -8435,7 +8435,7 @@ function resolveConfig(root, options = {}) {
   for (const [, o, file] of layers)
     if (o && Object.hasOwn(o, "herdr"))
       diag("retired_key", "warning", file, "herdr", "herdr is retired and ignored; remove it (imm-kernel config migrate --write deletes it)");
-  const sessionProviders = pick((o) => o.session_providers, "session_providers", (v) => Array.isArray(v) && v.length > 0 && v.every((name) => REGISTERED_SESSION_PROVIDERS.includes(name)) && new Set(v).size === v.length, `expected a non-empty list of distinct registered providers (${REGISTERED_SESSION_PROVIDERS.join(", ")})`, ["herdr"]);
+  const sessionProviders = pick((o) => o.session_providers, "session_providers", (v) => Array.isArray(v) && v.length > 0 && v.every((name) => REGISTERED_SESSION_PROVIDERS.includes(name)) && new Set(v).size === v.length, `expected a non-empty list of distinct registered providers (${REGISTERED_SESSION_PROVIDERS.join(", ")})`, ["herdr", "herdr-core"]);
   for (const [, o, file] of layers)
     knownKeys(part(o, file, "batch"), ["max_parallel", "final_verification"], file, "batch");
   const maxParallel = pick((o) => o.batch?.max_parallel, "batch.max_parallel", (v) => integerWithin(v, BATCH_MAX_PARALLEL.min, BATCH_MAX_PARALLEL.max), `expected an integer between ${BATCH_MAX_PARALLEL.min} and ${BATCH_MAX_PARALLEL.max}`, BATCH_MAX_PARALLEL.default);
@@ -18542,170 +18542,6 @@ function reportFromLane(record) {
     created_at: record.updated_at
   };
 }
-function afterExecutorExit(advanced, observed) {
-  const decision = observed.lane_decision_required;
-  return {
-    ...advanced,
-    handoffs: advanced.handoffs.filter((h) => h.role !== "executor"),
-    ...decision ? { lane_decision_required: decision } : {},
-    next_action: decision ? observed.next_action : advanced.handoffs.some((h) => h.role === "executor") ? "Call start_unattended_batch again to continue the Lane." : advanced.next_action,
-    lane_supervision: observed.lane_supervision
-  };
-}
-async function superviseSingle(input, report) {
-  const options = input.supervision;
-  const child = report.children.find((c) => c.task_id === input.initiative_slug && c.lane);
-  if (!child?.lane)
-    return report;
-  const recorded = readAnyBatchRunState(input.root, input.batch_id);
-  const choice = laneExecutorChoice(input.root, (recorded && isLaneBatchRecord(recorded) ? recorded.executor_preferences : undefined) ?? options.request, options.parentHost);
-  if (!choice)
-    return { ...report, batch_state: "rejected", reason: "lane_config_invalid", next_action: "Correct the Lane configuration and retry." };
-  const store = laneGenerationStore(input.root, input.batch_id);
-  const observation = await superviseLane(options.supervisor, {
-    key: `${input.root}\x00${input.batch_id}`,
-    repository: input.root,
-    lanePath: child.lane.path,
-    taskId: child.task_id,
-    choice,
-    pluginDir: options.pluginDir,
-    store,
-    baseline: "",
-    waitMs: options.waitMs,
-    graceMs: 1000,
-    signal: options.signal,
-    stop: options.stop,
-    project: async () => {
-      const result = await input.kernel.projectTask(child.lane.path, child.task_id);
-      if (result.error !== null)
-        throw new Error(`batch_lane_unreadable: ${result.error}`);
-      return result.projection;
-    }
-  });
-  if (observation.reason === "lane_executor_no_progress") {
-    const parked = parkLaneForExecutor(input.root, input.batch_id, child.task_id, "lane_executor_no_progress");
-    report = { ...reportFromLane(parked), reason: batchReason("lane_executor_no_progress").reason, next_action: batchReason("lane_executor_no_progress").recovery_action };
-  } else if (observation.state === "stopped" && observation.exit) {
-    const reason = store.read()?.state === "interrupted" ? "lane_executor_interrupted" : "lane_executor_stopped";
-    const parked = parkLaneForExecutor(input.root, input.batch_id, child.task_id, reason);
-    report = { ...reportFromLane(parked), reason, next_action: "Inspect the Lane and resume with a fresh drive entry." };
-  } else if (observation.state === "unavailable" || observation.state === "unobservable") {
-    report = { ...report, reason: batchReason(observation.state === "unavailable" ? "lane_executor_unavailable" : "lane_executor_unobservable").reason };
-  }
-  if (observation.reason === "lane_executor_requires_tui") {
-    const tui = batchReason("lane_executor_requires_tui");
-    return {
-      ...report,
-      reason: tui.reason,
-      next_action: tui.recovery_action.replaceAll("<task_id>", child.task_id),
-      lane_supervision: observation
-    };
-  }
-  let decision = null;
-  if (observation.state === "exited" && !observation.reason) {
-    const read = await input.kernel.projectTask(child.lane.path, child.task_id);
-    if (read.error === null)
-      decision = laneDecisionFacts(child.task_id, read.projection, child.lane.path);
-  }
-  const kept = observation.state === "stopped" || observation.state === "unobservable" || observation.state === "unavailable" || !!observation.reason;
-  const condition = observation.reason === "lane_executor_no_progress" ? "the Executor exited twice without Kernel progress" : exitProofCondition(store.read());
-  return {
-    ...report,
-    handoffs: report.handoffs.filter((handoff) => handoff.role !== "executor"),
-    ...kept && condition ? { lane_refusals: [{ task_id: child.task_id, path: child.lane.path, reason: retainedLaneReason(condition) }] } : {},
-    ...decision ? { lane_decision_required: decision } : {},
-    next_action: decision?.requested ? `The Lane Executor asks for a breaking intent revision (record ${decision.record_revision}). Call approve_breaking_intent_revision for ${decision.task_id} in the current Host with record_revision ${decision.record_revision} and lane_decision_required.requested.next_intent as next_intent; it opens the native gate and continues the Lane.` : decision ? `The Lane waits on a user decision (record ${decision.record_revision}). Call request_authorization for ${decision.task_id} in the current Host with record_revision ${decision.record_revision}; it opens the native gate and continues the Lane.` : observation.state === "running" ? "Call start_unattended_batch again to continue supervising this generation." : observation.state === "unobservable" ? batchReason("lane_executor_unobservable").recovery_action : observation.state === "unavailable" ? batchReason("lane_executor_unavailable").recovery_action : report.next_action,
-    lane_supervision: observation
-  };
-}
-async function startBatch(input) {
-  const recorded = readAnyBatchRunState(input.root, input.batch_id);
-  const interactive = recorded ? isLaneBatchRecord(recorded) && recorded.executor_mode === "interactive" : input.executor_mode === "interactive";
-  if (interactive)
-    input = {
-      ...input,
-      executor_mode: "interactive",
-      supervision: undefined,
-      lane_exit_observation: null,
-      executor_freeze: input.executor_freeze ?? (input.supervision ? { request: input.supervision.request, parentHost: input.supervision.parentHost } : undefined)
-    };
-  if (input.plan_source === "single_task" && input.supervision && !input.supervision.stop && batchConfigErrors(resolveConfig(input.root)).length > 0) {
-    const report = recorded && isLaneBatchRecord(recorded) ? reportFromLane(recorded) : null;
-    if (!report)
-      throw new Error("lane_config_invalid");
-    return { ...report, batch_state: "rejected", reason: "lane_config_invalid" };
-  }
-  if (recorded && !isLaneBatchRecord(recorded)) {
-    const reason = batchReason("batch_record_shape_retired");
-    return {
-      contract: "assurance_kernel/batch_run_report/v1",
-      batch_id: recorded.batch_id,
-      initiative_slug: recorded.initiative_slug,
-      batch_state: "rejected",
-      children: recorded.children,
-      commits: recorded.commits,
-      reason: reason.reason,
-      next_action: reason.recovery_action,
-      created_at: input.now
-    };
-  }
-  try {
-    if (input.plan_source === "single_task" && input.supervision && recorded && isLaneBatchRecord(recorded) && recorded.batch_state === "running") {
-      const generation = laneGenerationStore(input.root, input.batch_id).read();
-      if (generation && ["starting", "running", "unobservable", "exited"].includes(generation.state)) {
-        const observed = await superviseSingle(input, reportFromLane(recorded));
-        if (observed.reason || observed.lane_supervision?.state !== "exited" || input.supervision.stop)
-          return observed;
-        const advanced = await runLaneBatch({ ...input, lane_exit_observation: observed.lane_supervision?.exit ?? null }, readAnyBatchRunState(input.root, input.batch_id));
-        return afterExecutorExit(advanced, observed);
-      }
-    }
-    const report = await runLaneBatch(input, recorded);
-    if (interactive) {
-      const child = report.children.find((c) => (c.state === "enrolled" || c.state === "needs_human") && c.lane);
-      if (child?.lane) {
-        const read = await input.kernel.projectTask(child.lane.path, child.task_id);
-        if (read.error !== null)
-          throw new Error(`batch_lane_unreadable: ${read.error}`);
-        const decision = laneDecisionFacts(child.task_id, read.projection, child.lane.path);
-        if (decision)
-          return {
-            ...report,
-            lane_decision_required: decision,
-            handoffs: report.handoffs.filter((h) => h.role !== "executor"),
-            next_action: `The Lane waits on a user decision (record ${decision.record_revision}). Use the current Host's native decision gate for ${decision.task_id}; then resume the existing interactive Lane session.`
-          };
-      }
-      return { ...report, next_action: report.batch_state === "running" && report.reason === null && report.handoffs.some((h) => h.role === "executor") ? `Run ${input.initiative_slug} in its existing Herdr tab, creating one only when no live tab exists. Resume inside Herdr; re-enter start_unattended_batch with task_id ${input.initiative_slug} and no initiative_slug.` : report.next_action };
-    }
-    if (input.plan_source === "single_task" && input.supervision && recorded?.batch_state === "needs_human" && report.batch_state === "running") {
-      const store = laneGenerationStore(input.root, input.batch_id);
-      const generation = store.read();
-      if (generation && ["exited", "stopped_by_parent", "interrupted"].includes(generation.state))
-        store.update((value) => {
-          if (!value || value.generation !== generation.generation || value.state !== generation.state)
-            throw new Error("lane_executor_generation_changed");
-          return { ...value, no_progress: 0, handled_generation: value.generation };
-        });
-    }
-    if (input.plan_source === "single_task" && input.supervision && report.handoffs.some((h) => h.role === "executor")) {
-      const observed = await superviseSingle(input, report);
-      if (!observed.reason && observed.lane_supervision?.state === "exited" && !input.supervision.stop) {
-        const advanced = await runLaneBatch({ ...input, lane_exit_observation: observed.lane_supervision?.exit ?? null }, readAnyBatchRunState(input.root, input.batch_id));
-        return afterExecutorExit(advanced, observed);
-      }
-      return observed;
-    }
-    return report;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (!/retired file-store|kernel store|CAS mismatch|store is busy|locked/i.test(message))
-      throw error;
-    if (!recorded)
-      throw error;
-    return laneRejectionReport(input, recorded, message, "settle the reported kernel store condition and retry in the current Host");
-  }
-}
 
 // plugins/immune-brain/runtime/unattended/lane_decision.ts
 function laneDecisionFacts(taskId, projection, lanePath) {
@@ -19577,11 +19413,6 @@ function laneReport(record, reason, nextAction, extra = {}) {
     next_action: (nextAction || (record.final_report?.return_to_coordinator.status === "blocked" ? `Review the final report; coordinator return stopped: ${record.final_report.return_to_coordinator.reason}. The Parent branch is retained.` : TERMINAL_NEXT_ACTIONS[record.batch_state] ?? "Inspect the batch run state.")) + retainedLaneAction(extra.refusals),
     created_at: record.updated_at
   };
-}
-function laneRejectionReport(input, record, reason, nextAction) {
-  const lanes = laneGitOf(input);
-  const handoffs = releaseHandoffs(input, record, lanes);
-  return laneReport({ ...record, batch_state: "rejected" }, reason, handoffs.length ? `${nextAction}. Check each release handoff with the Lane Steward.` : nextAction, { handoffs, refusals: retainedLaneNotices(input.root, record, lanes) });
 }
 function finalizeLane(root, record, reason, nextAction, extra = {}) {
   const report = laneReport(record, reason, nextAction, extra);
@@ -20559,7 +20390,9 @@ function createMcpRuntime(profile, options = {}) {
     requestConfirmation: options.requestConfirmation ?? profile.requestConfirmation,
     batchKernel: options.batchKernel,
     batchGit: options.batchGit,
-    readInitiative: options.readInitiative
+    ...options.batchTracker ? { batchTracker: options.batchTracker } : {},
+    readInitiative: options.readInitiative,
+    ...options.sessionPortFactory ? { sessionPortFactory: options.sessionPortFactory } : {}
   });
   let negotiatedVersion;
   let negotiatedInteractive = false;
@@ -22712,6 +22545,1595 @@ init_github_issue_tracker();
 init_backend_claim();
 init_batch_preflight();
 
+// plugins/immune-brain/runtime/unattended/batch_agreement.ts
+init_batch_authority();
+var CONFIRMATION_SOURCES = new Set(["native_gate", "tracker_approval", "policy_auto"]);
+var RETURN_POLICIES = new Set(["checkout_delivery", "retain_branch"]);
+var INTERACTION_MODES = new Set(["interactive_host", "parent_relayed"]);
+function invalid2(reason) {
+  return { ok: false, code: "batch_agreement_invalid", reason: `batch_agreement_invalid: ${reason}` };
+}
+function authorizeBatch2(input) {
+  if (!input || typeof input !== "object")
+    return invalid2("agreement must be an object");
+  if (typeof input.batch_id !== "string" || !input.batch_id)
+    return invalid2("batch_id must be a non-empty string");
+  if (typeof input.initiative_slug !== "string" || !input.initiative_slug)
+    return invalid2("initiative_slug must be a non-empty string");
+  if (!Array.isArray(input.children) || input.children.length === 0)
+    return invalid2("children must be a non-empty array");
+  if (typeof input.base_head !== "string" || !input.base_head)
+    return invalid2("base_head must be a non-empty string");
+  if (!input.budget || typeof input.budget !== "object" || !Number.isInteger(input.budget.max_children) || input.budget.max_children <= 0 || !Number.isInteger(input.budget.qa_failure_limit) || input.budget.qa_failure_limit <= 0)
+    return invalid2("budget must carry positive max_children and qa_failure_limit");
+  const confirmation = input.confirmation;
+  if (!confirmation || typeof confirmation !== "object")
+    return invalid2("confirmation must be an object");
+  if (typeof confirmation.source !== "string" || !CONFIRMATION_SOURCES.has(confirmation.source))
+    return invalid2(`unknown confirmation.source ${String(confirmation.source)}`);
+  if (typeof confirmation.ref !== "string" || !confirmation.ref)
+    return invalid2("confirmation.ref must be a non-empty string");
+  const fv = input.final_verification;
+  if (!fv || typeof fv !== "object")
+    return invalid2("final_verification must be an object");
+  if (typeof fv.required !== "boolean")
+    return invalid2("final_verification.required must be a boolean");
+  if (!Array.isArray(fv.commands))
+    return invalid2("final_verification.commands must be an array");
+  for (const command of fv.commands) {
+    if (typeof command !== "string" || !command.trim())
+      return invalid2("final_verification.commands must be non-empty strings");
+  }
+  if (typeof input.return_policy !== "string" || !RETURN_POLICIES.has(input.return_policy))
+    return invalid2(`unknown return_policy ${String(input.return_policy)}`);
+  if (typeof input.interaction_mode !== "string" || !INTERACTION_MODES.has(input.interaction_mode))
+    return invalid2(`unknown interaction_mode ${String(input.interaction_mode)}`);
+  let planDigest;
+  try {
+    planDigest = computeBatchPlanDigest(input.children);
+  } catch (error) {
+    return invalid2(error instanceof Error ? error.message : "invalid child plan");
+  }
+  if (input.plan_digest !== undefined && input.plan_digest !== planDigest)
+    return invalid2("plan_digest does not match the confirmed child plan");
+  if (input.plan_source !== undefined && input.plan_source !== "single_task")
+    return invalid2(`unknown plan_source ${String(input.plan_source)}`);
+  const agreement = {
+    batch_id: input.batch_id,
+    initiative_slug: input.initiative_slug,
+    children: input.children.map((child) => ({ ...child, blocked_by: [...child.blocked_by] })),
+    plan_digest: planDigest,
+    ...input.plan_source ? { plan_source: input.plan_source } : {},
+    ...input.branch ? { branch: input.branch } : {},
+    base_head: input.base_head,
+    budget: { ...input.budget },
+    confirmation: { source: confirmation.source, ref: confirmation.ref },
+    final_verification: { required: fv.required, commands: [...fv.commands] },
+    return_policy: input.return_policy,
+    interaction_mode: input.interaction_mode,
+    ...input.actor ? { actor: input.actor } : {}
+  };
+  return { ok: true, agreement };
+}
+
+// plugins/immune-brain/runtime/session/herdr_provider.ts
+import { randomBytes as randomBytes2 } from "node:crypto";
+
+// plugins/immune-brain/runtime/session/exec.ts
+import { spawn as spawn5 } from "node:child_process";
+function runCommand(env, command, args, signal) {
+  return new Promise((resolve) => {
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+    if (signal?.aborted) {
+      resolve({ code: null, stdout, stderr, aborted: true });
+      return;
+    }
+    const child = spawn5(command, args, { env, stdio: ["ignore", "pipe", "pipe"] });
+    const abort = () => {
+      child.kill("SIGTERM");
+      finish({ code: null, stdout, stderr, aborted: true });
+    };
+    const finish = (result) => {
+      if (settled)
+        return;
+      settled = true;
+      signal?.removeEventListener("abort", abort);
+      resolve(result);
+    };
+    signal?.addEventListener("abort", abort, { once: true });
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    child.once("error", (error) => finish({ code: null, stdout, stderr: stderr || error.message, missing: error.code === "ENOENT" }));
+    child.once("close", (code) => finish({ code, stdout, stderr }));
+  });
+}
+function parseJson(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return;
+  }
+}
+function pick(value, path) {
+  let current = value;
+  for (const key of path) {
+    if (current === null || typeof current !== "object")
+      return;
+    current = current[key];
+  }
+  return current;
+}
+function parseVersion(text) {
+  const match = /(\d+)\.(\d+)\.(\d+)/.exec(text);
+  return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : null;
+}
+function versionAtLeast(version, minimum) {
+  for (let index = 0;index < 3; index++) {
+    if (version[index] !== minimum[index])
+      return version[index] > minimum[index];
+  }
+  return true;
+}
+
+// plugins/immune-brain/runtime/session/supervised_session_port.ts
+var SUPERVISED_SESSION_PROTOCOL = 1;
+var SESSION_STATES = ["working", "blocked", "idle", "done", "unknown"];
+var EXECUTOR_HOSTS2 = ["claude-code", "pi", "antigravity"];
+var SESSION_KEY_PATTERN = /^[a-z0-9-]{1,64}$/;
+function refuse4(code, reason, handle) {
+  return handle === undefined ? { ok: false, code, reason } : { ok: false, code, reason, handle };
+}
+function instructionRefusal(handle, observed) {
+  if (observed.state === "idle" || observed.state === "done")
+    return null;
+  return refuse4("state_refused", `session is ${observed.state}; an instruction is sent only to an idle or done session and nothing was sent`, handle);
+}
+function resumeRefusal(handle, observed) {
+  if (observed.state === "idle" || observed.state === "done")
+    return null;
+  return refuse4("state_refused", `session is ${observed.state}; the entry is resubmitted only to an idle or done session and nothing was sent`, handle);
+}
+function closeRecordRefusal(handle, record) {
+  const unmet = [];
+  if (typeof record?.task_id !== "string" || !/^[a-z0-9][a-z0-9._-]*$/i.test(record.task_id))
+    unmet.push("task_id");
+  const at = record?.recorded_at;
+  if (typeof at !== "string" || !Number.isFinite(Date.parse(at)) || new Date(Date.parse(at)).toISOString() !== at)
+    unmet.push("recorded_at");
+  if (unmet.length === 0)
+    return null;
+  return refuse4("close_unproven", `no recorded session close: ${unmet.join(", ")}; take task_id and at from the batch report's session_closes`, handle);
+}
+function validateSessionKey(key) {
+  if (!SESSION_KEY_PATTERN.test(key))
+    return refuse4("invalid_input", `session_key must match [a-z0-9-]{1,64}: ${JSON.stringify(key)}`);
+  return null;
+}
+function validateCreateInput(input) {
+  if (!input.cwd)
+    return refuse4("invalid_input", "cwd is required");
+  if (!input.label || input.label.length > 32)
+    return refuse4("invalid_input", "label must be 1 to 32 characters");
+  if (input.session_key !== undefined) {
+    const bad = validateSessionKey(input.session_key);
+    if (bad)
+      return bad;
+  }
+  if (!EXECUTOR_HOSTS2.includes(input.host))
+    return refuse4("invalid_input", `host must be one of ${EXECUTOR_HOSTS2.join(", ")}`);
+  if (!input.entry || input.entry.trim() === "")
+    return refuse4("invalid_input", "entry is required");
+  for (const [key, value] of Object.entries(input.env ?? {})) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key))
+      return refuse4("invalid_input", `env name ${JSON.stringify(key)} is not a valid variable name`);
+    if (typeof value !== "string" || /[\0\n\r]/.test(value))
+      return refuse4("invalid_input", `env ${key} must be a single-line string`);
+  }
+  return null;
+}
+function isSessionState(value) {
+  return typeof value === "string" && SESSION_STATES.includes(value);
+}
+
+// plugins/immune-brain/runtime/session/herdr_provider.ts
+var SUPPORTED_HERDR_PROTOCOLS = [22];
+var HERDR_PROMPT_TIMEOUT_MS = 30000;
+var HOST_KIND = { "claude-code": "claude", pi: "pi", antigravity: "agy" };
+function herdrAgentName(label, token) {
+  const suffix = token.toLowerCase().replace(/[^a-z0-9_-]+/g, "").slice(-12);
+  const folded = label.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^[^a-z]+/, "").replace(/[-_]+$/g, "") || "lane";
+  if (!suffix)
+    return folded.slice(0, 32).replace(/[-_]+$/g, "") || "lane";
+  const prefixBudget = 32 - 1 - suffix.length;
+  const prefix = folded.slice(0, prefixBudget).replace(/[-_]+$/g, "") || "lane".slice(0, prefixBudget);
+  return `${prefix}-${suffix}`;
+}
+var HERDR_CLI = {
+  schema: () => ["api", "schema", "--json"],
+  tabList: (workspace) => ["tab", "list", "--workspace", workspace],
+  tabCreate: (workspace, cwd, label, env = {}) => [
+    "tab",
+    "create",
+    "--workspace",
+    workspace,
+    "--cwd",
+    cwd,
+    "--label",
+    label,
+    ...Object.entries(env).flatMap(([key, value]) => ["--env", `${key}=${value}`]),
+    "--no-focus"
+  ],
+  tabGet: (tab) => ["tab", "get", tab],
+  paneGet: (pane) => ["pane", "get", pane],
+  agentStart: (label, kind, pane, hostArgs) => ["agent", "start", label, "--kind", kind, "--pane", pane, "--", ...hostArgs],
+  prompt: (pane, text, timeoutMs) => ["agent", "prompt", pane, text, "--wait", "--until", "working", "--until", "blocked", "--timeout", String(timeoutMs)],
+  wait: (pane, timeoutMs) => [
+    "agent",
+    "wait",
+    pane,
+    "--until",
+    "idle",
+    "--until",
+    "done",
+    "--until",
+    "blocked",
+    "--until",
+    "unknown",
+    ...timeoutMs ? ["--timeout", String(timeoutMs)] : []
+  ],
+  get: (pane) => ["agent", "get", pane],
+  read: (pane, source, lines) => ["pane", "read", pane, "--source", source === "visible" ? "visible" : "recent-unwrapped", ...lines ? ["--lines", String(lines)] : []],
+  sendKeys: (pane, key) => ["agent", "send-keys", pane, key],
+  paneClose: (pane) => ["pane", "close", pane],
+  tabClose: (tab) => ["tab", "close", tab],
+  paneRun: (pane, command) => ["pane", "run", pane, command],
+  waitOutput: (pane, regex) => ["pane", "wait-output", pane, "--regex", regex, "--source", "recent", "--lines", "400"]
+};
+function defaultHerdrExec(env) {
+  return (args, signal) => runCommand(env, "herdr", args, signal);
+}
+function createHerdrViewer(options) {
+  const workspace = options.env.HERDR_WORKSPACE_ID;
+  if (options.env.HERDR_ENV !== "1" || !workspace)
+    return null;
+  const exec = options.exec ?? defaultHerdrExec(options.env);
+  return async ({ cwd, label, argv, env }) => {
+    if (argv.length === 0)
+      return refuse4("invalid_input", "argv is empty");
+    const created = await exec(HERDR_CLI.tabCreate(workspace, cwd, label, env));
+    if (created.missing)
+      return refuse4("provider_unavailable", "the herdr executable is not on PATH");
+    if (created.code !== 0)
+      return refuse4("start_failed", `herdr tab create failed: ${failure(created)}`);
+    const pane = pick(parseJson(created.stdout), ["result", "root_pane", "pane_id"]);
+    if (typeof pane !== "string" || !pane)
+      return refuse4("start_failed", "herdr tab create returned no result.root_pane.pane_id");
+    const ran = await exec(HERDR_CLI.paneRun(pane, `${argv.map(shellWord).join(" ")} && exit`));
+    if (ran.code !== 0)
+      return refuse4("start_failed", `herdr pane run failed: ${failure(ran)}`);
+    return { ok: true };
+  };
+}
+function encodeHerdrHandle(ids) {
+  return `herdr:${[ids.workspace, ids.tab, ids.pane, ids.token].map(encodeURIComponent).join("/")}`;
+}
+function decodeHerdrHandle(handle) {
+  if (!handle.startsWith("herdr:"))
+    return null;
+  const parts = handle.slice("herdr:".length).split("/");
+  if (parts.length !== 4 || parts.some((part) => part === ""))
+    return null;
+  try {
+    const [workspace, tab, pane, token] = parts.map(decodeURIComponent);
+    return { workspace, tab, pane, token };
+  } catch {
+    return null;
+  }
+}
+function herdrTokenMark(token) {
+  return `[imm:${token}]`;
+}
+function shellWord(value) {
+  return /^[A-Za-z0-9_./:=@%+-]+$/.test(value) ? value : `'${value.replace(/'/g, `'\\''`)}'`;
+}
+function sentinelCommand(argv, token) {
+  return {
+    line: `${argv.map(shellWord).join(" ")}; printf 'IMM_%s_%s_%s\\n' ${token} DONE "$?"`,
+    regex: `IMM_${token}_DONE_[0-9]+`
+  };
+}
+function parseHerdrState(stdout) {
+  const value = pick(parseJson(stdout.trim()), ["result", "agent", "agent_status"]);
+  return isSessionState(value) ? value : "unknown";
+}
+function herdrErrorCode(result) {
+  for (const text of [result.stderr, result.stdout]) {
+    const code = pick(parseJson(text.trim()), ["error", "code"]);
+    if (typeof code === "string")
+      return code;
+  }
+  return;
+}
+var EXITED_CODES = new Set(["pane_not_found", "agent_not_running", "agent_not_found"]);
+var STALLED = Symbol("entry stalled");
+var HOST_GONE_CODES = new Set(["agent_not_running", "agent_not_found"]);
+function detected(state) {
+  return { state, provenance: state === "unknown" ? "none" : "detected" };
+}
+function failure(result) {
+  return (result.stderr || result.stdout).trim().slice(0, 500) || `herdr exited ${result.code}`;
+}
+function protocolOf(schema) {
+  for (const path of [["protocol"], ["protocol_version"], ["version", "protocol"], ["info", "protocol"]]) {
+    const value = pick(schema, path);
+    if (typeof value === "number")
+      return value;
+    if (typeof value === "string" && /^\d+$/.test(value))
+      return Number(value);
+  }
+  return;
+}
+function createHerdrSessionProvider(options) {
+  const exec = options.exec ?? defaultHerdrExec(options.env);
+  const promptTimeoutMs = options.promptTimeoutMs ?? HERDR_PROMPT_TIMEOUT_MS;
+  const workspace = options.env.HERDR_WORKSPACE_ID ?? "";
+  const run = async (args, signal) => {
+    const result = await exec(args, signal);
+    if (result.missing)
+      return refuse4("provider_unavailable", "the herdr executable is not on PATH");
+    return result;
+  };
+  const isRefusal = (value) => typeof value === "object" && value !== null && value.ok === false;
+  const own = async (handle) => {
+    const ids = decodeHerdrHandle(handle);
+    if (!ids)
+      return refuse4("not_owned", "handle is not a Herdr session handle", handle);
+    if (!workspace || ids.workspace !== workspace)
+      return refuse4("not_owned", "session is not in the Parent's own Herdr workspace", handle);
+    const pane = await run(HERDR_CLI.paneGet(ids.pane));
+    if (isRefusal(pane))
+      return pane;
+    const tab = await run(HERDR_CLI.tabGet(ids.tab));
+    if (isRefusal(tab))
+      return tab;
+    const marked = tab.code === 0 && String(pick(parseJson(tab.stdout), ["result", "tab", "label"]) ?? "").endsWith(herdrTokenMark(ids.token));
+    if (pane.code !== 0) {
+      if (herdrErrorCode(pane) !== "pane_not_found")
+        return refuse4("provider_error", `herdr pane get failed: ${failure(pane)}`, handle);
+      if (tab.code === 0 && !marked)
+        return refuse4("not_owned", "tab was not created for this session", handle);
+      return { ids, gone: true };
+    }
+    const info = pick(parseJson(pane.stdout), ["result", "pane"]);
+    if (pick(info, ["workspace_id"]) !== ids.workspace || pick(info, ["tab_id"]) !== ids.tab) {
+      return refuse4("not_owned", "pane is not in this session's tab", handle);
+    }
+    if (tab.code !== 0)
+      return refuse4("provider_error", `herdr tab get failed: ${failure(tab)}`, handle);
+    if (!marked)
+      return refuse4("not_owned", "tab was not created for this session", handle);
+    return { ids, gone: false };
+  };
+  const goneRefusal = (handle) => refuse4("state_refused", "the session's pane is gone; nothing was sent; create a new session", handle);
+  const observe = async (handle, pane) => {
+    const result = await run(HERDR_CLI.get(pane));
+    if (isRefusal(result))
+      return result;
+    if (result.code !== 0)
+      return { state: "unknown", provenance: "none" };
+    return detected(parseHerdrState(result.stdout));
+  };
+  async function submit(handle, pane, text, entry = false) {
+    const result = await run(HERDR_CLI.prompt(pane, text, promptTimeoutMs));
+    if (isRefusal(result))
+      return result;
+    if (entry && herdrErrorCode(result) === "agent_prompt_stalled")
+      return STALLED;
+    if (herdrErrorCode(result) === "agent_blocked")
+      return refuse4("state_refused", "session is blocked; Herdr sent nothing", handle);
+    if (result.code !== 0)
+      return refuse4("provider_error", `herdr agent prompt failed; inspect the session state before repeating: ${failure(result)}`, handle);
+    return detected(parseHerdrState(result.stdout));
+  }
+  const submitEntry = async (handle, pane, text) => {
+    const after = await submit(handle, pane, text, true);
+    if (after === STALLED)
+      return {
+        ok: true,
+        handle,
+        entry_submitted: false,
+        state: "unknown",
+        provenance: "none",
+        attention: "The Executor Host never started working on its entry: a dialog (such as sign-in or a selection) may hold the terminal, and the entry text may now sit in it. Ask the user to look at this tab and answer the dialog, then resume this session; do not send the entry again before the user has seen it."
+      };
+    if (isRefusal(after))
+      return after;
+    return { ok: true, handle, entry_submitted: true, ...after };
+  };
+  const startHost = async (handle, pane, label, host, hostArgs, token) => {
+    const started = await run(HERDR_CLI.agentStart(herdrAgentName(label, token), HOST_KIND[host], pane, hostArgs));
+    if (isRefusal(started))
+      return { ...started, handle };
+    if (started.code === 0)
+      return null;
+    if (herdrErrorCode(started) === "agent_not_ready") {
+      return { ok: true, handle, entry_submitted: false, state: "blocked", provenance: "detected" };
+    }
+    return refuse4("start_failed", `herdr agent start failed: ${failure(started)}`, handle);
+  };
+  return {
+    provider: "herdr",
+    protocolVersion: SUPERVISED_SESSION_PROTOCOL,
+    async probe() {
+      if (options.env.HERDR_ENV !== "1")
+        return refuse4("provider_unavailable", "not running inside Herdr (HERDR_ENV is not 1)");
+      if (!workspace)
+        return refuse4("provider_unavailable", "HERDR_WORKSPACE_ID is not set");
+      const result = await run(HERDR_CLI.schema());
+      if (isRefusal(result))
+        return result;
+      if (result.code !== 0)
+        return refuse4("provider_unavailable", `herdr api schema failed: ${failure(result)}`);
+      const protocol = protocolOf(parseJson(result.stdout));
+      if (protocol === undefined)
+        return refuse4("protocol_mismatch", "herdr api schema did not state a protocol version");
+      if (!SUPPORTED_HERDR_PROTOCOLS.includes(protocol)) {
+        return refuse4("protocol_mismatch", `herdr protocol ${protocol} is not one of ${SUPPORTED_HERDR_PROTOCOLS.join(", ")}`);
+      }
+      return { ok: true };
+    },
+    async createSession(input) {
+      const invalid = validateCreateInput(input);
+      if (invalid)
+        return invalid;
+      if (input.resume !== undefined) {
+        const handle = input.resume;
+        const found = await own(handle);
+        if (isRefusal(found))
+          return found;
+        if (found.gone)
+          return goneRefusal(handle);
+        const pane = found.ids.pane;
+        const got = await run(HERDR_CLI.get(pane));
+        if (isRefusal(got))
+          return got;
+        const code = got.code === 0 ? undefined : herdrErrorCode(got);
+        if (code && HOST_GONE_CODES.has(code)) {
+          const restarted = await startHost(handle, pane, input.label, input.host, input.hostArgs, found.ids.token);
+          if (restarted)
+            return restarted;
+        } else {
+          const current = got.code === 0 ? detected(parseHerdrState(got.stdout)) : { state: "unknown", provenance: "none" };
+          const refused = resumeRefusal(handle, current);
+          if (refused)
+            return refused;
+        }
+        return submitEntry(handle, pane, input.entry);
+      }
+      if (!workspace)
+        return refuse4("provider_unavailable", "HERDR_WORKSPACE_ID is not set");
+      const token = input.session_key ?? randomBytes2(6).toString("hex");
+      const created = await run(HERDR_CLI.tabCreate(workspace, input.cwd, `${input.label} ${herdrTokenMark(token)}`, input.env));
+      if (isRefusal(created))
+        return created;
+      if (created.code !== 0)
+        return refuse4("start_failed", `herdr tab create failed: ${failure(created)}`);
+      const json = parseJson(created.stdout);
+      const tab = pick(json, ["result", "tab", "tab_id"]);
+      const pane = pick(json, ["result", "root_pane", "pane_id"]);
+      if (typeof tab !== "string" || typeof pane !== "string" || !tab || !pane) {
+        return refuse4("start_failed", "herdr tab create returned no result.tab.tab_id and result.root_pane.pane_id");
+      }
+      const handle = encodeHerdrHandle({ workspace, tab, pane, token });
+      const started = await startHost(handle, pane, input.label, input.host, input.hostArgs, token);
+      if (started)
+        return started;
+      return submitEntry(handle, pane, input.entry);
+    },
+    async sendInstruction(handle, text) {
+      if (!text.trim())
+        return refuse4("invalid_input", "instruction text is empty", handle);
+      const found = await own(handle);
+      if (isRefusal(found))
+        return found;
+      if (found.gone)
+        return goneRefusal(handle);
+      const ids = found.ids;
+      const current = await observe(handle, ids.pane);
+      if (isRefusal(current))
+        return current;
+      const refused = instructionRefusal(handle, current);
+      if (refused)
+        return refused;
+      const after = await submit(handle, ids.pane, text);
+      if (isRefusal(after))
+        return after;
+      return { ok: true, ...after };
+    },
+    async awaitTransition(handle, waitOptions) {
+      const found = await own(handle);
+      if (isRefusal(found))
+        return found;
+      if (found.gone)
+        return { ok: true, transition: "exited", state: "unknown", provenance: "none" };
+      const ids = found.ids;
+      const result = await run(HERDR_CLI.wait(ids.pane, waitOptions?.timeoutMs), waitOptions?.signal);
+      if (isRefusal(result))
+        return result;
+      if (result.aborted)
+        return { ok: true, transition: "timeout", state: "unknown", provenance: "none" };
+      if (result.code === 0) {
+        const state = parseHerdrState(result.stdout);
+        return { ok: true, transition: "changed", ...detected(state) };
+      }
+      const code = herdrErrorCode(result);
+      if (code === "timeout")
+        return { ok: true, transition: "timeout", state: "unknown", provenance: "none" };
+      if (code && EXITED_CODES.has(code))
+        return { ok: true, transition: "exited", state: "unknown", provenance: "none" };
+      return refuse4("provider_error", `herdr agent wait failed: ${failure(result)}`, handle);
+    },
+    async readOutput(handle, source, readOptions) {
+      const found = await own(handle);
+      if (isRefusal(found))
+        return found;
+      if (found.gone)
+        return refuse4("state_refused", "the session's pane is gone; there is no output to read", handle);
+      const ids = found.ids;
+      const result = await run(HERDR_CLI.read(ids.pane, source, readOptions?.lines));
+      if (isRefusal(result))
+        return result;
+      if (result.code !== 0)
+        return refuse4("provider_error", `herdr pane read failed: ${failure(result)}`, handle);
+      return { ok: true, text: result.stdout, source };
+    },
+    async observeState(handle) {
+      const found = await own(handle);
+      if (isRefusal(found))
+        return found;
+      if (found.gone)
+        return refuse4("provider_error", "herdr pane get failed: pane_not_found", handle);
+      const ids = found.ids;
+      const current = await observe(handle, ids.pane);
+      if (isRefusal(current))
+        return current;
+      return { ok: true, ...current };
+    },
+    async stopSession(handle) {
+      const found = await own(handle);
+      if (isRefusal(found))
+        return found;
+      if (found.gone)
+        return { ok: true };
+      const ids = found.ids;
+      await run(HERDR_CLI.sendKeys(ids.pane, "ctrl+c"));
+      const closed = await run(HERDR_CLI.paneClose(ids.pane));
+      if (isRefusal(closed))
+        return closed;
+      if (closed.code !== 0)
+        return refuse4("provider_error", `herdr pane close failed: ${failure(closed)}`, handle);
+      return { ok: true };
+    },
+    async closeSession(handle, record) {
+      const found = await own(handle);
+      if (isRefusal(found))
+        return found;
+      const unproven = closeRecordRefusal(handle, record);
+      if (unproven)
+        return unproven;
+      const closed = await run(HERDR_CLI.tabClose(found.ids.tab));
+      if (isRefusal(closed))
+        return closed;
+      if (closed.code !== 0 && found.gone)
+        return { ok: true };
+      if (closed.code !== 0)
+        return refuse4("provider_error", `herdr tab close failed: ${failure(closed)}`, handle);
+      return { ok: true };
+    },
+    async findSession(session_key) {
+      const bad = validateSessionKey(session_key);
+      if (bad)
+        return bad;
+      if (!workspace)
+        return refuse4("provider_unavailable", "HERDR_WORKSPACE_ID is not set");
+      const listed = await run(HERDR_CLI.tabList(workspace));
+      if (isRefusal(listed))
+        return listed;
+      if (listed.code !== 0)
+        return refuse4("provider_error", `herdr tab list failed: ${failure(listed)}`);
+      const parsed = parseJson(listed.stdout);
+      const tabs = pick(parsed, ["result", "tabs"]) ?? pick(parsed, ["tabs"]);
+      if (!Array.isArray(tabs))
+        return refuse4("provider_error", "herdr tab list returned no tabs");
+      for (const tab of tabs) {
+        if (!String(pick(tab, ["label"]) ?? "").endsWith(herdrTokenMark(session_key)))
+          continue;
+        const tabId = pick(tab, ["tab_id"]);
+        if (typeof tabId !== "string" || !tabId)
+          continue;
+        if (typeof pick(tab, ["workspace_id"]) === "string" && pick(tab, ["workspace_id"]) !== workspace)
+          continue;
+        const paneId = pick(tab, ["root_pane", "pane_id"]) ?? pick(tab, ["pane_id"]);
+        if (typeof paneId !== "string" || !paneId)
+          continue;
+        return { ok: true, handle: encodeHerdrHandle({ workspace, tab: tabId, pane: paneId, token: session_key }) };
+      }
+      return { ok: true, not_found: true };
+    },
+    async closeWithProof(handle, session_key) {
+      const bad = validateSessionKey(session_key);
+      if (bad)
+        return bad;
+      const ids = decodeHerdrHandle(handle);
+      if (!ids || !workspace || ids.workspace !== workspace || ids.token !== session_key) {
+        return refuse4("not_owned", "handle was not created for this session key", handle);
+      }
+      const found = await own(handle);
+      if (isRefusal(found))
+        return found;
+      if (found.gone) {
+        const listed = await run(HERDR_CLI.tabList(workspace));
+        if (isRefusal(listed))
+          return listed;
+        if (listed.code !== 0)
+          return refuse4("provider_error", `herdr tab list failed: ${failure(listed)}`, handle);
+        const parsed = parseJson(listed.stdout);
+        const tabs = pick(parsed, ["result", "tabs"]) ?? pick(parsed, ["tabs"]);
+        if (!Array.isArray(tabs))
+          return refuse4("provider_error", "herdr tab list returned no tabs", handle);
+        const survivor = tabs.find((tab) => String(pick(tab, ["label"]) ?? "").endsWith(herdrTokenMark(session_key)));
+        if (!survivor)
+          return { ok: true, exited: true, handle, session_key };
+        const survivorTab = pick(survivor, ["tab_id"]);
+        if (survivorTab !== ids.tab)
+          return refuse4("not_owned", "a live tab carries this session key for another session; nothing was closed", handle);
+        const closing = await run(HERDR_CLI.tabClose(ids.tab));
+        if (isRefusal(closing))
+          return closing;
+        if (closing.code !== 0)
+          return refuse4("provider_error", `herdr tab close failed: ${failure(closing)}`, handle);
+        return { ok: true, exited: true, handle, session_key };
+      }
+      const paneClosed = await run(HERDR_CLI.paneClose(found.ids.pane));
+      if (isRefusal(paneClosed))
+        return paneClosed;
+      if (paneClosed.code !== 0)
+        return refuse4("provider_error", `herdr pane close failed: ${failure(paneClosed)}`, handle);
+      const gone = await run(HERDR_CLI.paneGet(found.ids.pane));
+      if (!isRefusal(gone) && gone.code === 0)
+        return refuse4("provider_error", "herdr pane close did not end the pane", handle);
+      if (!isRefusal(gone) && herdrErrorCode(gone) !== "pane_not_found")
+        return refuse4("provider_error", `herdr pane get failed: ${failure(gone)}`, handle);
+      const tabClosed = await run(HERDR_CLI.tabClose(found.ids.tab));
+      if (isRefusal(tabClosed))
+        return tabClosed;
+      if (tabClosed.code !== 0)
+        return refuse4("provider_error", `herdr tab close failed: ${failure(tabClosed)}`, handle);
+      return { ok: true, exited: true, handle, session_key };
+    },
+    async reconcile(handles) {
+      const sessions = [];
+      for (const handle of handles) {
+        const found = await own(handle);
+        if (isRefusal(found)) {
+          if (found.code !== "not_owned")
+            return found;
+          sessions.push({ handle, state: "unknown", provenance: "none", refused: found.code });
+          continue;
+        }
+        if (found.gone) {
+          sessions.push({ handle, state: "unknown", provenance: "none" });
+          continue;
+        }
+        const current = await observe(handle, found.ids.pane);
+        if (isRefusal(current))
+          return current;
+        sessions.push({ handle, ...current });
+      }
+      return { ok: true, sessions };
+    },
+    async runCommand(input) {
+      if (!input.cwd)
+        return refuse4("invalid_input", "cwd is required");
+      if (!input.label || input.label.length > 32)
+        return refuse4("invalid_input", "label must be 1 to 32 characters");
+      if (input.argv.length === 0)
+        return refuse4("invalid_input", "argv is empty");
+      if (!workspace)
+        return refuse4("provider_unavailable", "HERDR_WORKSPACE_ID is not set");
+      const token = randomBytes2(6).toString("hex");
+      const created = await run(HERDR_CLI.tabCreate(workspace, input.cwd, `${input.label} ${herdrTokenMark(token)}`, input.env));
+      if (isRefusal(created))
+        return created;
+      if (created.code !== 0)
+        return refuse4("start_failed", `herdr tab create failed: ${failure(created)}`);
+      const json = parseJson(created.stdout);
+      const tab = pick(json, ["result", "tab", "tab_id"]);
+      const pane = pick(json, ["result", "root_pane", "pane_id"]);
+      if (typeof tab !== "string" || typeof pane !== "string" || !tab || !pane) {
+        return refuse4("start_failed", "herdr tab create returned no result.tab.tab_id and result.root_pane.pane_id");
+      }
+      const handle = encodeHerdrHandle({ workspace, tab, pane, token });
+      const { line, regex } = sentinelCommand(input.argv, token);
+      const ran = await run(HERDR_CLI.paneRun(pane, line));
+      if (isRefusal(ran))
+        return { ...ran, handle };
+      if (ran.code !== 0)
+        return refuse4("start_failed", `herdr pane run failed: ${failure(ran)}`, handle);
+      const waited = await run(HERDR_CLI.waitOutput(pane, regex));
+      if (isRefusal(waited))
+        return { ...waited, handle };
+      if (waited.code !== 0)
+        return refuse4("provider_error", `herdr pane wait-output failed; the command may still run in its tab: ${failure(waited)}`, handle);
+      const matched = String(pick(parseJson(waited.stdout), ["result", "matched_line"]) ?? waited.stdout);
+      const status = new RegExp(`IMM_${token}_DONE_([0-9]+)`).exec(matched);
+      if (!status)
+        return refuse4("provider_error", "herdr pane wait-output returned no exit status", handle);
+      return { ok: true, handle, exit_code: Number(status[1]) };
+    },
+    async sendKeys(handle, key) {
+      const found = await own(handle);
+      if (isRefusal(found))
+        return found;
+      if (found.gone)
+        return goneRefusal(handle);
+      const result = await run(HERDR_CLI.sendKeys(found.ids.pane, key));
+      if (isRefusal(result))
+        return result;
+      if (result.code !== 0)
+        return refuse4("provider_error", `herdr agent send-keys failed: ${failure(result)}`, handle);
+      return { ok: true };
+    }
+  };
+}
+
+// plugins/immune-brain/runtime/session/herdr_core_provider.ts
+import { randomBytes as randomBytes3 } from "node:crypto";
+var HERDR_CORE_MIN_VERSION = [0, 1, 19];
+var HERDR_CORE_GENERATION = 1;
+var HERDR_CORE_METHODS = [
+  "terminal.run",
+  "terminal.get",
+  "terminal.list",
+  "terminal.send",
+  "terminal.wait",
+  "terminal.read",
+  "terminal.keys",
+  "terminal.interrupt",
+  "terminal.kill",
+  "terminal.rm"
+];
+var HOST_STATUS_MINIMUM = {
+  "claude-code": { binary: "claude", version: [2, 1, 295] },
+  pi: { binary: "pi", version: [1, 1, 0] },
+  antigravity: { binary: "agy", version: [1, 4, 0] }
+};
+var OWNER_LABEL = "imm-session";
+var HERDR_CORE_READY_TIMEOUT_MS = 30000;
+var SCROLLBACK_LINES = 200;
+var SESSION_KEY_LABEL = "imm-session-key";
+var HC_CLI = {
+  schema: () => ["schema", "--json"],
+  status: () => ["server", "status", "--json"],
+  list: () => ["list", "--json"],
+  run: (name, cwd, token, argv, sessionKey) => ["run", "--bg", "--json", "--no-parent", "--name", name, "--cwd", cwd, "--label", `${OWNER_LABEL}=${token}`, ...sessionKey !== undefined ? ["--label", `${SESSION_KEY_LABEL}=${sessionKey}`] : [], "--", ...argv],
+  get: (address) => ["get", address, "--json"],
+  send: (address, text, ifState) => ["send", address, text, ...ifState ? ["--if", ifState] : [], "--json"],
+  wait: (address, timeoutSeconds) => ["wait", address, ...timeoutSeconds ? ["--timeout", String(timeoutSeconds)] : [], "--json"],
+  read: (address, lines) => ["read", address, "--lines", String(lines), "--json"],
+  keys: (address, key) => ["keys", address, key, "--json"],
+  interrupt: (address) => ["interrupt", address, "--json"],
+  kill: (address) => ["kill", address, "--json"],
+  rm: (address) => ["rm", address, "--json"]
+};
+var HC_SELECTION_ENV = ["HC_SESSION", "XDG_RUNTIME_DIR", "XDG_STATE_HOME", "XDG_CONFIG_HOME"];
+function encodeHerdrCoreHandle(ids) {
+  return `herdr-core:${encodeURIComponent(ids.address)}/${encodeURIComponent(ids.token)}`;
+}
+function decodeHerdrCoreHandle(handle) {
+  if (!handle.startsWith("herdr-core:"))
+    return null;
+  const parts = handle.slice("herdr-core:".length).split("/");
+  if (parts.length !== 2 || parts.some((part) => part === ""))
+    return null;
+  try {
+    const [address, token] = parts.map(decodeURIComponent);
+    return { address, token };
+  } catch {
+    return null;
+  }
+}
+function herdrCoreName(label, token) {
+  const suffix = token.toLowerCase().replace(/[^a-z0-9_-]+/g, "").slice(0, 12);
+  const folded = label.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "lane";
+  if (!suffix)
+    return folded.slice(0, 32).replace(/[-_]+$/g, "") || "lane";
+  const prefixBudget = 32 - 1 - suffix.length;
+  const prefix = folded.slice(0, prefixBudget).replace(/[-_]+$/g, "") || "lane".slice(0, prefixBudget);
+  return `${prefix}-${suffix}`;
+}
+function coreState(word) {
+  if (typeof word === "string" && word !== "error" && isSessionState(word) && word !== "unknown")
+    return { state: word, provenance: "reported" };
+  return { state: "unknown", provenance: "none" };
+}
+function hcErrorKind(result) {
+  for (const text of [result.stderr, result.stdout]) {
+    const kind = pick(parseJson(text.trim()), ["error", "kind"]);
+    if (typeof kind === "string")
+      return kind;
+  }
+  return;
+}
+function failure2(result) {
+  return (result.stderr || result.stdout).trim().slice(0, 500) || `hc exited ${result.code}`;
+}
+function newToken() {
+  return randomBytes3(12).toString("hex");
+}
+function createHerdrCoreSessionProvider(options) {
+  const exec = options.exec ?? ((command, args, signal) => runCommand(options.env, command, args, signal));
+  const readyTimeoutMs = options.readyTimeoutMs ?? HERDR_CORE_READY_TIMEOUT_MS;
+  const pollMs = options.pollMs ?? 250;
+  const sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+  const isRefusal = (value) => typeof value === "object" && value !== null && value.ok === false;
+  const hc = async (args, signal) => {
+    const result = await exec("hc", args, signal);
+    if (result.missing)
+      return refuse4("provider_unavailable", "the hc executable is not on PATH");
+    return result;
+  };
+  const owned = async (handle) => {
+    const ids = decodeHerdrCoreHandle(handle);
+    if (!ids)
+      return refuse4("not_owned", "handle is not a herdr-core session handle", handle);
+    const result = await hc(HC_CLI.get(ids.address));
+    if (isRefusal(result))
+      return result;
+    if (result.code !== 0) {
+      if (hcErrorKind(result) === "not_found")
+        return refuse4("not_owned", "no such terminal on this core", handle);
+      return refuse4("provider_error", `hc get failed: ${failure2(result)}`, handle);
+    }
+    const terminal = parseJson(result.stdout);
+    if (pick(terminal, ["labels", OWNER_LABEL]) !== ids.token)
+      return refuse4("not_owned", "terminal was not created for this session", handle);
+    return { ids, terminal };
+  };
+  const observed = (terminal) => pick(terminal, ["state"]) === "finished" ? { state: "unknown", provenance: "none" } : coreState(pick(terminal, ["status", "state"]));
+  const send = async (handle, address, text, ifState) => {
+    const result = await hc(HC_CLI.send(address, text, ifState));
+    if (isRefusal(result))
+      return result;
+    if (result.code !== 0) {
+      const kind = hcErrorKind(result);
+      if (kind === "status_mismatch")
+        return refuse4("state_refused", "session is not idle; core sent nothing", handle);
+      if (kind === "blocked")
+        return refuse4("state_refused", "session is blocked; core sent nothing", handle);
+      return refuse4("provider_error", `hc send failed; inspect the session state before repeating: ${failure2(result)}`, handle);
+    }
+    const json = parseJson(result.stdout);
+    if (pick(json, ["started"]) === true)
+      return { state: "working", provenance: "reported" };
+    return coreState(pick(json, ["status"]));
+  };
+  const selection = Object.fromEntries(HC_SELECTION_ENV.flatMap((key) => options.env[key] ? [[key, options.env[key]]] : []));
+  const openViewer = async (address, name, cwd) => {
+    if (!options.viewer)
+      return { opened: false, reason: `not inside Herdr; watch it with \`hc attach ${address}\` in another terminal` };
+    const opened = await options.viewer({ cwd, label: `${name} (hc ${address})`, argv: ["hc", "attach", address], env: selection });
+    return opened.ok ? { opened: true } : { opened: false, reason: opened.reason };
+  };
+  const hostVersionRefusal = async (host) => {
+    const { binary, version } = HOST_STATUS_MINIMUM[host];
+    const result = await exec(binary, ["--version"]);
+    if (result.missing)
+      return refuse4("provider_unavailable", `the ${binary} executable is not on PATH`);
+    const found = parseVersion(`${result.stdout}
+${result.stderr}`);
+    if (result.code !== 0 || !found)
+      return refuse4("provider_unavailable", `${binary} --version reported no version`);
+    if (!versionAtLeast(found, version)) {
+      return refuse4("provider_unavailable", `${binary} ${found.join(".")} does not report OSC 7501; ${version.join(".")} or newer is required on herdr-core`);
+    }
+    return null;
+  };
+  return {
+    provider: "herdr-core",
+    protocolVersion: SUPERVISED_SESSION_PROTOCOL,
+    async probe() {
+      const schema = await hc(HC_CLI.schema());
+      if (isRefusal(schema))
+        return schema;
+      if (schema.code !== 0)
+        return refuse4("provider_unavailable", `hc schema failed: ${failure2(schema)}`);
+      const json = parseJson(schema.stdout);
+      const version = parseVersion(String(pick(json, ["info", "version"]) ?? ""));
+      if (!version || !versionAtLeast(version, HERDR_CORE_MIN_VERSION)) {
+        return refuse4("protocol_mismatch", `herdr-core ${HERDR_CORE_MIN_VERSION.join(".")} or newer is required`);
+      }
+      const generation = /Protocol generation (\d+)/.exec(String(pick(json, ["info", "description"]) ?? ""));
+      if (!generation || Number(generation[1]) !== HERDR_CORE_GENERATION) {
+        return refuse4("protocol_mismatch", `herdr-core protocol generation ${HERDR_CORE_GENERATION} is required`);
+      }
+      const methods = new Set((Array.isArray(pick(json, ["methods"])) ? pick(json, ["methods"]) : []).map((method) => pick(method, ["name"])));
+      const missing = HERDR_CORE_METHODS.filter((method) => !methods.has(method));
+      if (missing.length > 0)
+        return refuse4("protocol_mismatch", `herdr-core lacks ${missing.join(", ")}`);
+      const status = await hc(HC_CLI.status());
+      if (isRefusal(status))
+        return status;
+      if (status.code !== 0)
+        return refuse4("provider_unavailable", `no herdr-core server answered: ${failure2(status)}`);
+      return { ok: true };
+    },
+    async createSession(input) {
+      const invalid = validateCreateInput(input);
+      if (invalid)
+        return invalid;
+      if (input.resume !== undefined) {
+        const found = await owned(input.resume);
+        if (isRefusal(found))
+          return found;
+        if (pick(found.terminal, ["state"]) === "finished") {
+          return refuse4("state_refused", "the session's terminal finished; core cannot restart it in place; nothing was sent; create a new session", input.resume);
+        }
+        const current = observed(found.terminal);
+        const refused = resumeRefusal(input.resume, current);
+        if (refused)
+          return refused;
+        const after = await send(input.resume, found.ids.address, input.entry, current.state === "idle" ? "idle" : undefined);
+        if (isRefusal(after))
+          return after;
+        return { ok: true, handle: input.resume, entry_submitted: true, ...after };
+      }
+      const tooOld = await hostVersionRefusal(input.host);
+      if (tooOld)
+        return tooOld;
+      const token = newToken();
+      const name = herdrCoreName(input.label, token);
+      const envPrefix = Object.entries(input.env ?? {}).map(([key, value]) => `${key}=${value}`);
+      const argv = [...envPrefix.length > 0 ? ["env", ...envPrefix] : [], HOST_STATUS_MINIMUM[input.host].binary, ...input.hostArgs];
+      const started = await hc(HC_CLI.run(name, input.cwd, token, argv, input.session_key));
+      if (isRefusal(started))
+        return started;
+      if (started.code !== 0)
+        return refuse4("start_failed", `hc run failed: ${failure2(started)}`);
+      const address = pick(parseJson(started.stdout), ["address"]);
+      if (typeof address !== "string" || !address)
+        return refuse4("start_failed", "hc run returned no address");
+      const handle = encodeHerdrCoreHandle({ address, token });
+      const viewer = options.viewer ? await openViewer(address, name, input.cwd) : undefined;
+      const shown = viewer ? { viewer } : {};
+      const deadline = Date.now() + readyTimeoutMs;
+      for (;; ) {
+        const found = await owned(handle);
+        if (isRefusal(found))
+          return { ...found, handle };
+        if (pick(found.terminal, ["state"]) === "finished")
+          return refuse4("start_failed", "the Executor Host exited before it reported a status", handle);
+        const current = observed(found.terminal);
+        if (current.state === "blocked")
+          return { ok: true, handle, entry_submitted: false, ...current, ...shown };
+        if (current.state === "idle") {
+          const after = await send(handle, address, input.entry, "idle");
+          if (isRefusal(after))
+            return after;
+          return { ok: true, handle, entry_submitted: true, ...after, ...shown };
+        }
+        if (Date.now() >= deadline) {
+          return {
+            ok: true,
+            handle,
+            entry_submitted: false,
+            state: "unknown",
+            provenance: "none",
+            attention: `The Executor Host reported no status within ${readyTimeoutMs} ms and the entry was not submitted. It may be waiting on a startup dialog (such as workspace trust) or report no status at all; look ${viewer?.opened ? "in its viewer tab" : `with \`hc attach ${address}\` in another terminal`}, answer it there, then resume this session.`,
+            ...shown
+          };
+        }
+        await sleep(pollMs);
+      }
+    },
+    async sendInstruction(handle, text) {
+      if (!text.trim())
+        return refuse4("invalid_input", "instruction text is empty", handle);
+      const found = await owned(handle);
+      if (isRefusal(found))
+        return found;
+      const current = observed(found.terminal);
+      const refused = instructionRefusal(handle, current);
+      if (refused)
+        return refused;
+      const after = await send(handle, found.ids.address, text, current.state === "idle" ? "idle" : undefined);
+      if (isRefusal(after))
+        return after;
+      return { ok: true, ...after };
+    },
+    async awaitTransition(handle, waitOptions) {
+      const found = await owned(handle);
+      if (isRefusal(found))
+        return found;
+      const bounded = waitOptions?.timeoutMs !== undefined && waitOptions.timeoutMs > 0;
+      for (;; ) {
+        const result = await hc(HC_CLI.wait(found.ids.address, bounded ? waitOptions.timeoutMs / 1000 : undefined), waitOptions?.signal);
+        if (isRefusal(result))
+          return result;
+        if (result.aborted)
+          return { ok: true, transition: "timeout", state: "unknown", provenance: "none" };
+        if (result.code !== 0) {
+          if (hcErrorKind(result) === "finished")
+            return { ok: true, transition: "exited", state: "unknown", provenance: "none" };
+          return refuse4("provider_error", `hc wait failed: ${failure2(result)}`, handle);
+        }
+        const json = parseJson(result.stdout);
+        const reason = pick(json, ["reason"]);
+        if (reason === "exit")
+          return { ok: true, transition: "exited", state: "unknown", provenance: "none" };
+        if (reason === "timeout") {
+          if (!bounded)
+            continue;
+          return { ok: true, transition: "timeout", state: "unknown", provenance: "none" };
+        }
+        if (reason === "message")
+          continue;
+        return { ok: true, transition: "changed", ...coreState(pick(json, ["status"])) };
+      }
+    },
+    async readOutput(handle, source, readOptions) {
+      const found = await owned(handle);
+      if (isRefusal(found))
+        return found;
+      const result = await hc(HC_CLI.read(found.ids.address, source === "visible" ? 0 : readOptions?.lines ?? SCROLLBACK_LINES));
+      if (isRefusal(result))
+        return result;
+      if (result.code !== 0)
+        return refuse4("provider_error", `hc read failed: ${failure2(result)}`, handle);
+      const text = pick(parseJson(result.stdout), ["text"]);
+      return { ok: true, text: typeof text === "string" ? text : "", source };
+    },
+    async observeState(handle) {
+      const found = await owned(handle);
+      if (isRefusal(found))
+        return found;
+      return { ok: true, ...observed(found.terminal) };
+    },
+    async attachSession(handle) {
+      const found = await owned(handle);
+      if (isRefusal(found))
+        return found;
+      if (pick(found.terminal, ["state"]) === "finished")
+        return refuse4("state_refused", "the session's terminal finished; there is nothing to watch", handle);
+      const name = String(pick(found.terminal, ["name"]) ?? "lane");
+      const cwd = String(pick(found.terminal, ["cwd"]) ?? options.env.PWD ?? process.cwd());
+      const viewer = await openViewer(found.ids.address, name, cwd);
+      return viewer.opened ? { ok: true } : refuse4("provider_unavailable", viewer.reason, handle);
+    },
+    async stopSession(handle) {
+      const found = await owned(handle);
+      if (isRefusal(found))
+        return found;
+      if (pick(found.terminal, ["state"]) === "finished")
+        return { ok: true };
+      await hc(HC_CLI.interrupt(found.ids.address));
+      const killed = await hc(HC_CLI.kill(found.ids.address));
+      if (isRefusal(killed))
+        return killed;
+      if (killed.code !== 0 && hcErrorKind(killed) !== "finished")
+        return refuse4("provider_error", `hc kill failed: ${failure2(killed)}`, handle);
+      return { ok: true };
+    },
+    async closeSession(handle, record) {
+      const found = await owned(handle);
+      if (isRefusal(found))
+        return found;
+      const unproven = closeRecordRefusal(handle, record);
+      if (unproven)
+        return unproven;
+      if (pick(found.terminal, ["state"]) !== "finished") {
+        const killed = await hc(HC_CLI.kill(found.ids.address));
+        if (isRefusal(killed))
+          return killed;
+        if (killed.code !== 0 && hcErrorKind(killed) !== "finished")
+          return refuse4("provider_error", `hc kill failed: ${failure2(killed)}`, handle);
+      }
+      const removed = await hc(HC_CLI.rm(found.ids.address));
+      if (isRefusal(removed))
+        return removed;
+      if (removed.code !== 0)
+        return refuse4("provider_error", `hc rm failed: ${failure2(removed)}`, handle);
+      return { ok: true };
+    },
+    async findSession(session_key) {
+      const bad = validateSessionKey(session_key);
+      if (bad)
+        return bad;
+      const listed = await hc(HC_CLI.list());
+      if (isRefusal(listed))
+        return listed;
+      if (listed.code !== 0)
+        return refuse4("provider_error", `hc list failed: ${failure2(listed)}`);
+      const parsed = parseJson(listed.stdout);
+      const terminals = pick(parsed, ["terminals"]) ?? pick(parsed, ["result", "terminals"]);
+      if (!Array.isArray(terminals))
+        return refuse4("provider_error", "hc list returned no terminals");
+      for (const terminal of terminals) {
+        if (pick(terminal, ["state"]) === "finished")
+          continue;
+        if (pick(terminal, ["labels", SESSION_KEY_LABEL]) !== session_key)
+          continue;
+        const address = pick(terminal, ["address"]);
+        const token = pick(terminal, ["labels", OWNER_LABEL]);
+        if (typeof address !== "string" || !address || typeof token !== "string" || !token)
+          continue;
+        return { ok: true, handle: encodeHerdrCoreHandle({ address, token }) };
+      }
+      return { ok: true, not_found: true };
+    },
+    async closeWithProof(handle, session_key) {
+      const bad = validateSessionKey(session_key);
+      if (bad)
+        return bad;
+      const ids = decodeHerdrCoreHandle(handle);
+      if (!ids)
+        return refuse4("not_owned", "handle is not a herdr-core session handle", handle);
+      const found = await owned(handle);
+      if (isRefusal(found)) {
+        if (found.code !== "not_owned")
+          return found;
+        const listed = await hc(HC_CLI.list());
+        if (isRefusal(listed))
+          return listed;
+        if (listed.code !== 0)
+          return refuse4("provider_error", `hc list failed: ${failure2(listed)}`, handle);
+        const parsed = parseJson(listed.stdout);
+        const terminals = pick(parsed, ["terminals"]) ?? pick(parsed, ["result", "terminals"]);
+        if (Array.isArray(terminals)) {
+          const survivor = terminals.some((t) => pick(t, ["state"]) !== "finished" && pick(t, ["labels", SESSION_KEY_LABEL]) === session_key);
+          if (!survivor)
+            return { ok: true, exited: true, handle, session_key };
+        }
+        return found;
+      }
+      if (pick(found.terminal, ["labels", SESSION_KEY_LABEL]) !== undefined && pick(found.terminal, ["labels", SESSION_KEY_LABEL]) !== session_key) {
+        return refuse4("not_owned", "terminal was not created for this session key", handle);
+      }
+      if (pick(found.terminal, ["labels", SESSION_KEY_LABEL]) === undefined && pick(found.terminal, ["labels", OWNER_LABEL]) !== session_key) {
+        return refuse4("not_owned", "terminal was not created for this session key", handle);
+      }
+      if (pick(found.terminal, ["state"]) !== "finished") {
+        const killed = await hc(HC_CLI.kill(found.ids.address));
+        if (isRefusal(killed))
+          return killed;
+        if (killed.code !== 0 && hcErrorKind(killed) !== "finished")
+          return refuse4("provider_error", `hc kill failed: ${failure2(killed)}`, handle);
+      }
+      const removed = await hc(HC_CLI.rm(found.ids.address));
+      if (isRefusal(removed))
+        return removed;
+      if (removed.code !== 0)
+        return refuse4("provider_error", `hc rm failed: ${failure2(removed)}`, handle);
+      return { ok: true, exited: true, handle, session_key };
+    },
+    async reconcile(handles) {
+      const sessions = [];
+      for (const handle of handles) {
+        const found = await owned(handle);
+        if (isRefusal(found)) {
+          if (found.code === "provider_unavailable")
+            return found;
+          sessions.push({ handle, state: "unknown", provenance: "none", ...found.code === "not_owned" ? { refused: found.code } : {} });
+          continue;
+        }
+        sessions.push({ handle, ...observed(found.terminal) });
+      }
+      return { ok: true, sessions };
+    },
+    async sendKeys(handle, key) {
+      const found = await owned(handle);
+      if (isRefusal(found))
+        return found;
+      const result = await hc(HC_CLI.keys(found.ids.address, key));
+      if (isRefusal(result))
+        return result;
+      if (result.code !== 0)
+        return refuse4("provider_error", `hc keys failed: ${failure2(result)}`, handle);
+      return { ok: true };
+    }
+  };
+}
+
+// plugins/immune-brain/runtime/session/provider_registry.ts
+var EXECUTOR_HOSTS3 = ["claude-code", "pi", "antigravity"];
+function herdrCheck(env) {
+  if (env.HERDR_ENV !== "1")
+    return { ok: false, reason: "not running inside Herdr (HERDR_ENV is not 1)" };
+  if (!env.HERDR_WORKSPACE_ID)
+    return { ok: false, reason: "HERDR_WORKSPACE_ID is not set" };
+  return { ok: true };
+}
+var HERDR_RECOVERY = "run inside Herdr with HERDR_ENV=1 and HERDR_WORKSPACE_ID set to the Parent workspace";
+var HERDR_CORE_RECOVERY = "ensure hc 0.1.19+ is installed and a core server answers (hc server status --json)";
+var HERDR_DESCRIPTOR = {
+  name: "herdr",
+  checkEnv: herdrCheck,
+  recovery: HERDR_RECOVERY,
+  factory: (env) => createHerdrSessionProvider({ env }),
+  roles: {
+    executor: { hosts: [...EXECUTOR_HOSTS3], workspace: "local_path", find_by_key: true, exit_proof: true },
+    authority: { hosts: [...EXECUTOR_HOSTS3] },
+    advisory: { hosts: [...EXECUTOR_HOSTS3] }
+  }
+};
+var HERDR_CORE_DESCRIPTOR = {
+  name: "herdr-core",
+  checkEnv: () => ({ ok: true }),
+  recovery: HERDR_CORE_RECOVERY,
+  factory: (env) => createHerdrCoreSessionProvider({ env, viewer: createHerdrViewer({ env }) ?? undefined }),
+  roles: {
+    executor: { hosts: [], workspace: "local_path", find_by_key: true, exit_proof: false }
+  }
+};
+var SESSION_PROVIDER_REGISTRY = [HERDR_DESCRIPTOR, HERDR_CORE_DESCRIPTOR];
+function resolveSessionProvider(options) {
+  const registry = options.registry ?? SESSION_PROVIDER_REGISTRY;
+  const reasons = [];
+  for (const name of options.providers) {
+    const descriptor = registry.find((d) => d.name === name);
+    if (!descriptor) {
+      reasons.push({ provider: name, reason: `unknown session provider ${JSON.stringify(name)}`, recovery: "choose one of herdr, herdr-core" });
+      continue;
+    }
+    const envCheck = descriptor.checkEnv(options.env);
+    if (!envCheck.ok) {
+      reasons.push({ provider: name, reason: envCheck.reason, recovery: descriptor.recovery });
+      continue;
+    }
+    if (options.role === "executor") {
+      const admission = descriptor.roles.executor;
+      if (!admission) {
+        reasons.push({ provider: name, reason: "no executor role", recovery: descriptor.recovery });
+        continue;
+      }
+      if (!admission.hosts.includes(options.host)) {
+        reasons.push({ provider: name, reason: `host ${options.host} not admitted`, recovery: `use one of ${admission.hosts.join(", ") || "none admitted"}` });
+        continue;
+      }
+      if (admission.workspace !== "local_path") {
+        reasons.push({ provider: name, reason: "no local_path workspace", recovery: descriptor.recovery });
+        continue;
+      }
+      if (!admission.find_by_key) {
+        reasons.push({ provider: name, reason: "no find_by_key", recovery: descriptor.recovery });
+        continue;
+      }
+      return { ok: true, provider: name, descriptor };
+    }
+    const admission = descriptor.roles[options.role];
+    if (!admission) {
+      reasons.push({ provider: name, reason: `no ${options.role} role`, recovery: descriptor.recovery });
+      continue;
+    }
+    if (!admission.hosts.includes(options.host)) {
+      reasons.push({ provider: name, reason: `host ${options.host} not admitted`, recovery: `use one of ${admission.hosts.join(", ") || "none admitted"}` });
+      continue;
+    }
+    return { ok: true, provider: name, descriptor };
+  }
+  return { ok: false, code: "lane_session_unavailable", reasons };
+}
+
+// plugins/immune-brain/runtime/lane_sessions/index.ts
+init_batch_state();
+
+// plugins/immune-brain/runtime/lane_sessions/session_port_adapter.ts
+function isRefusal(value) {
+  return typeof value === "object" && value !== null && value.ok === false;
+}
+function refusalReason(value) {
+  return typeof value.reason === "string" ? value.reason : "provider failure";
+}
+function isPaneNotFound(reason) {
+  return reason.includes("pane_not_found");
+}
+
+class SessionPortAdapter {
+  provider;
+  port;
+  host;
+  hostArgs;
+  constructor(port, host, hostArgs = []) {
+    this.port = port;
+    this.provider = port.provider;
+    this.host = host;
+    this.hostArgs = [...hostArgs];
+  }
+  async open(input) {
+    const result = await this.port.createSession({
+      cwd: input.cwd,
+      label: input.label,
+      host: this.host,
+      hostArgs: this.hostArgs,
+      entry: input.entry,
+      session_key: input.key,
+      ...input.env && Object.keys(input.env).length > 0 ? { env: input.env } : {}
+    });
+    if (isRefusal(result))
+      return { ok: false, code: result.code, reason: result.reason };
+    return { ok: true, handle: result.handle, entry_submitted: result.entry_submitted, ...result.attention !== undefined ? { attention: result.attention ?? null } : {} };
+  }
+  async resume(handle, entry) {
+    const result = await this.port.createSession({
+      cwd: ".",
+      label: "resume",
+      host: this.host,
+      hostArgs: this.hostArgs,
+      entry,
+      resume: handle
+    });
+    if (isRefusal(result)) {
+      return { ok: false, code: result.code, reason: result.reason };
+    }
+    return { ok: true, entry_submitted: result.entry_submitted };
+  }
+  async find(key) {
+    if (!this.port.findSession)
+      return { ok: true, not_found: true };
+    const result = await this.port.findSession(key);
+    if (isRefusal(result)) {
+      const reason = refusalReason(result);
+      if (isPaneNotFound(reason))
+        return { ok: true, not_found: true };
+      return { ok: false, code: result.code, reason: result.reason };
+    }
+    return result;
+  }
+  async observe(handle) {
+    const result = await this.port.observeState(handle);
+    if (isRefusal(result)) {
+      const reason = refusalReason(result);
+      if (isPaneNotFound(reason))
+        return { ok: true, state: "exited" };
+      return { ok: true, state: "unknown" };
+    }
+    if (result.state === "working" || result.state === "blocked" || result.state === "idle" || result.state === "done" || result.state === "unknown") {
+      return { ok: true, state: result.state };
+    }
+    return { ok: true, state: "unknown" };
+  }
+  async send(handle, text) {
+    const result = await this.port.sendInstruction(handle, text);
+    if (isRefusal(result)) {
+      const reason = refusalReason(result);
+      if (isPaneNotFound(reason))
+        return { ok: true, state: "exited" };
+      return { ok: false, code: result.code, reason: result.reason };
+    }
+    return { ok: true, state: result.state };
+  }
+  async stop(handle) {
+    const result = await this.port.stopSession(handle);
+    if (isRefusal(result)) {
+      const reason = refusalReason(result);
+      if (isPaneNotFound(reason))
+        return { ok: true };
+      return { ok: false, code: result.code, reason: result.reason };
+    }
+    return { ok: true };
+  }
+  async closeWithProof(handle, key) {
+    if (!this.port.closeWithProof)
+      return { ok: false, code: "provider_unavailable", reason: `provider ${this.provider} has no close proof` };
+    const result = await this.port.closeWithProof(handle, key);
+    if (isRefusal(result)) {
+      const reason = refusalReason(result);
+      if (isPaneNotFound(reason))
+        return { ok: true, exited: true, handle, key };
+      return { ok: false, code: result.code, reason: result.reason };
+    }
+    return { ok: true, exited: true, handle, key };
+  }
+}
+
+// plugins/immune-brain/runtime/lane_sessions/index.ts
+function hostArgsFor(deps, taskId) {
+  if (!deps.hostArgs)
+    return [];
+  return typeof deps.hostArgs === "function" ? deps.hostArgs(taskId) : [...deps.hostArgs];
+}
+function executorSessionTarget(input) {
+  const choice = laneExecutorChoice(input.root, input.executor, input.host) ?? { host: input.host };
+  const hostArgs = [];
+  if (choice.model)
+    hostArgs.push("--model", choice.model);
+  if (choice.effort)
+    hostArgs.push(choice.host === "pi" ? "--thinking" : "--effort", choice.effort);
+  return { host: choice.host, hostArgs };
+}
+function portFor(provider, env, registry, createPort) {
+  if (createPort) {
+    try {
+      return createPort(provider, env);
+    } catch {
+      return null;
+    }
+  }
+  const descriptor = registry.find((d) => d.name === provider);
+  if (!descriptor)
+    return null;
+  return descriptor.factory(env);
+}
+function refusalFromReasons(reasons) {
+  const detail = reasons.map((r) => `${r.provider}: ${r.reason}`).join("; ");
+  return {
+    ok: false,
+    code: "lane_session_unavailable",
+    reason: `lane_session_unavailable: ${detail}`,
+    recovery: reasons[0]?.recovery ?? "run inside Herdr with HERDR_ENV=1 and HERDR_WORKSPACE_ID set",
+    reasons
+  };
+}
+function toBatchInput(agreement, deps, now, sessions) {
+  return {
+    root: deps.root,
+    batch_id: agreement.batch_id,
+    initiative_slug: agreement.initiative_slug,
+    registry: deps.registry,
+    capability: deps.capability,
+    children: agreement.children,
+    plan_digest: agreement.plan_digest,
+    base_head: agreement.base_head,
+    confirmation_time: deps.confirmation_time ?? now,
+    budget: agreement.budget,
+    now,
+    kernel: deps.kernel,
+    ...deps.git ? { git: deps.git } : {},
+    ...deps.tracker ? { tracker: deps.tracker } : {},
+    ...deps.max_parallel !== undefined ? { max_parallel: deps.max_parallel } : { max_parallel: agreement.children.length },
+    ...agreement.branch ? { branch: agreement.branch } : {},
+    confirmation: agreement.confirmation,
+    return_policy: agreement.return_policy,
+    interaction_mode: agreement.interaction_mode,
+    ...agreement.final_verification.commands.length > 0 ? { final_verification: [...agreement.final_verification.commands] } : {},
+    final_verification_required: agreement.final_verification.required,
+    executor_freeze: { ...deps.executor ? { request: deps.executor } : {}, parentHost: deps.host },
+    ...deps.executor_runtime ? { executor_runtime: deps.executor_runtime } : {},
+    ...deps.max_parallel !== undefined ? { max_parallel: deps.max_parallel } : {},
+    ...deps.lane_instruction !== undefined ? { lane_instruction: deps.lane_instruction } : {},
+    ...deps.lane_session_close !== undefined ? { lane_session_close: deps.lane_session_close } : {},
+    ...deps.lane_offers !== undefined ? { lane_offers: deps.lane_offers } : {},
+    ...deps.review_profile !== undefined ? { review_profile: deps.review_profile } : {},
+    ...deps.final_verification !== undefined ? { final_verification: deps.final_verification } : {},
+    ...deps.topology_digest !== undefined ? { topology_digest: deps.topology_digest } : {},
+    sessions
+  };
+}
+async function startLanes(agreement, deps) {
+  const registry = deps.providerRegistry ?? SESSION_PROVIDER_REGISTRY;
+  const target = executorSessionTarget({ root: deps.root, executor: deps.executor, host: deps.host });
+  const resolved = resolveSessionProvider({ role: "executor", providers: deps.providers, host: target.host, env: deps.env, registry });
+  if (!resolved.ok)
+    return refusalFromReasons(resolved.reasons);
+  const raw = portFor(resolved.provider, deps.env, registry, deps.createPort);
+  if (!raw)
+    return refusalFromReasons([{ provider: resolved.provider, reason: "provider factory failed", recovery: "retry inside Herdr" }]);
+  const adapter = new SessionPortAdapter(raw, target.host, deps.hostArgs?.length ? hostArgsFor(deps, agreement.children[0]?.task_id ?? "lane") : target.hostArgs);
+  const now = deps.now ?? new Date().toISOString();
+  const input = toBatchInput(agreement, deps, now, adapter);
+  const rawReport = await runLaneBatch(input, null);
+  const report = rawReport;
+  if (Array.isArray(report.handoffs))
+    report.handoffs = report.handoffs.filter((h) => h.role !== "executor");
+  return report;
+}
+async function advanceLanes(root, batchId, deps) {
+  let persisted = null;
+  try {
+    persisted = readAnyBatchRunState(root, batchId);
+  } catch {
+    return { ok: false, code: "lane_session_unavailable", reason: `lane_session_unavailable: unreadable batch ${batchId}`, recovery: "inspect the batch record" };
+  }
+  if (!persisted || !isLaneBatchRecord(persisted)) {
+    return { ok: false, code: "lane_session_unavailable", reason: `lane_session_unavailable: no active v3 batch ${batchId}`, recovery: "start a fresh batch" };
+  }
+  const recordedProvider = persisted.session_provider ?? null;
+  const registry = deps.providerRegistry ?? SESSION_PROVIDER_REGISTRY;
+  if (recordedProvider) {
+    const descriptor = registry.find((d) => d.name === recordedProvider);
+    if (!descriptor) {
+      return refusalFromReasons([{ provider: recordedProvider, reason: "recorded provider is not registered", recovery: "retire the stale batch" }]);
+    }
+    const check = descriptor.checkEnv(deps.env);
+    if (!check.ok) {
+      return refusalFromReasons([{ provider: recordedProvider, reason: check.reason, recovery: descriptor.recovery }]);
+    }
+    const raw = portFor(recordedProvider, deps.env, registry, deps.createPort);
+    if (!raw)
+      return refusalFromReasons([{ provider: recordedProvider, reason: "provider factory failed", recovery: "retry inside Herdr" }]);
+    const resumeTarget = executorSessionTarget({
+      root: deps.root,
+      executor: persisted.executor_preferences ?? deps.executor,
+      host: deps.host
+    });
+    const adapter = new SessionPortAdapter(raw, resumeTarget.host, deps.hostArgs?.length ? hostArgsFor(deps, batchId) : resumeTarget.hostArgs);
+    const now = deps.now ?? new Date().toISOString();
+    const input = {
+      root: deps.root,
+      batch_id: batchId,
+      initiative_slug: persisted.initiative_slug,
+      registry: deps.registry,
+      capability: deps.capability,
+      children: persisted.children,
+      plan_digest: persisted.plan_digest,
+      base_head: persisted.base_head,
+      confirmation_time: persisted.confirmation_time ?? now,
+      budget: persisted.budget,
+      now,
+      kernel: deps.kernel,
+      ...deps.git ? { git: deps.git } : {},
+      ...deps.tracker ? { tracker: deps.tracker } : {},
+      max_parallel: deps.max_parallel ?? persisted.max_parallel,
+      confirmation: persisted.confirmation,
+      return_policy: persisted.return_policy,
+      interaction_mode: persisted.interaction_mode,
+      ...Array.isArray(persisted.final_verification) ? { final_verification: persisted.final_verification } : {},
+      ...deps.lane_instruction !== undefined ? { lane_instruction: deps.lane_instruction } : {},
+      ...deps.lane_session_close !== undefined ? { lane_session_close: deps.lane_session_close } : {},
+      ...deps.lane_offers !== undefined ? { lane_offers: deps.lane_offers } : {},
+      ...deps.review_profile !== undefined ? { review_profile: deps.review_profile } : {},
+      sessions: adapter
+    };
+    const rawAdv = await runLaneBatch(input, persisted);
+    const advReport = rawAdv;
+    if (Array.isArray(advReport.handoffs))
+      advReport.handoffs = advReport.handoffs.filter((h) => h.role !== "executor");
+    return advReport;
+  }
+  const target = executorSessionTarget({ root: deps.root, executor: deps.executor, host: deps.host });
+  const resolved = resolveSessionProvider({ role: "executor", providers: deps.providers, host: target.host, env: deps.env, registry });
+  if (!resolved.ok)
+    return refusalFromReasons(resolved.reasons);
+  const raw = portFor(resolved.provider, deps.env, registry, deps.createPort);
+  if (!raw)
+    return refusalFromReasons([{ provider: resolved.provider, reason: "provider factory failed", recovery: "retry inside Herdr" }]);
+  const adapter = new SessionPortAdapter(raw, target.host, deps.hostArgs?.length ? hostArgsFor(deps, batchId) : target.hostArgs);
+  const now = deps.now ?? new Date().toISOString();
+  const input = {
+    root: deps.root,
+    batch_id: batchId,
+    initiative_slug: persisted.initiative_slug,
+    registry: deps.registry,
+    capability: deps.capability,
+    children: persisted.children,
+    plan_digest: persisted.plan_digest,
+    base_head: persisted.base_head,
+    confirmation_time: persisted.confirmation_time ?? now,
+    budget: persisted.budget,
+    now,
+    kernel: deps.kernel,
+    ...deps.git ? { git: deps.git } : {},
+    ...deps.tracker ? { tracker: deps.tracker } : {},
+    max_parallel: deps.max_parallel ?? persisted.max_parallel,
+    ...deps.lane_instruction !== undefined ? { lane_instruction: deps.lane_instruction } : {},
+    ...deps.lane_session_close !== undefined ? { lane_session_close: deps.lane_session_close } : {},
+    ...deps.lane_offers !== undefined ? { lane_offers: deps.lane_offers } : {},
+    ...deps.review_profile !== undefined ? { review_profile: deps.review_profile } : {},
+    sessions: adapter
+  };
+  const raw2 = await runLaneBatch(input, persisted);
+  const report2 = raw2;
+  if (Array.isArray(report2.handoffs))
+    report2.handoffs = report2.handoffs.filter((h) => h.role !== "executor");
+  return report2;
+}
+
 // plugins/immune-brain/runtime/loop_daemon/interaction/local_channel.ts
 init_actor_identity();
 init_storage();
@@ -24001,6 +25423,7 @@ class HostRuntime {
   batchGit;
   batchTracker;
   readInitiative;
+  sessionPortFactory;
   constructor(profile, options) {
     this.profile = profile;
     this.cwd = options.cwd;
@@ -24013,6 +25436,7 @@ class HostRuntime {
     this.batchGit = options.batchGit;
     this.batchTracker = options.batchTracker;
     this.readInitiative = options.readInitiative;
+    this.sessionPortFactory = options.sessionPortFactory;
     this.host = options.host ?? profile.createHost();
     this.reviewHost = new CliReviewHost(this.host, { env: this.env });
     this.coordinator = new AssuranceCoordinator({
@@ -24850,43 +26274,72 @@ class HostRuntime {
       resume: { isResuming, existingBatch, batchBranch },
       overrides: this.batchKernel
     });
-    let report = await startBatch({
-      plan_source: options.plan_source,
-      ...options.plan_source && this.env.HERDR_ENV === "1" ? { executor_mode: "interactive" } : {},
-      ...options.plan_source ? { supervision: {
-        supervisor: this.laneSupervisor,
-        parentHost: this.parentHost,
-        pluginDir: resolve17(dirname19(fileURLToPath5(import.meta.url)), "../.."),
-        waitMs: laneWaitMs(this.env),
-        signal: meta.signal,
-        stop: options.stop,
-        request: options.executor
-      } } : {},
-      executor_freeze: { ...options.executor ? { request: options.executor } : {}, ...this.parentHost ? { parentHost: this.parentHost } : {} },
-      topology_digest: preflight.projection.topology_digest,
+    const sessionProviders = (() => {
+      try {
+        const resolved = resolveConfig(this.cwd).session_providers;
+        const value = resolved.value;
+        return Array.isArray(value) ? value : ["herdr", "herdr-core"];
+      } catch {
+        return ["herdr", "herdr-core"];
+      }
+    })();
+    const laneDeps = {
       root: this.cwd,
-      batch_id: batchId,
-      initiative_slug: initiativeSlug,
       registry: this.batchRegistry,
       capability,
-      children: recoveryChildren,
-      plan_digest: planDigest,
-      base_head: binding.base_head,
-      confirmation_time: now,
-      budget,
-      now,
       kernel: kernelPort,
-      git: this.batchGit,
-      ...options.final_verification ? { final_verification: options.final_verification } : {},
+      ...this.batchGit ? { git: this.batchGit } : {},
+      ...!options.plan_source ? { tracker: this.batchTracker ?? createBatchTrackerPort(this.cwd, initiativeSlug) } : {},
+      providers: sessionProviders,
+      host: this.parentHost,
+      env: this.env,
+      ...options.max_parallel !== undefined ? { max_parallel: options.max_parallel } : { max_parallel: options.plan_source ? 1 : resolveConfig(this.cwd).batch.max_parallel.value },
+      now,
+      confirmation_time: now,
+      topology_digest: preflight.projection.topology_digest,
+      ...options.lane_instruction ? { lane_instruction: options.lane_instruction } : {},
+      ...options.lane_session_close ? { lane_session_close: options.lane_session_close } : {},
+      ...options.lane_offers !== undefined ? { lane_offers: options.lane_offers } : {},
       ...options.review_profile ? { review_profile: options.review_profile } : {},
-      ...options.max_parallel !== undefined ? {
-        max_parallel: options.max_parallel,
-        ...options.plan_source ? {} : { tracker: this.batchTracker ?? createBatchTrackerPort(this.cwd, initiativeSlug) },
-        ...options.lane_instruction ? { lane_instruction: options.lane_instruction } : {},
-        ...options.lane_session_close ? { lane_session_close: options.lane_session_close } : {}
-      } : {},
-      ...options.lane_offers !== undefined ? { lane_offers: options.lane_offers } : {}
-    });
+      ...options.final_verification ? { final_verification: options.final_verification } : {},
+      ...options.executor ? { executor: options.executor } : {},
+      ...this.sessionPortFactory ? { createPort: this.sessionPortFactory } : {}
+    };
+    let report;
+    if (isResuming && existingBatch && isLaneBatchRecord(existingBatch)) {
+      const resumed = await advanceLanes(this.cwd, existingBatch.batch_id, laneDeps);
+      if (resumed && typeof resumed === "object" && resumed.ok === false) {
+        const refusal = resumed;
+        return { state: "rejected", reason: refusal.reason, recovery_action: refusal.recovery };
+      }
+      report = resumed;
+    } else {
+      const singleTask = options.plan_source === "single_task";
+      const confirmationRef = binding.confirmation_ref ?? `native_gate:${batchId}`;
+      const agreementInput = {
+        batch_id: batchId,
+        initiative_slug: initiativeSlug,
+        children: recoveryChildren,
+        base_head: binding.base_head,
+        budget,
+        confirmation: { source: "native_gate", ref: confirmationRef },
+        final_verification: {
+          required: (options.final_verification?.length ?? 0) > 0 ? true : singleTask ? false : true,
+          commands: options.final_verification ? [...options.final_verification] : []
+        },
+        return_policy: singleTask ? "checkout_delivery" : "retain_branch",
+        interaction_mode: "interactive_host"
+      };
+      const agreement = authorizeBatch2(agreementInput);
+      if (!agreement.ok)
+        return batchReason("batch_run_rejected", agreement.reason);
+      const started = await startLanes(agreement.agreement, laneDeps);
+      if (started && typeof started === "object" && started.ok === false) {
+        const refusal = started;
+        return { state: "rejected", reason: refusal.reason, recovery_action: refusal.recovery };
+      }
+      report = started;
+    }
     if (report.batch_state === "rejected")
       return batchReason("batch_run_rejected", report.reason ?? "");
     if (!options.plan_source && report.batch_state === "completed" && report.final_verification?.passed)

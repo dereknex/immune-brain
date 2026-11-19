@@ -37,23 +37,30 @@ command surface the Parent runs, not only an interface.
    the (role × provider) admission matrix live once, in
    [`docs/reference/supervised-session-port.md`](../reference/supervised-session-port.md),
    and move with the port protocol version.
-2. **The Parent calls it through `imm-session`.** `plugins/immune-brain/bin/imm-session`
+2. **Host entries drive through `BatchSessionPort` and `runtime/lane_sessions/`.** `plugins/immune-brain/bin/imm-session`
    is routed by `runtime/v4_runtime.ts` like `imm-kernel` and `imm-tracker`.
    Every call names its provider; nothing is auto-detected and no provider
-   stands in for another. `imm-session await` runs as the Host background
-   command that re-invokes the Parent, so supervision stays event-driven. The
-   runtime does not drive sessions on its own initiative: `start_unattended_batch`,
-   the batch runner and the `lane-steward` neither import the port nor launch
-   anything through it.
+   stands in for another. `imm-session await --batch <batch_id>` waits read-only
+   through `runtime/lane_sessions/` (`observeLanes`) and returns the D20 `next_action`;
+   ungated `send|stop --batch` are refused. The runtime drives sessions on its own
+   initiative via `BatchSessionPort` (`runtime/unattended/batch_session_port.ts`) bound by
+   `runtime/lane_sessions/` (`SessionPortAdapter`): `start_unattended_batch`
+   runs `authorizeBatch` plus `startLanes`/`advanceLanes`; the Parent never creates,
+   sends to, or closes a Lane session directly.
 3. **A new runtime location.** `runtime/session/` holds the port, a `fake`
    provider and the Herdr adapter. It depends only on itself and Node builtins;
    only the CLI router imports it. It is independent of the review machinery
    that #414 will extract, so it does not wait for that location decision.
-4. **Handles are opaque and not persisted.** A Herdr handle encodes the
+4. **Persisted orchestration handles bound by `BatchSessionPort`.** A Herdr handle encodes the
    Parent's workspace, tab and pane; ownership means the handle names the
-   Parent's own workspace. The runtime writes no handle or heartbeat to the
-   batch record, which keeps ADR 0013's rejection of persisted session identity.
-   The Parent keeps `task_id → handle` as it kept `task_id → tab_id, pane_id`.
+   Parent's own workspace. The runtime persists orchestration handles on the v3
+   batch record: batch-level `session_provider`, per-child `session { key, generation,
+   baseline, handle, entry_submitted, attention, no_progress, exit_proof }` with a
+   write-ahead `laneSessionKey`, plus `lane_removed`/`lane_retained`. The `BatchSessionPort`
+   reconciler (`child_session_reconciler.ts`) mutates only those handles through
+   `open`/`resume`/`find`/`observe`/`send`/`stop`/`closeWithProof`; the Parent keeps no
+   `task_id → handle` map of its own.
+
 5. **Herdr TUI is the first provider, pinned.** The adapter maps port verbs onto
    the same `herdr` commands the Loop contract used, admits only inside Herdr
    with the Parent's workspace, and refuses a Herdr protocol other than 22.

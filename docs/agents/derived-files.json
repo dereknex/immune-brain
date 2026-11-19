@@ -189,6 +189,8 @@
         "plugins/immune-brain-antigravity/runtime/kernel/tracked_declaration.ts",
         "plugins/immune-brain-antigravity/runtime/kernel/types.ts",
         "plugins/immune-brain-antigravity/runtime/kernel/validation.ts",
+        "plugins/immune-brain-antigravity/runtime/lane_sessions/index.ts",
+        "plugins/immune-brain-antigravity/runtime/lane_sessions/session_port_adapter.ts",
         "plugins/immune-brain-antigravity/runtime/local_initiative.ts",
         "plugins/immune-brain-antigravity/runtime/loop_contract.ts",
         "plugins/immune-brain-antigravity/runtime/loop_daemon/agent_handlers.ts",

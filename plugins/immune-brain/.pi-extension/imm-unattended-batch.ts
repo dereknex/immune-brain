@@ -95,6 +95,9 @@ export interface PiBatchExecutionOptions {
 	batchGit?: BatchRunnerGitPort;
 	batchTracker?: BatchTrackerPort;
 	readInitiative?: InitiativeObservationReader;
+	sessionPortFactory?: (provider: string, env: Record<string, string | undefined>) => unknown;
+	/** Explicit environment for Lane session provider selection. Defaults to the ambient process environment. Tests must pass an explicit env without Herdr credentials and/or a sessionPortFactory, so a run inside Herdr never opens a real tab. */
+	env?: Record<string, string | undefined>;
 	runtime?: PiRuntime;
 	sessionId?: string;
 	toolCallId?: string;
@@ -146,10 +149,12 @@ export async function executePiUnattendedBatch(
 	const runtime = options.runtime ?? new PiRuntime({
 		cwd: options.root,
 		interactive,
+		env: options.env ?? process.env,
 		supervisor: options.supervisor ?? defaultSupervisor,
 		batchKernel: options.batchKernel,
 		batchGit: options.batchGit,
 		batchTracker: options.batchTracker,
+		...(options.sessionPortFactory ? { sessionPortFactory: options.sessionPortFactory } : {}),
 		readInitiative: options.readInitiative,
 		requestConfirmation: options.confirmBatch ? async (input: NativeConfirmationInput) => {
 			let decision: "accept" | "decline" | "cancel" = "cancel";

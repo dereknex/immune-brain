@@ -72,6 +72,10 @@ _Avoid_: suggested files, advisory scope
 A replacement TaskIntent revision classified as unchanged, compatible, or breaking. Breaking revisions require literal-user authority before replacing the enrolled intent.
 _Avoid_: scope patch, in-place Plan edit
 
+**Batch Agreement**:
+The self-contained batch contract wrapping the validated BatchAuthorizationBinding plus ordered children, confirmation, final_verification, return_policy, and interaction_mode. One builder `authorizeBatch` validates and issues it for Host and daemon entries; `runtime/lane_sessions/` starts and advances it without a side-door `steerLane`.
+_Avoid_: second authority, plan ledger
+
 ### Kernel State
 
 **TaskRecord**:

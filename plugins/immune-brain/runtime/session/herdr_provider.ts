@@ -397,7 +397,9 @@ export function createHerdrSessionProvider(options: HerdrProviderOptions): Super
 		async observeState(handle) {
 			const found = await own(handle);
 			if (isRefusal(found)) return found;
-			if (found.gone) return { ok: true, state: "unknown", provenance: "none" };
+			// A gone pane is an exited session, not an unknown one: report the
+			// provider's pane_not_found so the adapter maps it to `exited`.
+			if (found.gone) return refuse("provider_error", "herdr pane get failed: pane_not_found", handle);
 			const ids = found.ids;
 			const current = await observe(handle, ids.pane);
 			if (isRefusal(current)) return current;

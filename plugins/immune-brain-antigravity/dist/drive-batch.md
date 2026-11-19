@@ -385,7 +385,17 @@ read. For each `executor` handoff without a live session:
 2. Create the session, which opens a tab rooted in the Lane in the Parent's own
    Herdr workspace without taking focus, starts the Host there and submits the
    entry and nothing else (later text follows only the instruction rule below):
-   `imm-session create --provider herdr --cwd <lane_path> --label <name> --host <executor_host> --entry "<drive entry> <task_id>" -- <host arguments>`.
+   The runtime opens each Lane session itself through `runtime/lane_sessions/`; the Parent never creates a session. The Parent waits read-only with `imm-session await --batch <batch_id>` and follows the returned `next_action` table below.
+
+   `imm-session await --batch` returns at the first D20 wake event with `next_action`:
+
+   | Wake | `next_action` | Parent action |
+   | --- | --- | --- |
+   | settlement or idle/done/exited progress | `advance` | call `start_unattended_batch` to run `advanceLanes` |
+   | startup or mid-run dialog (`entry_submitted: false`, `blocked`) | `relay_dialog` | relay the dialog to the user |
+   | `interactive_host` child stalled idle | `ask_user` | ask the user; their answer arrives as instruction, correction, or stop |
+   | timeout with nothing pending | `wait` | re-arm the wait |
+   | batch terminal | `complete` | finish; the batch is done |
    `<name>` is a label of at most 32 characters such as the Slice ID; a
    `task_id` is usually too long. Host arguments are only those that load the
    Parent's plugin and `--model` and `--effort` (`--thinking` for `pi`)
@@ -491,7 +501,7 @@ the batch head, the runner records that session's close in the report's
 `session_closes` (`task_id`, `at`); the record is there even when that tick
 finishes the batch, so the Parent never re-enters a finished batch to ask.
 Once the wait has returned that session `idle`, `done` or `exited`, the Parent
-runs `imm-session close <handle> --provider herdr --batch <batch_id> --task <task_id> --recorded-at <at>`
+   The runtime closes each integrated child session with proof; the Parent never closes a session. Once the wait has returned that session idle, done or exited, the Parent calls `start_unattended_batch` again to advance the batch.
 from the coordinator checkout; `imm-session` reads the batch record and closes
 only a session it lists. Every other tab (a parked, failed,
 stopped or not yet integrated child's, and any tab the Parent did not create)
@@ -554,7 +564,7 @@ Spec drive-always-lanes D1 to D11 and ADR 0027 own the details below.
   no process exit. The Lane and branches remain retained after delivery because
   Herdr session state is never exit proof.
 - **Synchronous runtime supervision outside Herdr.** The
-  runtime spawns one non-interactive Executor (`claude --print` or the
+  runtime spawns one non-interactive Executor (a non-interactive entry or the
   antigravity print entry) with the Lane as working directory and
   `drive <task_id>` as its only prompt, and waits for it inside the Host tool
   call. A Pi Executor outside Herdr is never spawned: Pi writes to the Kernel
