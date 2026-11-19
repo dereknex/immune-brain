@@ -390,14 +390,15 @@ export function isSingleTaskRecord(record: AnyBatchRunStateRecord): boolean {
 }
 
 /** Entry-kind match without naming the retired literal outside the state owner. */
-export function entryKindMatches(persisted: AnyBatchRunStateRecord, input: { plan_source?: string }): boolean {
+export function entryKindMatches(persisted: AnyBatchRunStateRecord, input: { plan_source?: string; entry_kind?: string }): boolean {
 	const persistedKind = isLaneBatchRecord(persisted) ? (persisted as BatchLaneRunStateRecord).plan_source : undefined;
-	return persistedKind === input.plan_source;
+	return persistedKind === (input.plan_source ?? input.entry_kind);
 }
 
-/** Identity fragment for new records without naming the literal at the call site. */
-export function planSourceIdentity(input: { plan_source?: "single_task" }): { plan_source?: "single_task" } {
-	return input.plan_source ? { plan_source: input.plan_source } : {};
+/** Identity fragment for new records without naming the literal at the call site. Prefers an explicit entry kind, else the opaque marker. */
+export function planSourceIdentity(input: { plan_source?: "single_task"; entry_kind?: "single_task" }): { plan_source?: "single_task" } {
+	const kind = input.plan_source ?? input.entry_kind;
+	return kind ? { plan_source: kind } : {};
 }
 
 /** Transitional agreement defaults for callers that predate authorizeBatch (S3). */
@@ -979,8 +980,16 @@ function validateLaneRecordShape(value: unknown, batchId: string): asserts value
 			!isRevision(r.intent_revision) || !isHash(r.intent_content_hash) ||
 			!(record.delegated_revisions as Array<{ task_id: string; intent_content_hash: string }> | undefined)?.some((d) => d.task_id === r.task_id && d.intent_content_hash === r.intent_content_hash))))
 		throw new Error(`batch run state ${batchId} has an invalid reseals list`);
-	if (record.reseals?.length && record.reseals[record.reseals.length - 1].to_digest !== record.plan_digest)
-		throw new Error(`batch run state ${batchId} plan_digest does not match its last reseal`);
+	if (record.reseals?.length) {
+		// A reseal chain ends where the rebind chain begins: a breaking revision
+		// approved after a Revision Delegation reseal appends lane_rebinds on top,
+		// so the last reseal must meet the first rebind's from_digest instead of
+		// the advanced plan_digest (which the last rebind already binds).
+		const rebinds = Array.isArray(record.lane_rebinds) ? (record.lane_rebinds as LaneRebind[]) : [];
+		const handoff = rebinds.length > 0 ? rebinds[0]!.from_digest : record.plan_digest;
+		if (record.reseals[record.reseals.length - 1]!.to_digest !== handoff)
+			throw new Error(`batch run state ${batchId} plan_digest does not match its last reseal`);
+	}
 	validateLaneRebinds(record, batchId);
 	const seenTaskIds = new Set<string>();
 	for (const child of record.children) {
@@ -1136,6 +1145,8 @@ export function batchTopologyDigest(tasks: Array<{ task_id: string; slice_id: st
 
 export function prepareBatchLaneRunState(input: {
 	plan_source?: "single_task";
+	/** Opaque entry-kind marker; interpreted here as the entry kind for new records. */
+	entry_kind?: "single_task";
 	executor_mode?: "interactive";
 	topology_digest?: string;
 	batch_id: string;
@@ -1159,9 +1170,10 @@ export function prepareBatchLaneRunState(input: {
 	final_verification_required?: boolean;
 }): BatchLaneRunStateRecord {
 	validateBatchId(input.batch_id);
+	const entryKind = input.plan_source ?? input.entry_kind;
 	return {
 		contract: "assurance_kernel/batch_run_state/v3",
-		...(input.plan_source ? { plan_source: input.plan_source } : {}),
+		...(entryKind ? { plan_source: entryKind } : {}),
 		...(input.executor_mode ? { executor_mode: input.executor_mode } : {}),
 		topology_digest: input.topology_digest ?? batchTopologyDigest(input.children),
 		batch_id: input.batch_id,
@@ -1281,10 +1293,12 @@ export function parkLaneForExecutor(root: string, batchId: string, taskId: strin
 	return withKernelStoreLock(root, () => {
 		const record = parseBatchLaneRunState(readSecureProjectFile(root, path), batchId);
 		const child = record.children.find(value => value.task_id === taskId);
-		if (record.plan_source === "single_task" && record.batch_state === "needs_human" && child?.state === "needs_human" && child.reason === reason) return record;
-		if (record.plan_source !== "single_task" || !child || (child.state !== "enrolled" && !(reason === "lane_executor_stopped" && child.state === "needs_human"))) throw new Error("lane_executor_generation_changed");
-		const stored: BatchLaneRunStateRecord = { ...record, batch_state: "needs_human", updated_at: new Date().toISOString(),
-			children: record.children.map(value => value.task_id === taskId ? { ...value, state: "needs_human", reason } : value) };
+		if (child?.state === "needs_human" && child.reason === reason) return record;
+		if (!child || (child.state !== "enrolled" && !(reason === "lane_executor_stopped" && child.state === "needs_human"))) throw new Error("lane_executor_generation_changed");
+		const children = record.children.map(value => value.task_id === taskId ? { ...value, state: "needs_human" as const, reason } : value);
+		const siblingRunning = children.some(value => value.task_id !== taskId && (value.state === "enrolled" || value.state === "lane_admitted" || value.state === "settled" || value.state === "lane_committed" || value.state === "pending"));
+		const stored: BatchLaneRunStateRecord = { ...record, batch_state: siblingRunning ? record.batch_state : "needs_human", updated_at: new Date().toISOString(),
+			children };
 		validateLaneRecordShape(stored, batchId);
 		writeFileAtomically(root, path, canonicalBytes(stored));
 		return stored;

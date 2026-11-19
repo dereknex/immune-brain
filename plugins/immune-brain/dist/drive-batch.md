@@ -608,7 +608,7 @@ Spec drive-always-lanes D1 to D11 and ADR 0027 own the details below.
   the failed condition; the Parent deletes nothing. Parked, stopped and redo
   Lanes are never removed. A fresh `drive <task_id>` on a parked or retained
   Lane opens a fresh native gate and resumes in the same Lane.
-- **Parent decision relay.** When the Lane's Executor stops on a literal-user
+- **Parent decision relay (per-child).** When a Lane Executor stops on a literal-user
   decision, the report carries `lane_decision_required` (task, run and record
   revision, authorization and pending decisions). A headless Executor has no
   native gate, so its `approve_breaking_intent_revision` call only leaves a
@@ -619,13 +619,24 @@ Spec drive-always-lanes D1 to D11 and ADR 0027 own the details below.
   Parent answers on its own Host with the native-gate tool the facts call for:
   `request_authorization`, `approve_breaking_intent_revision` with the complete
   next intent, or a stop request, each passing the Lane's `task_id` and the
-  `record_revision` it read. The runtime applies the approved decision to the
-  Lane store through the same Kernel operation and starts the next generation
-  for runtime supervision. An interactive Lane keeps its existing Herdr tab and
+  `record_revision` it read. `findActiveLaneBatchForTask(root, taskId)` locates
+  the matching child of any single-task or Initiative batch by child `task_id`
+  (unknown tasks return relayed false; corrupt records or two active batches
+  claiming the same child fail closed). The runtime applies the approved decision
+  to the Lane store through the same Kernel operation, then triggers
+  `advanceLanes(root, batch_id)`: answered decisions reset that child's
+  `no_progress` to `0` and resume it while siblings are untouched. An interactive Lane keeps its existing Herdr tab and
   starts no runtime child; after the gate succeeds, re-enter the same `task_id`
   and resume the tab's `drive` entry once it is idle. A
-  breaking revision approved this way also rebinds the single-task batch's
-  approved identity, and a stop ends the Lane task. An interactive Lane waiting
+  breaking revision approved this way calls `rebindBatchChildIdentity` for that
+  child, appends `lane_rebinds` and advances `plan_digest` along the contiguous
+  chain accepted by `hasContiguousLaneRebind` (including after a Revision
+  Delegation reseal), continuing without `batch_plan_changed` or
+  `retire_stale_batch`, while a stale `from_digest` is refused. A
+  native-gated stop closes only that child's session via `BatchSessionPort.stop`,
+  parks that child `lane_executor_stopped` and retains its Lane while siblings
+  keep running. A `coordinator: correct` instruction closes `g(n)` with proof
+  and opens `g(n+1)`. An interactive Lane waiting
   on a decision stays enrolled even when its artifacts are frozen; the batch
   skips another Assurance attempt and returns `lane_decision_required`. The
   same decision facts remain visible for an already parked child. An approved
@@ -633,8 +644,7 @@ Spec drive-always-lanes D1 to D11 and ADR 0027 own the details below.
   `lane_relay.next_action` asks the user to close the tab while retaining the
   Lane and branches. A changed record is refused
   as `lane_decision_stale`, and a cancelled or failed gate applies nothing. The
-  Parent never decides for the user, and a child of an Initiative batch keeps the
-  batch behavior above.
+  Parent never decides for the user.
 
 An in-place TaskRecord enrolled before this change stays resumable through the
 Execution Loop in [`drive.md`](drive.md#execution-loop) until terminal.

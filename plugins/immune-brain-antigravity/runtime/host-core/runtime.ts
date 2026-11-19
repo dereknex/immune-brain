@@ -79,12 +79,14 @@ import {
 	authorizeBatch,
 	prepareBatchPreflight,
 	readConfirmedBatchTopology,
+	findActiveLaneBatchForTask,
 	findResumableBatchSlugForTask,
 	findExistingActiveBatch,
 	findSettledBatchRecord,
 } from "../unattended/batch_preflight";
 import { authorizeBatch as authorizeAgreement } from "../unattended/batch_agreement";
-import { advanceLanes, startLanes } from "../lane_sessions/index";
+import { advanceLanes, openBatchSessionPort, startLanes } from "../lane_sessions/index";
+import type { BatchSessionPort } from "../unattended/batch_session_port";
 import {
 	completedParentReport, stopSingleTaskSupervisor,
 	type BatchRunnerKernelPort,
@@ -809,6 +811,29 @@ export class HostRuntime {
 		const laneRuntime = this.profile.laneRuntime({ ...this.options, cwd: relayed.lane_path, laneRoot: true,
 			requestConfirmation: this.requestConfirmation, batchKernel: undefined, batchGit: undefined, batchTracker: undefined, readInitiative: undefined });
 		if (this.hostVersion) laneRuntime.bindHostVersion(this.hostVersion);
+		// S7 per-child: port-based batches stop only that child's session and resume via advanceLanes.
+		// Corrupt or ambiguous batch matches fail closed instead of falling back to the in-place path.
+		const active = findActiveLaneBatchForTask(this.cwd, taskId);
+		const childSession = active?.record.children.find(child => child.task_id === taskId)?.session;
+		let sessions: BatchSessionPort | undefined;
+		let advance: ((batchId: string) => Promise<unknown>) | undefined;
+		if (active && childSession?.handle) {
+			if (operation !== "stop") {
+				const initiativeSlug = active.record.initiative_slug;
+				const advanceKind = active.record.plan_source ? { plan_source: active.record.plan_source } : {};
+				advance = async () => this.startPreparedBatch(initiativeSlug, meta, { reuseOnly: true, ...advanceKind });
+			} else if (active.record.executor_mode !== "interactive") {
+				// Resolve the batch's recorded provider through the composition
+			// root: production Hosts supply no factory and reach the real
+			// provider; tests inject a fake. A refusal fails the stop closed
+			// instead of leaving the child's session running.
+				const opened = openBatchSessionPort({ root: this.cwd, provider: active.record.session_provider, env: this.env,
+					host: this.parentHost, executor: active.record.executor_preferences,
+					...(this.sessionPortFactory ? { createPort: this.sessionPortFactory as never } : {}) });
+				if (!opened.ok) throw new Error(`${opened.reason}. ${opened.recovery}`);
+				sessions = opened.port;
+			}
+		}
 		try {
 			const outcome = await relayLaneDecision({
 				root: this.cwd, taskId, operation: operation as LaneDecisionOperation,
@@ -818,6 +843,8 @@ export class HostRuntime {
 				applied: result => !(result && typeof result === "object" && "state" in result && result.state === "replan_selected"),
 				supervisor: this.laneSupervisor, parentHost: this.parentHost,
 				pluginDir: resolve(dirname(fileURLToPath(import.meta.url)), "../.."), waitMs: laneWaitMs(this.env), signal: meta.signal,
+				...(sessions ? { sessions } : {}),
+				...(advance ? { advance } : {}),
 			});
 			return outcome.relayed ? { ...outcome.result, lane_relay: outcome.lane_relay } : this.authorizeInRoot(taskId, operation, meta, extra);
 		} finally {
@@ -1456,6 +1483,7 @@ export class HostRuntime {
 			registry: this.batchRegistry,
 			capability,
 			kernel: kernelPort,
+			...(options.plan_source ? { entry_kind: options.plan_source } : {}),
 			...(this.batchGit ? { git: this.batchGit } : {}),
 			...(!options.plan_source ? { tracker: this.batchTracker ?? createBatchTrackerPort(this.cwd, initiativeSlug) } : {}),
 			providers: sessionProviders,

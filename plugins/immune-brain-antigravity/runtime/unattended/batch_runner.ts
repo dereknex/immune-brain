@@ -111,6 +111,8 @@ export type BatchChildAdvanceResult = { diagnostics?: QaCheckDiagnostic[]; envir
 
 export interface StartBatchInput {
 	plan_source?: "single_task";
+	/** Opaque entry-kind marker for composition roots that must not name the retired literal; the state owner interprets it as the entry kind. */
+	entry_kind?: "single_task";
 	/** The Parent supplies an interactive Executor session instead of a runtime child. */
 	executor_mode?: "interactive";
 	/** Single task only: the exit this call's own wait observed; cleanup compares its generation with the current one. */

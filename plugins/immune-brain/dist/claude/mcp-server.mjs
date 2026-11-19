@@ -6863,10 +6863,11 @@ function isSingleTaskRecord(record) {
 }
 function entryKindMatches(persisted, input) {
   const persistedKind = isLaneBatchRecord(persisted) ? persisted.plan_source : undefined;
-  return persistedKind === input.plan_source;
+  return persistedKind === (input.plan_source ?? input.entry_kind);
 }
 function planSourceIdentity(input) {
-  return input.plan_source ? { plan_source: input.plan_source } : {};
+  const kind = input.plan_source ?? input.entry_kind;
+  return kind ? { plan_source: kind } : {};
 }
 function defaultAgreementPolicies(input) {
   const single = input.plan_source === "single_task";
@@ -7179,8 +7180,12 @@ function validateLaneRecordShape(value, batchId) {
   validateIntentIdentities(record, batchId);
   if (record.reseals !== undefined && (!Array.isArray(record.reseals) || record.reseals.some((r) => !isObject(r) || typeof r.task_id !== "string" || typeof r.from_digest !== "string" || typeof r.to_digest !== "string" || !isRevision(r.intent_revision) || !isHash(r.intent_content_hash) || !record.delegated_revisions?.some((d) => d.task_id === r.task_id && d.intent_content_hash === r.intent_content_hash))))
     throw new Error(`batch run state ${batchId} has an invalid reseals list`);
-  if (record.reseals?.length && record.reseals[record.reseals.length - 1].to_digest !== record.plan_digest)
-    throw new Error(`batch run state ${batchId} plan_digest does not match its last reseal`);
+  if (record.reseals?.length) {
+    const rebinds = Array.isArray(record.lane_rebinds) ? record.lane_rebinds : [];
+    const handoff = rebinds.length > 0 ? rebinds[0].from_digest : record.plan_digest;
+    if (record.reseals[record.reseals.length - 1].to_digest !== handoff)
+      throw new Error(`batch run state ${batchId} plan_digest does not match its last reseal`);
+  }
   validateLaneRebinds(record, batchId);
   const seenTaskIds = new Set;
   for (const child of record.children) {
@@ -7293,9 +7298,10 @@ function batchTopologyDigest(tasks) {
 }
 function prepareBatchLaneRunState(input) {
   validateBatchId(input.batch_id);
+  const entryKind = input.plan_source ?? input.entry_kind;
   return {
     contract: "assurance_kernel/batch_run_state/v3",
-    ...input.plan_source ? { plan_source: input.plan_source } : {},
+    ...entryKind ? { plan_source: entryKind } : {},
     ...input.executor_mode ? { executor_mode: input.executor_mode } : {},
     topology_digest: input.topology_digest ?? batchTopologyDigest(input.children),
     batch_id: input.batch_id,
@@ -7404,15 +7410,17 @@ function parkLaneForExecutor(root, batchId, taskId, reason) {
   return withKernelStoreLock(root, () => {
     const record = parseBatchLaneRunState(readSecureProjectFile(root, path), batchId);
     const child = record.children.find((value) => value.task_id === taskId);
-    if (record.plan_source === "single_task" && record.batch_state === "needs_human" && child?.state === "needs_human" && child.reason === reason)
+    if (child?.state === "needs_human" && child.reason === reason)
       return record;
-    if (record.plan_source !== "single_task" || !child || child.state !== "enrolled" && !(reason === "lane_executor_stopped" && child.state === "needs_human"))
+    if (!child || child.state !== "enrolled" && !(reason === "lane_executor_stopped" && child.state === "needs_human"))
       throw new Error("lane_executor_generation_changed");
+    const children = record.children.map((value) => value.task_id === taskId ? { ...value, state: "needs_human", reason } : value);
+    const siblingRunning = children.some((value) => value.task_id !== taskId && (value.state === "enrolled" || value.state === "lane_admitted" || value.state === "settled" || value.state === "lane_committed" || value.state === "pending"));
     const stored = {
       ...record,
-      batch_state: "needs_human",
+      batch_state: siblingRunning ? record.batch_state : "needs_human",
       updated_at: new Date().toISOString(),
-      children: record.children.map((value) => value.task_id === taskId ? { ...value, state: "needs_human", reason } : value)
+      children
     };
     validateLaneRecordShape(stored, batchId);
     writeFileAtomically(root, path, canonicalBytes(stored));
@@ -7438,14 +7446,16 @@ function planChildrenWithIdentities(children, identities) {
   }
   return result;
 }
-function rebindSingleTaskIdentity(root, batchId, input) {
+function rebindBatchChildIdentity(root, batchId, input) {
   const path = statePath(batchId);
   return withKernelStoreLock(root, () => {
     const record = parseBatchLaneRunState(readSecureProjectFile(root, path), batchId);
     const recorded = record.intent_identities?.[input.task_id];
     const currentChildren = planChildrenWithIdentities(record.children, record.intent_identities);
-    if (record.plan_source !== "single_task" || record.initiative_slug !== input.task_id || !recorded || !currentChildren || input.intent.task_id !== input.task_id || !record.children.some((child) => child.task_id === input.task_id && child.lane) || computeBatchPlanDigest(currentChildren) !== record.plan_digest)
+    if (!recorded || !currentChildren || input.intent.task_id !== input.task_id || !record.children.some((child) => child.task_id === input.task_id) || computeBatchPlanDigest(currentChildren) !== record.plan_digest)
       throw new Error(batchReason("lane_decision_rebind_failed").reason);
+    if (input.from_digest !== undefined && input.from_digest !== record.plan_digest)
+      throw new Error(batchReason("lane_decision_stale").reason);
     if (recorded.intent_revision === input.intent.revision && recorded.intent_content_hash === input.content_hash)
       return record;
     if (input.intent.revision <= recorded.intent_revision)
@@ -17053,6 +17063,50 @@ function findExistingActiveBatch(root, initiativeSlug) {
   }
   return found;
 }
+function findActiveLaneBatchForTask(root, taskId) {
+  const batchesDir = join27(root, ".imm/state/batches");
+  if (!existsSync15(batchesDir))
+    return null;
+  const matches = [];
+  for (const file of readdirSync10(batchesDir).sort()) {
+    if (!file.endsWith(".json") || file.endsWith(".report.json"))
+      continue;
+    let raw;
+    try {
+      raw = JSON.parse(readFileSync19(join27(batchesDir, file), "utf8"));
+    } catch {
+      throw new Error(`batch_lane_unreadable: ${file}`);
+    }
+    const candidate = raw;
+    const kind = classifyBatchRunStateContract(candidate?.contract);
+    if (kind === "foreign")
+      continue;
+    if (kind === "newer")
+      throw new BatchRuntimeTooOldError(join27(batchesDir, file), candidate.contract);
+    if (kind !== "v3")
+      continue;
+    if (typeof candidate.batch_id !== "string" || typeof candidate.base_head !== "string" || !Array.isArray(candidate.children)) {
+      throw new Error(`batch_lane_unreadable: ${file}`);
+    }
+    if (isTerminalBatchState(candidate.batch_state))
+      continue;
+    let record;
+    try {
+      record = readAnyBatchRunState(root, file.slice(0, -5));
+    } catch {
+      throw new Error(`batch_lane_unreadable: ${file}`);
+    }
+    if (!record || !isLaneBatchRecord(record))
+      continue;
+    const laneRecord = record;
+    const child = laneRecord.children.find((value) => value.task_id === taskId);
+    if (child)
+      matches.push({ record: laneRecord, child });
+  }
+  if (matches.length > 1)
+    throw new Error(`batch_lane_ambiguous: ${taskId} is claimed by ${matches.map((m) => m.record.batch_id).sort().join(", ")}`);
+  return matches[0] ?? null;
+}
 function findSettledBatchRecord(root, initiativeSlug) {
   const batchesDir = join27(root, ".imm", "state", "batches");
   if (!existsSync15(batchesDir))
@@ -18598,8 +18652,8 @@ function laneDecisionFacts(taskId, projection, lanePath) {
   };
 }
 function findLaneRelayTarget(root, taskId) {
-  const found = findExistingActiveBatch(root, taskId);
-  if (!found || found.corrupt || !isLaneBatchRecord(found.record) || found.record.plan_source !== "single_task")
+  const found = findActiveLaneBatchForTask(root, taskId);
+  if (!found)
     return null;
   const child = found.record.children.find((value) => value.task_id === taskId);
   if (!child?.lane || child.state !== "enrolled" && child.state !== "needs_human")
@@ -18644,8 +18698,8 @@ async function relayLaneDecision(input) {
   if (input.applied && !input.applied(result))
     return { relayed: true, result, lane_relay: { batch_id: target.batch_id, operation: input.operation, applied: false, rebound: false, lane_supervision: null } };
   clearLaneDecisionRequest(target.lane_path);
-  const batch = findExistingActiveBatch(input.root, input.taskId);
-  const interactive = batch && !batch.corrupt && isLaneBatchRecord(batch.record) && batch.record.executor_mode === "interactive";
+  const active = findActiveLaneBatchForTask(input.root, input.taskId);
+  const interactive = active?.record.executor_mode === "interactive";
   if (input.operation === "stop") {
     if (interactive) {
       parkLaneForExecutor(input.root, target.batch_id, input.taskId, "lane_executor_stopped");
@@ -18656,6 +18710,18 @@ async function relayLaneDecision(input) {
         rebound: false,
         lane_supervision: null,
         next_action: "The Lane task is stopped. Close its Herdr Executor tab yourself; the Lane and branches are retained."
+      } };
+    }
+    const handle = active?.record.children.find((child) => child.task_id === input.taskId)?.session?.handle ?? null;
+    if (input.sessions && handle) {
+      await input.sessions.stop(handle);
+      parkLaneForExecutor(input.root, target.batch_id, input.taskId, "lane_executor_stopped");
+      return { relayed: true, result, lane_relay: {
+        batch_id: target.batch_id,
+        operation: input.operation,
+        applied: true,
+        rebound: false,
+        lane_supervision: null
       } };
     }
     const stopped = await stopSingleTaskSupervisor(input.supervisor, input.root, input.taskId, input.signal);
@@ -18675,15 +18741,25 @@ async function relayLaneDecision(input) {
       const committed = readTaskRecordRaw(target.lane_path, input.taskId).record;
       if (!committed)
         throw new Error("the Lane TaskRecord is unreadable");
-      rebindSingleTaskIdentity(input.root, target.batch_id, { task_id: input.taskId, intent: committed.intent_snapshot, content_hash: committed.intent_ref.content_hash });
+      rebindBatchChildIdentity(input.root, target.batch_id, { task_id: input.taskId, intent: committed.intent_snapshot, content_hash: committed.intent_ref.content_hash });
       rebound = true;
     } catch (error) {
       throw new Error(`${batchReason("lane_decision_rebind_failed").reason}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
+  if (input.advance) {
+    const observation = await input.advance(target.batch_id);
+    return { relayed: true, result, lane_relay: {
+      batch_id: target.batch_id,
+      operation: input.operation,
+      applied: true,
+      rebound,
+      lane_supervision: observation ?? null
+    } };
+  }
   if (interactive)
     return { relayed: true, result, lane_relay: { batch_id: target.batch_id, operation: input.operation, applied: true, rebound, lane_supervision: null } };
-  const choice = laneExecutorChoice(input.root, batch && !batch.corrupt && isLaneBatchRecord(batch.record) ? batch.record.executor_preferences : undefined, input.parentHost);
+  const choice = laneExecutorChoice(input.root, active?.record.executor_preferences, input.parentHost);
   if (!choice)
     return { relayed: true, result, lane_relay: { batch_id: target.batch_id, operation: input.operation, applied: true, rebound, lane_supervision: null } };
   const observation = await superviseLane(input.supervisor, {
@@ -24948,6 +25024,22 @@ function hostArgsFor(deps, taskId) {
     return [];
   return typeof deps.hostArgs === "function" ? deps.hostArgs(taskId) : [...deps.hostArgs];
 }
+function resumeChildren(record) {
+  return record.children.map((child) => {
+    const identity = record.intent_identities?.[child.task_id];
+    return {
+      task_id: child.task_id,
+      slice_id: child.slice_id,
+      blocked_by: [...child.blocked_by],
+      status: "enrollable",
+      reason: null,
+      intent_path: identity?.intent_path ?? null,
+      intent_revision: identity?.intent_revision ?? null,
+      intent_content_hash: identity?.intent_content_hash ?? null,
+      ...identity?.intent_authority_hash ? { intent_authority_hash: identity.intent_authority_hash } : {}
+    };
+  });
+}
 function executorSessionTarget(input) {
   const choice = laneExecutorChoice(input.root, input.executor, input.host) ?? { host: input.host };
   const hostArgs = [];
@@ -24970,6 +25062,22 @@ function portFor(provider, env, registry, createPort) {
     return null;
   return descriptor.factory(env);
 }
+function openBatchSessionPort(input) {
+  const registry = input.providerRegistry ?? SESSION_PROVIDER_REGISTRY;
+  if (!input.provider)
+    return { ok: false, reason: "lane_session_unavailable: no session provider recorded for this batch", recovery: "retire the stale batch" };
+  const descriptor = registry.find((d) => d.name === input.provider);
+  if (!descriptor)
+    return { ok: false, reason: `lane_session_unavailable: recorded provider ${input.provider} is not registered`, recovery: "retire the stale batch" };
+  const check = descriptor.checkEnv(input.env);
+  if (!check.ok)
+    return { ok: false, reason: `lane_session_unavailable: ${check.reason}`, recovery: descriptor.recovery };
+  const raw = portFor(input.provider, input.env, registry, input.createPort);
+  if (!raw)
+    return { ok: false, reason: "lane_session_unavailable: provider factory failed", recovery: "retry inside Herdr" };
+  const target = executorSessionTarget({ root: input.root, executor: input.executor, host: input.host });
+  return { ok: true, port: new SessionPortAdapter(raw, target.host, input.hostArgs ?? target.hostArgs) };
+}
 function refusalFromReasons(reasons) {
   const detail = reasons.map((r) => `${r.provider}: ${r.reason}`).join("; ");
   return {
@@ -24985,6 +25093,7 @@ function toBatchInput(agreement, deps, now, sessions) {
     root: deps.root,
     batch_id: agreement.batch_id,
     initiative_slug: agreement.initiative_slug,
+    ...deps.entry_kind ? { entry_kind: deps.entry_kind } : {},
     registry: deps.registry,
     capability: deps.capability,
     children: agreement.children,
@@ -25068,12 +25177,13 @@ async function advanceLanes(root, batchId, deps) {
       root: deps.root,
       batch_id: batchId,
       initiative_slug: persisted.initiative_slug,
+      ...deps.entry_kind ? { entry_kind: deps.entry_kind } : {},
       registry: deps.registry,
       capability: deps.capability,
-      children: persisted.children,
+      children: resumeChildren(persisted),
       plan_digest: persisted.plan_digest,
       base_head: persisted.base_head,
-      confirmation_time: persisted.confirmation_time ?? now,
+      confirmation_time: deps.confirmation_time ?? now,
       budget: persisted.budget,
       now,
       kernel: deps.kernel,
@@ -25109,12 +25219,13 @@ async function advanceLanes(root, batchId, deps) {
     root: deps.root,
     batch_id: batchId,
     initiative_slug: persisted.initiative_slug,
+    ...deps.entry_kind ? { entry_kind: deps.entry_kind } : {},
     registry: deps.registry,
     capability: deps.capability,
-    children: persisted.children,
+    children: resumeChildren(persisted),
     plan_digest: persisted.plan_digest,
     base_head: persisted.base_head,
-    confirmation_time: persisted.confirmation_time ?? now,
+    confirmation_time: deps.confirmation_time ?? now,
     budget: persisted.budget,
     now,
     kernel: deps.kernel,
@@ -26593,6 +26704,29 @@ class HostRuntime {
     });
     if (this.hostVersion)
       laneRuntime.bindHostVersion(this.hostVersion);
+    const active = findActiveLaneBatchForTask(this.cwd, taskId);
+    const childSession = active?.record.children.find((child) => child.task_id === taskId)?.session;
+    let sessions;
+    let advance;
+    if (active && childSession?.handle) {
+      if (operation !== "stop") {
+        const initiativeSlug = active.record.initiative_slug;
+        const advanceKind = active.record.plan_source ? { plan_source: active.record.plan_source } : {};
+        advance = async () => this.startPreparedBatch(initiativeSlug, meta, { reuseOnly: true, ...advanceKind });
+      } else if (active.record.executor_mode !== "interactive") {
+        const opened = openBatchSessionPort({
+          root: this.cwd,
+          provider: active.record.session_provider,
+          env: this.env,
+          host: this.parentHost,
+          executor: active.record.executor_preferences,
+          ...this.sessionPortFactory ? { createPort: this.sessionPortFactory } : {}
+        });
+        if (!opened.ok)
+          throw new Error(`${opened.reason}. ${opened.recovery}`);
+        sessions = opened.port;
+      }
+    }
     try {
       const outcome = await relayLaneDecision({
         root: this.cwd,
@@ -26606,7 +26740,9 @@ class HostRuntime {
         parentHost: this.parentHost,
         pluginDir: resolve16(dirname20(fileURLToPath5(import.meta.url)), "../.."),
         waitMs: laneWaitMs(this.env),
-        signal: meta.signal
+        signal: meta.signal,
+        ...sessions ? { sessions } : {},
+        ...advance ? { advance } : {}
       });
       return outcome.relayed ? { ...outcome.result, lane_relay: outcome.lane_relay } : this.authorizeInRoot(taskId, operation, meta, extra);
     } finally {
@@ -27199,6 +27335,7 @@ class HostRuntime {
       registry: this.batchRegistry,
       capability,
       kernel: kernelPort,
+      ...options.plan_source ? { entry_kind: options.plan_source } : {},
       ...this.batchGit ? { git: this.batchGit } : {},
       ...!options.plan_source ? { tracker: this.batchTracker ?? createBatchTrackerPort(this.cwd, initiativeSlug) } : {},
       providers: sessionProviders,

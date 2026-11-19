@@ -23,6 +23,7 @@ import {
 	isTerminalBatchState,
 	readAnyBatchRunState,
 	type AnyBatchRunStateRecord,
+	type BatchLaneRunStateRecord,
 } from "../unattended/batch_state";
 import type { BatchAgreement } from "../unattended/batch_agreement";
 import type { BatchSessionPort } from "../unattended/batch_session_port";
@@ -65,6 +66,8 @@ export interface LaneSessionsDeps {
 	env: Record<string, string | undefined>;
 	providerRegistry?: readonly SessionProviderDescriptor[];
 	createPort?: (provider: string, env: Record<string, string | undefined>) => SupervisedSessionPort;
+	/** Entry kind the batch was authorized under; new records persist it so re-entry matches. Carried opaquely: this composition root never interprets it. */
+	entry_kind?: "single_task";
 	hostArgs?: string[] | ((taskId: string) => string[]);
 	/** The requested Executor profile; sessions open with the effective choice, never the Parent Host by default. */
 	executor?: ExecutorPreferences;
@@ -92,6 +95,22 @@ export interface ObserveLanesDeps {
 function hostArgsFor(deps: { hostArgs?: string[] | ((taskId: string) => string[]) }, taskId: string): string[] {
 	if (!deps.hostArgs) return [];
 	return typeof deps.hostArgs === "function" ? deps.hostArgs(taskId) : [...deps.hostArgs];
+}
+
+/**
+ * Resume validates the fresh authorization against the record's identities
+ * (rebinds included), so the resumptive input carries identity-bearing
+ * children derived from the record instead of bare child shadows (which
+ * carry no intent fields and would fail the digest check unconditionally).
+ */
+function resumeChildren(record: BatchLaneRunStateRecord): Array<{ task_id: string; slice_id: string; blocked_by: string[]; status: "enrollable"; reason: null; intent_path: string | null; intent_revision: number | null; intent_content_hash: string | null; intent_authority_hash?: string }> {
+	return record.children.map(child => {
+		const identity = record.intent_identities?.[child.task_id];
+		return { task_id: child.task_id, slice_id: child.slice_id, blocked_by: [...child.blocked_by], status: "enrollable" as const, reason: null,
+			intent_path: identity?.intent_path ?? null, intent_revision: identity?.intent_revision ?? null,
+			intent_content_hash: identity?.intent_content_hash ?? null,
+			...(identity?.intent_authority_hash ? { intent_authority_hash: identity.intent_authority_hash } : {}) };
+	});
 }
 
 /**
@@ -130,6 +149,40 @@ function portFor(
 	return descriptor.factory(env);
 }
 
+/**
+ * Open the batch's recorded session provider for a direct Port call: a
+ * native-gated stop closes one child's session without a full advance.
+ * Provider resolution stays in the composition root; callers pass only the
+ * recorded provider name, never a session import. A test double arrives
+ * through `createPort`; production passes none and resolves the real
+ * provider, failing closed outside Herdr instead of inventing a session.
+ */
+export function openBatchSessionPort(input: {
+	root: string;
+	provider: string | null | undefined;
+	env: Record<string, string | undefined>;
+	host: ExecutorHostKind;
+	executor?: ExecutorPreferences;
+	hostArgs?: string[];
+	providerRegistry?: readonly SessionProviderDescriptor[];
+	createPort?: (provider: string, env: Record<string, string | undefined>) => SupervisedSessionPort;
+}): { ok: true; port: BatchSessionPort } | { ok: false; reason: string; recovery: string } {
+	const registry = input.providerRegistry ?? SESSION_PROVIDER_REGISTRY;
+	if (!input.provider)
+		return { ok: false, reason: "lane_session_unavailable: no session provider recorded for this batch", recovery: "retire the stale batch" };
+	const descriptor = registry.find((d) => d.name === input.provider);
+	if (!descriptor)
+		return { ok: false, reason: `lane_session_unavailable: recorded provider ${input.provider} is not registered`, recovery: "retire the stale batch" };
+	const check = descriptor.checkEnv(input.env);
+	if (!check.ok)
+		return { ok: false, reason: `lane_session_unavailable: ${check.reason}`, recovery: descriptor.recovery };
+	const raw = portFor(input.provider, input.env, registry, input.createPort);
+	if (!raw)
+		return { ok: false, reason: "lane_session_unavailable: provider factory failed", recovery: "retry inside Herdr" };
+	const target = executorSessionTarget({ root: input.root, executor: input.executor, host: input.host });
+	return { ok: true, port: new SessionPortAdapter(raw, target.host, input.hostArgs ?? target.hostArgs) };
+}
+
 function refusalFromReasons(reasons: Array<{ provider: string; reason: string; recovery: string }>): LaneSessionRefusal {
 	const detail = reasons.map((r) => `${r.provider}: ${r.reason}`).join("; ");
 	return {
@@ -151,6 +204,7 @@ function toBatchInput(
 		root: deps.root,
 		batch_id: agreement.batch_id,
 		initiative_slug: agreement.initiative_slug,
+		...(deps.entry_kind ? { entry_kind: deps.entry_kind } : {}),
 		registry: deps.registry,
 		capability: deps.capability,
 		children: agreement.children,
@@ -240,12 +294,13 @@ export async function advanceLanes(
 			root: deps.root,
 			batch_id: batchId,
 			initiative_slug: persisted.initiative_slug,
+			...(deps.entry_kind ? { entry_kind: deps.entry_kind } : {}),
 			registry: deps.registry,
 			capability: deps.capability,
-			children: persisted.children,
+			children: resumeChildren(persisted),
 			plan_digest: persisted.plan_digest,
 			base_head: persisted.base_head,
-			confirmation_time: (persisted as { confirmation_time?: string }).confirmation_time ?? now,
+			confirmation_time: deps.confirmation_time ?? now,
 			budget: persisted.budget,
 			now,
 			kernel: deps.kernel,
@@ -278,12 +333,13 @@ export async function advanceLanes(
 		root: deps.root,
 		batch_id: batchId,
 		initiative_slug: persisted.initiative_slug,
+		...(deps.entry_kind ? { entry_kind: deps.entry_kind } : {}),
 		registry: deps.registry,
 		capability: deps.capability,
-		children: persisted.children,
+		children: resumeChildren(persisted),
 		plan_digest: persisted.plan_digest,
 		base_head: persisted.base_head,
-		confirmation_time: (persisted as { confirmation_time?: string }).confirmation_time ?? now,
+		confirmation_time: deps.confirmation_time ?? now,
 		budget: persisted.budget,
 		now,
 		kernel: deps.kernel,

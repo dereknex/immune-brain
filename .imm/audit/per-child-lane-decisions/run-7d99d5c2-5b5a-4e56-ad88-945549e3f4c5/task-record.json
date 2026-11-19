@@ -1,0 +1,468 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "per-child-lane-decisions",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "per-child-lane-decisions",
+    "goal": "unified-lane-sessions S7 (#570; Spec docs/specs/unified-lane-sessions.spec.md D12, D19, BR-DEC-1, BR-DEC-4, BR-SCN-6). Authority-path change. Add findActiveLaneBatchForTask(root, taskId) (failing closed on corrupt or ambiguous multi-batch matches) so findLaneRelayTarget and breaking-revision approval reach any child of a single-task or Initiative v3 batch through the record-level rebindBatchChildIdentity and hasContiguousLaneRebind proven in S3; trigger advanceLanes after relayLaneDecision so answered decisions reset no_progress and resume, native-gated stop closes only that child's session and retains its Lane, and coordinator: correct rotates to g(n+1).",
+    "acceptance": [
+      {
+        "id": "PLD-A1",
+        "assertion": "In tests/single-task-lane-decision.test.ts: findActiveLaneBatchForTask locates Child 2 in a two-child Initiative batch; relaying a literal-user decision resumes Child 2 via advanceLanes with no_progress reset to 0 while Child 1 is untouched; native-gated stop stops Child 2's session via BatchSessionPort.stop, parks Child 2 lane_executor_stopped, retains Child 2's Lane, and leaves Child 1 running; a coordinator: correct instruction closes g1 with proof and opens g2; an unknown task returns relayed false, and two active batches claiming the same task_id fail closed.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-lane-decision.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "PLD-A2",
+        "assertion": "In tests/single-task-lane-decision.test.ts and tests/unattended-contracts.test.ts: approving a breaking intent revision for one child in a two-child Initiative calls rebindBatchChildIdentity, appends lane_rebinds, advances plan_digest, and continues without batch_plan_changed or retire_stale_batch (including after a Revision Delegation reseal), while refusing a stale from_digest.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-lane-decision.test.ts\",\n      \"tests/unattended-contracts.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "PLD-A3",
+        "assertion": "lane_decision.ts never mentions plan_source; drive-batch.md and drive.md describe per-child decision relay, native-gated stop, and lane_rebinds; dist consistency, bundles, mirrors, and typecheck pass.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"! grep -n plan_source plugins/immune-brain/runtime/unattended/lane_decision.ts && grep -q lane_rebinds plugins/immune-brain/dist/drive-batch.md && bun test tests/runtime-layering-boundary.test.ts tests/skill-dist-consistency.test.ts && bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun scripts/sync-dist-docs.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/per-child-lane-decisions.md",
+      "docs/plans/per-child-lane-decisions.intent.json",
+      "docs/specs/unified-lane-sessions.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/drive-batch.md",
+      "plugins/immune-brain/dist/drive.md",
+      "plugins/immune-brain/runtime/host-core/runtime.ts",
+      "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+      "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+      "plugins/immune-brain/runtime/unattended/batch_state.ts",
+      "plugins/immune-brain/runtime/unattended/lane_decision.ts",
+      "tests/runtime-layering-boundary.test.ts",
+      "tests/single-task-lane-decision.test.ts",
+      "tests/unattended-contracts.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/per-child-lane-decisions.intent.json",
+    "content_hash": "sha256:343eaa9ca63ae4063ad2b3411da525473763a88c54ee3c34f74d9faec75f2c91"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:343eaa9ca63ae4063ad2b3411da525473763a88c54ee3c34f74d9faec75f2c91",
+  "git_base_head": "df81410d95a402f820c429b69163c8a2c83cd62a",
+  "attestations": [
+    {
+      "id": "approval-qa-5c4bcf4a",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:343eaa9ca63ae4063ad2b3411da525473763a88c54ee3c34f74d9faec75f2c91",
+      "diff_hash": "sha256:0021499730d7d307420ac4d6e2a5bbe0a86baa1e924058b9dd541d3009896638",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:e0a6ab71155a780c963ed98eed4917d45f31c649d55f57ddd2c5a74837a6cd97",
+      "acceptance_results": [
+        {
+          "acceptance_id": "PLD-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:e0a6ab71155a780c963ed98eed4917d45f31c649d55f57ddd2c5a74837a6cd97"
+        },
+        {
+          "acceptance_id": "PLD-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:e0a6ab71155a780c963ed98eed4917d45f31c649d55f57ddd2c5a74837a6cd97"
+        },
+        {
+          "acceptance_id": "PLD-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:e0a6ab71155a780c963ed98eed4917d45f31c649d55f57ddd2c5a74837a6cd97"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-1582fd64",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:343eaa9ca63ae4063ad2b3411da525473763a88c54ee3c34f74d9faec75f2c91",
+      "diff_hash": "sha256:093cfc2ba3240f451a92e2108b7999b661d2c5db1f975e9f20ca7961dd34ff6c",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:248a5e4fdf4be32ca39ec3488066875804dcfe03ee2a1f5e80b8ee6e99776b55",
+      "acceptance_results": [
+        {
+          "acceptance_id": "PLD-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:248a5e4fdf4be32ca39ec3488066875804dcfe03ee2a1f5e80b8ee6e99776b55"
+        },
+        {
+          "acceptance_id": "PLD-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:248a5e4fdf4be32ca39ec3488066875804dcfe03ee2a1f5e80b8ee6e99776b55"
+        },
+        {
+          "acceptance_id": "PLD-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:248a5e4fdf4be32ca39ec3488066875804dcfe03ee2a1f5e80b8ee6e99776b55"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-64791bd2",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:343eaa9ca63ae4063ad2b3411da525473763a88c54ee3c34f74d9faec75f2c91",
+      "diff_hash": "sha256:461d859610fc61b5a0f939c7a270bd6485b8704f82e57cf0a8f9ab487a9ae9fd",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:fe292ca747dac939db52b4e4d4db1f2719c49056e891a84cd0334a17ef240e3b",
+      "acceptance_results": [
+        {
+          "acceptance_id": "PLD-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:fe292ca747dac939db52b4e4d4db1f2719c49056e891a84cd0334a17ef240e3b"
+        },
+        {
+          "acceptance_id": "PLD-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:fe292ca747dac939db52b4e4d4db1f2719c49056e891a84cd0334a17ef240e3b"
+        },
+        {
+          "acceptance_id": "PLD-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:fe292ca747dac939db52b4e4d4db1f2719c49056e891a84cd0334a17ef240e3b"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-f4419787",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:343eaa9ca63ae4063ad2b3411da525473763a88c54ee3c34f74d9faec75f2c91",
+      "diff_hash": "sha256:461d859610fc61b5a0f939c7a270bd6485b8704f82e57cf0a8f9ab487a9ae9fd",
+      "actor_id": "cli:claude-code:388e9967-292b-454c-8658-093ad1a066f8",
+      "summary": "Round-3 delta: validateLaneRecordShape now meets the last reseal at lane_rebinds[0].from_digest (identical in both runtime mirrors and both dist bundles; no runtime writer appends reseals after rebinds), and tests drive relay and post-rebind continuation (incl. after a Delegation reseal) through real startLanes/advanceLanes; blast radius medium — persisted batch_run_state/v3 validation in batch_state.ts.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "df81410d95a402f820c429b69163c8a2c83cd62a",
+        "review_commit": "a67d9f9bc22fc6e5fc95037412f9e8280829a0da"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-042adcba3d5f-1-review-1",
+          "acceptance_id": "PLD-A2",
+          "summary": "validateLaneRebinds checks only the last rebind's to_digest against plan_digest; intermediate links (rebinds[i].to_digest === rebinds[i+1].from_digest) are not validated at load, so the reseal-to-rebind handoff check anchors on an unverified chain head.",
+          "anchor": "sha256:66ef8f155d28eee2ec0a8818a75c43a39c5a62ae5f9a74ba5730903b61ec6af1",
+          "evidence": {
+            "trigger": "a stored record with two lane_rebinds whose first to_digest differs from the second from_digest, and reseals ending at rebinds[0].from_digest → loads without a shape error",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/unattended/batch_state.ts",
+              "validateLaneRecordShape",
+              "validateLaneRebinds"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "PLD-A2"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:5f5ad17ccd1df35802deed5966e44654675a0ee96cd02e3f031e775a41cce1b5"
+    }
+  ],
+  "findings": [
+    {
+      "id": "qa-PLD-A1-72d57715-db99d3",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "PLD-A1",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1) stdout=28B stderr=15267B",
+      "anchor": null,
+      "evidence": null,
+      "counterevidence": null
+    },
+    {
+      "id": "qa-PLD-A2-72d57715-de26b3",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "PLD-A2",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1) stdout=28B stderr=27875B",
+      "anchor": null,
+      "evidence": null,
+      "counterevidence": null
+    },
+    {
+      "id": "review-cb8f8b5f1a4a-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "PLD-A1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "Native-gated per-child stop only reaches BatchSessionPort.stop when HostRuntime has an injected sessionPortFactory, which production Claude/Pi/Antigravity Hosts never supply; production stop falls back to stopSingleTaskSupervisor and leaves the child's Herdr session running.",
+      "anchor": "sha256:25a6a47b279da8685863af375c98490882406f37e9b71a687a149e72bf78db6d",
+      "evidence": {
+        "trigger": "Production Host (HostRuntime constructed without options.sessionPortFactory, as in host-core/mcp_runtime.ts:329 and .pi-extension/imm-unattended-batch.ts:157 which only forward it when a test passes one) relays a native-gated stop for Child 2 of an S5 port-based batch (session_provider 'herdr', child.session.handle set, no executor_mode) → runtime.ts:827 skips SessionPortAdapter construction, relayLaneDecision gets no `sessions`, falls through to stopSingleTaskSupervisor, so BatchSessionPort.stop is never called and Child 2's Herdr session keeps running (and is not parked lane_executor_stopped via the port path). lane_sessions/index.ts portFor already falls back to the registry descriptor factory when createPort is absent; the stop path lacks that fallback. The host-level tests pass only because claudeHarness/piHarness (and the Pi shared runtime monkey-patch in tests/single-task-lane-decision.test.ts) inject a factory. Fix: build the stop port from SESSION_PROVIDER_REGISTRY (same resolution as portFor) when no factory is injected, and add a test that pins stop on a HostRuntime without sessionPortFactory using a registered test provider.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/host-core/runtime.ts:HostRuntime (relay block, sessionPortFactory guard)",
+          "plugins/immune-brain/runtime/unattended/lane_decision.ts:relayLaneDecision (stop branch)",
+          "plugins/immune-brain/runtime/unattended/batch_runner.ts:stopSingleTaskSupervisor"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "PLD-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-45ce8181d725-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "PLD-A1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "The two-child Initiative resume test injects a fake `advance` that writes no_progress=0 itself, so advanceLanes is never exercised for Child 2 and 'Child 1 untouched' is asserted only against the fake.",
+      "anchor": "sha256:5051526936aa2c3ed7f94fcde0fe11ef4acb31e7811476f0ee67fa842429c3e9",
+      "evidence": {
+        "trigger": "Two-child Initiative batch (s7Fixture), relayLaneDecision for child-2 with a test-supplied advance that rewrites child-2 session {no_progress:0, baseline:'r2'} → the asserted reset and sibling invariance come from the test's own write; the production HostRuntime path (advance = startPreparedBatch(initiativeSlug, {reuseOnly}) → advanceLanes over every child) could leave no_progress unreset or mutate child-1's session and this test would still pass",
+        "caller_chain": [
+          "tests/single-task-lane-decision.test.ts:per-child Lane decisions (S7)/relaying a literal-user decision resumes Child 2 via advanceLanes",
+          "plugins/immune-brain/runtime/unattended/lane_decision.ts:relayLaneDecision(input.advance)",
+          "plugins/immune-brain/runtime/host-core/runtime.ts:HostRuntime relay advance → startPreparedBatch",
+          "plugins/immune-brain/runtime/lane_sessions/index.ts:advanceLanes"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "PLD-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-45ce8181d725-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "PLD-A2",
+      "source": "review",
+      "review_round": 2,
+      "summary": "For the two-child Initiative, the tests only check rebindBatchChildIdentity record effects; nothing continues the batch after the rebind to prove there is no batch_plan_changed or retire_stale_batch, and no test covers the Revision Delegation reseal case.",
+      "anchor": "sha256:aa753b930910b143490d4c4fd94ee0e628824f3b38d9d3d25289fca4e5582dab",
+      "evidence": {
+        "trigger": "Two-child Initiative batch, child-2 breaking revision rebound (lane_rebinds appended, plan_digest advanced), then the batch continues through advanceLanes with resumeChildren(persisted) and the fresh confirmation_time → whether continuation refuses with batch_plan_changed (or does so after a Revision Delegation reseal) is never observed; git grep of both named test files at the review commit finds no reseal/Revision Delegation or batch_plan_changed continuation case",
+        "caller_chain": [
+          "tests/single-task-lane-decision.test.ts:approving a breaking revision rebinds Child 2, advances plan_digest and refuses a stale from_digest",
+          "plugins/immune-brain/runtime/unattended/lane_decision.ts:relayLaneDecision → rebindBatchChildIdentity",
+          "plugins/immune-brain/runtime/lane_sessions/index.ts:advanceLanes → resumeChildren"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "PLD-A2"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:per-child-lane-decisions:2026-11-19T07:25:07.305Z",
+      "at": "2026-11-19T07:25:07.305Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/per-child-lane-decisions.intent.json"
+    },
+    {
+      "id": "request_rework:per-child-lane-decisions:2026-11-19T07:25:37.755Z",
+      "at": "2026-11-19T07:25:37.755Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:4457de9f5187ec376a46358d2bfc60d1cc56fb2aa6957e285572ae68c4e77244",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-19T07:25:37.755Z"
+      }
+    },
+    {
+      "id": "resolve_finding:per-child-lane-decisions:2026-11-19T08:41:01.036Z",
+      "at": "2026-11-19T08:41:01.036Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-PLD-A1-72d57715-db99d3\naction_v2_sha256:b9aee6c2ab537f294e65e2f5808c64c47b1b9c132448a0ce8985c9e3ef1501c1"
+    },
+    {
+      "id": "resolve_finding:per-child-lane-decisions:2026-11-19T08:41:11.086Z",
+      "at": "2026-11-19T08:41:11.086Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-PLD-A2-72d57715-de26b3\naction_v2_sha256:4b37679f80db75c1f90e7e9a87e8ca4895722f61b4be3750c947773e6c7b6d4c"
+    },
+    {
+      "id": "freeze_artifacts:per-child-lane-decisions:2026-11-19T08:41:20.615Z",
+      "at": "2026-11-19T08:41:20.615Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/per-child-lane-decisions.intent.json"
+    },
+    {
+      "id": "record_approval:per-child-lane-decisions:2026-11-19T08:43:25.676Z",
+      "at": "2026-11-19T08:43:25.676Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-5c4bcf4a\naction_v2_sha256:093037bf7edeea459096db58c24508b40e512a4afe886aca9fb05153e4d106a1",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-19T08:43:25.676Z"
+      }
+    },
+    {
+      "id": "request_rework:per-child-lane-decisions:2026-11-19T08:57:53.833Z",
+      "at": "2026-11-19T08:57:53.833Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:73ec9c4c1a9b000c4f98f03576c54bc640bb14f133c352a5204a1cfc8807e8f9",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:6de2281c-1c66-4896-abcd-39ddd3ba72b4",
+        "confirmation_ref": "pi:cli:claude-code:6de2281c-1c66-4896-abcd-39ddd3ba72b4",
+        "issued_at": "2026-11-19T08:57:53.833Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "df81410d95a402f820c429b69163c8a2c83cd62a",
+        "review_commit": "10cfff381309cbdce07c22153d9f2e3aaa4a7be8"
+      },
+      "review_started_at": "2026-11-19T08:43:29.974Z",
+      "review_submitted_at": "2026-11-19T08:57:52.819Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "resolve_finding:per-child-lane-decisions:2026-11-19T09:07:06.991Z",
+      "at": "2026-11-19T09:07:06.991Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-cb8f8b5f1a4a-1-review-1\naction_v2_sha256:fcdea89f029f148228b92e07771dbf9a5872d030f2361b4477f1a637cdb8b650"
+    },
+    {
+      "id": "freeze_artifacts:per-child-lane-decisions:2026-11-19T09:07:17.182Z",
+      "at": "2026-11-19T09:07:17.182Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/per-child-lane-decisions.intent.json"
+    },
+    {
+      "id": "record_approval:per-child-lane-decisions:2026-11-19T09:09:18.560Z",
+      "at": "2026-11-19T09:09:18.560Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-1582fd64\naction_v2_sha256:0a88263ae60fdad84653049a28fa09e9c46ec85f5ee6324f73106b9ef19c8a98",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-19T09:09:18.560Z"
+      }
+    },
+    {
+      "id": "request_rework:per-child-lane-decisions:2026-11-19T09:11:37.067Z",
+      "at": "2026-11-19T09:11:37.067Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:65512b73774bcc50f1f8df4fb7aa5e3356b28e110c32a166898221c6e791bfbe",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:49574f6f-d151-47e6-862d-ada61b555792",
+        "confirmation_ref": "pi:cli:claude-code:49574f6f-d151-47e6-862d-ada61b555792",
+        "issued_at": "2026-11-19T09:11:37.067Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "df81410d95a402f820c429b69163c8a2c83cd62a",
+        "review_commit": "b60df36409041165cbb720a46b046b725468031d"
+      },
+      "review_started_at": "2026-11-19T09:09:22.813Z",
+      "review_submitted_at": "2026-11-19T09:11:35.837Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "resolve_finding:per-child-lane-decisions:2026-11-19T09:32:34.079Z",
+      "at": "2026-11-19T09:32:34.079Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-45ce8181d725-1-review-1\naction_v2_sha256:0b9fd2e77e2612aea84bbfe349935545c1c327e454263956aa4b5c07ec4dda80"
+    },
+    {
+      "id": "resolve_finding:per-child-lane-decisions:2026-11-19T09:32:45.738Z",
+      "at": "2026-11-19T09:32:45.738Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-45ce8181d725-2-review-2\naction_v2_sha256:5bc79f5b85339df36902246ef7e43f2c5bc3358fcb4cf68a37fdf8a5a747acc1"
+    },
+    {
+      "id": "freeze_artifacts:per-child-lane-decisions:2026-11-19T09:32:57.158Z",
+      "at": "2026-11-19T09:32:57.158Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/per-child-lane-decisions.intent.json"
+    },
+    {
+      "id": "record_approval:per-child-lane-decisions:2026-11-19T09:35:34.737Z",
+      "at": "2026-11-19T09:35:34.737Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-64791bd2\naction_v2_sha256:f06cd820293d2b2f86de0e784bdd40a93f0de3de9246b77fabc94e742026a8d3",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-19T09:35:34.737Z"
+      }
+    },
+    {
+      "id": "record_approval:per-child-lane-decisions:2026-11-19T09:37:50.568Z",
+      "at": "2026-11-19T09:37:50.568Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-f4419787\naction_v2_sha256:18c4168eb469f4841d6f62df8513cfb3d3ebe3816140ed62ee4bf6a5962f9319",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:388e9967-292b-454c-8658-093ad1a066f8",
+        "confirmation_ref": "pi:cli:claude-code:388e9967-292b-454c-8658-093ad1a066f8",
+        "issued_at": "2026-11-19T09:37:50.568Z"
+      },
+      "review_started_at": "2026-11-19T09:35:39.874Z",
+      "review_submitted_at": "2026-11-19T09:37:49.335Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:per-child-lane-decisions:2026-11-19T09:37:54.195Z",
+      "at": "2026-11-19T09:37:54.195Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:6ef4bdfb114d759e3ea4898ad1d1b464b47bc59bb5333dfe5d682fd1e8761eca"
+    }
+  ]
+}

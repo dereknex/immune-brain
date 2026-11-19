@@ -282,11 +282,16 @@ describe("single-task Lane contract text (Spec drive-always-lanes S6)", () => {
 			"`auto` fast-forwards the current branch",
 			"`checkout_delivery_overlap: <paths>` and writes nothing",
 			"Unrelated user edits are never blocked",
-			"only when the current generation's exit was observed as a normal exit",
+			// S6 exit-proof cleanup: an exit is observed only from the runtime's
+			// own child-process exit event, never from codes, notices or Herdr state.
+			"An exit is observed only from the runtime's own child-process exit event for that generation",
 			"`batch_lane_retained`",
 			"`lane_decision_required`",
 			"`approve_breaking_intent_revision`",
-			"rebinds the single-task batch's approved identity",
+			"`findActiveLaneBatchForTask(root, taskId)`",			"`rebindBatchChildIdentity`",
+			"`lane_rebinds`",
+			"`BatchSessionPort.stop`",
+			"`advanceLanes(root, batch_id)`",			"`coordinator: correct`",
 			"`lane_decision_stale`",
 			"A Pi Executor outside Herdr is never spawned",
 			"reports reason `lane_executor_requires_tui`",

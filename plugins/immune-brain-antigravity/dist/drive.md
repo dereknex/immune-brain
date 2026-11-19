@@ -40,7 +40,7 @@ task itself nor implements it in its own conversation. The Executor role runs in
 process, never in the Parent conversation. The Parent waits read-only with
 `imm-session await --batch <batch_id>` and follows the returned `next_action`
 (`advance`, `relay_dialog`, `ask_user`, `wait`, `complete`) under
-[Single-Task Lane](drive-batch.md#single-task-lane) and [Herdr Lane Tabs](drive-batch.md#herdr-lane-tabs). Planner and Brainstorm never open that
+[Single-Task Lane](drive-batch.md#single-task-lane) and [Herdr Lane Tabs](drive-batch.md#herdr-lane-tabs). Per-child decisions, native-gated stop, and `lane_rebinds` relay to the matching child of any single-task or Initiative batch via `findActiveLaneBatchForTask` and `rebindBatchChildIdentity`, then `advanceLanes`; see [Single-Task Lane](drive-batch.md#single-task-lane). Planner and Brainstorm never open that
 gate; a confirmation given to either is not this entry. A gate failure preserves
 the candidate and reports its stable reason plus exactly one same-Host recovery
 action; never recommend another Host, worktree, Direct Path, unmanaged
