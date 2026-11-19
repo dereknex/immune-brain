@@ -67,7 +67,7 @@ function fixture(independent = false) {
 }
 
 describe("serial runner retirement", () => {
-	it.each(["v3", "v9", "vnext", "v0"])("refuses unsupported batch contract %s without any writes", async version => {
+	it.each(["v4", "v9", "vnext", "v0"])("refuses unsupported batch contract %s without any writes", async version => {
 		const f = fixture();
 		try {
 			const dir = join(f.root, ".imm/state/batches"); mkdirSync(dir, { recursive: true });
@@ -77,7 +77,7 @@ describe("serial runner retirement", () => {
 			writeFileSync(path, bytes);
 			const before = f.snapshot();
 			const result = await prepareBatchPreflight({ root: f.root, initiative_slug: "retirement", now });
-			const newer = version === "v3" || version === "v9";
+			const newer = version === "v4" || version === "v9";
 			expect(result.ok).toBe(false);
 			if (result.ok) throw new Error("unsupported contract was accepted");
 			expect(result.state).toBe("blocked");
@@ -115,7 +115,7 @@ describe("serial runner retirement", () => {
 			expect(first.handoffs).toMatchObject([{ role: "executor", task_id: "first" }]);
 			expect(f.enrolled.size).toBe(1);
 			const statePath = join(f.root, ".imm/state/batches/retirement-batch.json");
-			expect(readAnyBatchRunState(f.root, input.batch_id)).toMatchObject({ contract: "assurance_kernel/batch_run_state/v2", max_parallel: 1, branch: "refs/heads/imm/retirement" });
+			expect(readAnyBatchRunState(f.root, input.batch_id)).toMatchObject({ contract: "assurance_kernel/batch_run_state/v3", max_parallel: 1, branch: "refs/heads/imm/retirement" });
 			const persisted = readFileSync(statePath);
 			expect((await tick()).handoffs).toEqual(first.handoffs);
 			expect(readFileSync(statePath)).toEqual(persisted);

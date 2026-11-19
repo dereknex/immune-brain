@@ -10,8 +10,10 @@
 // adapter that owns the transport.
 
 export type BatchReasonKey =
+	| "batch_agreement_invalid"
 	| "batch_entry_ambiguous"
 	| "batch_entry_kind_mismatch"
+	| "batch_record_retired"
 	| "lane_config_invalid"
 	| "lane_executor_unavailable"
 	| "lane_executor_unobservable"
@@ -81,6 +83,16 @@ export const BATCH_REASONS: Readonly<Record<BatchReasonKey, BatchReasonSpec>> = 
 	batch_record_shape_retired: {
 		state: "rejected",
 		reason: "batch_record_shape_retired: v1 serial batch records are read-and-retire only",
+		recovery_action: "Inspect the recorded batch, then use retire_stale_batch for this Initiative in the current Host.",
+	},
+	batch_agreement_invalid: {
+		state: "rejected",
+		reason: (detail: string) => detail || "batch_agreement_invalid",
+		recovery_action: "Correct the agreement fields and retry in the current Host.",
+	},
+	batch_record_retired: {
+		state: "rejected",
+		reason: (detail: string) => detail || "batch_record_retired: v2 Lane records are read-and-retire only",
 		recovery_action: "Inspect the recorded batch, then use retire_stale_batch for this Initiative in the current Host.",
 	},
 	batch_parent_branch_exists: {

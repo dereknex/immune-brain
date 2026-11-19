@@ -207,8 +207,8 @@ describe("single-task entry refusals", () => {
 	it.each([
 		["consolidation", JSON.stringify({ contract: "assurance_kernel/parent_delivery_consolidation/v1", envelope: {} }), true],
 		["malformed-json", "{", false],
-		["invalid-batch", JSON.stringify({ contract: "assurance_kernel/batch_run_state/v2", initiative_slug: "other" }), false],
-		["newer-batch", JSON.stringify({ contract: "assurance_kernel/batch_run_state/v3", initiative_slug: "other" }), false],
+		["invalid-batch", JSON.stringify({ contract: "assurance_kernel/batch_run_state/v3", initiative_slug: "other" }), false],
+		["newer-batch", JSON.stringify({ contract: "assurance_kernel/batch_run_state/v4", initiative_slug: "other" }), false],
 	] as const)("classifies %s records before checking Initiative membership", async (name, bytes, allowed) => {
 		const { repo } = fixture();
 		const path = join(repo, `.imm/state/batches/${name}.json`);
@@ -699,5 +699,19 @@ describe("single-task final verification and checkout delivery", () => {
 		expect(git(f.repo, "rev-parse", "HEAD")).toBe(f.base);
 		expect(git(f.repo, "rev-parse", `refs/heads/imm/${TASK}`)).toBe(parked.commits[0]!);
 		expect(parked.commits).toHaveLength(1);
+	});
+
+	it("AGR-A5: new single-task records are v3 with policies, null sessions; v2 refused", async () => {
+		const f = owned({});
+		await settled(f);
+		laneReport(await startBatch(f.args()));
+		const record = read(f);
+		expect(record.contract).toBe("assurance_kernel/batch_run_state/v3");
+		expect(record.session_provider).toBeNull();
+		expect(record.children.every(c => (c as { session?: unknown }).session === null)).toBe(true);
+		expect(record.confirmation?.source).toBe("native_gate");
+		expect(record.return_policy).toBe("checkout_delivery");
+		expect(record.interaction_mode).toBe("interactive_host");
+		expect(typeof record.final_verification_required).toBe("boolean");
 	});
 });

@@ -108,7 +108,7 @@ describe("batch completion verifier", () => {
 			writeBatchLaneRunState(f.root, supported);
 			expect((await observeParentCompletion(f.root, "parent", ["s5", "s6"])).head).toBe(head);
 			const path = join(directory, "newer.json");
-			const contract = "assurance_kernel/batch_run_state/v3";
+			const contract = "assurance_kernel/batch_run_state/v4";
 			writeFileSync(path, JSON.stringify({ contract, initiative_slug: "other" }));
 			expect((await observeParentCompletion(f.root, "parent", ["s5", "s6"])).complete).toBe(false);
 			const bytes = JSON.stringify({ contract, initiative_slug: "parent" }); writeFileSync(path, bytes);
@@ -334,7 +334,7 @@ async function laneFixture() {
 	}
 	const commitOf = (task: string) => commits[task === "task-s1" ? 0 : 1]!;
 	const children = tasks.map((task) => ({ ...child(task, "integrated", commitOf(task)), qa_failures: 0, lane: { path: lanes.get(task)!.path, branch: lanes.get(task)!.branch, base_head: base, lane_commit: lanes.get(task)!.commit } }));
-	const state = { contract: "assurance_kernel/batch_run_state/v2", batch_id: batch, initiative_slug: "lanefix", plan_digest: "sha256:p", base_head: base, branch: "imm/lanefix", confirmation_time: NOW, budget: { max_children: 2, qa_failure_limit: 2 }, max_parallel: 2, batch_state: "completed", children, commits, created_at: NOW, updated_at: NOW } as Record<string, any>;
+	const state = { contract: "assurance_kernel/batch_run_state/v3", batch_id: batch, initiative_slug: "lanefix", plan_digest: "sha256:p", base_head: base, branch: "imm/lanefix", confirmation_time: NOW, budget: { max_children: 2, qa_failure_limit: 2 }, max_parallel: 2, batch_state: "completed", children, commits, created_at: NOW, updated_at: NOW } as Record<string, any>;
 	const report = { contract: "assurance_kernel/batch_run_report/v1", batch_id: batch, initiative_slug: "lanefix", batch_state: "completed", max_parallel: 2, children: structuredClone(children), commits: [...commits], reason: null, handoffs: [], next_action: "none", created_at: NOW } as Record<string, any>;
 	persist(root, batch, state, report);
 	const dispose = () => { rmSync(root, { recursive: true, force: true }); for (const lane of lanes.values()) rmSync(lane.path, { recursive: true, force: true }); };

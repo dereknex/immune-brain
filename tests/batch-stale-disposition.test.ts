@@ -42,9 +42,9 @@ it("newer batch contracts block retirement and settled-lineage reuse without a g
 	const r = repo();
 	const settled = { ...laneRecord(r), batch_id: "a-settled", batch_state: "budget_stopped" as const };
 	writeFileSync(join(r.root, ".imm/state/batches/a-settled.json"), JSON.stringify(settled));
-	expect(findSettledBatchRecord(r.root, SLUG)?.contract).toBe("assurance_kernel/batch_run_state/v2");
+	expect(findSettledBatchRecord(r.root, SLUG)?.contract).toBe("assurance_kernel/batch_run_state/v3");
 	const path = join(r.root, ".imm/state/batches/z-newer.json");
-	const contract = "assurance_kernel/batch_run_state/v3";
+	const contract = "assurance_kernel/batch_run_state/v4";
 	const bytes = JSON.stringify({ contract, initiative_slug: SLUG });
 	writeFileSync(path, bytes);
 	expect(readStaleBatchLookup(r.root, SLUG)).toEqual({ kind: "corrupt", path, newer_contract: contract });
@@ -55,11 +55,11 @@ it("newer batch contracts block retirement and settled-lineage reuse without a g
 	expect(() => findSettledBatchRecord(r.root, SLUG)).toThrow("batch_runtime_too_old");
 });
 
-it.each(["before", "after"] as const)("a newer record listed %s an active v2 record blocks the active lookup", order => {
+it.each(["before", "after"] as const)("a newer record listed %s an active v3 record blocks the active lookup", order => {
 	const r = repo();
 	write(r, laneRecord(r));
 	const dir = join(r.root, ".imm/state/batches");
-	const contract = "assurance_kernel/batch_run_state/v3";
+	const contract = "assurance_kernel/batch_run_state/v4";
 	const bytes = JSON.stringify({ contract, initiative_slug: SLUG });
 	// Directory order is filesystem-defined, so probe for a name that lands on the wanted side.
 	let path: string | null = null;
@@ -204,7 +204,7 @@ function laneRecord(r: Repo): BatchLaneRunStateRecord {
 		run_id: runId,
 	});
 	return {
-		contract: "assurance_kernel/batch_run_state/v2",
+		contract: "assurance_kernel/batch_run_state/v3",
 		batch_id: BATCH_ID,
 		initiative_slug: SLUG,
 		base_head: r.base,
@@ -458,9 +458,9 @@ describe("stale batch disposition", () => {
 		expect(outcome.outcome).toBe("retired");
 		if (outcome.outcome !== "retired") throw new Error("expected retired");
 		const after = readAnyBatchRunState(r.root, BATCH_ID)!;
-		expect(after.contract).toBe("assurance_kernel/batch_run_state/v2");
+		expect(after.contract).toBe("assurance_kernel/batch_run_state/v3");
 		expect(after.batch_state).toBe("superseded");
-		if (after.contract !== "assurance_kernel/batch_run_state/v2") throw new Error("expected v2");
+		if (after.contract !== "assurance_kernel/batch_run_state/v3") throw new Error("expected v3");
 		// Lane branches and run identity survive as evidence.
 		expect(after.children.map((c) => c.lane?.branch ?? null)).toEqual([
 			`${BATCH_BRANCH}-parallel-batch-lanes-s1`,

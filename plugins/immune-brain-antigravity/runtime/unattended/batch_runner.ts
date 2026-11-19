@@ -161,6 +161,11 @@ export interface StartBatchInput {
 	 * the recorded list in either execution mode.
 	 */
 	final_verification?: string[];
+	/** BatchAgreement policies (S3): written into new Lane records; absent, derived transitionally. */
+	confirmation?: { source: string; ref: string };
+	return_policy?: "checkout_delivery" | "retain_branch";
+	interaction_mode?: "interactive_host" | "parent_relayed";
+	final_verification_required?: boolean;
 	/**
 	 * Lane mode: the Review profile resolved from the request-selected Lane
 	 * profile, recorded when a new batch starts; a resume keeps the recorded one

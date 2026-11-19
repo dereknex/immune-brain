@@ -32,7 +32,7 @@ import { dependencyWaves } from "./batch_schedule";
 import { parseVerificationDescriptor } from "../verification_descriptor";
 import { scopeEstimateFailure } from "../kernel/intent_readiness";
 import { batchReason, type BatchReasonKey } from "./batch_reasons";
-import { BatchRuntimeTooOldError, classifyBatchRunStateContract, BATCH_RUN_STATES, batchTopologyDigest, isLaneBatchRecord, isTerminalBatchState, readAnyBatchRunState, recordedAuthorityHashes, type AnyBatchRunStateRecord, type LaneRebind } from "./batch_state";
+import { BatchRuntimeTooOldError, classifyBatchRunStateContract, BATCH_RUN_STATES, batchTopologyDigest, isLaneBatchRecord, isRetiredLaneRecord, isTerminalBatchState, readAnyBatchRunState, recordedAuthorityHashes, type AnyBatchRunStateRecord, type LaneRebind } from "./batch_state";
 import { assertLaneWorktreeAvailable } from "./batch_worktrees";
 import { planLaneLeakRestore } from "./batch_leak_restore";
 import type {
@@ -697,6 +697,7 @@ async function projectPreflight(
 			: reject("batch_state_unreadable", found.path);
 	// Settled records retain branch provenance; only active records are resumed.
 	const activeRecord: AnyBatchRunStateRecord | null = found ? found.record : null;
+	if (activeRecord && isRetiredLaneRecord(activeRecord)) return reject("batch_record_retired", `${activeRecord.batch_id} uses v2; v2 Lane records are read-and-retire only`);
 	if (activeRecord && !isLaneBatchRecord(activeRecord)) return reject("batch_record_shape_retired");
 	const existingBatch: AnyBatchRunStateRecord | null = activeRecord ?? findSettledBatchRecord(root, initiativeSlug);
 	if (existingBatch && (isLaneBatchRecord(existingBatch) ? existingBatch.plan_source : undefined) !== options.plan_source)

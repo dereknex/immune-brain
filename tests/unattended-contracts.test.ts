@@ -547,7 +547,7 @@ describe("unattended batch contract text", () => {
 			).map((line) => line.trim().replace(/\??:$/, ""));
 		const declaredFields = fieldsOf(recordBody);
 		// Lane mode adds a second record contract; it is orchestration-only as well.
-		expect(batchState).toContain('contract: "assurance_kernel/batch_run_state/v2"');
+		expect(batchState).toContain('contract: "assurance_kernel/batch_run_state/v3"');
 		expect(
 			fieldsOf(
 				batchState.slice(
@@ -559,6 +559,12 @@ describe("unattended batch contract text", () => {
 			"contract",
 			// Spec drive-always-lanes D1: a single-task batch records its plan source.
 			"plan_source",
+			// S3 (batch-agreement-v3): agreement policies and session provider, null until S4.
+			"confirmation",
+			"return_policy",
+			"interaction_mode",
+			"session_provider",
+			"final_verification_required",
 			"executor_mode",
 			"topology_digest",
 			"progress_mode",

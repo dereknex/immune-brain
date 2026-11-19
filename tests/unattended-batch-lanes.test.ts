@@ -473,7 +473,7 @@ describe("runtime-owned Parent Lane lifecycle", () => {
 			expect(first.children[0]!.state).toBe("enrolled");
 			const lane = first.children[0]!.lane!.path;
 			const record = readAnyBatchRunState(fx.repo, BATCH_ID)!;
-			if (record.contract !== "assurance_kernel/batch_run_state/v2") throw new Error("expected Lane record");
+			if (record.contract !== "assurance_kernel/batch_run_state/v3") throw new Error("expected Lane record");
 			if (mismatch === "record-path") record.children[0]!.lane!.path = fx.repo;
 			if (mismatch === "record-branch") record.children[0]!.lane!.branch = "imm-lane/foreign/task-a";
 			if (mismatch.startsWith("record-")) writeBatchLaneRunState(fx.repo, record);
@@ -972,7 +972,7 @@ describe("max_parallel 1 end to end through a real second worktree", () => {
 				},
 			]);
 			expect(first).not.toHaveProperty("handoff");
-			expect(readAnyBatchRunState(fx.repo, BATCH_ID)?.contract).toBe("assurance_kernel/batch_run_state/v2");
+			expect(readAnyBatchRunState(fx.repo, BATCH_ID)?.contract).toBe("assurance_kernel/batch_run_state/v3");
 			expect(kernel.enrolled.size).toBe(0);
 
 			// Tick 2: the Lane is offered and the child is enrolled in it.
@@ -1245,7 +1245,7 @@ describe("max_parallel 1 end to end through a real second worktree", () => {
 			const { max_parallel: _omitted, ...serial } = request(fx, [child("task-a", "S1")], kernel);
 			const report = await startBatch({ ...serial, max_parallel: 1 });
 			expect(report).toMatchObject({ max_parallel: 1 });
-			expect(readAnyBatchRunState(fx.repo, BATCH_ID)?.contract).toBe("assurance_kernel/batch_run_state/v2");
+			expect(readAnyBatchRunState(fx.repo, BATCH_ID)?.contract).toBe("assurance_kernel/batch_run_state/v3");
 		} finally {
 			fx.cleanup();
 		}
@@ -1277,7 +1277,36 @@ describe("max_parallel 1 end to end through a real second worktree", () => {
 			const kernel = laneKernel();
 			const { max_parallel: _omitted, ...serial } = request(fx, [child("task-a", "S1")], kernel);
 			await startBatch(serial);
-			expect(readAnyBatchRunState(fx.repo, BATCH_ID)).toMatchObject({ contract: "assurance_kernel/batch_run_state/v2", max_parallel: 1 });
+			const record = readAnyBatchRunState(fx.repo, BATCH_ID) as BatchLaneRunStateRecord;
+			expect(record).toMatchObject({ contract: "assurance_kernel/batch_run_state/v3", max_parallel: 1 });
+			// AGR-A5: new Lane records carry v3 agreement policies, null provider and null child sessions.
+			expect(record.session_provider).toBeNull();
+			expect(record.children.every(c => (c as { session?: unknown }).session === null)).toBe(true);
+			expect(record.confirmation?.source).toBe("native_gate");
+			expect(["checkout_delivery", "retain_branch"]).toContain(record.return_policy);
+			expect(record.interaction_mode).toBe("interactive_host");
+			expect(typeof record.final_verification_required).toBe("boolean");
+		} finally {
+			fx.cleanup();
+		}
+	});
+
+	it("AGR-A5: stored v2 Lane records are refused with batch_record_retired", async () => {
+		const fx = fixture();
+		try {
+			const kernel = laneKernel();
+			const args = request(fx, [child("task-a", "S1")], kernel);
+			await startBatch(args);
+			const v3 = readAnyBatchRunState(fx.repo, BATCH_ID) as BatchLaneRunStateRecord;
+			const v2path = join(fx.repo, ".imm/state/batches/v2-retired.json");
+			writeFileSync(v2path, JSON.stringify({ ...v3, contract: "assurance_kernel/batch_run_state/v2", batch_id: "v2-retired" }, null, 2) + "\n");
+			const persisted = readAnyBatchRunState(fx.repo, "v2-retired");
+			expect(persisted).not.toBeNull();
+			const { isRetiredLaneRecord } = await import("../plugins/immune-brain/runtime/unattended/batch_state");
+			expect(isRetiredLaneRecord(persisted!)).toBe(true);
+			const report = await runLaneBatch({ ...args, batch_id: "v2-retired", initiative_slug: SLUG }, persisted);
+			expect(report.reason ?? "").toContain("batch_record_retired");
+			expect(report.next_action).toContain("retire_stale_batch");
 		} finally {
 			fx.cleanup();
 		}
@@ -1574,7 +1603,7 @@ describe("lane release", () => {
 				git_base_head: commit, attestations: [], findings: [], history: [],
 			} });
 			const persisted = readAnyBatchRunState(fx.repo, BATCH_ID)!;
-			if (persisted.contract !== "assurance_kernel/batch_run_state/v2") throw new Error("expected Lane record");
+			if (persisted.contract !== "assurance_kernel/batch_run_state/v3") throw new Error("expected Lane record");
 			expect(laneRejectionReport(args, persisted, "kernel store is busy", "retry").handoffs).toEqual([]);
 			expect(readFileSync(statePath, "utf8")).toBe(before);
 			expect(lanes(await reject()).handoffs).toEqual([]);

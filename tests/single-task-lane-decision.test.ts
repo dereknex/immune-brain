@@ -335,9 +335,9 @@ describe("single-task Lane decision relay (S5)", () => {
 		writeFileSync(stateFile, `${JSON.stringify({ ...rebound, lane_rebinds: [{ ...validEntry, to_digest: `sha256:${"b".repeat(64)}` }] }, null, 2)}\n`);
 		expect(() => readAnyBatchRunState(repo, BATCH_ID)).toThrow();
 
-		// Record without plan_source single_task carrying lane_rebinds.
+		// S3 generalizes lane_rebinds to any child: an Initiative record without plan_source still carries them.
 		writeFileSync(stateFile, `${JSON.stringify({ ...rebound, plan_source: undefined, lane_rebinds: [validEntry] }, null, 2)}\n`);
-		expect(() => readAnyBatchRunState(repo, BATCH_ID)).toThrow();
+		expect(() => readAnyBatchRunState(repo, BATCH_ID)).not.toThrow();
 
 		// Entry whose to_revision is not greater than from_revision.
 		writeFileSync(stateFile, `${JSON.stringify({ ...rebound, lane_rebinds: [{ ...validEntry, from_revision: 2, to_revision: 2 }] }, null, 2)}\n`);

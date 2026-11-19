@@ -49,7 +49,7 @@ function fixture(mode = "manual", routineClasses?: Array<{ id: string; paths: st
 	git(root, "commit", "-qm", "child");
 	const head = git(root, "rev-parse", "HEAD");
 	git(root, "checkout", "-q", "main");
-	const batch: BatchLaneRunStateRecord = { contract: "assurance_kernel/batch_run_state/v2", progress_mode: "parent_branch", batch_id: "batch-example", initiative_slug: "example", plan_digest: `sha256:${"2".repeat(64)}`,
+	const batch: BatchLaneRunStateRecord = { contract: "assurance_kernel/batch_run_state/v3", progress_mode: "parent_branch", batch_id: "batch-example", initiative_slug: "example", plan_digest: `sha256:${"2".repeat(64)}`,
 		base_head: base, branch: "refs/heads/imm/example", confirmation_time: "2026-01-01T00:00:00.000Z", budget: { max_children: 2, qa_failure_limit: 2 }, max_parallel: 1, batch_state: "running",
 		children: [{ task_id: "child", slice_id: "S1", blocked_by: [], state: "integrated", reason: null, commit: head, qa_failures: 0, redo_grants: 2,
 			lane: { path: join(root, "removed-lane"), branch: "imm-lane/example/child", base_head: base, lane_commit: head } }], commits: [head], created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z" };

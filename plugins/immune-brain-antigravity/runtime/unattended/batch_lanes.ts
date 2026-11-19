@@ -49,9 +49,14 @@ import {
 	type BatchLaneHandoff,
 	type BatchLaneRunReport,
 	type BatchLaneRunStateRecord,
+	defaultAgreementPolicies,
+	effectiveReturnPolicy,
+	entryKindMatches,
 	isLaneBatchRecord,
+	isRetiredLaneRecord,
 	isTerminalBatchState,
 	laneGenerationStore,
+	planSourceIdentity,
 	prepareBatchLaneRunState,
 	writeBatchLaneRunState,
 	writeBatchRunReport,
@@ -612,8 +617,8 @@ function redoRetained(cause: string | null | undefined): string {
 /** Integrated children whose runtime-created Lane is still present; delivery never implies cleanup. */
 export function retainedLaneNotices(root: string, record: BatchLaneRunStateRecord, lanes: BatchLaneGitPort = createDefaultLaneGitPort()): NonNullable<BatchLaneRunReport["lane_refusals"]> {
 	if (!isParentBranch(record.branch)) return [];
-	// Spec drive-always-lanes D7: a single task's cleanup decision is recorded, so its notice names the failed condition.
-	if (record.plan_source === "single_task")
+	// A checkout return records its cleanup decision, so its notice names the failed condition.
+	if (effectiveReturnPolicy(record) === "checkout_delivery")
 		return record.children
 			.filter(child => child.lane && (child.lane_retained || (child.state === "needs_human" && child.commit !== null)) && lanes.inspectLane(root, child.lane.path).exists)
 			.map(child => ({ task_id: child.task_id, path: child.lane!.path,
@@ -885,7 +890,9 @@ export async function runLaneBatch(
 ): Promise<BatchLaneRunReport> {
 	if (persisted && !isLaneBatchRecord(persisted))
 		return { ...refuse(input, persisted, "batch_record_shape_retired", "v1 serial batch records are read-and-retire only"), next_action: "Inspect the recorded batch, then use retire_stale_batch for this Initiative in the current Host." };
-	if (persisted && persisted.plan_source !== input.plan_source)
+	if (persisted && isRetiredLaneRecord(persisted))
+		return { ...refuse(input, persisted, "batch_record_retired", "v2 Lane records are read-and-retire only"), next_action: "Inspect the recorded batch, then use retire_stale_batch for this Initiative in the current Host." };
+	if (persisted && !entryKindMatches(persisted, input))
 		return refuse(input, persisted, "batch_entry_kind_mismatch", "the recorded batch has a different plan source");
 	if (persisted && input.max_parallel !== undefined && input.max_parallel !== persisted.max_parallel)
 		return refuse(input, persisted, PARALLEL_MISMATCH, `the recorded batch runs with max_parallel ${persisted.max_parallel}`);
@@ -941,7 +948,7 @@ export async function runLaneBatch(
 			for (const child of record.children) {
 				if (child.state !== "needs_human") { resumed.push(child); continue; }
 				if (!child.lane?.run_id) { resumed.push(child); continue; }
-				if (record.plan_source === "single_task" && child.commit && record.final_report?.return_to_coordinator.status === "blocked" &&
+				if (effectiveReturnPolicy(record) === "checkout_delivery" && child.commit && record.final_report?.return_to_coordinator.status === "blocked" &&
 					record.final_report.return_to_coordinator.reason === child.reason) {
 					resumed.push({ ...child, state: "integrated", reason: null }); continue;
 				}
@@ -1008,7 +1015,8 @@ export async function runLaneBatch(
 		const freeze = input.executor_freeze ?? input.supervision;
 		const frozenExecutor = frozenExecutorPreferences(input.root, freeze?.request, freeze?.parentHost);
 		record = prepareBatchLaneRunState({
-			plan_source: input.plan_source,
+			...planSourceIdentity(input),
+			...defaultAgreementPolicies(input),
 			executor_mode: input.executor_mode,
 			topology_digest: input.topology_digest,
 			batch_id: input.batch_id,
@@ -1478,7 +1486,8 @@ export async function runLaneBatch(
 		// A hidden-ref batch leaves its delivery in the user's working tree, so the check is
 		// bound to the children's scoped content rather than to a clean tree at HEAD.
 		const declared = readDerivedFilesAt(input.root, record.base_head);
-		const singleTask = record.plan_source === "single_task" && isParentBranch(record.branch);
+		const isCheckout = effectiveReturnPolicy(record) === "checkout_delivery";
+		const singleTask = isCheckout && isParentBranch(record.branch);
 		// D3: a replayed single task reuses only an unchanged, validated PASS for this exact tip.
 		const reused = singleTask ? reusableFinalVerification(record.final_report?.final_verification,
 			{ head: expectedBatchHead(record), commands: record.final_verification ?? [], declared }) : null;
@@ -1492,28 +1501,42 @@ export async function runLaneBatch(
 			// The nested observation is legal in a running record; the top-level proof waits for completion (D1).
 			record.final_report = await buildBatchFinalReport(input.root, { ...record, final_verification_result: final });
 			persist(); // Keep the report even if the return step is interrupted.
-			if (record.plan_source === "single_task") {
-				const child = record.children[0]!;
+			if (isCheckout) {
+				const required = (record as { final_verification_required?: boolean }).final_verification_required;
+				const mustPass = required !== false;
 				const failedChecks = final ? [...final.results, ...(final.derived_checks ?? []).map(item => ({ ...item, command: item.id }))].filter(item => !item.passed).map(item => item.command) : [];
-				// D4: delivery needs a pass bound to this exact tip; a failure keeps the integration and touches no checkout.
-				const unverified = final && (!final.passed || final.head !== record.final_report.head)
+				// D4: delivery needs a pass bound to this exact tip when verification is required; a failure keeps the integration and touches no checkout.
+				const unverified = mustPass && final && (!final.passed || final.head !== record.final_report.head)
 					? `final_verification_failed: ${failedChecks.join(", ") || (final.head !== record.final_report.head ? "head_mismatch" : "workspace_changed")}` : null;
-				const delivery = unverified ? { ...record.final_report.return_to_coordinator, status: "blocked" as const, reason: unverified }
-					: deliverSingleTask(input.root, child.lane!.base_head, record.final_report.head);
-				record.final_report.return_to_coordinator = delivery;
-				if (delivery.status === "blocked") {
-					record.children = record.children.map(c => c.task_id === child.task_id ? { ...c, state: "needs_human", reason: delivery.reason } : c);
-					record.batch_state = "needs_human";
+				if (record.children.length === 1) {
+					const child = record.children[0]!;
+					const delivery = unverified ? { ...record.final_report.return_to_coordinator, status: "blocked" as const, reason: unverified }
+						: deliverSingleTask(input.root, child.lane!.base_head, record.final_report.head);
+					record.final_report.return_to_coordinator = delivery;
+					if (delivery.status === "blocked") {
+						record.children = record.children.map(c => c.task_id === child.task_id ? { ...c, state: "needs_human", reason: delivery.reason } : c);
+						record.batch_state = "needs_human";
+						persist();
+						return finalizeLane(input.root, record, delivery.reason!, "", { refusals: [...refusals, ...retainedLaneNotices(input.root, record, lanes)], tracker, instruction, sessionClose, ...(final ? { final } : {}) });
+					}
+					persist(); // The delivery is recorded before any cleanup step.
+					const outcome = cleanupSingleTaskLane({ root: input.root, lanePath: child.lane!.path, laneBranch: child.lane!.branch,
+						parentRef: record.branch, generation: laneGenerationStore(input.root, record.batch_id).read(),
+						observation: input.lane_exit_observation });
+					record.children = record.children.map(c => c.task_id !== child.task_id ? c : outcome.status === "removed"
+						? { ...c, lane_removed: { exit: outcome.exit, worktree: outcome.worktree, branches: outcome.branches } }
+						: { ...c, lane_retained: { condition: outcome.condition } });
+				} else {
+					const delivery = unverified ? { ...record.final_report.return_to_coordinator, status: "blocked" as const, reason: unverified }
+						: deliverSingleTask(input.root, record.base_head, record.final_report.head);
+					record.final_report.return_to_coordinator = delivery;
+					if (delivery.status === "blocked") {
+						record.batch_state = "needs_human";
+						persist();
+						return finalizeLane(input.root, record, delivery.reason!, "", { refusals: [...refusals, ...retainedLaneNotices(input.root, record, lanes)], tracker, instruction, sessionClose, ...(final ? { final } : {}) });
+					}
 					persist();
-					return finalizeLane(input.root, record, delivery.reason!, "", { refusals: [...refusals, ...retainedLaneNotices(input.root, record, lanes)], tracker, instruction, sessionClose, ...(final ? { final } : {}) });
 				}
-				persist(); // The delivery is recorded before any cleanup step.
-				const outcome = cleanupSingleTaskLane({ root: input.root, lanePath: child.lane!.path, laneBranch: child.lane!.branch,
-					parentRef: record.branch, generation: laneGenerationStore(input.root, record.batch_id).read(),
-					observation: input.lane_exit_observation });
-				record.children = record.children.map(c => c.task_id !== child.task_id ? c : outcome.status === "removed"
-					? { ...c, lane_removed: { exit: outcome.exit, worktree: outcome.worktree, branches: outcome.branches } }
-					: { ...c, lane_retained: { condition: outcome.condition } });
 			} else record.final_report.return_to_coordinator = returnBatchToCoordinator(input.root, record.final_report.head, final ?? null);
 		}
 		record.batch_state = "completed";
@@ -1528,7 +1551,7 @@ export async function runLaneBatch(
 			final && !final.passed
 				? "Every child is integrated but the batch did not pass its final verification; inspect the failing commands against the delivered content. Integrated commits were not rolled back."
 				: "",
-			{ handoffs: releaseHandoffs(input, record, lanes), refusals: record.plan_source === "single_task" ? [...refusals, ...retainedLaneNotices(input.root, record, lanes)] : refusals,
+			{ handoffs: releaseHandoffs(input, record, lanes), refusals: isCheckout ? [...refusals, ...retainedLaneNotices(input.root, record, lanes)] : refusals,
 				tracker, instruction, sessionClose, ...(final ? { final } : {}) },
 		);
 	}

@@ -206,7 +206,7 @@ describe("registered Pi batch entry with real Kernel, QA and Git (routine fixtur
 			expect(status.lifecycle).not.toBe("active");
 		}
 		expect(first.report).not.toHaveProperty("handoff");
-		expect(f.state(first.batch_id)).toMatchObject({ contract: "assurance_kernel/batch_run_state/v2", max_parallel: 1, branch: f.batchRef() });
+		expect(f.state(first.batch_id)).toMatchObject({ contract: "assurance_kernel/batch_run_state/v3", max_parallel: 1, branch: f.batchRef() });
 		expect(readAuditTaskPair(f.lane(f.tasks[0]!), f.tasks[0]!)).toBeNull();
 	}, 120000);
 

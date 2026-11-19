@@ -157,7 +157,7 @@ describe("record and topology validation before Host batch effects", () => {
 					: await runPiBatch({ root: f.root, initiativeSlug: f.slug, readInitiative: async () => f.observation, confirmBatch: async () => "accept" });
 				expect(next.state).toBe("started"); if (next.state !== "started") throw new Error(next.reason);
 				expect(next.batch_id).not.toBe(record.batch_id);
-				expect(readAnyBatchRunState(f.root, next.batch_id!)).toMatchObject({ contract: "assurance_kernel/batch_run_state/v2", max_parallel: 1 });
+				expect(readAnyBatchRunState(f.root, next.batch_id!)).toMatchObject({ contract: "assurance_kernel/batch_run_state/v3", max_parallel: 1 });
 				expect(readFileSync(path)).toEqual(bytes); expect(snapshot(f.root).index).toEqual(before.index); expect(snapshot(f.root).head).toBe(before.head);
 				return;
 			}
@@ -553,7 +553,7 @@ describe("lane mode parameters and resume", () => {
 			const terminalBytes = readFileSync(path);
 			const next = await start();
 			expect(next.state).toBe("started"); expect(gates).toBe(1); expect(next.batch_id).not.toBe(record.batch_id);
-			expect(readAnyBatchRunState(f.root, next.batch_id)).toMatchObject({ contract: "assurance_kernel/batch_run_state/v2", max_parallel: 1 });
+			expect(readAnyBatchRunState(f.root, next.batch_id)).toMatchObject({ contract: "assurance_kernel/batch_run_state/v3", max_parallel: 1 });
 			expect(readFileSync(path)).toEqual(terminalBytes); expect(git(f.root, "rev-parse", "HEAD")).toBe(before.head);
 		}, 30000);
 	it("refuses invalid max_parallel and malformed Lane offers before any gate", async () => {
