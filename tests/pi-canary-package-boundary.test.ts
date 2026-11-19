@@ -131,9 +131,9 @@ describe("pi canary package boundary", () => {
 		const entryCalls = new Set<string>();
 		const sequencers: string[] = [];
 		for (const [name, source] of productionSources()) {
-			// The entry module itself is the sequencer, not a caller; the batch
-			// runner's `enrollTask` is a Kernel-port member, not this entry.
-			const isSequencerOrPort = name === "runtime/kernel/enrollment.ts" || name === "runtime/unattended/batch_runner.ts";
+			// The entry module itself is the sequencer, not a caller; the shared
+			// batch child Kernel port invokes the entry through an injectable alias.
+			const isSequencerOrPort = name === "runtime/kernel/enrollment.ts";
 			const callsEntry = importsEntry(source) && !isSequencerOrPort;
 			const usesRehearsal = /\brunEnrollmentRehearsal\s*\(/.test(source);
 			const usesCommit = /\benrollCanaryTask\s*\(/.test(source);

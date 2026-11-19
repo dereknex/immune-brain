@@ -10,10 +10,13 @@ import { createBatchKernelPort } from "../plugins/immune-brain/runtime/unattende
 import { createEnrollmentAuthorityRegistry } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
 import { createDefaultBatchGitPort, type BatchRunnerGitPort } from "../plugins/immune-brain/runtime/unattended/batch_git";
 import { createDefaultLaneGitPort } from "../plugins/immune-brain/runtime/unattended/batch_lanes";
-import { startBatch } from "../plugins/immune-brain/runtime/unattended/batch_runner";
-import type { BatchRunnerKernelPort, StartBatchInput } from "../plugins/immune-brain/runtime/unattended/batch_runner";
+import { runLaneBatch } from "../plugins/immune-brain/runtime/unattended/batch_lanes";
+
+/** S8: the shared transitional entry is gone; the engine entry reads the persisted record the same way. */
+const startBatch = (input: StartBatchInput) => runLaneBatch(input, readAnyBatchRunState(input.root, input.batch_id));
+import type { BatchRunnerKernelPort } from "../plugins/immune-brain/runtime/unattended/batch_kernel_port";
+import type { StartBatchInput } from "../plugins/immune-brain/runtime/unattended/batch_lanes";
 import { parkLaneForExecutor, prepareBatchLaneRunState, readAnyBatchRunState, rebindBatchChildIdentity, rebindSingleTaskIdentity, writeBatchLaneRunState, type BatchLaneRunReport, type BatchLaneRunStateRecord } from "../plugins/immune-brain/runtime/unattended/batch_state";
-import { LaneSupervisor } from "../plugins/immune-brain/runtime/unattended/lane_supervisor";
 import { LaneDecisionStaleError, laneDecisionFacts, relayLaneDecision, type LaneDecisionOperation } from "../plugins/immune-brain/runtime/unattended/lane_decision";
 import { laneDecisionRequestPath, readLaneDecisionRequest, writeLaneDecisionRequest, LANE_EXECUTOR_ENV, LANE_EXECUTOR_HEADLESS } from "../plugins/immune-brain/runtime/unattended/lane_decision_request";
 import type { BatchPlanChild } from "../plugins/immune-brain/runtime/unattended/types";
@@ -128,18 +131,11 @@ function request(repo: string, base: string, fx: { kernel: ReturnType<typeof ker
 const laneReport = (report: unknown) => report as BatchLaneRunReport;
 
 
-function executors(script: string) {
-	const dir = realpathSync(mkdtempSync(join(tmpdir(), "imm-lane-decision-bin-")));
-	roots.push(dir);
-	for (const name of ["claude", "pi"]) { const path = join(dir, name); writeFileSync(path, script); chmodSync(path, 0o755); }
-	process.env.PATH = `${dir}:${oldPath}`;
-}
-
 /** A started single-task batch whose Lane child waits on a literal-user decision. */
-async function waitingLane(executor_mode?: "interactive") {
+async function waitingLane(_executor_mode?: "interactive") {
 	const { repo, base } = fixture();
 	const k = kernel();
-	const args = (intentOverride?: ReturnType<typeof readTaskIntent>) => ({ ...request(repo, base, { kernel: k, git: Object.assign(createDefaultBatchGitPort(), { lane: createDefaultLaneGitPort() }) }, intentOverride), executor_mode });
+	const args = (intentOverride?: ReturnType<typeof readTaskIntent>) => ({ ...request(repo, base, { kernel: k, git: Object.assign(createDefaultBatchGitPort(), { lane: createDefaultLaneGitPort() }) }, intentOverride) });
 	const first = laneReport(await startBatch(args()));
 	const lane = first.children[0]!.lane!.path;
 	return { repo, base, lane, args, first };
@@ -157,40 +153,45 @@ function relayInput(repo: string, lane: string, over: Partial<Parameters<typeof 
 	const applied = { value: false, calls: 0 };
 	const input = { root: repo, taskId: TASK, operation: "request_authorization" as LaneDecisionOperation, project,
 		apply: async () => { applied.calls++; applied.value = true; return { state: "applied" }; },
-		supervisor: new LaneSupervisor(), parentHost: "claude-code" as const, pluginDir: "/plugin", waitMs: 20_000, ...over };
+		// S8: the relay resumes through the session-port owner, which the test
+		// observes here by writing the next generation's marker itself.
+		advance: async () => { writeFileSync(join(lane, "gen.txt"), lane); return { advanced: true }; },
+		...over };
 	return { input, applied };
 }
 
 describe("single-task Lane decision relay (S5)", () => {
-	it("applies the gate in the Lane and starts the next Executor generation", async () => {
-		executors('#!/bin/sh\nprintf "%s\\n" "$PWD" > gen.txt\nexit 0\n');
-		const { repo, lane } = await waitingLane();
+	it("applies the gate in the Lane and resumes the next generation", async () => {
+			const { repo, lane } = await waitingLane();
 		const { input, applied } = relayInput(repo, lane);
 		const outcome = await relayLaneDecision(input);
 		expect(applied.calls).toBe(1);
-		expect(outcome).toMatchObject({ relayed: true, lane_relay: { applied: true, operation: "request_authorization", rebound: false, lane_supervision: { state: "exited" } } });
+		expect(outcome).toMatchObject({ relayed: true, lane_relay: { applied: true, operation: "request_authorization", rebound: false, lane_supervision: { advanced: true } } });
 		expect(readFileSync(join(lane, "gen.txt"), "utf8").trim()).toBe(lane);
 	});
 
-	it.each(["request_authorization", "stop"] as const)("applies %s to an interactive Lane without launching a runtime Executor", async operation => {
-		executors('#!/bin/sh\nprintf x > gen.txt\n');
+	it.each(["request_authorization", "stop"] as const)("applies %s through the session-port relay without spawning a process", async operation => {
 		const { repo, lane, args } = await waitingLane("interactive");
 		const { input, applied } = relayInput(repo, lane, { operation });
 		const outcome = await relayLaneDecision(input);
 		expect(applied.calls).toBe(1);
-		expect(outcome).toMatchObject({ relayed: true, lane_relay: { applied: true, operation, lane_supervision: null } });
-		expect(existsSync(join(lane, "gen.txt"))).toBe(false);
-		expect(existsSync(lane)).toBe(true);
 		if (operation === "stop") {
+			expect(outcome).toMatchObject({ relayed: true, lane_relay: { applied: true, operation, lane_supervision: null } });
+			expect(existsSync(join(lane, "gen.txt"))).toBe(false);
+			expect(existsSync(lane)).toBe(true);
 			expect(readAnyBatchRunState(repo, BATCH_ID)).toMatchObject({ batch_state: "needs_human",
 				children: [{ state: "needs_human", reason: "lane_executor_stopped" }] });
 			expect(outcome).toMatchObject({ lane_relay: { next_action: expect.stringContaining("Close") } });
 			const next = laneReport(await startBatch(args()));
 			expect(next.children[0]!.reason).toBe("lane_executor_stopped");
+		} else {
+			expect(outcome).toMatchObject({ relayed: true, lane_relay: { applied: true, operation, lane_supervision: { advanced: true } } });
+			expect(readFileSync(join(lane, "gen.txt"), "utf8").trim()).toBe(lane);
+			expect(existsSync(lane)).toBe(true);
 		}
 	});
 
-	it("records an approved stop for an already parked interactive Lane", async () => {
+	it("records an approved stop for an already parked Lane", async () => {
 		const { repo, lane } = await waitingLane("interactive");
 		const record = readAnyBatchRunState(repo, BATCH_ID) as BatchLaneRunStateRecord;
 		writeBatchLaneRunState(repo, { ...record, batch_state: "needs_human",
@@ -205,8 +206,7 @@ describe("single-task Lane decision relay (S5)", () => {
 	});
 
 	it("refuses a decision answered against a record revision that is no longer current", async () => {
-		executors('#!/bin/sh\nprintf x > gen.txt\n');
-		const { repo, lane } = await waitingLane();
+			const { repo, lane } = await waitingLane();
 		const { input, applied } = relayInput(repo, lane, { expectedRecordRevision: "r0" });
 		await expect(relayLaneDecision(input)).rejects.toBeInstanceOf(LaneDecisionStaleError);
 		expect(applied.calls).toBe(0);
@@ -214,8 +214,7 @@ describe("single-task Lane decision relay (S5)", () => {
 	});
 
 	it("refuses a decision for a Lane that waits on none", async () => {
-		executors('#!/bin/sh\nprintf x > gen.txt\n');
-		const { repo, lane } = await waitingLane();
+			const { repo, lane } = await waitingLane();
 		const { input, applied } = relayInput(repo, lane, { project: async (_p, taskId) => ({ contract: "assurance_kernel/assurance_projection/v1",
 			task_id: taskId, error: null, claim: { task_id: taskId, lifecycle_status: "active" }, projection: projectionBody() }) as AssuranceProjectionResult });
 		await expect(relayLaneDecision(input)).rejects.toBeInstanceOf(LaneDecisionStaleError);
@@ -224,8 +223,7 @@ describe("single-task Lane decision relay (S5)", () => {
 	});
 
 	it.each([undefined, "interactive"] as const)("starts nothing when the user cancels the gate (mode=%s)", async mode => {
-		executors('#!/bin/sh\nprintf x > gen.txt\n');
-		const { repo, lane } = await waitingLane(mode);
+			const { repo, lane } = await waitingLane(mode);
 		const before = readAnyBatchRunState(repo, BATCH_ID);
 		const { input } = relayInput(repo, lane, { apply: async () => ({ state: "cancelled" }), applied: result => result.state === "applied" });
 		const outcome = await relayLaneDecision(input);
@@ -235,8 +233,7 @@ describe("single-task Lane decision relay (S5)", () => {
 	});
 
 	it("reports a record that moved while the gate was open as stale, and keeps other gate errors", async () => {
-		executors('#!/bin/sh\nprintf x > gen.txt\n');
-		const { repo, lane } = await waitingLane();
+			const { repo, lane } = await waitingLane();
 		let moved = false;
 		const project = async (_p: string, taskId: string): Promise<AssuranceProjectionResult> => ({ contract: "assurance_kernel/assurance_projection/v1",
 			task_id: taskId, error: null, claim: { task_id: taskId, lifecycle_status: "active" },
@@ -256,21 +253,29 @@ describe("single-task Lane decision relay (S5)", () => {
 		expect(applied.calls).toBe(0);
 	});
 
-	it("stops the live generation after a relayed Kernel stop and keeps the Lane", async () => {
-		executors("#!/bin/sh\nexec sleep 30\n");
+	it("parks the child on a relayed stop, closes its session when one is bound, and retains its Lane", async () => {
 		const { repo, lane } = await waitingLane();
-		const supervisor = new LaneSupervisor();
-		const running = await relayLaneDecision(relayInput(repo, lane, { supervisor, waitMs: 300 }).input);
-		expect(running).toMatchObject({ relayed: true, lane_relay: { lane_supervision: { state: "running" } } });
-		const stopped = await relayLaneDecision(relayInput(repo, lane, { supervisor, operation: "stop",
-			project: async (_p, taskId) => ({ contract: "assurance_kernel/assurance_projection/v1", task_id: taskId, error: null,
-				claim: { task_id: taskId, lifecycle_status: "active" }, projection: advanced() }) as AssuranceProjectionResult }).input);
-		expect(stopped).toMatchObject({ relayed: true, lane_relay: { operation: "stop", applied: true, lane_supervision: { state: "stopped" } } });
+		// A child with a live session handle: the relay closes exactly that session.
+		const record = readAnyBatchRunState(repo, BATCH_ID) as BatchLaneRunStateRecord;
+		writeBatchLaneRunState(repo, {
+			...record,
+			children: record.children.map((child) => ({
+				...child,
+				session: { key: "imm-drive-task-g1-aaaaaaaaaaaa", generation: 1, baseline: "r1",
+					handle: "herdr:ws/relay-tab", entry_submitted: true, attention: null, no_progress: 0, exit_proof: null },
+			})),
+		});
+		const stops: string[] = [];
+		const sessions = { stop: async (handle: string) => { stops.push(handle); return { ok: true as const }; } } as unknown as import("../plugins/immune-brain/runtime/unattended/batch_session_port").BatchSessionPort;
+		const stopped = await relayLaneDecision(relayInput(repo, lane, { operation: "stop", sessions }).input);
+		expect(stopped).toMatchObject({ relayed: true, lane_relay: { operation: "stop", applied: true, lane_supervision: null } });
+		expect(stops).toEqual(["herdr:ws/relay-tab"]);
+		expect(readAnyBatchRunState(repo, BATCH_ID)).toMatchObject({ batch_state: "needs_human",
+			children: [{ state: "needs_human", reason: "lane_executor_stopped" }] });
 		expect(existsSync(lane)).toBe(true);
 	});
 
 	it("rebinds the batch's approved identity once a breaking revision is committed in the Lane", async () => {
-		executors("#!/bin/sh\nexit 0\n");
 		const { repo, lane, args } = await waitingLane();
 		writeFileSync(join(lane, `docs/plans/${TASK}.intent.json`), intentJson(2, "A1 holds, revised"));
 		const revised = readTaskIntent(lane, TASK);
@@ -900,7 +905,6 @@ describe("per-child Lane decisions (S7)", () => {
 			root: fx.repo, taskId: CHILD_B, operation: "request_authorization", expectedRecordRevision: revision,
 			project,
 			apply: async () => { applied.push({ taskId: CHILD_B }); fx.open.set(CHILD_B, false); fx.revs.set(CHILD_B, "r2"); return { state: "applied" }; },
-			supervisor: new LaneSupervisor(), parentHost: "claude-code", pluginDir: "/plugin", waitMs: 1000,
 			advance: async (batchId: string) => { advanceCalls.push(batchId); return advanceLanes(fx.repo, batchId, fx.deps as never); },
 		});
 		expect(applied).toHaveLength(1);

@@ -12,26 +12,8 @@
 // `batch_lane_retained` naming the condition; parked, stopped and redo Lanes
 // are never passed here by the caller.
 import { spawnSync } from "node:child_process";
-import type { LaneExit, LaneGeneration } from "./lane_supervisor";
 
 export const LANE_RETAINED_REASON = "batch_lane_retained";
-
-/** Transitional: the first exit-proof condition that fails for a supervisor generation, or null when it exited normally. Kept for `batch_runner` stop reporting until S8 removes supervision. */
-export function exitProofCondition(generation: LaneGeneration | null, observation?: LaneExit | null): string | null {
-	if (!generation) return "no Executor generation was supervised by the runtime, so no exit was observed";
-	if (generation.state === "interrupted") return `Executor generation ${generation.generation} was interrupted`;
-	if (generation.state === "stopped_by_parent") return `Executor generation ${generation.generation} was stopped by the Parent`;
-	if (generation.state !== "exited" || !generation.exit)
-		return `Executor generation ${generation.generation} exit was never observed (unobservable)`;
-	const exit = observation ?? generation.exit;
-	if (exit.generation !== generation.generation)
-		return `the exit observation belongs to superseded generation ${exit.generation}; the current generation is ${generation.generation}`;
-	if (exit.pid !== generation.pid || exit.repository !== generation.repository || exit.lane_path !== generation.lane_path)
-		return `the exit observation of generation ${generation.generation} is not bound to this Executor process`;
-	if (exit.code !== 0 || exit.signal !== null)
-		return `Executor generation ${generation.generation} did not exit normally (${exit.signal ? `signal ${exit.signal}` : `code ${exit.code}`})`;
-	return null;
-}
 
 export interface ChildExitProof {
 	ok: true;

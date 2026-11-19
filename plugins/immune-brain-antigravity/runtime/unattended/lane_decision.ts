@@ -8,10 +8,8 @@ import type { AssuranceProjectionResult } from "../kernel/assurance_projection";
 import { readTaskRecordRaw } from "../kernel/storage";
 import { findActiveLaneBatchForTask } from "./batch_preflight";
 import { batchReason } from "./batch_reasons";
-import { laneGenerationStore, parkLaneForExecutor, rebindBatchChildIdentity } from "./batch_state";
+import { parkLaneForExecutor, rebindBatchChildIdentity } from "./batch_state";
 import type { BatchSessionPort } from "./batch_session_port";
-import { LaneSupervisor, superviseLane, type ExecutorHost } from "./lane_supervisor";
-import { laneExecutorChoice, stopSingleTaskSupervisor } from "./batch_runner";
 import { clearLaneDecisionRequest, readLaneDecisionRequest } from "./lane_decision_request";
 
 type Projection = AssuranceProjectionResult["projection"];
@@ -94,14 +92,9 @@ export interface LaneRelayInput<R> {
 	apply: (target: LaneRelayTarget, facts: LaneDecisionFacts | null) => Promise<R>;
 	/** Whether `apply` committed the operation. A Host that reports a cancelled or blocked gate by value returns false; default true. */
 	applied?: (result: R) => boolean;
-	supervisor: LaneSupervisor;
-	parentHost: ExecutorHost;
-	pluginDir: string;
-	waitMs: number;
-	signal?: AbortSignal;
 	/** Per-child session port for native-gated stop. When present with a bound handle, stop closes only that child and retains its Lane. */
 	sessions?: BatchSessionPort;
-	/** Per-child resume after an answered decision. When present, the relay delegates the next generation to it instead of the transitional supervisor. */
+	/** Per-child resume after an answered decision. The relay delegates the next generation to it; absent, the caller re-enters the batch itself. */
 	advance?: (batchId: string) => Promise<unknown>;
 }
 
@@ -141,26 +134,13 @@ export async function relayLaneDecision<R>(input: LaneRelayInput<R>): Promise<La
 	// The request was answered: the committed decision (or stop) moved the Lane record past it.
 	clearLaneDecisionRequest(target.lane_path);
 	const active = findActiveLaneBatchForTask(input.root, input.taskId);
-	const interactive = active?.record.executor_mode === "interactive";
 	if (input.operation === "stop") {
-		if (interactive) {
-			parkLaneForExecutor(input.root, target.batch_id, input.taskId, "lane_executor_stopped");
-			return { relayed: true, result, lane_relay: { batch_id: target.batch_id, operation: input.operation, applied: true, rebound: false,
-				lane_supervision: null, next_action: "The Lane task is stopped. Close its Herdr Executor tab yourself; the Lane and branches are retained." } };
-		}
 		const handle = active?.record.children.find(child => child.task_id === input.taskId)?.session?.handle ?? null;
-		if (input.sessions && handle) {
-			await input.sessions.stop(handle);
-			parkLaneForExecutor(input.root, target.batch_id, input.taskId, "lane_executor_stopped");
-			return { relayed: true, result, lane_relay: { batch_id: target.batch_id, operation: input.operation, applied: true, rebound: false,
-				lane_supervision: null } };
-		}
-		// The Kernel stop of the Lane record was just applied under the user's gate; the
-		// generation is then terminated and the Lane kept (parked by the supervisor stop).
-		const stopped = await stopSingleTaskSupervisor(input.supervisor, input.root, input.taskId, input.signal);
-		const report = stopped.state === "started" ? stopped.report as unknown as { lane_supervision?: unknown; lane_refusals?: unknown } : {};
+		if (input.sessions && handle) await input.sessions.stop(handle);
+		parkLaneForExecutor(input.root, target.batch_id, input.taskId, "lane_executor_stopped");
 		return { relayed: true, result, lane_relay: { batch_id: target.batch_id, operation: input.operation, applied: true, rebound: false,
-			lane_supervision: report.lane_supervision ?? null, ...(report.lane_refusals ? { lane_refusals: report.lane_refusals } : {}) } };
+			lane_supervision: null,
+			...(input.sessions && handle ? {} : { next_action: "The Lane task is stopped and retained. Close its Executor tab yourself when it is no longer needed." }) } };
 	}
 	let rebound = false;
 	if (input.operation === "approve_breaking_intent_revision") {
@@ -174,25 +154,9 @@ export async function relayLaneDecision<R>(input: LaneRelayInput<R>): Promise<La
 			throw new Error(`${batchReason("lane_decision_rebind_failed").reason}: ${error instanceof Error ? error.message : String(error)}`);
 		}
 	}
-	if (input.advance) {
-		const observation = await input.advance(target.batch_id);
-		return { relayed: true, result, lane_relay: { batch_id: target.batch_id, operation: input.operation, applied: true, rebound,
-			lane_supervision: observation ?? null } };
-	}
-	if (interactive)
-		return { relayed: true, result, lane_relay: { batch_id: target.batch_id, operation: input.operation, applied: true, rebound, lane_supervision: null } };
-	const choice = laneExecutorChoice(input.root, active?.record.executor_preferences, input.parentHost);
-	if (!choice) return { relayed: true, result, lane_relay: { batch_id: target.batch_id, operation: input.operation, applied: true, rebound, lane_supervision: null } };
-	const observation = await superviseLane(input.supervisor, {
-		key: `${input.root}\0${target.batch_id}`, repository: input.root, lanePath: target.lane_path, taskId: input.taskId,
-		choice, pluginDir: input.pluginDir, store: laneGenerationStore(input.root, target.batch_id), baseline: "",
-		waitMs: input.waitMs, graceMs: 1000, signal: input.signal,
-		project: async () => {
-			const read = await input.project(target.lane_path, target.task_id);
-			if (read.error !== null) throw new Error(`batch_lane_unreadable: ${read.error}`);
-			return read.projection;
-		},
-	});
+	// Every answered decision resumes through the session port owner: the caller
+	// re-enters the batch (advanceLanes) on this batch id.
+	const observation = input.advance ? await input.advance(target.batch_id) : null;
 	return { relayed: true, result, lane_relay: { batch_id: target.batch_id, operation: input.operation, applied: true, rebound,
-		lane_supervision: observation } };
+		lane_supervision: observation ?? null } };
 }

@@ -1,5 +1,5 @@
 /**
- * Loop Daemon: Judgement Boundary Tests (S2)
+ * Loop Daemon: Judgement Boundary Tests (S2) plus the S8 composition-root boundary (LDP-A4).
  *
  * Verifies the boundary and fault controls of S2-AC1 under
  * docs/plans/loop-daemon-s2-judge.intent.json and S2 / D2 in
@@ -9,10 +9,14 @@
  * - Boundary Control: forged HTML markers in an untrusted user comment are
  *   blocked by guard G7 before reaching Tier 1/Tier 2, and a dry-run tick
  *   performs zero GitHub or branch mutations.
+ * S8 (LDP-A4): `loop_daemon/` reaches Lanes only through
+ * `runtime/lane_sessions/` — it imports neither `runtime/session/` nor
+ * `unattended/batch_lanes.ts` — and no retired supervisor, startBatch,
+ * executor_mode, or lane_executor_requires_tui reference remains.
  */
 
 import { afterEach, describe, expect, it } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -424,5 +428,41 @@ describe("dry-run isolation", () => {
 		});
 		expect(result.returncode).toBe(1);
 		expect(result.stderr).toContain("no-touch declaration");
+	});
+});
+
+describe("S8 composition-root boundary (LDP-A4)", () => {
+	it("drives Lanes only through runtime/lane_sessions/", () => {
+		const dir = join(__dirname, "..", "plugins", "immune-brain", "runtime", "loop_daemon");
+		const files = readdirSync(dir).filter((entry) => entry.endsWith(".ts"));
+		expect(files.length).toBeGreaterThan(0);
+		const violations: string[] = [];
+		for (const file of files) {
+			const source = readFileSync(join(dir, file), "utf8");
+			for (const match of source.matchAll(/from\s+["']([^"']+)["']/g)) {
+				const specifier = match[1]!;
+				if (specifier.startsWith("../session/") || specifier.startsWith("../session.")) violations.push(`${file} -> ${specifier}`);
+				if (specifier === "../unattended/batch_lanes" || specifier === "../unattended/batch_lanes.ts")
+					violations.push(`${file} -> ${specifier}`);
+			}
+		}
+		expect(violations).toEqual([]);
+	});
+
+	it("keeps no retired supervisor, startBatch, executor_mode, or requires-tui reference", () => {
+		const dir = join(__dirname, "..", "plugins", "immune-brain", "runtime");
+		const retired = /LaneSupervisor|startBatch|executor_mode|lane_executor_requires_tui/;
+		const violations: string[] = [];
+		const walk = (path: string): void => {
+			for (const entry of readdirSync(path, { withFileTypes: true })) {
+				if (entry.name === "node_modules") continue;
+				const full = join(path, entry.name);
+				if (entry.isDirectory()) { walk(full); continue; }
+				if (!full.endsWith(".ts")) continue;
+				if (retired.test(readFileSync(full, "utf8"))) violations.push(full);
+			}
+		};
+		walk(dir);
+		expect(violations).toEqual([]);
 	});
 });

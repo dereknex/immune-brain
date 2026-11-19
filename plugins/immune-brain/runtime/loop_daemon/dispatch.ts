@@ -1,7 +1,10 @@
 /**
  * Loop Daemon: Tick Dispatch Core (S8)
  *
- * Implements S8 and D10 items 3-6 of docs/specs/loop-daemon.spec.md (SCN-5).
+ * Implements S8 and D10 items 3-6 of docs/specs/loop-daemon.spec.md (SCN-5),
+ * driving through runtime/lane_sessions/ (D15): verified GitHub/local decision
+ * replies apply via relayLaneDecision and advanceLanes, and PR creation gates
+ * on the settled v3 Batch Record commit plus the .imm/audit/ digest (D13).
  * Connects imm-loop tick and run to their handlers:
  *   - Admits judged handlers only through scheduleLoopWork() and an acquired lease
  *   - Executes deterministic handlers through one GitHub write port:
@@ -20,13 +23,16 @@
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { resolveConfig, type LoopConfig } from "../config/layered_config.ts";
 import { diffSnapshotOf, type HostRuntimeOptions, type ToolMeta } from "../host-core/runtime.ts";
 import { projectAssurance } from "../kernel/assurance_projection.ts";
 import { relayLaneDecision, type LaneRelayTarget } from "../unattended/lane_decision.ts";
-import { LaneSupervisor, type ExecutorHost } from "../unattended/lane_supervisor.ts";
+import type { ExecutorHost } from "../unattended/agent_profiles.ts";
+import { findActiveLaneBatchForTask, laneDeliveryEvidence } from "../unattended/batch_preflight.ts";
+import type { BatchSessionPort } from "../unattended/batch_session_port.ts";
+import { openBatchSessionPort } from "../lane_sessions/index.ts";
+import { advanceDaemonLanes } from "./drive_dispatcher.ts";
 import { type LoopDecisionRecord } from "./decision_record.ts";
 import { type AgentHandlerPort, readPlanPublication } from "./agent_handlers.ts";
 import {
@@ -57,7 +63,6 @@ import {
 	escalationKey,
 	planEscalation,
 } from "./escalation.ts";
-import { readExecutorExit } from "./exit_recorder.ts";
 import { type GuardFacts, eventTarget } from "./guards.ts";
 import type { LoopHandler } from "./handlers.ts";
 import type { JudgingAgentFn } from "./judging_agent.ts";
@@ -185,12 +190,36 @@ export function createDefaultRelayInputFactory(
 		commentId?: number;
 		meta?: ToolMeta;
 		laneRuntime: LaneRuntimeFactory;
+		createPort?: (provider: string, env: Record<string, string | undefined>) => never;
 	},
 ): RelayInputFactory<unknown> {
 	const config = resolveConfig(root);
 	const parentHost: ExecutorHost = config.agents.roles.executor?.host ?? "claude-code";
-	const pluginDir = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-	const supervisor = new LaneSupervisor();
+
+	// S8 (D12): a stop closes the child's live session through the batch's
+	// recorded provider, exactly as the Host entry does; a record with no bound
+	// session (or an unresolvable provider, e.g. outside Herdr) parks the child
+	// and keeps its Lane.
+	const active = (() => {
+		try {
+			return findActiveLaneBatchForTask(root, taskId);
+		} catch {
+			return null;
+		}
+	})();
+	const sessionHandle = active?.record.children.find((child) => child.task_id === taskId)?.session?.handle ?? null;
+	let sessions: BatchSessionPort | undefined;
+	if (active && sessionHandle) {
+		const opened = openBatchSessionPort({
+			root,
+			provider: active.record.session_provider,
+			env: { ...process.env } as Record<string, string | undefined>,
+			host: parentHost,
+			executor: active.record.executor_preferences,
+			...(options.createPort ? { createPort: options.createPort as never } : {}),
+		});
+		if (opened.ok) sessions = opened.port;
+	}
 
 	return (op, rev, choice) => ({
 		root,
@@ -229,10 +258,14 @@ export function createDefaultRelayInputFactory(
 			}
 		},
 		applied: (result: unknown) => !(result && typeof result === "object" && "state" in result && (result as any).state === "replan_selected"),
-		supervisor,
-		parentHost,
-		pluginDir,
-		waitMs: 10_000,
+		...(sessions ? { sessions } : {}),
+		// The answered decision resumes through the daemon's own advance: the
+		// composition root re-issues the batch binding from the v3 record.
+		advance: async (batchId: string) =>
+			advanceDaemonLanes(root, batchId, {
+				parent_host: parentHost,
+				...(options.createPort ? { createPort: options.createPort } : {}),
+			}),
 		extra: { chosen_option: choice.option_id },
 	});
 }
@@ -251,7 +284,7 @@ export interface DispatchDecisionsOptions {
 	now?: string;
 	/** The S9 agent port; absent keeps agent-backed handlers at `agent_port_unavailable`. */
 	agentPort?: AgentHandlerPort;
-	/** True only inside the standing `imm-loop run` process, which owns the Lane supervisor. */
+	/** True only inside the standing `imm-loop run` process, which drives Lanes through the session port. */
 	standingDaemon?: boolean;
 	judgingAgent?: JudgingAgentFn;
 	relayDecision?: typeof relayLaneDecision;
@@ -1068,52 +1101,22 @@ export async function dispatchDecisions(
 					continue;
 				}
 
-				// 2. Resolve Executor Exit
-				let exitRecord = readExecutorExit(stateDir, taskId);
-				if (!exitRecord && (event as any)?.task_id) {
-					exitRecord = readExecutorExit(stateDir, (event as any).task_id);
-				}
-				if (!exitRecord) {
-					exitRecord = readExecutorExit(stateDir, `task-${issueNum}`) ?? readExecutorExit(stateDir, `issue-${issueNum}`);
-				}
-
-				if (!exitRecord) {
+				// 2. Resolve delivery evidence (D13): the settled v3 Batch Record
+				// commit on retained refs/heads/imm/<task_id> plus the digest of
+				// the tracked .imm/audit/<task_id>/ pair at that commit.
+				const delivery = (() => {
+					try {
+						return laneDeliveryEvidence(options.root, taskId);
+					} catch (error) {
+						return { ok: false as const, reason: error instanceof Error ? error.message : String(error) };
+					}
+				})();
+				if (!delivery.ok) {
 					emitDispatch(
 						decision.decision_id,
 						decision.handler,
 						"failed",
-						`no executor exit record found for ${taskId}`,
-					);
-					continue;
-				}
-
-				if (exitRecord.state !== "exited" || exitRecord.exit_code !== 0) {
-					emitDispatch(
-						decision.decision_id,
-						decision.handler,
-						"failed",
-						`executor exit not clean: state=${exitRecord.state} exit_code=${exitRecord.exit_code}`,
-					);
-					continue;
-				}
-
-				if (!exitRecord.verification_evidence_digest) {
-					emitDispatch(
-						decision.decision_id,
-						decision.handler,
-						"failed",
-						`executor exit has no verification evidence digest for ${taskId}`,
-					);
-					continue;
-				}
-
-				// D6 negative control: a settlement with no commit digest is not a delivery.
-				if (!exitRecord.final_commit_sha) {
-					emitDispatch(
-						decision.decision_id,
-						decision.handler,
-						"failed",
-						`executor exit has no final commit sha for ${taskId}`,
+						`no delivery evidence for ${taskId}: ${delivery.reason}`,
 					);
 					continue;
 				}
@@ -1123,8 +1126,8 @@ export async function dispatchDecisions(
 					.map((ac: any) => `- ${ac.id}: ${ac.assertion}`)
 					.join("\n");
 				const verificationSummary = [
-					`Verification evidence digest: \`${exitRecord.verification_evidence_digest}\``,
-					`Commit SHA: \`${exitRecord.final_commit_sha ?? "unknown"}\``,
+					`Verification evidence digest: \`${delivery.digest}\``,
+					`Commit SHA: \`${delivery.commit}\``,
 					"",
 					"### Acceptance Criteria",
 					acceptanceSummary || "All acceptance criteria verified.",
@@ -1145,7 +1148,7 @@ export async function dispatchDecisions(
 					decision.decision_id,
 					decision.handler,
 					"executed",
-					`opened PR #${opened.number} for ${taskId} (base: ${baseBranch}, commit: ${exitRecord.final_commit_sha}, digest: ${exitRecord.verification_evidence_digest})`,
+					`opened PR #${opened.number} for ${taskId} (base: ${baseBranch}, commit: ${delivery.commit}, digest: ${delivery.digest})`,
 				);
 			} else if (decision.handler === "mark_pr_ready") {
 				const prNumber = (event as any)?.pr_number ?? (event ? parseInt(eventTarget(event).id, 10) : 0);

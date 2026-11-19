@@ -25,12 +25,85 @@ import { reusableFinalVerification, runFinalVerification, type FinalVerification
 import { buildBatchFinalReport, returnBatchToCoordinator } from "./batch_final_report";
 import { deliverSingleTask } from "./checkout_delivery";
 import { cleanupIntegratedChildLane, cleanupParentBranch, retainedLaneReason } from "./lane_cleanup";
-import { laneDecisionFacts } from "./lane_decision";
+import { laneDecisionFacts, type LaneDecisionFacts } from "./lane_decision";
 import { frozenExecutorPreferences, frozenReviewProfile } from "./agent_profiles";
 import { resolveConfig } from "../config/layered_config";
 import { runGithubTrackerOperation } from "../github_issue_tracker";
 import { hasLocalInitiative } from "../local_initiative";
-import type { BatchTrackerPort, StartBatchInput } from "./batch_runner";
+import type { BatchRunnerKernelPort, BatchTrackerPort } from "./batch_kernel_port";
+import type { BatchAuthorityRegistry } from "../kernel/batch_authority";
+import type { BatchPlanChild, InitiativeObservationReader } from "./types";
+import type { ExecutorPreferences } from "./agent_profiles";
+import type { ReviewProfile } from "../config/layered_config";
+
+export interface StartBatchInput {
+	/** Opaque entry-kind marker for composition roots; the state owner interprets it as the entry kind (D4: the plan identity lives in the record, not the driver input). */
+	entry_kind?: "single_task";
+	/**
+	 * The Executor request and Parent Host that decide a new batch's frozen
+	 * profile. Set for every batch.
+	 */
+	executor_freeze?: { request?: ExecutorPreferences; parentHost?: ExecutorPreferences["host"] };
+	topology_digest?: string;
+	root: string;
+	batch_id: string;
+	initiative_slug: string;
+	registry: BatchAuthorityRegistry;
+	capability: object;
+	children: BatchPlanChild[];
+	plan_digest: string;
+	base_head: string;
+	confirmation_time: string;
+	budget: { max_children: number; qa_failure_limit: number };
+	now: string;
+	kernel: BatchRunnerKernelPort;
+	git?: BatchRunnerGitPort;
+	/** Present only in lane mode: how many children may run at once. */
+	max_parallel?: number;
+	/** Present only in lane mode: Lanes someone else created, offered to the batch. */
+	lane_offers?: LaneOffer[];
+	/**
+	 * Lane mode only: the opted-in tracker projection the coordinator runs after
+	 * integrating a child. A Lane settlement writes nothing to the tracker, so
+	 * this is where its Child Issue is closed, exactly once. Absent, nothing is
+	 * projected.
+	 */
+	tracker?: BatchTrackerPort;
+	/**
+	 * Lane mode only: the plugin or runtime directory the Lane Executor Host
+	 * loads. Absent, the repository's own plugin source is compared when the
+	 * repository is the Immune-Brain package; otherwise nothing is compared.
+	 */
+	executor_runtime?: string;
+	/**
+	 * The project's full verification commands, recorded when a new batch starts
+	 * and run on its branch after every delivery is integrated. A resume uses
+	 * the recorded list in either execution mode.
+	 */
+	final_verification?: string[];
+	/** BatchAgreement policies (S3): written into new Lane records; absent, derived transitionally. */
+	confirmation?: { source: string; ref: string };
+	return_policy?: "checkout_delivery" | "retain_branch";
+	interaction_mode?: "interactive_host" | "parent_relayed";
+	final_verification_required?: boolean;
+	/**
+	 * Lane mode: the Review profile resolved from the request-selected Lane
+	 * profile, recorded when a new batch starts; a resume keeps the recorded one
+	 * (#426 F14).
+	 */
+	review_profile?: ReviewProfile;
+	/** Bounds each final command; absent, the verifier's own default applies. Not a Host tool parameter. */
+	final_verification_timeout_ms?: number;
+	/**
+	 * Lane mode only: one text instruction the Parent wants to send a Lane
+	 * session. The tick records it and answers whether it may be sent; it is
+	 * never sent to a blocked or working session.
+	 */
+	lane_instruction?: LaneInstructionRequest;
+	lane_session_close?: LaneSessionCloseRequest;
+	/** S8: every advance carries the session port; a mismatched provider refuses. */
+	sessions?: BatchSessionPort;
+}
 import {
 	BatchIntegrationError,
 	findIntegratedCandidate,
@@ -39,9 +112,10 @@ import {
 } from "./batch_integration";
 import { isBatchRef, isParentBranch } from "./batch_ref";
 import { assertLaneWorktreeAvailable, copyLanePlanningInput, createLaneWorktree, ensureReservedLaneWorktree, plannedLane } from "./batch_worktrees";
-import { classifyBatchLineage, expectedBatchHead, findExistingActiveBatch, porcelainEntries, readActiveClaimTaskId, unsettledChildScopes } from "./batch_preflight";
+import { observeInitiative } from "./batch_plan";
+import { classifyBatchLineage, expectedBatchHead, findExistingActiveBatch, findSettledBatchRecord, porcelainEntries, readActiveClaimTaskId, unsettledChildScopes } from "./batch_preflight";
 import { restoreProvableLaneLeaks } from "./batch_leak_restore";
-import { withBatchEvidence } from "./batch_git";
+import { observeParentCompletion, withBatchEvidence } from "./batch_git";
 import { blockedByParked, startableChildren } from "./batch_schedule";
 import {
 	type AnyBatchRunStateRecord,
@@ -57,6 +131,7 @@ import {
 	isTerminalBatchState,
 	planSourceIdentity,
 	prepareBatchLaneRunState,
+	readAnyBatchRunState,
 	writeBatchLaneRunState,
 	writeBatchRunReport,
 } from "./batch_state";
@@ -69,6 +144,42 @@ import { reconcileChildSession } from "./child_session_reconciler";
 export { LANE_EXECUTOR_HOSTS };
 
 export const advanceBatch = runLaneBatch;
+
+/** Rebuilt from durable facts: the settled Parent report for a completed lane batch, or null. */
+export async function completedParentReport(root: string, initiativeSlug: string, readInitiative?: InitiativeObservationReader,
+	tracker = createBatchTrackerPort(root, initiativeSlug)): Promise<import("./batch_state").BatchRunReport | null> {
+	const candidate = findSettledBatchRecord(root, initiativeSlug);
+	if (!candidate || !isLaneBatchRecord(candidate) || candidate.batch_state !== "completed") return null;
+	const batch = readAnyBatchRunState(root, candidate.batch_id);
+	if (!batch || batch.final_verification_result?.passed !== true) return null;
+	const parent = await (readInitiative ?? observeInitiative)(root, initiativeSlug);
+	const proof = await observeParentCompletion(root, initiativeSlug, parent.tasks.map(child => child.task_id));
+	if (!proof.complete) return null;
+	const last = parent.tasks.at(-1);
+	const tombstone = last ? await withBatchEvidence(root, batch.branch, expectedBatchHead(batch),
+		path => readTaskTombstone(path, last.task_id)) : null;
+	let sync: Awaited<ReturnType<BatchTrackerPort["markTerminal"]>> | null = null;
+	if (last && tracker) {
+		if (!tombstone || tombstone.terminal_lifecycle !== "done") throw new Error("Parent tracker synchronization requires exact terminal evidence");
+		try { sync = await tracker.markTerminal(root, { task_id: last.task_id, phase: "done", terminal_event_id: tombstone.terminal_event_id }); }
+		catch { sync = { status: "failed", message: "Local Parent completion proved; retry tracker synchronization on this Host" }; }
+	}
+	// Rebuilt from durable facts, so a reopened report keeps every cleanup notice.
+	const retained = isLaneBatchRecord(batch) ? retainedLaneNotices(root, batch) : [];
+	const report = {
+		contract: "assurance_kernel/batch_run_report/v1" as const,
+		batch_id: batch.batch_id, initiative_slug: initiativeSlug, batch_state: batch.batch_state,
+		children: batch.children, commits: batch.commits, final_verification: batch.final_verification_result,
+		...(sync ? { tracker: sync } : {}),
+		...(retained.length ? { lane_refusals: retained } : {}),
+		reason: sync?.status === "failed" ? "Local Parent completion proved; tracker synchronization failed" : null,
+		next_action: (sync?.status === "failed" ? sync.message : "Parent delivery and final verification passed") + (retained.length ? "." : "") + retainedLaneAction(retained),
+		created_at: new Date().toISOString(), ...(isLaneBatchRecord(batch) ? { max_parallel: batch.max_parallel, handoffs: [] } : {}),
+	};
+	// The first terminal report is historical; return this HEAD's freshly proved observation.
+	writeBatchRunReport(root, report);
+	return report as unknown as import("./batch_state").BatchRunReport;
+}
 
 export type LaneAdmissionReason =
 	| "batch_lane_foreign_repository"
@@ -685,7 +796,7 @@ function laneReport(
 	record: BatchLaneRunStateRecord,
 	reason: string | null,
 	nextAction: string,
-	extra: { handoffs?: BatchLaneHandoff[]; refusals?: BatchLaneRunReport["lane_refusals"]; tracker?: TrackerObservations; final?: FinalVerificationReport; instruction?: BatchLaneRunReport["lane_instruction"] } = {},
+	extra: { handoffs?: BatchLaneHandoff[]; refusals?: BatchLaneRunReport["lane_refusals"]; tracker?: TrackerObservations; final?: FinalVerificationReport; instruction?: BatchLaneRunReport["lane_instruction"]; decision?: LaneDecisionFacts | null } = {},
 ): BatchLaneRunReport {
 	return {
 		contract: "assurance_kernel/batch_run_report/v1",
@@ -704,6 +815,7 @@ function laneReport(
 		...(record.final_report ? { final_report: record.final_report } : {}),
 		...(record.interventions?.length ? { interventions: record.interventions } : {}),
 		...(extra.instruction ? { lane_instruction: extra.instruction } : {}),
+		...(extra.decision ? { lane_decision_required: extra.decision } : {}),
 		...(record.delegated_revisions?.length ? { delegated_revisions: record.delegated_revisions } : {}),
 		...(record.reseals?.length ? { reseals: record.reseals } : {}),
 		...(record.lane_rebinds?.length ? { lane_rebinds: record.lane_rebinds } : {}),
@@ -916,8 +1028,20 @@ export async function runLaneBatch(
 		}
 		if (record.batch_state === "needs_human") {
 			const invalid = validateNewAuthorization(input);
-			if (invalid || Date.parse(input.confirmation_time) <= Date.parse(record.confirmation_time))
-				return laneReport(record, invalid ?? "the parked batch requires a fresh literal-user confirmation", LANE_NEEDS_HUMAN_NEXT_ACTION);
+			if (invalid || Date.parse(input.confirmation_time) <= Date.parse(record.confirmation_time)) {
+				// Surface the decision the parked batch waits on, even though
+				// re-entry needs a fresh confirmation first.
+				let parkedDecision: LaneDecisionFacts | null = null;
+				for (const child of record.children) {
+					if ((child.state !== "enrolled" && child.state !== "needs_human") || !child.lane) continue;
+					const fresh = await readLaneProjection(input, child.lane.path, child.task_id);
+					if (fresh.error !== null) continue;
+					const waiting = laneDecisionFacts(child.task_id, fresh.projection, child.lane.path);
+					if (waiting) { parkedDecision = waiting; break; }
+				}
+				return laneReport(record, invalid ?? "the parked batch requires a fresh literal-user confirmation", LANE_NEEDS_HUMAN_NEXT_ACTION,
+					{ ...(parkedDecision ? { decision: parkedDecision } : {}) });
+			}
 			const resumed: BatchLaneChildRun[] = [];
 			for (const child of record.children) {
 				if (child.state !== "needs_human") { resumed.push(child); continue; }
@@ -986,12 +1110,11 @@ export async function runLaneBatch(
 		if (!preflight.ok) return refuse(input, null, preflight.reason, preflight.message || "Correct the preflight condition and re-confirm.");
 		// ADR 0041: a new batch freezes its resolved profiles; resume and every later generation read the record.
 		const frozenReview = frozenReviewProfile(input.root, input.review_profile);
-		const freeze = input.executor_freeze ?? input.supervision;
+		const freeze = input.executor_freeze;
 		const frozenExecutor = frozenExecutorPreferences(input.root, freeze?.request, freeze?.parentHost);
 		record = prepareBatchLaneRunState({
 			...planSourceIdentity(input),
 			...defaultAgreementPolicies(input),
-			executor_mode: input.executor_mode,
 			topology_digest: input.topology_digest,
 			batch_id: input.batch_id,
 			initiative_slug: input.initiative_slug,
@@ -1244,8 +1367,8 @@ export async function runLaneBatch(
 		}
 		// A child waiting for its coordinator correction gets no further attempt.
 		if (child.correction_due) continue;
-		// A pending interactive decision belongs to the Parent's native gate, not another Assurance attempt.
-		if (record.executor_mode === "interactive" && laneDecisionFacts(child.task_id, fresh.projection)) continue;
+		// A pending literal-user decision belongs to a native gate plus relay, not another Assurance attempt.
+		if (laneDecisionFacts(child.task_id, fresh.projection)) continue;
 		// An unfrozen child, or one with QA pending the Executor's own attempt,
 		// is the Executor's to move; the batch never reruns that attempt.
 		if (fresh.projection.next_obligation === "run_qa" || fresh.projection.artifact_state !== "frozen") continue;
@@ -1640,8 +1763,12 @@ export async function runLaneBatch(
 		);
 	}
 	const handoffs: BatchLaneHandoff[] = [];
+	// The report carries the first pending literal-user decision, so the Parent
+	// relays it instead of advancing past the user. Parked children are read
+	// for facts only; only enrolled children earn handoffs.
+	let pendingDecision: LaneDecisionFacts | null = null;
 	for (const child of record.children) {
-		if (child.state !== "enrolled" || !child.lane) continue;
+		if ((child.state !== "enrolled" && child.state !== "needs_human") || !child.lane) continue;
 		if (child.correction_due) {
 			// No further Executor attempt until the coordinator's correction is recorded.
 			handoffs.push({
@@ -1657,9 +1784,15 @@ export async function runLaneBatch(
 		}
 		const fresh = await readLaneProjection(input, child.lane.path, child.task_id);
 		if (fresh.error !== null) {
-			parkChild(child.task_id, laneUnreadableReason(fresh.error, child.task_id, child.lane.run_id));
+			if (child.state === "enrolled") parkChild(child.task_id, laneUnreadableReason(fresh.error, child.task_id, child.lane.run_id));
 			continue;
 		}
+		const waiting = laneDecisionFacts(child.task_id, fresh.projection, child.lane.path);
+		if (waiting) pendingDecision ??= waiting;
+		if (child.state !== "enrolled") continue;
+		// A child waiting on a literal-user decision earns no Executor handoff:
+		// the Parent relays the decision before the Lane runs again.
+		if (waiting) continue;
 		handoffs.push({
 			role: "executor",
 			task_id: child.task_id,
@@ -1668,10 +1801,10 @@ export async function runLaneBatch(
 			next_obligation: fresh.projection.next_obligation,
 			lane_branch: child.lane.branch,
 			lane_path: child.lane.path,
-			...(record.executor_preferences?.executor_host ? { executor: {
-				host: record.executor_preferences.executor_host,
-				...(record.executor_preferences.executor_model ? { model: record.executor_preferences.executor_model } : {}),
-				...(record.executor_preferences.executor_effort ? { effort: record.executor_preferences.executor_effort } : {}),
+			...(record.executor_preferences?.host ? { executor: {
+				host: record.executor_preferences.host,
+				...(record.executor_preferences.model ? { model: record.executor_preferences.model } : {}),
+				...(record.executor_preferences.effort ? { effort: record.executor_preferences.effort } : {}),
 			} } : {}),
 		});
 	}
@@ -1706,7 +1839,7 @@ export async function runLaneBatch(
 			record,
 			parkedMessage ?? (parked ? "a parked child needs a human decision" : overBudget ? `max_children budget exhausted (${record.budget.max_children})` : "no child can start"),
 			"",
-			{ refusals, tracker, instruction },
+			{ refusals, tracker, instruction, ...(pendingDecision ? { decision: pendingDecision } : {}) },
 		);
 	}
 	if (!overBudget && !isParentBranch(record.branch)) {
@@ -1728,7 +1861,7 @@ export async function runLaneBatch(
 				? `child ${reviewOpen[0]} holds an open Review reservation`
 				: `children ${reviewOpen.join(", ")} hold open Review reservations`,
 			"Submit each reserved foreground Review verdict in its own Lane, then call start_unattended_batch again to continue.",
-			{ handoffs, refusals, tracker, instruction },
+			{ handoffs, refusals, tracker, instruction, ...(pendingDecision ? { decision: pendingDecision } : {}) },
 		);
 	}
 	return laneReport(
@@ -1739,6 +1872,6 @@ export async function runLaneBatch(
 			: handoffs.some((h) => h.role === "lane-steward" && h.action === "provision")
 				? "Provide a Lane for each provision handoff, then call start_unattended_batch again with lane_offers."
 				: "Run each executor handoff in its Lane. When a Lane finishes, call start_unattended_batch again with the same Initiative.",
-		{ handoffs, refusals, tracker, instruction },
+		{ handoffs, refusals, tracker, instruction, ...(pendingDecision ? { decision: pendingDecision } : {}) },
 	);
 }

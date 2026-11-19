@@ -14,9 +14,9 @@
 import { resolveSessionProvider, SESSION_PROVIDER_REGISTRY, type SessionProviderDescriptor } from "../session/provider_registry";
 import type { ExecutorHostKind, SupervisedSessionPort } from "../session/supervised_session_port";
 import { laneExecutorChoice } from "../unattended/agent_profiles";
-import type { ExecutorPreferences } from "../unattended/lane_supervisor";
+import type { ExecutorPreferences } from "../unattended/agent_profiles";
 import { runLaneBatch as advanceBatch } from "../unattended/batch_lanes";
-import type { BatchRunnerKernelPort, BatchTrackerPort } from "../unattended/batch_runner";
+import type { BatchRunnerKernelPort, BatchTrackerPort } from "../unattended/batch_kernel_port";
 import type { BatchRunnerGitPort } from "../unattended/batch_git";
 import {
 	isLaneBatchRecord,

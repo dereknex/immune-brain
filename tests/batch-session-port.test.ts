@@ -16,7 +16,8 @@ import {
 	type SessionObservation,
 } from "../plugins/immune-brain/runtime/unattended/batch_session_port";
 import { reconcileChildSession } from "../plugins/immune-brain/runtime/unattended/child_session_reconciler";
-import type { BatchRunnerKernelPort, StartBatchInput } from "../plugins/immune-brain/runtime/unattended/batch_runner";
+import type { BatchRunnerKernelPort } from "../plugins/immune-brain/runtime/unattended/batch_kernel_port";
+import type { StartBatchInput } from "../plugins/immune-brain/runtime/unattended/batch_lanes";
 import type { BatchPlanChild } from "../plugins/immune-brain/runtime/unattended/types";
 
 const SLUG = "bsp-slug";

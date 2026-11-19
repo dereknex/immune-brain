@@ -22,6 +22,7 @@
 
 import { afterEach, describe, expect, it } from "bun:test";
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -41,7 +42,11 @@ import {
 import { runLoopDaemonCli } from "../plugins/immune-brain/runtime/loop_daemon/cli.ts";
 import { dispatchDecisions } from "../plugins/immune-brain/runtime/loop_daemon/dispatch.ts";
 import { eventTarget } from "../plugins/immune-brain/runtime/loop_daemon/guards.ts";
-import { recordExecutorExit, readExecutorExit } from "../plugins/immune-brain/runtime/loop_daemon/exit_recorder.ts";
+import { laneDeliveryEvidence } from "../plugins/immune-brain/runtime/unattended/batch_preflight.ts";
+import {
+	prepareBatchLaneRunState,
+	writeBatchLaneRunState,
+} from "../plugins/immune-brain/runtime/unattended/batch_state.ts";
 import type { LoopGitHubPort } from "../plugins/immune-brain/runtime/loop_daemon/github_port.ts";
 import {
 	LOOP_JOB_MAX_ATTEMPTS,
@@ -201,15 +206,52 @@ interface FakeLane {
 	port: AgentHandlerPort;
 	/** One entry per `enroll_and_drive` the daemon handed this port. */
 	handled: Array<{ issue_number: number; task_id: string; job_id: string }>;
-	/** Settle the Nth started job the way the Kernel projection reports it. */
-	settle(index: number, options?: { final_commit_sha?: string | null }): Promise<void>;
+	/** The delivery the last settle seeded, when it seeded one. */
+	lastDelivery: { commit: string; digest: string } | null;
+	/** Settle the Nth started job the way the Batch Record plus `.imm/audit/` prove it. */
+	settle(index: number, options?: { skipEvidence?: boolean }): Promise<void>;
+}
+
+/** S8: seed a settled delivery — a completed v3 record plus the tracked audit pair. */
+function seedAsyncDelivery(root: string, taskId: string): { commit: string; digest: string } {
+	const runId = "run-async-seed";
+	const auditDir = join(root, ".imm", "audit", taskId, runId);
+	mkdirSync(auditDir, { recursive: true });
+	const recordJson = `${JSON.stringify({ contract: "assurance_kernel/task_record/v4", task_id: taskId })}\n`;
+	const proofJson = `${JSON.stringify({ contract: "assurance_kernel/task_tombstone/v2", task_id: taskId, terminal_lifecycle: "done" })}\n`;
+	writeFileSync(join(auditDir, "task-record.json"), recordJson);
+	writeFileSync(join(auditDir, "terminal-proof.json"), proofJson);
+	execFileSync("git", ["add", "-A"], { cwd: root });
+	execFileSync("git", ["commit", "--no-verify", "-qm", `deliver ${taskId}`], { cwd: root });
+	const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+	const prepared = prepareBatchLaneRunState({
+		batch_id: `batch-${taskId}`,
+		initiative_slug: taskId,
+		children: [{ task_id: taskId, slice_id: taskId, blocked_by: [], status: "enrollable", reason: null,
+			intent_path: `docs/plans/${taskId}.intent.json`, intent_revision: 1, intent_content_hash: "sha256:x" }],
+		plan_digest: "sha256:plan",
+		base_head: "0".repeat(40),
+		confirmation_time: "2026-01-01T00:00:00.000Z",
+		budget: { max_children: 1, qa_failure_limit: 1 },
+		max_parallel: 1,
+		now: "2026-01-01T00:00:00.000Z",
+	});
+	writeBatchLaneRunState(root, {
+		...prepared,
+		batch_state: "completed",
+		children: [{ task_id: taskId, slice_id: taskId, blocked_by: [], state: "integrated", reason: null, commit,
+			lane: { path: join(root, "lane"), branch: `imm-lane/${taskId}/${taskId}`, base_head: commit, lane_commit: commit },
+			qa_failures: 0, session: null }],
+		commits: [commit],
+	});
+	return { commit, digest: `sha256:${createHash("sha256").update(`${recordJson}\n${proofJson}`).digest("hex")}` };
 }
 
 /**
  * A fake Lane: it starts a real job record and holds its work until the test
  * settles it, so the tick that started it returns first.
  */
-function makeFakeLane(stateDir: string, options: { issueNumbers?: number[] } = {}): FakeLane {
+function makeFakeLane(root: string, stateDir: string, options: { issueNumbers?: number[] } = {}): FakeLane {
 	const handled: FakeLane["handled"] = [];
 	const settleFns: Array<(finalCommitSha: string | null) => void> = [];
 
@@ -223,34 +265,22 @@ function makeFakeLane(stateDir: string, options: { issueNumbers?: number[] } = {
 			}
 			// The fixture drives one task; E1 carries no `task_id` of its own.
 			const taskId = event?.task_id ?? TASK_ID;
-			const work = new Promise<{ outcome: "settled"; detail: string; exit: LoopJobExit }>((resolve) => {
-				settleFns.push((finalCommitSha) => {
-					const exit = recordExecutorExit(stateDir, {
-						run_id: taskId,
-						task_id: taskId,
-						batch_id: `batch-${taskId}`,
-						lane: {
-							repository: context.root,
-							lane_path: join(context.root, ".imm-worktrees", "lane"),
-							generation: 1,
-							pid: 4242,
-							code: 0,
-							signal: null,
-						},
-						state: "exited",
-						final_commit_sha: finalCommitSha,
-						verification_evidence: JSON.stringify({ acceptance: ["AC1"] }),
-						recorded_at: context.now,
-					});
+			const work = new Promise<{ outcome: "settled"; detail: string; exit: LoopJobExit | null }>((resolve) => {
+				settleFns.push(() => {
+					const delivery = laneDeliveryEvidence(context.root, taskId);
+					if (!delivery.ok) {
+						resolve({ outcome: "settled", detail: `lane settled without evidence: ${delivery.reason}`, exit: null });
+						return;
+					}
 					resolve({
 						outcome: "settled",
 						detail: "lane settled",
 						exit: {
-							state: exit.state,
-							exit_code: exit.exit_code,
-							generation: exit.generation,
-							final_commit_sha: exit.final_commit_sha,
-							verification_evidence_digest: exit.verification_evidence_digest,
+							state: "exited",
+							exit_code: 0,
+							generation: 1,
+							final_commit_sha: delivery.commit,
+							verification_evidence_digest: delivery.digest,
 						},
 					});
 				});
@@ -275,10 +305,14 @@ function makeFakeLane(stateDir: string, options: { issueNumbers?: number[] } = {
 	return {
 		port,
 		handled,
+		lastDelivery: null as FakeLane["lastDelivery"],
 		async settle(index, settleOptions = {}) {
 			const settle = settleFns[index];
 			if (!settle) throw new Error(`no job ${index} to settle`);
-			settle(settleOptions.final_commit_sha === undefined ? COMMIT_SHA : settleOptions.final_commit_sha);
+			if (!settleOptions.skipEvidence) {
+				this.lastDelivery = seedAsyncDelivery(root, TASK_ID);
+			}
+			settle(undefined as never);
 			await waitForTerminalJob(stateDir, handled[index]!.job_id);
 		},
 	};
@@ -315,7 +349,7 @@ describe("S6-AC1: a drive outlives the tick and E13 opens the PR", () => {
 		const ws = makeWorkspace();
 		publishPlan(ws.root, 10, "sha256:published-plan");
 		writeIntent(ws.root);
-		const lane = makeFakeLane(ws.stateDir);
+		const lane = makeFakeLane(ws.root, ws.stateDir);
 
 		// Tick 1: the ready label is the approval signal; the drive starts as a job.
 		const first = await tick(ws.root, lane.port, { issues: [readyIssue(10)] });
@@ -327,7 +361,7 @@ describe("S6-AC1: a drive outlives the tick and E13 opens the PR", () => {
 		// The tick returned while the job runs: nonterminal record, lease still held.
 		expect(readLoopJob(ws.stateDir, "issue-10")?.outcome).toBeNull();
 		expect(listLeases(ws.stateDir).map((lease) => lease.target_id)).toEqual(["issue-10"]);
-		expect(readExecutorExit(ws.stateDir, TASK_ID)).toBeNull();
+		expect(laneDeliveryEvidence(ws.root, TASK_ID).ok).toBe(false);
 
 		// A later tick before the Lane settles: still nothing to open.
 		const second = await tick(ws.root, lane.port, { issues: [readyIssue(10)] });
@@ -342,12 +376,16 @@ describe("S6-AC1: a drive outlives the tick and E13 opens the PR", () => {
 		expect(third.decisions.map((decision) => decision.handler)).toContain("open_pr");
 		expect(third.dispatches).toHaveLength(1);
 		expect(third.dispatches[0]).toMatchObject({ handler: "open_pr", outcome: "executed" });
-		expect(third.dispatches[0]!.detail).toContain(`commit: ${COMMIT_SHA}`);
+		expect(third.dispatches[0]!.detail).toContain(`commit: ${lane.lastDelivery!.commit}`);
 		expect(lane.handled).toHaveLength(1);
 
-		const exit = readExecutorExit(ws.stateDir, TASK_ID);
-		expect(exit).toMatchObject({ final_commit_sha: COMMIT_SHA });
-		expect(exit!.verification_evidence_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
+		const delivery = laneDeliveryEvidence(ws.root, TASK_ID);
+		expect(delivery).toMatchObject({ ok: true });
+		if (delivery.ok) {
+			expect(delivery.commit).toBe(lane.lastDelivery!.commit);
+			expect(delivery.digest).toBe(lane.lastDelivery!.digest);
+			expect(delivery.digest).toMatch(/^sha256:[0-9a-f]{64}$/);
+		}
 
 		// The lease is released only once the job record is terminal.
 		expect(listLeases(ws.stateDir)).toHaveLength(0);
@@ -357,7 +395,7 @@ describe("S6-AC1: a drive outlives the tick and E13 opens the PR", () => {
 		const ws = makeWorkspace();
 		publishPlan(ws.root, 11, "sha256:published-plan-11");
 		writeIntent(ws.root);
-		const lane = makeFakeLane(ws.stateDir);
+		const lane = makeFakeLane(ws.root, ws.stateDir);
 		const gitHubPort = makeFakeGitHubPort();
 
 		const run = () =>
@@ -372,14 +410,14 @@ describe("S6-AC1: a drive outlives the tick and E13 opens the PR", () => {
 			});
 
 		expect((await run()).returncode).toBe(0);
-		await lane.settle(0, { final_commit_sha: null });
+		await lane.settle(0, { skipEvidence: true });
 
 		const next = JSON.parse((await run()).stdout) as {
 			dispatches: Array<{ handler: string; outcome: string; detail: string }>;
 		};
 		expect(next.dispatches).toHaveLength(1);
 		expect(next.dispatches[0]).toMatchObject({ handler: "open_pr", outcome: "failed" });
-		expect(next.dispatches[0]!.detail).toContain("no final commit sha");
+		expect(next.dispatches[0]!.detail).toContain("no delivery evidence");
 		expect(gitHubPort.upserts).toHaveLength(0);
 	});
 });
@@ -389,7 +427,7 @@ describe("S6-AC3: the tick returns while a job runs", () => {
 		const ws = makeWorkspace({ max_concurrent: 1 });
 		publishPlan(ws.root, 20, "sha256:published-plan-20");
 		writeIntent(ws.root);
-		const lane = makeFakeLane(ws.stateDir);
+		const lane = makeFakeLane(ws.root, ws.stateDir);
 
 		await tick(ws.root, lane.port, { issues: [readyIssue(20)] });
 		expect(readLoopJob(ws.stateDir, "issue-20")?.outcome).toBeNull();
@@ -424,7 +462,7 @@ describe("S6-AC3: the tick returns while a job runs", () => {
 		publishPlan(ws.root, 30, "sha256:published-plan-30");
 		publishPlan(ws.root, 31, "sha256:published-plan-31");
 		writeIntent(ws.root);
-		const lane = makeFakeLane(ws.stateDir);
+		const lane = makeFakeLane(ws.root, ws.stateDir);
 
 		const result = await tick(ws.root, lane.port, { issues: [readyIssue(30), readyIssue(31)] });
 
@@ -788,7 +826,7 @@ describe("S6-AC2: re-entry resumes an enrolled task", () => {
 		const ws = makeWorkspace();
 		publishPlan(ws.root, 42, "sha256:published-plan-42");
 		writeIntent(ws.root);
-		const lane = makeFakeLane(ws.stateDir);
+		const lane = makeFakeLane(ws.root, ws.stateDir);
 
 		// A job whose process is gone and whose outcome never landed.
 		startLoopJob(

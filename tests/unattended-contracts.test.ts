@@ -266,25 +266,26 @@ describe("single-task Lane contract text (Spec drive-always-lanes S6)", () => {
 		expect(flatText(BATCH_CONTRACT)).not.toContain("A standalone task id uses single-task Enrollment");
 	});
 
-	it("routes single-task Herdr sessions to interactive tabs and other sessions to runtime supervision", () => {
+	it("drives single-task Lanes through the session port on every Host", () => {
 		const lane = flatText(section(BATCH_CONTRACT, "### Single-Task Lane"));
 		for (const claim of [
 			"calls `start_unattended_batch` with `task_id` and no `initiative_slug`",
 			"under exactly one native gate",
-			"waits for it inside the Host tool call",
-			"`executor_mode: \"interactive\"`",
-			"The Parent creates one Herdr tab",
-			"Synchronous runtime supervision outside Herdr",
-			"call the same entry again to re-attach",
-			"`stop: true` on the same entry terminates the current generation",
-			"never exit proof",
+			"No runtime child process is ever spawned",
+			"completion is read from the v3",
+			"refuses",
+			"`lane_session_unavailable`",
+			"creates no Lane worktree, branch, tab, or Executor process",
+			"`advanceLanes(root, batch_id)`",
+			"never switches",
+			"`stop: true` on the same entry closes only that child's session",
+			"parks the child `lane_executor_stopped`",
+			"`entry_submitted: false`",
+			"holds the batch open",
 			"`manual` stages the delivered delta, uncommitted, and moves no HEAD",
 			"`auto` fast-forwards the current branch",
 			"`checkout_delivery_overlap: <paths>` and writes nothing",
 			"Unrelated user edits are never blocked",
-			// S6 exit-proof cleanup: an exit is observed only from the runtime's
-			// own child-process exit event, never from codes, notices or Herdr state.
-			"An exit is observed only from the runtime's own child-process exit event for that generation",
 			"`batch_lane_retained`",
 			"`lane_decision_required`",
 			"`approve_breaking_intent_revision`",
@@ -293,19 +294,17 @@ describe("single-task Lane contract text (Spec drive-always-lanes S6)", () => {
 			"`BatchSessionPort.stop`",
 			"`advanceLanes(root, batch_id)`",			"`coordinator: correct`",
 			"`lane_decision_stale`",
-			"A Pi Executor outside Herdr is never spawned",
-			"reports reason `lane_executor_requires_tui`",
-			"hands the Lane to the user under the no-supervised-session rule",
-			"`/skill:drive <task_id>` in interactive pi",
 		]) expect(lane).toContain(claim);
-		// #426 F9: Pi never runs as a non-interactive Executor, so the contract must not name one.
+		// S8: no spawned Executors, no process supervision, no TUI handoff.
 		expect(lane).not.toContain("pi --print");
+		expect(lane).not.toContain("lane_executor_requires_tui");
+		expect(lane).not.toContain("executor_mode");
 		const supervision = flatText(section(BATCH_CONTRACT, "#### Lane Executor Supervision"));
-		expect(supervision).toContain("single-task Lanes recorded with `executor_mode: \"interactive\"` inside Herdr");
+		expect(supervision).toContain("The runtime owns every Lane session through `runtime/lane_sessions/`");
 		const herdr = flatText(section(BATCH_CONTRACT, "##### Herdr Lane Tabs"));
 		expect(herdr).toContain("This facility applies to Initiative batches and single-task Lanes inside Herdr");
 		expect(herdr).toContain("with the same `task_id` on every re-entry");
-		expect(herdr).toContain("Existing tasks with a runtime-owned Executor keep that process until settlement");
+		expect(herdr).toContain("Existing tasks with a runtime-owned Executor session keep that session");
 	});
 });
 
@@ -570,7 +569,6 @@ describe("unattended batch contract text", () => {
 			"interaction_mode",
 			"session_provider",
 			"final_verification_required",
-			"executor_mode",
 			"topology_digest",
 			"progress_mode",
 			"final_report",

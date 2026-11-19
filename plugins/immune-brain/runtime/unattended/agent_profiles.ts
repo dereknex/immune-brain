@@ -3,12 +3,28 @@
 // resolved profiles, and every later generation reads the frozen record.
 import { agentRole, parseAgentValue, type AgentProfile, type ResolvedAgentRole } from "../config/agent_roles";
 import { batchConfigErrors, resolveConfig, type ReviewProfile } from "../config/layered_config";
-import { chooseExecutor, type ExecutorChoice, type ExecutorHost, type ExecutorPreferences } from "./lane_supervisor";
+
+export type ExecutorHost = "claude-code" | "pi" | "antigravity";
+/** S8: short keys; the retired long model key collides with a retired gate. */
+export interface ExecutorPreferences { host?: ExecutorHost; model?: string; effort?: string }
+export interface ExecutorChoice { host: ExecutorHost; model?: string; effort?: string }
+
+/**
+ * The first layer that names a Host supplies the whole profile; nothing is
+ * filled in from a later layer. Without one, the fallback Host runs on its own
+ * default model (ADR 0041).
+ */
+export function chooseExecutor(layers: ExecutorPreferences[], fallback: ExecutorHost): ExecutorChoice {
+	const selected = layers.find(layer => layer.host !== undefined);
+	if (!selected) return { host: fallback };
+	return { host: selected.host!, ...(selected.model ? { model: selected.model } : {}),
+		...(selected.effort ? { effort: selected.effort } : {}) };
+}
 
 const executorPreferences = (profile: AgentProfile | ResolvedAgentRole): ExecutorPreferences => ({
-	executor_host: profile.host,
-	...(profile.model ? { executor_model: profile.model } : {}),
-	...(profile.effort ? { executor_effort: profile.effort } : {}),
+	host: profile.host,
+	...(profile.model ? { model: profile.model } : {}),
+	...(profile.effort ? { effort: profile.effort } : {}),
 });
 
 /** The whole profiles a `start_unattended_batch` request names per role. */
@@ -43,7 +59,7 @@ export function parseRequestedAgents(root: string, value: unknown): RequestedAge
  * model. Null when `agents` or `batch` has a configuration error and nothing was frozen or requested.
  */
 export function laneExecutorChoice(root: string, preferences: ExecutorPreferences | undefined, parentHost: ExecutorHost): ExecutorChoice | null {
-	if (preferences?.executor_host) return chooseExecutor([preferences], parentHost);
+	if (preferences?.host) return chooseExecutor([preferences], parentHost);
 	const config = resolveConfig(root);
 	if (batchConfigErrors(config).length) return null;
 	const role = agentRole(config.agents, "executor");
@@ -56,12 +72,12 @@ export function laneExecutorChoice(root: string, preferences: ExecutorPreference
  * or the configuration is invalid.
  */
 export function frozenExecutorPreferences(root: string, request: ExecutorPreferences | undefined, parentHost?: ExecutorHost): ExecutorPreferences | undefined {
-	if (request?.executor_host) return request;
+	if (request?.host) return request;
 	const config = resolveConfig(root);
 	if (batchConfigErrors(config).length) return undefined;
 	const role = agentRole(config.agents, "executor");
 	if (role) return executorPreferences(role);
-	return parentHost ? { executor_host: parentHost } : undefined;
+	return parentHost ? { host: parentHost } : undefined;
 }
 
 /** The `reviewer` profile a new batch freezes: the request's, else the configured role's. */

@@ -2,13 +2,10 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { Type } from "typebox";
 import { randomUUID } from "node:crypto";
 import { claimProcess, copySource } from "./single-copy";
-import { LaneSupervisor, type ExecutorPreferences } from "../runtime/unattended/lane_supervisor";
+import type { ExecutorPreferences } from "../runtime/unattended/agent_profiles";
 import { readSettledTaskEvidence } from "../runtime/kernel/storage";
-import {
-	type BatchRunnerKernelPort,
-	type BatchRunReport,
-	type BatchTrackerPort,
-} from "../runtime/unattended/batch_runner";
+import type { BatchRunnerKernelPort, BatchTrackerPort } from "../runtime/unattended/batch_kernel_port";
+import type { BatchRunReport } from "../runtime/unattended/batch_state";
 import { type BatchRunnerGitPort, advanceNativeParent } from "../runtime/unattended/batch_git";
 import type { InitiativeObservationReader } from "../runtime/unattended/types";
 import { piEntryToken, piRunEntryRefusal } from "./imm-canary-work";
@@ -42,10 +39,9 @@ import {
 	type NativeConfirmationInput,
 	NativeAuthorityError,
 } from "../runtime/host-core/interaction";
-import { PI_LANE_WAIT_MS, piLaneSupervisor, PiRuntime } from "./pi-host-runtime";
+import { PI_LANE_WAIT_MS, PiRuntime } from "./pi-host-runtime";
 
-export { PI_LANE_WAIT_MS, piLaneSupervisor };
-const defaultSupervisor = piLaneSupervisor;
+export { PI_LANE_WAIT_MS };
 
 export async function readSettledTaskRecord(
 	root: string,
@@ -78,7 +74,6 @@ export interface PiBatchExecutionOptions {
 	taskId?: string;
 	stop?: boolean;
 	executor?: ExecutorPreferences;
-	supervisor?: LaneSupervisor;
 	interactive?: boolean;
 	reuseOnly?: boolean;
 	signal?: AbortSignal;
@@ -150,7 +145,6 @@ export async function executePiUnattendedBatch(
 		cwd: options.root,
 		interactive,
 		env: options.env ?? process.env,
-		supervisor: options.supervisor ?? defaultSupervisor,
 		batchKernel: options.batchKernel,
 		batchGit: options.batchGit,
 		batchTracker: options.batchTracker,
@@ -327,7 +321,6 @@ export default function (
 	// A second copy of the plugin in this process registers nothing (C-1); the
 	// notice comes from this copy's other factory.
 	if (!claimProcess(copySource(import.meta.url)).active) return;
-	const supervisor = piLaneSupervisor;
 	pi.registerTool({
 		name: "start_unattended_batch",
 		label: "Start unattended batch",
@@ -406,7 +399,6 @@ export default function (
 				...(params.task_id ? { taskId: params.task_id } : {}),
 				...(params.stop ? { stop: true } : {}),
 				...(requested.executor ? { executor: requested.executor } : {}),
-				supervisor,
 				...(maxParallel !== undefined ? { max_parallel: maxParallel } : {}),
 				...(laneOffers !== undefined ? { lane_offers: laneOffers } : {}),
 				...(finalVerification !== undefined ? { final_verification: finalVerification } : {}),

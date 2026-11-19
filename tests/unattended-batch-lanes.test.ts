@@ -37,8 +37,12 @@ import {
 	type LaneFacts,
 	type LaneOffer,
 } from "../plugins/immune-brain/runtime/unattended/batch_lanes";
-import type { BatchRunnerKernelPort, StartBatchInput } from "../plugins/immune-brain/runtime/unattended/batch_runner";
-import { completedParentReport, startBatch } from "../plugins/immune-brain/runtime/unattended/batch_runner";
+import type { BatchRunnerKernelPort } from "../plugins/immune-brain/runtime/unattended/batch_kernel_port";
+import type { StartBatchInput } from "../plugins/immune-brain/runtime/unattended/batch_lanes";
+import { completedParentReport, runLaneBatch } from "../plugins/immune-brain/runtime/unattended/batch_lanes";
+
+/** S8: the shared transitional entry is gone; the engine entry reads the persisted record the same way. */
+const startBatch = (input: StartBatchInput) => runLaneBatch(input, readAnyBatchRunState(input.root, input.batch_id));
 import { planLaneLeakRestore } from "../plugins/immune-brain/runtime/unattended/batch_leak_restore";
 import { startableChildren } from "../plugins/immune-brain/runtime/unattended/batch_schedule";
 import { recoverKernelStoreFollowUps } from "../plugins/immune-brain/runtime/kernel/storage";
@@ -924,7 +928,7 @@ describe("max_parallel 1 end to end through a real second worktree", () => {
 	// #564: the runtime alone resolves the Executor profile, freezes it, and hands it to the Parent
 	// with every Executor handoff so an interactive Lane tab starts on the frozen Host, model and effort.
 	const freezeCases: Array<[string, StartBatchInput["executor_freeze"], string | null, object]> = [
-		["the request", { request: { executor_host: "pi", executor_model: "req-model", executor_effort: "high" }, parentHost: "claude-code" },
+		["the request", { request: { host: "pi", model: "req-model", effort: "high" }, parentHost: "claude-code" },
 			"claude-code:project-model", { host: "pi", model: "req-model", effort: "high" }],
 		["the project executor role", { parentHost: "claude-code" }, "pi:project-model@low", { host: "pi", model: "project-model", effort: "low" }],
 		["the Parent Host", { parentHost: "antigravity" }, null, { host: "antigravity" }],
@@ -938,12 +942,12 @@ describe("max_parallel 1 end to end through a real second worktree", () => {
 			}
 			const args = { ...request(fx, [child("task-a", "S1")], laneKernel()), executor_freeze: freeze };
 			lanes(await startBatch(args));
-			const executorPreferences = { executor_host: (expected as { host: string }).host,
-				...((expected as { model?: string }).model ? { executor_model: (expected as { model: string }).model } : {}),
-				...((expected as { effort?: string }).effort ? { executor_effort: (expected as { effort: string }).effort } : {}) };
+			const executorPreferences = { host: (expected as { host: string }).host,
+				...((expected as { model?: string }).model ? { model: (expected as { model: string }).model } : {}),
+				...((expected as { effort?: string }).effort ? { effort: (expected as { effort: string }).effort } : {}) };
 			expect(readAnyBatchRunState(fx.repo, BATCH_ID)).toMatchObject({ executor_preferences: executorPreferences });
 			// A later tick reads the frozen record, not a changed request.
-			const second = lanes(await startBatch({ ...args, executor_freeze: { request: { executor_host: "claude-code" } }, lane_offers: [{ task_id: "task-a", path: fx.lane("task-a") }] }));
+			const second = lanes(await startBatch({ ...args, executor_freeze: { request: { host: "claude-code" } }, lane_offers: [{ task_id: "task-a", path: fx.lane("task-a") }] }));
 			expect(second.handoffs).toMatchObject([{ role: "executor", task_id: "task-a", executor: expected }]);
 		} finally {
 			fx.cleanup();

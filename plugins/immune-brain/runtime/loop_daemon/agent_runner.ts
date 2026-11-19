@@ -21,7 +21,7 @@ import { createHash } from "node:crypto";
 import { accessSync, chmodSync, constants, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import { agentRole, type AgentRole, type AgentsSection } from "../config/agent_roles.ts";
-import type { ExecutorHost } from "../unattended/lane_supervisor.ts";
+import type { ExecutorHost } from "../unattended/agent_profiles.ts";
 
 export const AGENT_SESSION_CONTRACT = "assurance_kernel/loop_agent_session/v1" as const;
 

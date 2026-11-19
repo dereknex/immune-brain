@@ -32,9 +32,9 @@ import { HostRuntime, type HostRuntimeOptions, type HostRuntimeProfile, type Too
 import { batchReason } from "../unattended/batch_reasons";
 import { parseLaneInstruction, parseLaneOffers, parseLaneSessionClose, parseMaxParallel, resolveLaneParallel } from "../unattended/batch_lanes";import { parseFinalVerification } from "../unattended/batch_final_verification";
 import { parseRequestedAgents } from "../unattended/agent_profiles";
-import type { ExecutorHost } from "../unattended/lane_supervisor";
+import type { ExecutorHost } from "../unattended/agent_profiles";
 import type { InitiativeObservationReader } from "../unattended/types";
-import type { BatchRunnerKernelPort, BatchTrackerPort } from "../unattended/batch_runner";
+import type { BatchRunnerKernelPort, BatchTrackerPort } from "../unattended/batch_kernel_port";
 import type { BatchRunnerGitPort } from "../unattended/batch_git";
 import type { AssuranceHostPort } from "../assurance/host_port";
 import { deliveryOf, type AssuranceCoordinatorPorts } from "../assurance/coordinator";
@@ -461,7 +461,7 @@ export function createMcpRuntime(profile: McpHostProfile, options: McpRuntimeOpt
 				const initiative = typeof args.initiative_slug === "string" ? args.initiative_slug : "";
 				const task = typeof args.task_id === "string" ? args.task_id : "";
 				if (args.stop !== undefined && typeof args.stop !== "boolean") throw new Error("stop must be a boolean");
-				for (const key of ["executor_host", "executor_model", "executor_effort", "review_host", "review_model", "review_effort"]) if (Object.hasOwn(args, key)) throw new Error(`unknown parameter: ${key} (use agents)`);
+				for (const key of ["executor_host", "executor_effort", "host", "model", "effort", "review_host", "review_model", "review_effort"]) if (Object.hasOwn(args, key)) throw new Error(`unknown parameter: ${key} (use agents)`);
 				const requested = parseRequestedAgents(workspace, args.agents);
 				if (!!initiative === !!task) return batchReason("batch_entry_ambiguous");
 				const initiativeSlug = task || initiative;

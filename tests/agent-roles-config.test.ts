@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { agentRole, AGENT_ROLES, parseAgentShorthand } from "../plugins/immune-brain/runtime/config/agent_roles.ts";
 import { resolveConfig } from "../plugins/immune-brain/runtime/config/layered_config.ts";
-import { frozenExecutorPreferences, frozenReviewProfile, laneExecutorChoice } from "../plugins/immune-brain/runtime/unattended/batch_runner.ts";
+import { frozenExecutorPreferences, frozenReviewProfile, laneExecutorChoice } from "../plugins/immune-brain/runtime/unattended/agent_profiles.ts";
 
 // ADR 0041: four agent roles (executor, reviewer, planner, triage), each one
 // whole profile from one layer: project role over user role over unset.
@@ -124,7 +124,7 @@ test("without agents every role is null and the Lane executor falls back to the 
 	expect(Object.keys(c.agents.roles).sort()).toEqual([...AGENT_ROLES].sort());
 	for (const role of AGENT_ROLES) expect(agentRole(c.agents, role)).toBeNull();
 	expect(laneExecutorChoice(f.root, undefined, "antigravity")).toMatchObject({ host: "antigravity" });
-	expect(frozenExecutorPreferences(f.root, undefined, "antigravity")).toEqual({ executor_host: "antigravity" });
+	expect(frozenExecutorPreferences(f.root, undefined, "antigravity")).toEqual({ host: "antigravity" });
 	expect(frozenReviewProfile(f.root, undefined)).toBeUndefined();
 });
 
@@ -132,12 +132,12 @@ test("the Lane executor and the frozen batch profiles read the resolved roles", 
 	const f = fixture();
 	f.user({ agents: { profiles: PROFILES, executor: "deepseek", reviewer: "opus" } });
 	expect(laneExecutorChoice(f.root, undefined, "claude-code")).toMatchObject({ host: "pi", model: "auto/deepseek-v4.1-flash", effort: "high" });
-	expect(frozenExecutorPreferences(f.root, undefined, "claude-code")).toEqual({ executor_host: "pi", executor_model: "auto/deepseek-v4.1-flash", executor_effort: "high" });
+	expect(frozenExecutorPreferences(f.root, undefined, "claude-code")).toEqual({ host: "pi", model: "auto/deepseek-v4.1-flash", effort: "high" });
 	expect(frozenReviewProfile(f.root, undefined)).toEqual({ host: "claude-code", model: "claude-opus-5-5", effort: "medium" });
 	f.project({ agents: { executor: "antigravity:p-model" } });
 	expect(laneExecutorChoice(f.root, undefined, "claude-code")).toMatchObject({ host: "antigravity", model: "p-model" });
 	// A frozen or requested profile replaces the configured role whole.
-	expect(laneExecutorChoice(f.root, { executor_host: "claude-code" }, "pi")).toMatchObject({ host: "claude-code" });
+	expect(laneExecutorChoice(f.root, { host: "claude-code" }, "pi")).toMatchObject({ host: "claude-code" });
 	expect(frozenReviewProfile(f.root, { host: "pi" })).toEqual({ host: "pi" });
 });
 

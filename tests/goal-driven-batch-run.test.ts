@@ -17,7 +17,7 @@ import { recognizePhaseEntry, NO_LOCAL_NAMES } from "../plugins/immune-brain/run
 import { recordPhaseEntryPrompt } from "../plugins/immune-brain/runtime/claude/lane_guard";
 import { runContinuationHookOutput } from "../plugins/immune-brain/runtime/claude/run_continuation";
 import { runFinalVerification, parseFinalVerificationReport } from "../plugins/immune-brain/runtime/unattended/batch_final_verification";
-import { completedParentReport } from "../plugins/immune-brain/runtime/unattended/batch_runner";
+import { completedParentReport } from "../plugins/immune-brain/runtime/unattended/batch_lanes";
 import type { BatchLaneRunReport } from "../plugins/immune-brain/runtime/unattended/batch_state";
 
 function repository() {

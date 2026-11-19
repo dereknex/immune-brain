@@ -8,7 +8,12 @@ import { canonicalIntentHash, parseTaskIntentV1, readTaskIntent } from "../plugi
 import type { AssuranceProjectionResult } from "../plugins/immune-brain/runtime/kernel/assurance_projection";
 import { prepareBatchPreflight, projectBatchPreflight } from "../plugins/immune-brain/runtime/unattended/batch_preflight";
 import { readStaleBatchLookup, retireStaleBatch } from "../plugins/immune-brain/runtime/unattended/batch_disposition";
-import { startBatch, type BatchRunnerKernelPort, type StartBatchInput } from "../plugins/immune-brain/runtime/unattended/batch_runner";
+import { runLaneBatch } from "../plugins/immune-brain/runtime/unattended/batch_lanes";
+import type { BatchRunnerKernelPort } from "../plugins/immune-brain/runtime/unattended/batch_kernel_port";
+import type { StartBatchInput } from "../plugins/immune-brain/runtime/unattended/batch_lanes";
+
+/** S8: the engine entry reads the persisted record the way the retired transitional entry did. */
+const startBatch = (input: StartBatchInput) => runLaneBatch(input, readAnyBatchRunState(input.root, input.batch_id));
 import { prepareBatchRunState, readAnyBatchRunState, writeBatchRunState, type BatchLaneRunReport } from "../plugins/immune-brain/runtime/unattended/batch_state";
 
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";

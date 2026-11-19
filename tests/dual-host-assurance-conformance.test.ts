@@ -1702,7 +1702,7 @@ describe("dual-host assurance conformance", () => {
 			const pHeadBefore = execFileSync("git", ["rev-parse", "HEAD"], { cwd: pf.root, encoding: "utf8" }).trim();
 
 			// A parked authorization must reject graph drift before historical completion replay.
-			const { completedParentReport } = await import("../plugins/immune-brain/runtime/unattended/batch_runner");
+			const { completedParentReport } = await import("../plugins/immune-brain/runtime/unattended/batch_lanes");
 			for (const [f, history] of [[cf, cBatchBefore], [pf, pBatchBefore]] as const) {
 				expect(await completedParentReport(f.root, f.observation.initiative_id, async () => f.observation,
 					{ markTerminal: async () => ({ status: "synced", message: "fixture" }) })).not.toBeNull();

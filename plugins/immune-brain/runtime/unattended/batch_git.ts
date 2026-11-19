@@ -980,6 +980,29 @@ export async function withBatchEvidence<T>(root: string, branch: string | undefi
 	return isParentBranch(branch) ? withParentWorktree(root, head, async path => read(path)) : read(root);
 }
 
+/**
+ * S8 daemon PR gate (D13): `sha256:` digest over the tracked
+ * `.imm/audit/<task_id>/` terminal evidence pair as it stands at `head`
+ * (`task-record.json` + `"\\n"` + `terminal-proof.json` of the run dir that
+ * carries both files), or null when the pair is absent or unreadable there.
+ */
+export function auditEvidenceDigest(root: string, head: string, taskId: string): string | null {
+	const listing = spawnSync("git", ["-C", root, "ls-tree", "-r", "--name-only", head, "--", `.imm/audit/${taskId}`],
+		{ encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+	if (listing.status !== 0) return null;
+	const files = listing.stdout.trim().split("\n").filter(Boolean);
+	const runDirs = new Set(files.map(file => file.slice(0, file.lastIndexOf("/"))));
+	const runDir = [...runDirs].find(dir =>
+		files.includes(`${dir}/task-record.json`) && files.includes(`${dir}/terminal-proof.json`));
+	if (!runDir) return null;
+	const record = spawnSync("git", ["-C", root, "show", `${head}:${runDir}/task-record.json`],
+		{ encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 32 * 1024 * 1024 });
+	const proof = spawnSync("git", ["-C", root, "show", `${head}:${runDir}/terminal-proof.json`],
+		{ encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 32 * 1024 * 1024 });
+	if (record.status !== 0 || proof.status !== 0) return null;
+	return `sha256:${createHash("sha256").update(`${record.stdout}\n${proof.stdout}`).digest("hex")}`;
+}
+
 /** Settled `done` with an unchanged TaskIntent is delivered. */
 function isDelivered(root: string, taskId: string): boolean {
 	const settled = readSettledTaskEvidence(root, taskId);
@@ -1147,7 +1170,7 @@ export function nativeParentFinalDecision(facts: NativeParentFacts, commands?: s
 }
 
 export async function advanceNativeParent(root: string, initiativeSlug: string, commands?: string[], readInitiative?: InitiativeObservationReader,
-	tracker?: import("./batch_runner").BatchTrackerPort, gate?: NativeParentGate) {
+	tracker?: import("./batch_kernel_port").BatchTrackerPort, gate?: NativeParentGate) {
 	let facts = await observeNativeParent(root, initiativeSlug, readInitiative);
 	if (!facts) return null;
 	const decision = nativeParentFinalDecision(facts, commands);

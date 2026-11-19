@@ -6623,7 +6623,6 @@ var init_batch_reasons = __esm(() => {
     lane_executor_unavailable: { state: "blocked", reason: "lane_executor_unavailable", recovery_action: "Install the selected Executor on PATH and retry in the current Host." },
     lane_executor_unobservable: { state: "blocked", reason: "lane_executor_unobservable", recovery_action: "Inspect the retained Lane and Executor process in the current Host." },
     lane_executor_no_progress: { state: "blocked", reason: "lane_executor_no_progress", recovery_action: "Inspect the Lane and resume with a fresh drive entry." },
-    lane_executor_requires_tui: { state: "blocked", reason: "lane_executor_requires_tui", recovery_action: "Open interactive pi in the Lane and run `/skill:drive <task_id>` there; when it finishes, call `start_unattended_batch` again with that task_id in the current Host." },
     lane_decision_stale: { state: "rejected", reason: "lane_decision_stale", recovery_action: "Read the Lane decision facts again with status and relay the decision for the current record revision." },
     lane_decision_rebind_failed: { state: "blocked", reason: "lane_decision_rebind_failed", recovery_action: "The decision was applied in the Lane; inspect the batch record with status before any further entry." },
     batch_entry_ambiguous: {
@@ -6832,13 +6831,27 @@ function parseBatchExecutorPreferences(value) {
     return;
   const prefs = value;
   const text = (v) => v === undefined || typeof v === "string" && v.trim() !== "";
-  if (typeof value !== "object" || value === null || Array.isArray(value) || Object.keys(prefs).some((key) => key !== "executor_host" && key !== "executor_model" && key !== "executor_effort") || prefs.executor_host !== undefined && !EXECUTOR_HOSTS.has(String(prefs.executor_host)) || !text(prefs.executor_model) || !text(prefs.executor_effort))
-    throw new Error("invalid executor_preferences: expected { executor_host?: pi | claude-code | antigravity, executor_model?, executor_effort? }");
-  return {
-    ...prefs.executor_host ? { executor_host: prefs.executor_host } : {},
-    ...prefs.executor_model ? { executor_model: prefs.executor_model } : {},
-    ...prefs.executor_effort ? { executor_effort: prefs.executor_effort } : {}
-  };
+  const out = {};
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    throw new Error("invalid executor_preferences: expected { host?: pi | claude-code | antigravity, model?, effort? }");
+  for (const [key, entry] of Object.entries(prefs)) {
+    if (key === "host" || key === "executor_host") {
+      if (entry !== undefined && !EXECUTOR_HOSTS.has(String(entry)))
+        throw new Error("invalid executor_preferences: expected { host?: pi | claude-code | antigravity, model?, effort? }");
+      if (entry)
+        out.host = entry;
+    } else if (key === "model" || key === "effort" || key === "executor_effort") {
+      if (!text(entry))
+        throw new Error("invalid executor_preferences: expected { host?: pi | claude-code | antigravity, model?, effort? }");
+      if (entry)
+        out[key === "model" ? "model" : "effort"] = entry;
+    } else if (key.startsWith("executor_")) {
+      continue;
+    } else {
+      throw new Error("invalid executor_preferences: expected { host?: pi | claude-code | antigravity, model?, effort? }");
+    }
+  }
+  return out;
 }
 function classifyBatchRunStateContract(contract) {
   if (contract === "assurance_kernel/batch_run_state/v1")
@@ -7116,8 +7129,6 @@ function validateLaneRecordShape(value, batchId) {
     throw new Error(`batch run state ${batchId} has an invalid final_verification_required`);
   if (record.plan_source !== undefined && record.plan_source !== "single_task")
     throw new Error(`batch run state ${batchId} has an invalid plan_source`);
-  if (record.executor_mode !== undefined && (record.executor_mode !== "interactive" || record.plan_source !== "single_task"))
-    throw new Error(`batch run state ${batchId} has an invalid executor_mode`);
   if (record.plan_source === "single_task" && (record.max_parallel !== 1 || !Array.isArray(record.children) || record.children.length !== 1 || record.children[0]?.task_id !== record.initiative_slug))
     throw new Error(`batch run state ${batchId} has an invalid single_task plan`);
   if (record.topology_digest !== undefined && (typeof record.topology_digest !== "string" || !/^sha256:[0-9a-f]{64}$/.test(record.topology_digest)))
@@ -7302,7 +7313,6 @@ function prepareBatchLaneRunState(input) {
   return {
     contract: "assurance_kernel/batch_run_state/v3",
     ...entryKind ? { plan_source: entryKind } : {},
-    ...input.executor_mode ? { executor_mode: input.executor_mode } : {},
     topology_digest: input.topology_digest ?? batchTopologyDigest(input.children),
     batch_id: input.batch_id,
     initiative_slug: input.initiative_slug,
@@ -7491,27 +7501,6 @@ function rebindBatchChildIdentity(root, batchId, input) {
     writeFileAtomically(root, path, canonicalBytes(stored));
     return stored;
   });
-}
-function laneGenerationStore(root, batchId) {
-  validateBatchId(batchId);
-  const directory = join10(".imm", "state", "lane-supervisors");
-  const path = join10(directory, `${batchId}.json`);
-  const read = () => {
-    if (!existsSync6(join10(root, path)))
-      return null;
-    const value = JSON.parse(readSecureProjectFile(root, path));
-    if (!isObject(value) || typeof value.repository !== "string" || !value.repository || typeof value.lane_path !== "string" || !value.lane_path || !Number.isSafeInteger(value.generation) || value.generation < 1 || value.pid !== null && (!Number.isSafeInteger(value.pid) || value.pid < 1) || !Number.isSafeInteger(value.owner_pid) || value.owner_pid < 1 || !["starting", "running", "exited", "stopped_by_parent", "interrupted", "unobservable", "unavailable"].includes(String(value.state)) || typeof value.baseline !== "string" || !Number.isSafeInteger(value.no_progress) || value.no_progress < 0 || value.handled_generation !== undefined && (!Number.isSafeInteger(value.handled_generation) || value.handled_generation < 1 || value.handled_generation > value.generation) || (value.state === "starting" || value.state === "unavailable") && (value.pid !== null || value.exit !== null) || value.state === "running" && (value.pid === null || value.exit !== null) || value.state === "unobservable" && value.exit !== null || ["exited", "stopped_by_parent", "interrupted"].includes(String(value.state)) && (value.pid === null || value.exit === null) || value.exit !== null && (!isObject(value.exit) || value.exit.repository !== value.repository || value.exit.lane_path !== value.lane_path || value.exit.generation !== value.generation || value.exit.pid !== value.pid || value.exit.code !== null && !Number.isInteger(value.exit.code) || value.exit.signal !== null && typeof value.exit.signal !== "string" || value.exit.code === null === (value.exit.signal === null)))
-      throw new Error(`invalid lane supervisor state for ${batchId}`);
-    return value;
-  };
-  return { read, update(fn) {
-    return withKernelStoreLock(root, () => {
-      const next = fn(read());
-      ensureSecureDirectory2(root, directory);
-      writeFileAtomically(root, path, JSON.stringify(next));
-      return next;
-    });
-  } };
 }
 function writeBatchLaneRunState(root, record) {
   const path = statePath(record.batch_id);
@@ -17852,9 +17841,9 @@ init_batch_preflight();
 init_batch_state();
 import { existsSync as existsSync23, readdirSync as readdirSync13 } from "node:fs";
 import { createInterface } from "node:readline";
-import { join as join42 } from "node:path";
+import { join as join41 } from "node:path";
 import { stdin as stdin2 } from "node:process";
-import { fileURLToPath as fileURLToPath6 } from "node:url";
+import { fileURLToPath as fileURLToPath5 } from "node:url";
 
 // plugins/immune-brain/runtime/host-core/mcp_runtime.ts
 import { randomUUID as randomUUID11 } from "node:crypto";
@@ -18089,30 +18078,12 @@ init_checkout_delivery();
 import { spawnSync as spawnSync19 } from "node:child_process";
 import { createHash as createHash25 } from "node:crypto";
 import { existsSync as existsSync17, realpathSync as realpathSync17 } from "node:fs";
-import { isAbsolute as isAbsolute11, join as join30 } from "node:path";
+import { isAbsolute as isAbsolute11, join as join29 } from "node:path";
 import { readFileSync as readFileSync21 } from "node:fs";
 
 // plugins/immune-brain/runtime/unattended/lane_cleanup.ts
 import { spawnSync as spawnSync18 } from "node:child_process";
 var LANE_RETAINED_REASON = "batch_lane_retained";
-function exitProofCondition(generation, observation) {
-  if (!generation)
-    return "no Executor generation was supervised by the runtime, so no exit was observed";
-  if (generation.state === "interrupted")
-    return `Executor generation ${generation.generation} was interrupted`;
-  if (generation.state === "stopped_by_parent")
-    return `Executor generation ${generation.generation} was stopped by the Parent`;
-  if (generation.state !== "exited" || !generation.exit)
-    return `Executor generation ${generation.generation} exit was never observed (unobservable)`;
-  const exit = observation ?? generation.exit;
-  if (exit.generation !== generation.generation)
-    return `the exit observation belongs to superseded generation ${exit.generation}; the current generation is ${generation.generation}`;
-  if (exit.pid !== generation.pid || exit.repository !== generation.repository || exit.lane_path !== generation.lane_path)
-    return `the exit observation of generation ${generation.generation} is not bound to this Executor process`;
-  if (exit.code !== 0 || exit.signal !== null)
-    return `Executor generation ${generation.generation} did not exit normally (${exit.signal ? `signal ${exit.signal}` : `code ${exit.code}`})`;
-  return null;
-}
 function git8(cwd, ...args) {
   return spawnSync18("git", ["--no-optional-locks", "-C", cwd, ...args], { encoding: "utf8" });
 }
@@ -18191,11 +18162,6 @@ init_batch_preflight();
 init_batch_reasons();
 init_batch_state();
 
-// plugins/immune-brain/runtime/unattended/lane_supervisor.ts
-import { spawn as spawn4 } from "node:child_process";
-import { accessSync as accessSync3, constants as constants7 } from "node:fs";
-import { delimiter as delimiter4, join as join29 } from "node:path";
-
 // plugins/immune-brain/runtime/unattended/lane_decision_request.ts
 import { existsSync as existsSync16, mkdirSync as mkdirSync12, readFileSync as readFileSync20, rmSync as rmSync11, writeFileSync as writeFileSync12 } from "node:fs";
 import { dirname as dirname16, join as join28 } from "node:path";
@@ -18227,410 +18193,6 @@ function readLaneDecisionRequest(lanePath, taskId, recordRevision) {
 }
 function clearLaneDecisionRequest(lanePath) {
   rmSync11(laneDecisionRequestPath(lanePath), { force: true });
-}
-
-// plugins/immune-brain/runtime/unattended/lane_supervisor.ts
-function chooseExecutor(layers, fallback) {
-  const selected = layers.find((layer) => layer.executor_host !== undefined);
-  if (!selected)
-    return { host: fallback };
-  return {
-    host: selected.executor_host,
-    ...selected.executor_model ? { model: selected.executor_model } : {},
-    ...selected.executor_effort ? { effort: selected.executor_effort } : {}
-  };
-}
-function executorArguments(choice, pluginDir, taskId) {
-  if (choice.host === "antigravity") {
-    return [
-      "--dangerously-skip-permissions",
-      ...choice.model ? ["--model", choice.model] : [],
-      ...choice.effort ? ["--effort", choice.effort] : [],
-      "--print",
-      `/drive ${taskId}`
-    ];
-  }
-  return [
-    "--print",
-    ...choice.host === "claude-code" ? ["--plugin-dir", pluginDir] : [],
-    ...choice.model ? ["--model", choice.model] : [],
-    ...choice.effort ? [choice.host === "claude-code" ? "--effort" : "--thinking", choice.effort] : [],
-    `${choice.host === "claude-code" ? "/immune-brain:drive" : "/skill:drive"} ${taskId}`
-  ];
-}
-
-class LaneSupervisor {
-  handles = new Map;
-  async run(input) {
-    let current = input.store.read();
-    let handle = this.handles.get(input.key);
-    if (current && (current.repository !== input.repository || current.lane_path !== input.lanePath))
-      throw new Error("lane_executor_identity_mismatch");
-    if (!handle && current && (current.state === "starting" || current.state === "running" || current.state === "unobservable")) {
-      if (current.state !== "starting")
-        current = input.store.update((value) => {
-          if (!value || value.generation !== current.generation)
-            throw new Error("lane_executor_generation_changed");
-          return { ...value, state: "unobservable", exit: null };
-        });
-      return { state: "unobservable", generation: current.generation, exit: null };
-    }
-    if (input.stop && !handle)
-      return { state: "stopped", generation: current?.generation ?? null, exit: null };
-    if (!handle && current && ["stopped_by_parent", "interrupted"].includes(current.state) && !input.restart)
-      return { state: "stopped", generation: current.generation, exit: current.exit };
-    if (!handle && (input.signal?.aborted || current?.state === "exited" && !input.restart))
-      return { state: current?.state === "exited" ? "exited" : "stopped", generation: current?.generation ?? null, exit: current?.exit ?? null };
-    if (!handle && !input.stop) {
-      const binaryName = input.choice.host === "claude-code" ? "claude" : input.choice.host === "antigravity" ? "agy" : "pi";
-      const executable = (process.env.PATH ?? "").split(delimiter4).map((dir) => join29(dir || ".", binaryName)).find((path) => {
-        try {
-          accessSync3(path, constants7.X_OK);
-          return true;
-        } catch {
-          return false;
-        }
-      });
-      if (!executable)
-        return { state: "unavailable", generation: current?.generation ?? null, exit: null };
-      const previous = current;
-      current = input.store.update((value) => {
-        if ((value?.generation ?? 0) !== (previous?.generation ?? 0) || value && value.state !== "unavailable" && (!input.restart || !["exited", "stopped_by_parent", "interrupted"].includes(value.state)))
-          throw new Error("lane_executor_generation_changed");
-        return {
-          repository: input.repository,
-          lane_path: input.lanePath,
-          generation: value?.state === "unavailable" ? value.generation : (value?.generation ?? 0) + 1,
-          pid: null,
-          owner_pid: process.pid,
-          state: "starting",
-          exit: null,
-          baseline: input.baseline,
-          no_progress: value?.no_progress ?? 0,
-          ...value?.handled_generation ? { handled_generation: value.handled_generation } : {}
-        };
-      });
-      const generation = current.generation;
-      const child = spawn4(executable, executorArguments(input.choice, input.pluginDir, input.taskId), { cwd: input.lanePath, stdio: "ignore", env: { ...process.env, [LANE_EXECUTOR_ENV]: LANE_EXECUTOR_HEADLESS } });
-      const started = new Promise((resolve) => {
-        child.once("spawn", () => resolve(true));
-        child.once("error", () => resolve(false));
-      });
-      if (!child.pid) {
-        await started;
-        input.store.update((value) => {
-          if (!value || value.generation !== generation)
-            throw new Error("lane_executor_generation_changed");
-          return { ...value, state: "unavailable" };
-        });
-        return { state: "unavailable", generation, exit: null };
-      }
-      const pid = child.pid;
-      const newHandle = { child, termination: null, done: null };
-      newHandle.done = new Promise((resolve, reject) => child.once("exit", (code, signal) => {
-        try {
-          const stored = input.store.update((value) => {
-            if (!value || value.generation !== generation || value.pid !== pid)
-              throw new Error("lane_executor_generation_changed");
-            const exit = { repository: input.repository, lane_path: input.lanePath, generation, pid, code, signal };
-            return { ...value, state: newHandle.termination ?? "exited", exit };
-          });
-          resolve(stored);
-        } catch (error) {
-          reject(error);
-        } finally {
-          this.handles.delete(input.key);
-        }
-      }));
-      newHandle.done.catch(() => {});
-      try {
-        current = input.store.update((value) => {
-          if (!value || value.generation !== generation || value.state !== "starting")
-            throw new Error("lane_executor_generation_changed");
-          return { ...value, pid, state: "running" };
-        });
-      } catch (error) {
-        child.kill("SIGTERM");
-        const killTimer = setTimeout(() => child.kill("SIGKILL"), input.graceMs);
-        newHandle.done.finally(() => clearTimeout(killTimer)).catch(() => {});
-        throw error;
-      }
-      this.handles.set(input.key, newHandle);
-      handle = newHandle;
-      if (!await started) {
-        this.handles.delete(input.key);
-        input.store.update((value) => {
-          if (!value || value.generation !== generation)
-            throw new Error("lane_executor_generation_changed");
-          return { ...value, pid: null, state: "unavailable", exit: null };
-        });
-        return { state: "unavailable", generation, exit: null };
-      }
-    }
-    if (!handle)
-      return { state: "exited", generation: current?.generation ?? null, exit: current?.exit ?? null };
-    const active = handle;
-    let timer;
-    let abort;
-    let interrupted;
-    const interruption = new Promise((resolve) => {
-      interrupted = () => resolve("interrupted");
-    });
-    const terminate = (reason) => {
-      if (active.termination)
-        return;
-      active.termination = reason;
-      active.child.kill("SIGTERM");
-      const killTimer = setTimeout(() => active.child.kill("SIGKILL"), input.graceMs);
-      active.done.finally(() => clearTimeout(killTimer));
-      interrupted?.();
-    };
-    if (input.stop)
-      terminate("stopped_by_parent");
-    if (input.signal?.aborted)
-      terminate("interrupted");
-    const timeout = new Promise((resolve) => {
-      timer = setTimeout(() => resolve(null), input.waitMs);
-    });
-    if (input.signal && !input.signal.aborted) {
-      abort = () => terminate("interrupted");
-      input.signal.addEventListener("abort", abort, { once: true });
-    }
-    try {
-      let result = await Promise.race([active.done, timeout, interruption]);
-      if (result === "interrupted")
-        result = await active.done;
-      if (!result)
-        return { state: "running", generation: current.generation, exit: null };
-      return { state: result.state === "exited" ? "exited" : "stopped", generation: result.generation, exit: result.exit };
-    } finally {
-      if (timer)
-        clearTimeout(timer);
-      if (abort)
-        input.signal?.removeEventListener("abort", abort);
-    }
-  }
-}
-async function projectStable(project, attempts = 6, delayMs = 25) {
-  for (let attempt = 1;; attempt++) {
-    try {
-      return await project();
-    } catch (error) {
-      if (attempt >= attempts || !/recovery projection changed/.test(error instanceof Error ? error.message : String(error)))
-        throw error;
-      await new Promise((resolve) => setTimeout(resolve, delayMs * attempt));
-    }
-  }
-}
-async function superviseLane(supervisor, input) {
-  const project = () => projectStable(input.project);
-  const markHandled = (generation, advanced) => input.store.update((value) => {
-    if (!value || value.generation !== generation.generation || value.state !== "exited")
-      throw new Error("lane_executor_generation_changed");
-    if (value.handled_generation === value.generation)
-      return value;
-    return { ...value, handled_generation: value.generation, no_progress: advanced ? 0 : value.no_progress + 1 };
-  });
-  let projection = await project();
-  const requested = (p) => readLaneDecisionRequest(input.lanePath, input.taskId, p.record_revision) !== null;
-  const waitsOnUser = (p) => p.lifecycle !== "active" || p.next_obligation === "awaiting_user" || p.open_user_decision_count > 0 || requested(p);
-  const progressed = (p, baseline) => p.record_revision !== baseline || requested(p);
-  const deadline = Date.now() + input.waitMs;
-  for (;; ) {
-    const before = input.store.read();
-    if (before?.no_progress && before.no_progress >= 2 && before.handled_generation === before.generation)
-      return { state: "exited", generation: before.generation, exit: before.exit, reason: "lane_executor_no_progress" };
-    const mayBeLive = before && ["starting", "running", "unobservable"].includes(before.state);
-    if (!input.stop && !mayBeLive && waitsOnUser(projection)) {
-      if (before?.state === "exited")
-        markHandled(before, progressed(projection, before.baseline));
-      return { state: "exited", generation: before?.generation ?? null, exit: before?.exit ?? null };
-    }
-    if (!mayBeLive && input.choice.host === "pi")
-      return { state: "unavailable", generation: null, exit: null, reason: "lane_executor_requires_tui" };
-    const restart = !!before && ["exited", "stopped_by_parent", "interrupted"].includes(before.state) && before.handled_generation === before.generation;
-    const observation = await supervisor.run({ ...input, baseline: projection.record_revision, restart, waitMs: Math.max(0, deadline - Date.now()) });
-    if (observation.state !== "exited" || observation.generation === null)
-      return observation;
-    const generation = input.store.read();
-    if (!generation || generation.generation !== observation.generation || generation.state !== "exited")
-      throw new Error("lane_executor_generation_changed");
-    projection = await project();
-    const advanced = progressed(projection, generation.baseline);
-    const observed = markHandled(generation, advanced);
-    if (waitsOnUser(projection) || advanced)
-      return observation;
-    if (observed.no_progress >= 2)
-      return { ...observation, reason: "lane_executor_no_progress" };
-  }
-}
-
-// plugins/immune-brain/runtime/unattended/batch_runner.ts
-init_batch_preflight();
-init_batch_state();
-init_layered_config();
-
-// plugins/immune-brain/runtime/unattended/agent_profiles.ts
-init_agent_roles();
-init_layered_config();
-var executorPreferences = (profile) => ({
-  executor_host: profile.host,
-  ...profile.model ? { executor_model: profile.model } : {},
-  ...profile.effort ? { executor_effort: profile.effort } : {}
-});
-function parseRequestedAgents(root, value) {
-  if (value === undefined)
-    return {};
-  if (value === null || typeof value !== "object" || Array.isArray(value))
-    throw new Error("invalid agents: expected { executor?, reviewer? }");
-  const unknown = Object.keys(value).filter((key) => key !== "executor" && key !== "reviewer");
-  if (unknown.length)
-    throw new Error(`invalid agents: unknown role ${unknown.join(", ")}`);
-  const profiles = resolveConfig(root).agents.profiles.value;
-  const out = {};
-  for (const role of ["executor", "reviewer"]) {
-    const raw = value[role];
-    if (raw === undefined)
-      continue;
-    const parsed = parseAgentValue(raw, profiles);
-    if (!parsed.ok)
-      throw new Error(`invalid agents.${role}: ${parsed.message}`);
-    if (role === "executor")
-      out.executor = executorPreferences(parsed.profile);
-    else
-      out.reviewer = { host: parsed.profile.host, ...parsed.profile.model ? { model: parsed.profile.model } : {}, ...parsed.profile.effort ? { effort: parsed.profile.effort } : {} };
-  }
-  return out;
-}
-function laneExecutorChoice(root, preferences, parentHost) {
-  if (preferences?.executor_host)
-    return chooseExecutor([preferences], parentHost);
-  const config = resolveConfig(root);
-  if (batchConfigErrors(config).length)
-    return null;
-  const role = agentRole(config.agents, "executor");
-  return chooseExecutor(role ? [executorPreferences(role)] : [], parentHost);
-}
-function frozenExecutorPreferences(root, request, parentHost) {
-  if (request?.executor_host)
-    return request;
-  const config = resolveConfig(root);
-  if (batchConfigErrors(config).length)
-    return;
-  const role = agentRole(config.agents, "executor");
-  if (role)
-    return executorPreferences(role);
-  return parentHost ? { executor_host: parentHost } : undefined;
-}
-function frozenReviewProfile(root, request) {
-  if (request)
-    return request;
-  const role = agentRole(resolveConfig(root).agents, "reviewer");
-  return role ? { host: role.host, ...role.model ? { model: role.model } : {}, ...role.effort ? { effort: role.effort } : {} } : undefined;
-}
-// plugins/immune-brain/runtime/unattended/batch_runner.ts
-init_layered_config();
-init_backend_claim();
-init_batch_plan();
-init_batch_git();
-init_batch_reasons();
-function batchQaFailureFacts(record) {
-  const failed = record.history.filter((event) => event.type === "request_rework" && event.authority?.authority_kind === "qa");
-  return {
-    qa_failure_count: failed.length,
-    last_qa_failure_at: failed.at(-1)?.at ?? null,
-    recovery_findings: record.findings.filter((f) => f.status === "open").map((f) => ({ id: f.id, kind: f.kind, status: f.status, acceptance_id: f.acceptance_id }))
-  };
-}
-async function completedParentReport(root, initiativeSlug, readInitiative, tracker = createBatchTrackerPort(root, initiativeSlug)) {
-  const candidate = findSettledBatchRecord(root, initiativeSlug);
-  if (!candidate || !isLaneBatchRecord(candidate) || candidate.batch_state !== "completed")
-    return null;
-  const batch = readAnyBatchRunState(root, candidate.batch_id);
-  if (!batch || batch.final_verification_result?.passed !== true)
-    return null;
-  const parent = await (readInitiative ?? observeInitiative)(root, initiativeSlug);
-  const proof = await observeParentCompletion(root, initiativeSlug, parent.tasks.map((child) => child.task_id));
-  if (!proof.complete)
-    return null;
-  const last = parent.tasks.at(-1);
-  const tombstone = last ? await withBatchEvidence(root, batch.branch, expectedBatchHead(batch), (path) => readTaskTombstone(path, last.task_id)) : null;
-  let sync = null;
-  if (last && tracker) {
-    if (!tombstone || tombstone.terminal_lifecycle !== "done")
-      throw new Error("Parent tracker synchronization requires exact terminal evidence");
-    try {
-      sync = await tracker.markTerminal(root, { task_id: last.task_id, phase: "done", terminal_event_id: tombstone.terminal_event_id });
-    } catch {
-      sync = { status: "failed", message: "Local Parent completion proved; retry tracker synchronization on this Host" };
-    }
-  }
-  const retained = isLaneBatchRecord(batch) ? retainedLaneNotices(root, batch) : [];
-  const report = {
-    contract: "assurance_kernel/batch_run_report/v1",
-    batch_id: batch.batch_id,
-    initiative_slug: initiativeSlug,
-    batch_state: batch.batch_state,
-    children: batch.children,
-    commits: batch.commits,
-    final_verification: batch.final_verification_result,
-    ...sync ? { tracker: sync } : {},
-    ...retained.length ? { lane_refusals: retained } : {},
-    reason: sync?.status === "failed" ? "Local Parent completion proved; tracker synchronization failed" : null,
-    next_action: (sync?.status === "failed" ? sync.message : "Parent delivery and final verification passed") + (retained.length ? "." : "") + retainedLaneAction(retained),
-    created_at: new Date().toISOString(),
-    ...isLaneBatchRecord(batch) ? { max_parallel: batch.max_parallel, handoffs: [] } : {}
-  };
-  writeBatchRunReport(root, report);
-  return report;
-}
-async function stopSingleTaskSupervisor(supervisor, root, taskId, signal) {
-  const existing = findExistingActiveBatch(root, taskId);
-  if (!existing || existing.corrupt || !isLaneBatchRecord(existing.record) || existing.record.plan_source !== "single_task")
-    return { state: "blocked", reason: "lane_executor_not_running", recovery_action: "Inspect the task status in the current Host." };
-  const record = existing.record;
-  if (record.executor_mode === "interactive")
-    return { state: "blocked", reason: "lane_executor_interactive", recovery_action: "Close the Lane's Executor tab yourself; the Lane is retained." };
-  const lane = record.children.find((child) => child.task_id === taskId)?.lane;
-  if (!lane)
-    return { state: "blocked", reason: "lane_executor_not_running", recovery_action: "Inspect the task status in the current Host." };
-  const observation = await supervisor.run({
-    key: `${root}\x00${record.batch_id}`,
-    repository: root,
-    lanePath: lane.path,
-    taskId,
-    choice: { host: "pi" },
-    pluginDir: "",
-    store: laneGenerationStore(root, record.batch_id),
-    baseline: "",
-    waitMs: 5000,
-    graceMs: 1000,
-    signal,
-    stop: true
-  });
-  const reason = laneGenerationStore(root, record.batch_id).read()?.state === "interrupted" ? "lane_executor_interrupted" : "lane_executor_stopped";
-  const parked = observation.state === "stopped" && observation.exit && record.batch_state === "running" ? parkLaneForExecutor(root, record.batch_id, taskId, reason) : record;
-  const condition = observation.state === "stopped" ? exitProofCondition(laneGenerationStore(root, record.batch_id).read()) : null;
-  return { state: "started", batch_id: record.batch_id, report: {
-    ...reportFromLane(parked),
-    ...condition ? { lane_refusals: [{ task_id: taskId, path: lane.path, reason: retainedLaneReason(condition) }] } : {},
-    lane_supervision: observation
-  } };
-}
-function reportFromLane(record) {
-  return {
-    contract: "assurance_kernel/batch_run_report/v1",
-    batch_id: record.batch_id,
-    initiative_slug: record.initiative_slug,
-    batch_state: record.batch_state,
-    max_parallel: record.max_parallel,
-    children: record.children,
-    commits: record.commits,
-    reason: null,
-    handoffs: [],
-    next_action: "Continue supervising the Lane.",
-    created_at: record.updated_at
-  };
 }
 
 // plugins/immune-brain/runtime/unattended/lane_decision.ts
@@ -18699,40 +18261,18 @@ async function relayLaneDecision(input) {
     return { relayed: true, result, lane_relay: { batch_id: target.batch_id, operation: input.operation, applied: false, rebound: false, lane_supervision: null } };
   clearLaneDecisionRequest(target.lane_path);
   const active = findActiveLaneBatchForTask(input.root, input.taskId);
-  const interactive = active?.record.executor_mode === "interactive";
   if (input.operation === "stop") {
-    if (interactive) {
-      parkLaneForExecutor(input.root, target.batch_id, input.taskId, "lane_executor_stopped");
-      return { relayed: true, result, lane_relay: {
-        batch_id: target.batch_id,
-        operation: input.operation,
-        applied: true,
-        rebound: false,
-        lane_supervision: null,
-        next_action: "The Lane task is stopped. Close its Herdr Executor tab yourself; the Lane and branches are retained."
-      } };
-    }
     const handle = active?.record.children.find((child) => child.task_id === input.taskId)?.session?.handle ?? null;
-    if (input.sessions && handle) {
+    if (input.sessions && handle)
       await input.sessions.stop(handle);
-      parkLaneForExecutor(input.root, target.batch_id, input.taskId, "lane_executor_stopped");
-      return { relayed: true, result, lane_relay: {
-        batch_id: target.batch_id,
-        operation: input.operation,
-        applied: true,
-        rebound: false,
-        lane_supervision: null
-      } };
-    }
-    const stopped = await stopSingleTaskSupervisor(input.supervisor, input.root, input.taskId, input.signal);
-    const report = stopped.state === "started" ? stopped.report : {};
+    parkLaneForExecutor(input.root, target.batch_id, input.taskId, "lane_executor_stopped");
     return { relayed: true, result, lane_relay: {
       batch_id: target.batch_id,
       operation: input.operation,
       applied: true,
       rebound: false,
-      lane_supervision: report.lane_supervision ?? null,
-      ...report.lane_refusals ? { lane_refusals: report.lane_refusals } : {}
+      lane_supervision: null,
+      ...input.sessions && handle ? {} : { next_action: "The Lane task is stopped and retained. Close its Executor tab yourself when it is no longer needed." }
     } };
   }
   let rebound = false;
@@ -18747,47 +18287,83 @@ async function relayLaneDecision(input) {
       throw new Error(`${batchReason("lane_decision_rebind_failed").reason}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
-  if (input.advance) {
-    const observation = await input.advance(target.batch_id);
-    return { relayed: true, result, lane_relay: {
-      batch_id: target.batch_id,
-      operation: input.operation,
-      applied: true,
-      rebound,
-      lane_supervision: observation ?? null
-    } };
-  }
-  if (interactive)
-    return { relayed: true, result, lane_relay: { batch_id: target.batch_id, operation: input.operation, applied: true, rebound, lane_supervision: null } };
-  const choice = laneExecutorChoice(input.root, active?.record.executor_preferences, input.parentHost);
-  if (!choice)
-    return { relayed: true, result, lane_relay: { batch_id: target.batch_id, operation: input.operation, applied: true, rebound, lane_supervision: null } };
-  const observation = await superviseLane(input.supervisor, {
-    key: `${input.root}\x00${target.batch_id}`,
-    repository: input.root,
-    lanePath: target.lane_path,
-    taskId: input.taskId,
-    choice,
-    pluginDir: input.pluginDir,
-    store: laneGenerationStore(input.root, target.batch_id),
-    baseline: "",
-    waitMs: input.waitMs,
-    graceMs: 1000,
-    signal: input.signal,
-    project: async () => {
-      const read = await input.project(target.lane_path, target.task_id);
-      if (read.error !== null)
-        throw new Error(`batch_lane_unreadable: ${read.error}`);
-      return read.projection;
-    }
-  });
+  const observation = input.advance ? await input.advance(target.batch_id) : null;
   return { relayed: true, result, lane_relay: {
     batch_id: target.batch_id,
     operation: input.operation,
     applied: true,
     rebound,
-    lane_supervision: observation
+    lane_supervision: observation ?? null
   } };
+}
+
+// plugins/immune-brain/runtime/unattended/agent_profiles.ts
+init_agent_roles();
+init_layered_config();
+function chooseExecutor(layers, fallback) {
+  const selected = layers.find((layer) => layer.host !== undefined);
+  if (!selected)
+    return { host: fallback };
+  return {
+    host: selected.host,
+    ...selected.model ? { model: selected.model } : {},
+    ...selected.effort ? { effort: selected.effort } : {}
+  };
+}
+var executorPreferences = (profile) => ({
+  host: profile.host,
+  ...profile.model ? { model: profile.model } : {},
+  ...profile.effort ? { effort: profile.effort } : {}
+});
+function parseRequestedAgents(root, value) {
+  if (value === undefined)
+    return {};
+  if (value === null || typeof value !== "object" || Array.isArray(value))
+    throw new Error("invalid agents: expected { executor?, reviewer? }");
+  const unknown = Object.keys(value).filter((key) => key !== "executor" && key !== "reviewer");
+  if (unknown.length)
+    throw new Error(`invalid agents: unknown role ${unknown.join(", ")}`);
+  const profiles = resolveConfig(root).agents.profiles.value;
+  const out = {};
+  for (const role of ["executor", "reviewer"]) {
+    const raw = value[role];
+    if (raw === undefined)
+      continue;
+    const parsed = parseAgentValue(raw, profiles);
+    if (!parsed.ok)
+      throw new Error(`invalid agents.${role}: ${parsed.message}`);
+    if (role === "executor")
+      out.executor = executorPreferences(parsed.profile);
+    else
+      out.reviewer = { host: parsed.profile.host, ...parsed.profile.model ? { model: parsed.profile.model } : {}, ...parsed.profile.effort ? { effort: parsed.profile.effort } : {} };
+  }
+  return out;
+}
+function laneExecutorChoice(root, preferences, parentHost) {
+  if (preferences?.host)
+    return chooseExecutor([preferences], parentHost);
+  const config = resolveConfig(root);
+  if (batchConfigErrors(config).length)
+    return null;
+  const role = agentRole(config.agents, "executor");
+  return chooseExecutor(role ? [executorPreferences(role)] : [], parentHost);
+}
+function frozenExecutorPreferences(root, request, parentHost) {
+  if (request?.host)
+    return request;
+  const config = resolveConfig(root);
+  if (batchConfigErrors(config).length)
+    return;
+  const role = agentRole(config.agents, "executor");
+  if (role)
+    return executorPreferences(role);
+  return parentHost ? { host: parentHost } : undefined;
+}
+function frozenReviewProfile(root, request) {
+  if (request)
+    return request;
+  const role = agentRole(resolveConfig(root).agents, "reviewer");
+  return role ? { host: role.host, ...role.model ? { model: role.model } : {}, ...role.effort ? { effort: role.effort } : {} } : undefined;
 }
 
 // plugins/immune-brain/runtime/unattended/batch_lanes.ts
@@ -18797,6 +18373,7 @@ init_local_initiative();
 init_batch_integration();
 init_batch_ref();
 init_batch_worktrees();
+init_batch_plan();
 init_batch_preflight();
 init_batch_leak_restore();
 init_batch_git();
@@ -19069,6 +18646,48 @@ async function stallOrProgress(port, session, opts) {
 }
 
 // plugins/immune-brain/runtime/unattended/batch_lanes.ts
+async function completedParentReport(root, initiativeSlug, readInitiative, tracker = createBatchTrackerPort(root, initiativeSlug)) {
+  const candidate = findSettledBatchRecord(root, initiativeSlug);
+  if (!candidate || !isLaneBatchRecord(candidate) || candidate.batch_state !== "completed")
+    return null;
+  const batch = readAnyBatchRunState(root, candidate.batch_id);
+  if (!batch || batch.final_verification_result?.passed !== true)
+    return null;
+  const parent = await (readInitiative ?? observeInitiative)(root, initiativeSlug);
+  const proof = await observeParentCompletion(root, initiativeSlug, parent.tasks.map((child) => child.task_id));
+  if (!proof.complete)
+    return null;
+  const last = parent.tasks.at(-1);
+  const tombstone = last ? await withBatchEvidence(root, batch.branch, expectedBatchHead(batch), (path) => readTaskTombstone(path, last.task_id)) : null;
+  let sync = null;
+  if (last && tracker) {
+    if (!tombstone || tombstone.terminal_lifecycle !== "done")
+      throw new Error("Parent tracker synchronization requires exact terminal evidence");
+    try {
+      sync = await tracker.markTerminal(root, { task_id: last.task_id, phase: "done", terminal_event_id: tombstone.terminal_event_id });
+    } catch {
+      sync = { status: "failed", message: "Local Parent completion proved; retry tracker synchronization on this Host" };
+    }
+  }
+  const retained = isLaneBatchRecord(batch) ? retainedLaneNotices(root, batch) : [];
+  const report = {
+    contract: "assurance_kernel/batch_run_report/v1",
+    batch_id: batch.batch_id,
+    initiative_slug: initiativeSlug,
+    batch_state: batch.batch_state,
+    children: batch.children,
+    commits: batch.commits,
+    final_verification: batch.final_verification_result,
+    ...sync ? { tracker: sync } : {},
+    ...retained.length ? { lane_refusals: retained } : {},
+    reason: sync?.status === "failed" ? "Local Parent completion proved; tracker synchronization failed" : null,
+    next_action: (sync?.status === "failed" ? sync.message : "Parent delivery and final verification passed") + (retained.length ? "." : "") + retainedLaneAction(retained),
+    created_at: new Date().toISOString(),
+    ...isLaneBatchRecord(batch) ? { max_parallel: batch.max_parallel, handoffs: [] } : {}
+  };
+  writeBatchRunReport(root, report);
+  return report;
+}
 var PARALLEL_MISMATCH = "batch_parallel_mismatch";
 var TASK_ID_PATTERN2 = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 var MAX_LANE_OFFERS = 64;
@@ -19174,7 +18793,7 @@ function laneRuntimeDir(root, explicit) {
   if (explicit)
     return explicit;
   try {
-    const manifest = JSON.parse(readFileSync21(join30(root, "package.json"), "utf8"));
+    const manifest = JSON.parse(readFileSync21(join29(root, "package.json"), "utf8"));
     return manifest.name === "immune-brain" ? root : null;
   } catch {
     return null;
@@ -19507,6 +19126,7 @@ function laneReport(record, reason, nextAction, extra = {}) {
     ...record.final_report ? { final_report: record.final_report } : {},
     ...record.interventions?.length ? { interventions: record.interventions } : {},
     ...extra.instruction ? { lane_instruction: extra.instruction } : {},
+    ...extra.decision ? { lane_decision_required: extra.decision } : {},
     ...record.delegated_revisions?.length ? { delegated_revisions: record.delegated_revisions } : {},
     ...record.reseals?.length ? { reseals: record.reseals } : {},
     ...record.lane_rebinds?.length ? { lane_rebinds: record.lane_rebinds } : {},
@@ -19636,7 +19256,7 @@ async function runLaneBatch(input, persisted) {
       for (const child of record.children) {
         if (!child.lane || child.state === "released")
           continue;
-        const expectedPath = common ? join30(common, "imm", "worktrees", record.initiative_slug, child.task_id) : null;
+        const expectedPath = common ? join29(common, "imm", "worktrees", record.initiative_slug, child.task_id) : null;
         const facts = lanes.inspectLane(input.root, child.lane.path);
         const bindingMatches = child.lane.path === expectedPath && child.lane.branch === laneBranchName(record.initiative_slug, child.task_id);
         const headMatches = facts.head && (facts.head === child.redo_head || (child.lane.lane_commit ? facts.head === child.lane.lane_commit : gitRead(input.root, ["merge-base", "--is-ancestor", child.lane.base_head, facts.head]).status === 0));
@@ -19657,8 +19277,22 @@ async function runLaneBatch(input, persisted) {
     }
     if (record.batch_state === "needs_human") {
       const invalid = validateNewAuthorization(input);
-      if (invalid || Date.parse(input.confirmation_time) <= Date.parse(record.confirmation_time))
-        return laneReport(record, invalid ?? "the parked batch requires a fresh literal-user confirmation", LANE_NEEDS_HUMAN_NEXT_ACTION);
+      if (invalid || Date.parse(input.confirmation_time) <= Date.parse(record.confirmation_time)) {
+        let parkedDecision = null;
+        for (const child of record.children) {
+          if (child.state !== "enrolled" && child.state !== "needs_human" || !child.lane)
+            continue;
+          const fresh = await readLaneProjection(input, child.lane.path, child.task_id);
+          if (fresh.error !== null)
+            continue;
+          const waiting = laneDecisionFacts(child.task_id, fresh.projection, child.lane.path);
+          if (waiting) {
+            parkedDecision = waiting;
+            break;
+          }
+        }
+        return laneReport(record, invalid ?? "the parked batch requires a fresh literal-user confirmation", LANE_NEEDS_HUMAN_NEXT_ACTION, { ...parkedDecision ? { decision: parkedDecision } : {} });
+      }
       const resumed = [];
       for (const child of record.children) {
         if (child.state !== "needs_human") {
@@ -19740,12 +19374,11 @@ async function runLaneBatch(input, persisted) {
     if (!preflight.ok)
       return refuse2(input, null, preflight.reason, preflight.message || "Correct the preflight condition and re-confirm.");
     const frozenReview = frozenReviewProfile(input.root, input.review_profile);
-    const freeze = input.executor_freeze ?? input.supervision;
+    const freeze = input.executor_freeze;
     const frozenExecutor = frozenExecutorPreferences(input.root, freeze?.request, freeze?.parentHost);
     record = prepareBatchLaneRunState({
       ...planSourceIdentity(input),
       ...defaultAgreementPolicies(input),
-      executor_mode: input.executor_mode,
       topology_digest: input.topology_digest,
       batch_id: input.batch_id,
       initiative_slug: input.initiative_slug,
@@ -19824,7 +19457,7 @@ async function runLaneBatch(input, persisted) {
     record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "released" } : c);
     persist();
   }
-  const lineage = existsSync17(join30(input.root, ".git")) ? classifyBatchLineage({
+  const lineage = existsSync17(join29(input.root, ".git")) ? classifyBatchLineage({
     root: input.root,
     branch: record.branch ?? "",
     expectedHead: expectedBatchHead(record),
@@ -19983,7 +19616,7 @@ async function runLaneBatch(input, persisted) {
     }
     if (child.correction_due)
       continue;
-    if (record.executor_mode === "interactive" && laneDecisionFacts(child.task_id, fresh.projection))
+    if (laneDecisionFacts(child.task_id, fresh.projection))
       continue;
     if (fresh.projection.next_obligation === "run_qa" || fresh.projection.artifact_state !== "frozen")
       continue;
@@ -20320,8 +19953,9 @@ async function runLaneBatch(input, persisted) {
     });
   }
   const handoffs = [];
+  let pendingDecision = null;
   for (const child of record.children) {
-    if (child.state !== "enrolled" || !child.lane)
+    if (child.state !== "enrolled" && child.state !== "needs_human" || !child.lane)
       continue;
     if (child.correction_due) {
       handoffs.push({
@@ -20337,9 +19971,17 @@ async function runLaneBatch(input, persisted) {
     }
     const fresh = await readLaneProjection(input, child.lane.path, child.task_id);
     if (fresh.error !== null) {
-      parkChild(child.task_id, laneUnreadableReason(fresh.error, child.task_id, child.lane.run_id));
+      if (child.state === "enrolled")
+        parkChild(child.task_id, laneUnreadableReason(fresh.error, child.task_id, child.lane.run_id));
       continue;
     }
+    const waiting = laneDecisionFacts(child.task_id, fresh.projection, child.lane.path);
+    if (waiting)
+      pendingDecision ??= waiting;
+    if (child.state !== "enrolled")
+      continue;
+    if (waiting)
+      continue;
     handoffs.push({
       role: "executor",
       task_id: child.task_id,
@@ -20348,10 +19990,10 @@ async function runLaneBatch(input, persisted) {
       next_obligation: fresh.projection.next_obligation,
       lane_branch: child.lane.branch,
       lane_path: child.lane.path,
-      ...record.executor_preferences?.executor_host ? { executor: {
-        host: record.executor_preferences.executor_host,
-        ...record.executor_preferences.executor_model ? { model: record.executor_preferences.executor_model } : {},
-        ...record.executor_preferences.executor_effort ? { effort: record.executor_preferences.executor_effort } : {}
+      ...record.executor_preferences?.host ? { executor: {
+        host: record.executor_preferences.host,
+        ...record.executor_preferences.model ? { model: record.executor_preferences.model } : {},
+        ...record.executor_preferences.effort ? { effort: record.executor_preferences.effort } : {}
       } } : {}
     });
   }
@@ -20376,7 +20018,7 @@ async function runLaneBatch(input, persisted) {
       record.final_report.return_to_coordinator.reason = "children_not_integrated";
     }
     persist();
-    return finalizeLane(input.root, record, parkedMessage ?? (parked ? "a parked child needs a human decision" : overBudget ? `max_children budget exhausted (${record.budget.max_children})` : "no child can start"), "", { refusals, tracker, instruction });
+    return finalizeLane(input.root, record, parkedMessage ?? (parked ? "a parked child needs a human decision" : overBudget ? `max_children budget exhausted (${record.budget.max_children})` : "no child can start"), "", { refusals, tracker, instruction, ...pendingDecision ? { decision: pendingDecision } : {} });
   }
   if (!overBudget && !isParentBranch(record.branch)) {
     for (const taskId of startable) {
@@ -20391,9 +20033,9 @@ async function runLaneBatch(input, persisted) {
     }
   }
   if (reviewOpen.length > 0) {
-    return laneReport(record, reviewOpen.length === 1 ? `child ${reviewOpen[0]} holds an open Review reservation` : `children ${reviewOpen.join(", ")} hold open Review reservations`, "Submit each reserved foreground Review verdict in its own Lane, then call start_unattended_batch again to continue.", { handoffs, refusals, tracker, instruction });
+    return laneReport(record, reviewOpen.length === 1 ? `child ${reviewOpen[0]} holds an open Review reservation` : `children ${reviewOpen.join(", ")} hold open Review reservations`, "Submit each reserved foreground Review verdict in its own Lane, then call start_unattended_batch again to continue.", { handoffs, refusals, tracker, instruction, ...pendingDecision ? { decision: pendingDecision } : {} });
   }
-  return laneReport(record, null, handoffs.some((h) => h.role === "coordinator") ? "For each coordinator handoff, read every round's findings in that Lane, start a new Lane session and send one design-level correction as lane_instruction kind correction; run the other handoffs as usual." : handoffs.some((h) => h.role === "lane-steward" && h.action === "provision") ? "Provide a Lane for each provision handoff, then call start_unattended_batch again with lane_offers." : "Run each executor handoff in its Lane. When a Lane finishes, call start_unattended_batch again with the same Initiative.", { handoffs, refusals, tracker, instruction });
+  return laneReport(record, null, handoffs.some((h) => h.role === "coordinator") ? "For each coordinator handoff, read every round's findings in that Lane, start a new Lane session and send one design-level correction as lane_instruction kind correction; run the other handoffs as usual." : handoffs.some((h) => h.role === "lane-steward" && h.action === "provision") ? "Provide a Lane for each provision handoff, then call start_unattended_batch again with lane_offers." : "Run each executor handoff in its Lane. When a Lane finishes, call start_unattended_batch again with the same Initiative.", { handoffs, refusals, tracker, instruction, ...pendingDecision ? { decision: pendingDecision } : {} });
 }
 
 // plugins/immune-brain/runtime/host-core/mcp_runtime.ts
@@ -20643,7 +20285,7 @@ function createMcpRuntime(profile, options = {}) {
         const task = typeof args.task_id === "string" ? args.task_id : "";
         if (args.stop !== undefined && typeof args.stop !== "boolean")
           throw new Error("stop must be a boolean");
-        for (const key of ["executor_host", "executor_model", "executor_effort", "review_host", "review_model", "review_effort"])
+        for (const key of ["executor_host", "executor_effort", "host", "model", "effort", "review_host", "review_model", "review_effort"])
           if (Object.hasOwn(args, key))
             throw new Error(`unknown parameter: ${key} (use agents)`);
         const requested = parseRequestedAgents(workspace, args.agents);
@@ -21550,18 +21192,18 @@ var CLAUDE_CAPABILITY = validateHostCapabilityDeclaration({
 
 // plugins/immune-brain/runtime/host-core/hook_event_log.ts
 import { lstatSync as lstatSync19, readdirSync as readdirSync11, rmSync as rmSync13 } from "node:fs";
-import { dirname as dirname17, join as join32 } from "node:path";
+import { dirname as dirname17, join as join31 } from "node:path";
 import { tmpdir as tmpdir6 } from "node:os";
 
 // plugins/immune-brain/runtime/host-core/private_file.ts
 import { createHash as createHash26 } from "node:crypto";
-import { constants as constants8, closeSync as closeSync7, fstatSync as fstatSync4, ftruncateSync, lstatSync as lstatSync18, mkdirSync as mkdirSync13, openSync as openSync7, readSync, rmSync as rmSync12, writeSync } from "node:fs";
-import { join as join31 } from "node:path";
+import { constants as constants7, closeSync as closeSync7, fstatSync as fstatSync4, ftruncateSync, lstatSync as lstatSync18, mkdirSync as mkdirSync13, openSync as openSync7, readSync, rmSync as rmSync12, writeSync } from "node:fs";
+import { join as join30 } from "node:path";
 function sessionHash(sessionId) {
   return createHash26("sha256").update(sessionId).digest("hex");
 }
 function cacheDir(root, cacheName) {
-  return join31(root, cacheName);
+  return join30(root, cacheName);
 }
 function ownedByUs(stat) {
   if (stat.isSymbolicLink())
@@ -21592,7 +21234,7 @@ function ensurePrivateDir(dir) {
 function appendPrivate(path, dir, line) {
   if (!ensurePrivateDir(dir))
     return false;
-  const flags = constants8.O_WRONLY | constants8.O_CREAT | constants8.O_APPEND | constants8.O_NOFOLLOW | constants8.O_NONBLOCK;
+  const flags = constants7.O_WRONLY | constants7.O_CREAT | constants7.O_APPEND | constants7.O_NOFOLLOW | constants7.O_NONBLOCK;
   let fd;
   try {
     fd = openSync7(path, flags, 384);
@@ -21620,7 +21262,7 @@ function dropPrivate(path) {
 function readPrivate(path, maxBytes = Number.POSITIVE_INFINITY) {
   let fd;
   try {
-    fd = openSync7(path, constants8.O_RDONLY | constants8.O_NOFOLLOW | constants8.O_NONBLOCK);
+    fd = openSync7(path, constants7.O_RDONLY | constants7.O_NOFOLLOW | constants7.O_NONBLOCK);
   } catch {
     return;
   }
@@ -21663,7 +21305,7 @@ class MemoryHookEventLog {
   }
 }
 function hookEventPath(cacheName, sessionId, root = tmpdir6()) {
-  return join32(cacheDir(root, cacheName), `${sessionHash(sessionId)}.jsonl`);
+  return join31(cacheDir(root, cacheName), `${sessionHash(sessionId)}.jsonl`);
 }
 
 class FileHookEventLog {
@@ -21685,7 +21327,7 @@ class FileHookEventLog {
     if (!ensurePrivateDir(dir))
       return [];
     try {
-      return readdirSync11(dir).filter((name) => name.endsWith(".jsonl") && !name.endsWith(".events.jsonl")).flatMap((name) => this.readFile(join32(dir, name)));
+      return readdirSync11(dir).filter((name) => name.endsWith(".jsonl") && !name.endsWith(".events.jsonl")).flatMap((name) => this.readFile(join31(dir, name)));
     } catch {
       return [];
     }
@@ -21929,7 +21571,7 @@ class VerifierObservation {
 
 // plugins/immune-brain/runtime/claude/review_host.ts
 import { realpathSync as realpathSync19 } from "node:fs";
-import { basename as basename5, dirname as dirname18, isAbsolute as isAbsolute13, join as join33 } from "node:path";
+import { basename as basename5, dirname as dirname18, isAbsolute as isAbsolute13, join as join32 } from "node:path";
 import { tmpdir as tmpdir7 } from "node:os";
 var AGENT_TOOL = "Agent";
 var VERIFIER_AGENTS = ["immune-brain-review-verifier", "immune-brain:immune-brain-review-verifier"];
@@ -22014,7 +21656,7 @@ function readSyncAgentTranscript(post, stop) {
   const session = post.transcriptPath;
   if (!session || !isAbsolute13(session) || !AGENT_ID_PATTERN.test(post.agentId))
     return;
-  const derived = join33(dirname18(session), basename5(session, ".jsonl"), "subagents", `agent-${post.agentId}.jsonl`);
+  const derived = join32(dirname18(session), basename5(session, ".jsonl"), "subagents", `agent-${post.agentId}.jsonl`);
   return readAgentTranscript(derived);
 }
 function parseReviewMarker(prompt) {
@@ -22238,7 +21880,7 @@ init_lane_workspace();
 import { lstatSync as lstatSync20, realpathSync as realpathSync20 } from "node:fs";
 import { randomUUID as randomUUID12 } from "node:crypto";
 import { homedir as homedir2, tmpdir as tmpdir8 } from "node:os";
-import { join as join35 } from "node:path";
+import { join as join34 } from "node:path";
 
 // plugins/immune-brain/runtime/assurance/active_task_notice.ts
 init_storage();
@@ -22608,13 +22250,13 @@ function decideRunContinuation(previous, observation) {
 }
 
 // plugins/immune-brain/runtime/assurance/alias_file.ts
-import { closeSync as closeSync8, constants as constants9, fstatSync as fstatSync5, openSync as openSync8, readSync as readSync2, statSync as statSync5 } from "node:fs";
-import { join as join34 } from "node:path";
+import { closeSync as closeSync8, constants as constants8, fstatSync as fstatSync5, openSync as openSync8, readSync as readSync2, statSync as statSync5 } from "node:fs";
+import { join as join33 } from "node:path";
 var MAX_ALIAS_BYTES = 64 * 1024;
 function readAliasFile(path, maxBytes = MAX_ALIAS_BYTES) {
   let fd;
   try {
-    fd = openSync8(path, constants9.O_RDONLY | constants9.O_NONBLOCK);
+    fd = openSync8(path, constants8.O_RDONLY | constants8.O_NONBLOCK);
   } catch (error) {
     if (isAbsent(error))
       return null;
@@ -22637,7 +22279,7 @@ function readAliasFile(path, maxBytes = MAX_ALIAS_BYTES) {
 }
 function localSkillExists(dir, name) {
   try {
-    statSync5(join34(dir, name, "SKILL.md"));
+    statSync5(join33(dir, name, "SKILL.md"));
     return true;
   } catch (error) {
     return !isAbsent(error);
@@ -22676,10 +22318,10 @@ async function activeTaskHookOutput(payload) {
   return JSON.stringify({ hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: notice } });
 }
 function entryLogPath(sessionId, root) {
-  return join35(cacheDir(root, CLAUDE_CACHE_DIR), `${sessionHash(sessionId)}.entry`);
+  return join34(cacheDir(root, CLAUDE_CACHE_DIR), `${sessionHash(sessionId)}.entry`);
 }
 function admissionPath(toolUseId, root) {
-  return join35(cacheDir(root, CLAUDE_CACHE_DIR), `${sessionHash(toolUseId)}.admit`);
+  return join34(cacheDir(root, CLAUDE_CACHE_DIR), `${sessionHash(toolUseId)}.admit`);
 }
 function sessionIdOf(payload) {
   return typeof payload.session_id === "string" ? payload.session_id : "";
@@ -22688,17 +22330,17 @@ function cwdOf(payload) {
   return typeof payload.cwd === "string" && payload.cwd ? payload.cwd : process.cwd();
 }
 function claudeLocalNames(cwd, home) {
-  const roots = [join35(cwd, ".claude"), join35(home, ".claude")];
+  const roots = [join34(cwd, ".claude"), join34(home, ".claude")];
   return {
     alias: (name) => {
       for (const root of roots) {
-        const body = readAliasFile(join35(root, "commands", `${name}.md`));
+        const body = readAliasFile(join34(root, "commands", `${name}.md`));
         if (body !== null)
           return body;
       }
       return null;
     },
-    skill: (name) => roots.some((root) => localSkillExists(join35(root, "skills"), name))
+    skill: (name) => roots.some((root) => localSkillExists(join34(root, "skills"), name))
   };
 }
 function readPhaseEntryState(sessionId, root = tmpdir8(), read = readPrivate) {
@@ -22943,7 +22585,7 @@ init_storage();
 init_batch_state();
 import { existsSync as existsSync18, lstatSync as lstatSync21, realpathSync as realpathSync21, renameSync as renameSync6, rmSync as rmSync14 } from "node:fs";
 import { randomUUID as randomUUID13 } from "node:crypto";
-import { join as join36 } from "node:path";
+import { join as join35 } from "node:path";
 var NATIVE_OPERATIONS = new Set(["start_unattended_batch", "retire_stale_batch", "request_authorization", "approve_breaking_intent_revision", "request_stop", "stop"]);
 var MAX_METADATA_BYTES = 256 * 1024;
 var NATIVE_FAILURE_LIMIT = 3;
@@ -22959,8 +22601,8 @@ var blank = () => ({
   stop_blocks: 0,
   native_failures: 0
 });
-var statePath2 = (host, sessionId, root) => join36(cacheDir(root, host.cache_name), `${sessionHash(sessionId)}.continuation`);
-var callPath = (host, toolId, root) => join36(cacheDir(root, host.cache_name), `${sessionHash(toolId)}.continuation-call`);
+var statePath2 = (host, sessionId, root) => join35(cacheDir(root, host.cache_name), `${sessionHash(sessionId)}.continuation`);
+var callPath = (host, toolId, root) => join35(cacheDir(root, host.cache_name), `${sessionHash(toolId)}.continuation-call`);
 function drop(host, path, root) {
   if (!existsSync18(path))
     return;
@@ -23410,10 +23052,6 @@ async function runContinuationHookOutput(payload, root = tmpdir9()) {
 // plugins/immune-brain/runtime/host-core/runtime.ts
 init_verdict_authority();
 init_layered_config();
-import { existsSync as existsSync22, readFileSync as readFileSync25, writeFileSync as writeFileSync15 } from "node:fs";
-import { execFileSync as execFileSync16 } from "node:child_process";
-import { dirname as dirname20, join as join41, resolve as resolve16 } from "node:path";
-import { fileURLToPath as fileURLToPath5 } from "node:url";
 init_coordinator();
 init_verification();
 init_assurance_projection();
@@ -23422,6 +23060,9 @@ init_storage();
 init_intent();
 init_canary_application();
 init_authority_port();
+import { existsSync as existsSync22, readFileSync as readFileSync25, writeFileSync as writeFileSync15 } from "node:fs";
+import { execFileSync as execFileSync16 } from "node:child_process";
+import { join as join40 } from "node:path";
 // plugins/immune-brain/runtime/kernel/enrollment_confirmation.ts
 init_no_touch();
 init_risk_floor();
@@ -23574,11 +23215,11 @@ init_actor_identity();
 // plugins/immune-brain/runtime/staged_intent.ts
 import { execFileSync as execFileSync14 } from "node:child_process";
 import { readFileSync as readFileSync22, writeFileSync as writeFileSync13 } from "node:fs";
-import { join as join37 } from "node:path";
+import { join as join36 } from "node:path";
 function captureStagedIntent(root, relativePath) {
   return {
     path: relativePath,
-    bytes: readFileSync22(join37(root, relativePath)),
+    bytes: readFileSync22(join36(root, relativePath)),
     index_state: execFileSync14("git", ["ls-files", "--stage", "-z", "--", relativePath], {
       cwd: root,
       stdio: ["ignore", "pipe", "pipe"]
@@ -23586,7 +23227,7 @@ function captureStagedIntent(root, relativePath) {
   };
 }
 function restoreStagedIntent(root, snapshot) {
-  writeFileSync13(join37(root, snapshot.path), snapshot.bytes);
+  writeFileSync13(join36(root, snapshot.path), snapshot.bytes);
   execFileSync14("git", ["update-index", "--force-remove", "--", snapshot.path], {
     cwd: root,
     stdio: ["ignore", "pipe", "pipe"]
@@ -23598,7 +23239,7 @@ function restoreStagedIntent(root, snapshot) {
       stdio: ["pipe", "ignore", "pipe"]
     });
   }
-  const restoredBytes = readFileSync22(join37(root, snapshot.path));
+  const restoredBytes = readFileSync22(join36(root, snapshot.path));
   if (!restoredBytes.equals(snapshot.bytes)) {
     throw new Error("failed to restore prior intent bytes");
   }
@@ -23696,7 +23337,7 @@ function authorizeBatch2(input) {
 import { randomBytes as randomBytes2 } from "node:crypto";
 
 // plugins/immune-brain/runtime/session/exec.ts
-import { spawn as spawn5 } from "node:child_process";
+import { spawn as spawn4 } from "node:child_process";
 function runCommand(env, command, args, signal) {
   return new Promise((resolve) => {
     let stdout = "";
@@ -23706,7 +23347,7 @@ function runCommand(env, command, args, signal) {
       resolve({ code: null, stdout, stderr, aborted: true });
       return;
     }
-    const child = spawn5(command, args, { env, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn4(command, args, { env, stdio: ["ignore", "pipe", "pipe"] });
     const abort = () => {
       child.kill("SIGTERM");
       finish({ code: null, stdout, stderr, aborted: true });
@@ -25249,7 +24890,7 @@ async function advanceLanes(root, batchId, deps) {
 init_actor_identity();
 init_storage();
 import { existsSync as existsSync19, mkdirSync as mkdirSync14, readFileSync as readFileSync23, readdirSync as readdirSync12, rmSync as rmSync15, writeFileSync as writeFileSync14 } from "node:fs";
-import { join as join38 } from "node:path";
+import { join as join37 } from "node:path";
 
 // plugins/immune-brain/runtime/loop_daemon/guards.ts
 init_no_touch();
@@ -25265,16 +24906,16 @@ var INTERACTION_REQUEST_CONTRACT = "immune_brain/interaction_request/v1";
 var LOCAL_ANSWER_CONTRACT = "immune_brain/interaction_answer/v1";
 var ANSWER_LOOP_INTERACTION_TOOL = "answer_loop_interaction";
 function loopInteractionStateDir(root) {
-  return join38(root, ".imm/state/loop");
+  return join37(root, ".imm/state/loop");
 }
 function localInteractionsDir(stateDir) {
-  return join38(stateDir, "interactions");
+  return join37(stateDir, "interactions");
 }
 function requestPath(stateDir, interactionId) {
-  return join38(localInteractionsDir(stateDir), `${fileName(interactionId)}.json`);
+  return join37(localInteractionsDir(stateDir), `${fileName(interactionId)}.json`);
 }
 function answerPath(stateDir, interactionId) {
-  return join38(localInteractionsDir(stateDir), `${fileName(interactionId)}.answer.json`);
+  return join37(localInteractionsDir(stateDir), `${fileName(interactionId)}.answer.json`);
 }
 function fileName(interactionId) {
   if (!interactionId || /[/\\]/.test(interactionId) || interactionId.startsWith("."))
@@ -25680,6 +25321,14 @@ function enrollCanaryTask(root, input, registry) {
 // plugins/immune-brain/runtime/unattended/batch_kernel_port.ts
 init_storage();
 init_batch_preflight();
+function batchQaFailureFacts(record) {
+  const failed = record.history.filter((event) => event.type === "request_rework" && event.authority?.authority_kind === "qa");
+  return {
+    qa_failure_count: failed.length,
+    last_qa_failure_at: failed.at(-1)?.at ?? null,
+    recovery_findings: record.findings.filter((f) => f.status === "open").map((f) => ({ id: f.id, kind: f.kind, status: f.status, acceptance_id: f.acceptance_id }))
+  };
+}
 function createBatchKernelPort(input) {
   const project = input.deps?.projectAssurance ?? projectAssurance;
   const readRecord = input.deps?.readTaskRecordRaw ?? readTaskRecordRaw;
@@ -25754,7 +25403,7 @@ init_batch_reasons();
 init_batch_preflight();
 init_batch_state();
 import { existsSync as existsSync20 } from "node:fs";
-import { join as join39 } from "node:path";
+import { join as join38 } from "node:path";
 var SERIAL_IN_FLIGHT = new Set(["enrolled", "settled"]);
 var LANE_IN_FLIGHT = new Set(["lane_admitted", "enrolled", "settled", "lane_committed"]);
 var RETIRE_REASON = "Retired by an explicit literal-user disposition: the batch plan moved past this record, so its authorization could neither reconfirm nor continue. " + "Recorded child commits, child states and the batch branch are preserved as evidence. " + "Children this batch never executed carry no commit, no batch trailer and no approval; nothing infers their delivery from this record.";
@@ -25774,7 +25423,7 @@ function laneChildLifecycleOf(root, child) {
   if (!lane)
     return kernelLifecycleOf(root, child.task_id);
   try {
-    if (!existsSync20(join39(lane.path, KERNEL_DB_RELATIVE)))
+    if (!existsSync20(join38(lane.path, KERNEL_DB_RELATIVE)))
       return null;
     if (readActiveClaimTaskId(lane.path) === child.task_id)
       return null;
@@ -25954,9 +25603,9 @@ init_batch_state();
 init_session_result_slot();
 init_host_port();
 import { execFileSync as execFileSync15 } from "node:child_process";
-import { accessSync as accessSync4, constants as constants10, existsSync as existsSync21, readFileSync as readFileSync24 } from "node:fs";
+import { accessSync as accessSync3, constants as constants9, existsSync as existsSync21, readFileSync as readFileSync24 } from "node:fs";
 import { createHash as createHash29 } from "node:crypto";
-import { delimiter as delimiter5, dirname as dirname19, join as join40 } from "node:path";
+import { delimiter as delimiter4, dirname as dirname19, join as join39 } from "node:path";
 import { fileURLToPath as fileURLToPath4 } from "node:url";
 var REVIEW_PROFILE_RECOVERY = "Set `agents.reviewer` (a user `agents.profiles` name, `host[:model][@effort]` or { host, model?, effort? }) in the user or project configuration, then call `advance_assurance`";
 var REVIEW_BINARY = {
@@ -25998,9 +25647,9 @@ var CLAUDE_REVIEW_SETTINGS = JSON.stringify({
 });
 function reviewBinary(host) {
   const name = REVIEW_BINARY[host];
-  return (process.env.PATH ?? "").split(delimiter5).map((dir) => join40(dir || ".", name)).find((path) => {
+  return (process.env.PATH ?? "").split(delimiter4).map((dir) => join39(dir || ".", name)).find((path) => {
     try {
-      accessSync4(path, constants10.X_OK);
+      accessSync3(path, constants9.X_OK);
       return true;
     } catch {
       return false;
@@ -26018,7 +25667,7 @@ function reviewSessionRunner(env = process.env) {
   }
   let dir = dirname19(fileURLToPath4(import.meta.url));
   for (let level = 0;level < 5; level++) {
-    const candidate = join40(dir, "bin", "imm-session");
+    const candidate = join39(dir, "bin", "imm-session");
     if (existsSync21(candidate))
       return candidate;
     dir = dirname19(dir);
@@ -26164,7 +25813,7 @@ class CliReviewHost {
     requireReviewBinary(profile);
     const slotId = `verify-${request.operationId}`;
     const slot = allocateResultSlot(review.root, slotId, request.prompt, "verify-packet.md");
-    const awaitRecord = join40(slot.directory, "session-await.json");
+    const awaitRecord = join39(slot.directory, "session-await.json");
     const label = `verify ${request.taskId}`.slice(0, 32);
     const actorId = `cli-verifier:${profile.host}:${request.operationId}`;
     const session = withSlot(slot, () => sessionSpec(sessionRunner, label, {
@@ -26227,7 +25876,7 @@ ${receiptInstruction(profile.host, slotId, slot.result)}`,
     const tree = reviewTreeState(root);
     const slotId = `review-${request.operationId}`;
     const slot = allocateResultSlot(root, slotId, request.snapshotPrompt);
-    const awaitRecord = join40(slot.directory, "session-await.json");
+    const awaitRecord = join39(slot.directory, "session-await.json");
     const actorId = `cli:${profile.host}:${request.operationId}`;
     const session = withSlot(slot, () => sessionSpec(sessionRunner, `review ${request.taskId}`.slice(0, 32), {
       root,
@@ -26309,11 +25958,6 @@ ${receiptInstruction(profile.host, slotId, slot.result)}`,
 }
 
 // plugins/immune-brain/runtime/host-core/runtime.ts
-var LANE_WAIT_MS = 500;
-function laneWaitMs(env) {
-  const limit = Number(env.MCP_TOOL_TIMEOUT);
-  return Number.isFinite(limit) && limit > 0 ? Math.min(LANE_WAIT_MS, Math.floor(limit / 2)) : LANE_WAIT_MS;
-}
 function diffSnapshotOf(root, record) {
   return taskDeliveryIdentity(root, record);
 }
@@ -26330,7 +25974,7 @@ async function executeOrdinaryKernelOperation(input) {
   const operation = input.operation.op === "revise_intent" ? { ...input.operation, next_intent: parseProjectTaskIntent(root, input.operation.next_intent) } : input.operation;
   const priorIntent = (input.readIntent ?? readTaskIntentForRecord)(root, taskId);
   const nextScope = operation.op === "revise_intent" ? operation.next_intent.scope_hint : undefined;
-  const sidecar = join41(root, priorIntent.intent_ref.path);
+  const sidecar = join40(root, priorIntent.intent_ref.path);
   const priorBytes = operation.op === "revise_intent" ? readFileSync25(sidecar) : null;
   const priorStaged = priorBytes !== null ? captureStagedIntent(root, priorIntent.intent_ref.path) : null;
   try {
@@ -26426,7 +26070,6 @@ var ENTRY_TOKEN_OPERATIONS = new Set(["retire_stale_batch"]);
 
 class HostRuntime {
   profile;
-  laneSupervisor = new LaneSupervisor;
   parentHost;
   host;
   reviewHost;
@@ -26578,7 +26221,7 @@ class HostRuntime {
     try {
       if (!this.profile.selectedParent(meta.toolCallId, this.cwd, slug))
         return result;
-      if (existsSync22(join41(this.cwd, ".imm", "audit", taskId)))
+      if (existsSync22(join40(this.cwd, ".imm", "audit", taskId)))
         execFileSync16("git", ["-C", this.cwd, "add", "--", `.imm/audit/${taskId}`], { stdio: "ignore" });
       const batch = await this.startUnattendedBatch(slug, meta, { reuseOnly: true });
       return { ...result, batch, ...batch.state === "started" && batch.report?.tracker ? { tracker: batch.report.tracker } : {} };
@@ -26713,7 +26356,7 @@ class HostRuntime {
         const initiativeSlug = active.record.initiative_slug;
         const advanceKind = active.record.plan_source ? { plan_source: active.record.plan_source } : {};
         advance = async () => this.startPreparedBatch(initiativeSlug, meta, { reuseOnly: true, ...advanceKind });
-      } else if (active.record.executor_mode !== "interactive") {
+      } else {
         const opened = openBatchSessionPort({
           root: this.cwd,
           provider: active.record.session_provider,
@@ -26736,11 +26379,6 @@ class HostRuntime {
         project: (lanePath, id) => projectAssurance(lanePath, id, diffSnapshotOf),
         apply: async () => laneRuntime.authorizeInRoot(taskId, operation, meta, extra),
         applied: (result) => !(result && typeof result === "object" && ("state" in result) && result.state === "replan_selected"),
-        supervisor: this.laneSupervisor,
-        parentHost: this.parentHost,
-        pluginDir: resolve16(dirname20(fileURLToPath5(import.meta.url)), "../.."),
-        waitMs: laneWaitMs(this.env),
-        signal: meta.signal,
         ...sessions ? { sessions } : {},
         ...advance ? { advance } : {}
       });
@@ -26847,7 +26485,7 @@ class HostRuntime {
       throw new Error("approve_breaking_intent_revision requires next_intent");
     const nextIntentHash = nextIntent ? canonicalIntentHash(nextIntent) : undefined;
     const nextIntentRef = nextIntent ? { path: `docs/plans/${nextIntent.task_id}.intent.json`, content_hash: nextIntentHash } : undefined;
-    const sidecar = nextIntent ? join41(this.cwd, priorIntent.intent_ref.path) : undefined;
+    const sidecar = nextIntent ? join40(this.cwd, priorIntent.intent_ref.path) : undefined;
     const stagedSnapshot = sidecar ? captureStagedIntent(this.cwd, priorIntent.intent_ref.path) : undefined;
     const restoreStagedIntent2 = () => {
       if (!stagedSnapshot)
@@ -27035,7 +26673,25 @@ class HostRuntime {
     if (options.stop) {
       if (options.plan_source !== "single_task")
         return { state: "rejected", reason: "lane_stop_requires_task", recovery_action: "Specify a task_id in the current Host." };
-      return stopSingleTaskSupervisor(this.laneSupervisor, this.cwd, initiativeSlug, meta.signal);
+      const active = findActiveLaneBatchForTask(this.cwd, initiativeSlug);
+      if (!active)
+        return { state: "blocked", reason: "lane_executor_not_running", recovery_action: "Inspect the task status in the current Host." };
+      const handle = active.record.children.find((child) => child.task_id === initiativeSlug)?.session?.handle ?? null;
+      if (handle) {
+        const opened = openBatchSessionPort({
+          root: this.cwd,
+          provider: active.record.session_provider,
+          env: this.env,
+          host: this.parentHost,
+          executor: active.record.executor_preferences,
+          ...this.sessionPortFactory ? { createPort: this.sessionPortFactory } : {}
+        });
+        if (!opened.ok)
+          return { state: "blocked", reason: opened.reason, recovery_action: opened.recovery };
+        await opened.port.stop(handle);
+      }
+      parkLaneForExecutor(this.cwd, active.record.batch_id, initiativeSlug, "lane_executor_stopped");
+      return { state: "blocked", reason: "lane_executor_stopped", recovery_action: "The Lane task is stopped and its Lane retained; resume with a fresh drive entry." };
     }
     if ((options.plan_source || !reuseOnly) && batchConfigErrors(resolveConfig(this.cwd)).length > 0)
       return batchReason("lane_config_invalid");
@@ -27580,7 +27236,7 @@ var CLAUDE_MCP_PROFILE = {
   consumePhaseAdmission: (toolCallId, operation) => consumePhaseAdmission(toolCallId, operation),
   readRunToolSession: (toolCallId, operation, workspace) => readRunToolSession(toolCallId, operation, workspace),
   dispatchHook: runHook,
-  bundlePath: fileURLToPath6(import.meta.url)
+  bundlePath: fileURLToPath5(import.meta.url)
 };
 var createMcpRuntime2 = (options = {}) => createMcpRuntime(CLAUDE_MCP_PROFILE, options);
 var handleJsonRpc2 = (message, mcp = createMcpRuntime2()) => handleJsonRpc(message, mcp);
@@ -27625,7 +27281,7 @@ async function runHook() {
     return;
   const cwd = typeof payload?.cwd === "string" && payload.cwd ? payload.cwd : process.cwd();
   if (!readActiveClaimTaskId(cwd)) {
-    const batchesDir = join42(cwd, ".imm", "state", "batches");
+    const batchesDir = join41(cwd, ".imm", "state", "batches");
     const activeBatch = existsSync23(batchesDir) && readdirSync13(batchesDir).some((file) => {
       if (!file.endsWith(".json") || file.endsWith(".report.json"))
         return false;

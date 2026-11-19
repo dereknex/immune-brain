@@ -9,11 +9,11 @@ import type { AssuranceProjectionResult } from "../plugins/immune-brain/runtime/
 import { createBatchKernelPort } from "../plugins/immune-brain/runtime/unattended/batch_kernel_port";
 import { createEnrollmentAuthorityRegistry } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
 import { createDefaultBatchGitPort, type BatchRunnerGitPort } from "../plugins/immune-brain/runtime/unattended/batch_git";
-import { createDefaultLaneGitPort } from "../plugins/immune-brain/runtime/unattended/batch_lanes";
-import { LaneSupervisor } from "../plugins/immune-brain/runtime/unattended/lane_supervisor";
-import { batchReason } from "../plugins/immune-brain/runtime/unattended/batch_reasons";
-import { startBatch, stopSingleTaskSupervisor } from "../plugins/immune-brain/runtime/unattended/batch_runner";
-import type { BatchRunnerKernelPort, StartBatchInput } from "../plugins/immune-brain/runtime/unattended/batch_runner";
+import { createDefaultLaneGitPort, runLaneBatch } from "../plugins/immune-brain/runtime/unattended/batch_lanes";
+import { relayLaneDecision } from "../plugins/immune-brain/runtime/unattended/lane_decision";
+import type { BatchRunnerKernelPort } from "../plugins/immune-brain/runtime/unattended/batch_kernel_port";
+import type { StartBatchInput } from "../plugins/immune-brain/runtime/unattended/batch_lanes";
+
 import { parseBatchLaneRunState, prepareBatchLaneRunState, readAnyBatchRunState, writeBatchLaneRunState, type BatchLaneRunReport, type BatchLaneRunStateRecord } from "../plugins/immune-brain/runtime/unattended/batch_state";
 import { readSettledRunEvidence, recoverKernelStoreFollowUps } from "../plugins/immune-brain/runtime/kernel/storage";
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
@@ -45,9 +45,6 @@ test("single-task batch records retain their source and reject a different child
 	expect(parse(record).plan_source).toBe("single_task");
 	expect(() => parse({ ...record, max_parallel: 2 })).toThrow("invalid single_task plan");
 	expect(() => parse({ ...record, initiative_slug: "other" })).toThrow("invalid single_task plan");
-	expect(parse({ ...record, executor_mode: "interactive" }).executor_mode).toBe("interactive");
-	expect(() => parse({ ...record, executor_mode: "unknown" })).toThrow("invalid executor_mode");
-	expect(() => parse({ ...record, plan_source: undefined, executor_mode: "interactive" })).toThrow("invalid executor_mode");
 });
 
 const roots: string[] = [];
@@ -166,6 +163,9 @@ function request(repo: string, base: string, fx: { kernel: ReturnType<typeof ker
 }
 
 const laneReport = (report: unknown) => report as BatchLaneRunReport;
+
+/** S8: the shared transitional entry is gone; the engine entry reads the persisted record the same way. */
+const startBatch = (input: StartBatchInput) => runLaneBatch(input, readAnyBatchRunState(input.root, input.batch_id));
 
 describe("single-task entry refusals", () => {
 	/** A first entry: HEAD names an absent branch and only planning input is staged. */
@@ -288,7 +288,7 @@ describe("single-task Lane delivery", () => {
 				request(repo, base, { kernel: k, git: Object.assign(laneCommits, { lane: port }) }, { ...options.extra, ...extra }) };
 	}
 
-	it("keeps an interactive Lane on re-entry, delivers its settlement and retains its worktree", async () => {
+	it("keeps the Lane on re-entry, surfaces decisions, parks on relayed stop, and completes on settlement", async () => {
 		const f = owned();
 		const project = f.kernel.projectTask;
 		let decisionPending = false;
@@ -303,19 +303,15 @@ describe("single-task Lane delivery", () => {
 			}
 			return result;
 		};
-		const supervisor = new LaneSupervisor();
-		const spawn = spyOn(supervisor, "run").mockImplementation(async () => { throw new Error("must not spawn a runtime Executor"); });
-		const args = { ...f.args(), executor_mode: "interactive" as const,
-			supervision: { supervisor, parentHost: "pi" as const, pluginDir: "/plugin", waitMs: 1 } };
+		// S8: no runtime process is ever spawned; the session layer owns execution.
+		const args = f.args();
 		const first = laneReport(await startBatch(args));
 		const lane = first.children[0]!.lane!.path;
 		expect(first.handoffs).toContainEqual(expect.objectContaining({ role: "executor", task_id: TASK, lane_path: lane }));
 		expect(first.lane_supervision).toBeUndefined();
-		expect(readAnyBatchRunState(f.repo, BATCH_ID)).toMatchObject({ executor_mode: "interactive" });
-		const again = laneReport(await startBatch({ ...args, executor_mode: undefined }));
+		expect(readAnyBatchRunState(f.repo, BATCH_ID)).toMatchObject({ plan_source: "single_task" });
+		const again = laneReport(await startBatch(args));
 		expect(again.children[0]!.lane!.path).toBe(lane);
-		expect(again.next_action).toContain("Resume inside Herdr");
-		expect(again.next_action).toContain(`task_id ${TASK} and no initiative_slug`);
 		expect(again.handoffs).toContainEqual(expect.objectContaining({ role: "executor", lane_path: lane }));
 		decisionPending = true;
 		for (const artifactState of ["active", "frozen"] as const) {
@@ -328,38 +324,41 @@ describe("single-task Lane delivery", () => {
 		}
 		expect(advance).not.toHaveBeenCalled();
 		decisionPending = false;
-		expect(await stopSingleTaskSupervisor(supervisor, f.repo, TASK)).toMatchObject({ state: "blocked", reason: "lane_executor_interactive" });
+		// A native-gated stop closes only this child's session and retains its Lane.
+		const stopped = await relayLaneDecision({
+			root: f.repo, taskId: TASK, operation: "stop",
+			project: (lanePath, taskId) => f.kernel.projectTask(lanePath, taskId),
+			apply: async () => ({}),
+		});
+		expect(stopped).toMatchObject({ relayed: true, lane_relay: { operation: "stop", applied: true } });
+		expect(readAnyBatchRunState(f.repo, BATCH_ID)).toMatchObject({ batch_state: "needs_human",
+			children: [{ state: "needs_human", reason: "lane_executor_stopped" }] });
+		expect(existsSync(lane)).toBe(true);
 		writeFileSync(join(lane, "delivery.txt"), "delivered\n");
 		settleLane(lane);
 		f.kernel.settled.add(TASK);
 		auditPair(lane, TASK);
 		git(lane, "add", "--", "delivery.txt");
-		const done = laneReport(await startBatch({ ...args, executor_mode: undefined }));
+		// Resuming the stopped child needs a fresh confirmation, like the production reuse gate.
+		const done = laneReport(await startBatch(f.args({ confirmedAt: now })));
 		expect(done.batch_state).toBe("completed");
 		expect(done.final_report?.return_to_coordinator.status).toBe("staged");
 		expect(git(f.repo, "show", ":delivery.txt")).toBe("delivered");
 		expect(git(f.repo, "worktree", "list", "--porcelain")).toContain(lane);
 		expect(done.children[0]!.lane_retained).toBeDefined();
-		expect(spawn).not.toHaveBeenCalled();
 	});
 
-	// Issue #426 F9: `pi --print` can never write the Kernel, so the Lane is handed to the user instead of spawned.
-	it("hands a Pi Executor outside Herdr to the user instead of spawning a process", async () => {
+	// S8: the engine never spawns an Executor; a session port outside Herdr refuses at the entry.
+	it("returns executor handoffs without spawning a process; the session layer owns execution", async () => {
 		const f = owned();
-		const supervisor = new LaneSupervisor();
-		const spawn = spyOn(supervisor, "run").mockImplementation(async () => { throw new Error("must not spawn a Pi Executor"); });
-		const args = f.args({ supervision: { supervisor, parentHost: "pi" as const, pluginDir: "/plugin", waitMs: 1 } });
+		const args = f.args();
 		const first = laneReport(await startBatch(args));
 		const lane = first.children[0]!.lane!.path;
-		expect(first.reason).toBe(batchReason("lane_executor_requires_tui").reason);
 		expect(first.children[0]!.state).toBe("enrolled");
-		expect(first.lane_supervision).toMatchObject({ state: "unavailable", generation: null, reason: "lane_executor_requires_tui" });
+		expect(first.lane_supervision).toBeUndefined();
 		expect(first.lane_refusals).toBeUndefined();
 		expect(first.handoffs).toContainEqual(expect.objectContaining({ role: "executor", task_id: TASK, lane_path: lane }));
-		expect(first.next_action).toContain(`/skill:drive ${TASK}`);
-		expect(first.next_action).toContain("start_unattended_batch");
 		expect(readAnyBatchRunState(f.repo, BATCH_ID)).toMatchObject({ batch_state: "running", children: [{ state: "enrolled" }] });
-		expect(spawn).not.toHaveBeenCalled();
 		// Re-entry after the Lane's own run ended advances the batch without starting a process.
 		writeFileSync(join(lane, "delivery.txt"), "delivered\n");
 		settleLane(lane);
@@ -369,7 +368,6 @@ describe("single-task Lane delivery", () => {
 		const done = laneReport(await startBatch(args));
 		expect(done.batch_state).toBe("completed");
 		expect(done.final_report?.return_to_coordinator.status).toBe("staged");
-		expect(spawn).not.toHaveBeenCalled();
 	});
 
 	it("reports a pending decision in an already parked interactive Lane without resuming it", async () => {

@@ -10,7 +10,6 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { GithubInitiativeObservation } from "../plugins/immune-brain/runtime/github_issue_tracker";
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
-import { LaneSupervisor } from "../plugins/immune-brain/runtime/unattended/lane_supervisor";
 import { selectedPiParent, registerPiRunContinuation } from "../plugins/immune-brain/.pi-extension/pi-run-continuation";
 import { PI_PROFILE, bindPiSelectedParent } from "../plugins/immune-brain/.pi-extension/pi-host-runtime";
 import { recognizePhaseEntry, NO_LOCAL_NAMES } from "../plugins/immune-brain/runtime/assurance/phase_entry";
@@ -160,7 +159,7 @@ describe("acc-pi-batch-gate", () => {
 				delete process.env.HERDR_WORKSPACE_ID;
 				delete process.env.FAKE_HERDR_STATE;
 			}
-			const result = await executePiUnattendedBatch({ root: f.root, taskId, executor: { executor_host: "claude-code" }, confirmBatch: async details => { gates.push(details); return "accept"; } });
+			const result = await executePiUnattendedBatch({ root: f.root, taskId, executor: { host: "claude-code" }, confirmBatch: async details => { gates.push(details); return "accept"; } });
 			expect(gates).toHaveLength(1);
 			expect(gates[0].summary).toContain("Preparation digest: sha256:");
 			if (!herdr) {
@@ -186,29 +185,6 @@ describe("acc-pi-batch-gate", () => {
 			if (oldPath2 !== undefined) process.env.PATH = oldPath2;
 			return;
 		}
-		expect((result.report as any).lane_supervision).toMatchObject({ state: "running", generation: 1, exit: null });
-		const { readAnyBatchRunState } = await import("../plugins/immune-brain/runtime/unattended/batch_state");
-		const record = readAnyBatchRunState(f.root, result.batch_id)!;
-		expect(record).toMatchObject({ plan_source: "single_task", initiative_slug: taskId, max_parallel: 1, children: [{ task_id: taskId, state: "enrolled" }] });
-		const lane = (record.children[0] as any).lane;
-		for (let attempt = 0; attempt < 300 && !existsSync(join(bins, "args")); attempt++) await new Promise(resolve => setTimeout(resolve, 10));
-		const argv = readFileSync(join(bins, "args"), "utf8").trim().split("\n");
-		expect(realpathSync(argv[0]!)).toBe(realpathSync(lane.path)); expect(argv.at(-1)).toBe(`/immune-brain:drive ${taskId}`);
-		expect((result.report as any).handoffs.filter((h: { role: string }) => h.role === "executor")).toEqual([]);
-		const lost = await executePiUnattendedBatch({ root: f.root, taskId, executor: { executor_host: "claude-code" },
-			supervisor: new LaneSupervisor(), confirmBatch: async () => "accept" });
-		expect((lost as any).report.lane_supervision).toMatchObject({ state: "unobservable", generation: 1, exit: null });
-		const stopped = await executePiUnattendedBatch({ root: f.root, taskId, stop: true });
-		expect((stopped as any).report.lane_supervision).toMatchObject({ state: "stopped", generation: 1 });
-		const resumed = await executePiUnattendedBatch({ root: f.root, taskId, executor: { executor_host: "claude-code" }, confirmBatch: async () => "accept" });
-		expect((resumed as any).report.lane_supervision).toMatchObject({ state: "running", generation: 2 });
-		expect(lane.branch).toBe(`imm-lane/${taskId}/${taskId}`);
-		const tools: any[] = [];
-		registerPiWork({ registerTool: (tool: unknown) => tools.push(tool), registerCommand() {}, on() {}, events: { on() {}, emit() {} } } as never);
-		const work = tools.find(tool => tool.name === "imm_kernel_canary");
-		const status = textOf(await work.execute("status", { task_id: taskId, action: { op: "status" } }, undefined, undefined, context(f.root, "cancel")));
-		expect(status.batch.record).toMatchObject({ plan_source: "single_task", batch_state: "running", children: [{ task_id: taskId, state: "enrolled", lane: { path: lane.path } }] });
-		expect(readFileSync(join(lane.path, `docs/plans/${taskId}.intent.json`), "utf8")).toBe(JSON.stringify(intent));
 		} finally {
 			try { await executePiUnattendedBatch({ root: f.root, taskId, stop: true }); } catch { /* session batches have no supervisor to stop */ }
 			process.env.PATH = oldPath; if (oldOutput === undefined) delete process.env.LANE_TEST_OUTPUT; else process.env.LANE_TEST_OUTPUT = oldOutput;
@@ -243,7 +219,7 @@ describe("acc-pi-batch-gate", () => {
 			process.env.FAKE_HERDR_STATE = subject.env.FAKE_HERDR_STATE;
 			process.env.PATH = subject.env.PATH;
 			try {
-			const result = await executePiUnattendedBatch({ root: f.root, taskId, executor: { executor_host: "pi" }, confirmBatch: async () => "accept" });
+			const result = await executePiUnattendedBatch({ root: f.root, taskId, executor: { host: "pi" }, confirmBatch: async () => "accept" });
 			expect(result.state).toBe("started");
 			if (result.state !== "started") throw new Error((result as { reason?: string }).reason);
 			const report = result.report as any;
@@ -279,7 +255,7 @@ describe("acc-pi-batch-gate", () => {
 		delete process.env.HERDR_ENV;
 		process.env.PATH = `${bins}:${oldPath}`; process.env.LANE_TEST_OUTPUT = join(bins, "args");
 		try {
-			const result = await executePiUnattendedBatch({ root: f.root, taskId, executor: { executor_host: "pi" }, confirmBatch: async () => "accept" });
+			const result = await executePiUnattendedBatch({ root: f.root, taskId, executor: { host: "pi" }, confirmBatch: async () => "accept" });
 			expect(result.state).toBe("rejected");
 			if (result.state !== "rejected") throw new Error("expected lane_session_unavailable");
 			expect(result.reason).toContain("lane_session_unavailable");

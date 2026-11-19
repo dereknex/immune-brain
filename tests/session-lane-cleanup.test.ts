@@ -15,8 +15,8 @@ import type { BatchSessionPort } from "../plugins/immune-brain/runtime/unattende
 import { computeBatchPlanDigest, createBatchAuthorityRegistry } from "../plugins/immune-brain/runtime/kernel/batch_authority";
 import { canonicalIntentHash, readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
 import type { AssuranceProjectionResult } from "../plugins/immune-brain/runtime/kernel/assurance_projection";
-import type { BatchRunnerKernelPort, StartBatchInput } from "../plugins/immune-brain/runtime/unattended/batch_runner";
-import { startBatch } from "../plugins/immune-brain/runtime/unattended/batch_runner";
+import type { BatchRunnerKernelPort } from "../plugins/immune-brain/runtime/unattended/batch_kernel_port";
+import type { StartBatchInput } from "../plugins/immune-brain/runtime/unattended/batch_lanes";
 import { createDefaultBatchGitPort } from "../plugins/immune-brain/runtime/unattended/batch_git";
 import { readAnyBatchRunState, prepareBatchLaneRunState, writeBatchLaneRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
 import type { BatchPlanChild } from "../plugins/immune-brain/runtime/unattended/types";

@@ -35,11 +35,14 @@ project without editing a shared file.
 4. **Explicit session-provider selection.** Top-level `session_providers` holds a
    non-empty ordered list of distinct registered provider names (`herdr`,
    `herdr-core`), default `["herdr"]`, with the project file replacing the user
-   file. Inside Herdr, single-task Lane Executors run in interactive Herdr tabs;
-   the former top-level `herdr` switch is retired: setting it warns
-   (`retired_key`) and is ignored, and `imm-kernel config migrate --write`
-   deletes it. Review always runs in
-   Herdr; Loop roles always run as processes.
+   file. Inside Herdr, single-task Lane Executors run in Herdr tabs opened
+   through `runtime/lane_sessions/`; the former top-level `herdr` switch is
+   retired: setting it warns (`retired_key`) and is ignored, and `imm-kernel
+   config migrate --write` deletes it. The daemon drives through
+   `runtime/lane_sessions/` (`authorizeBatch` plus `startLanes`/`advanceLanes`)
+   and gates pull requests on the settled v3 Batch Record commit plus the
+   `.imm/audit/` verification digest (unified-lane-sessions S8). Review always
+   runs in Herdr; Loop roles always run as processes.
 5. **The runtime is the only resolver.** `start_unattended_batch` takes
    `agents: { executor?, reviewer? }`, each replacing that role whole; the
    flat `executor_*` / `review_*` parameters are removed. The Parent passes

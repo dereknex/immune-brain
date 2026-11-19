@@ -23,7 +23,7 @@ import { intentAuthorityHash, readTaskIntent, observeEnrollmentTaskIntent } from
 import type { TaskIntentV1 } from "../kernel/types";
 import { ignoredPaths, isBatchRef, isParentBranch, isProgressRef, parentBranchRef, readBatchRef } from "./batch_ref";
 import { auditRunRecordPath, auditRunTerminalProofPath } from "../kernel/storage_paths";
-import { isWorkflowAuthoringPath } from "./batch_git";
+import { auditEvidenceDigest, isWorkflowAuthoringPath } from "./batch_git";
 import { readTaskRecordRaw, readSettledTaskEvidence, readWorkspaceStateRaw, enrollmentEventIdFor, reconcileKernelAuthority } from "../kernel/storage";
 import type { TaskRecord } from "../kernel/types";
 import { pathMatchesScope } from "../workspace_scope";
@@ -1209,6 +1209,30 @@ export async function authorizeBatch<HostRejection>(
 		reuse_blockers: reuseBlockers,
 		binding,
 	};
+}
+
+/**
+ * S8 daemon PR gate (D13): the settled delivery evidence for one task, read
+ * from the v3 Batch Record plus `.imm/audit/`. The active batch wins; a
+ * terminal settled record covers a restarted daemon. Corrupt or ambiguous
+ * matches throw instead of guessing, so the gate fails closed.
+ */
+export function laneDeliveryEvidence(root: string, taskId: string):
+	| { ok: true; batch_id: string; commit: string; digest: string }
+	| { ok: false; reason: string } {
+	const active = findActiveLaneBatchForTask(root, taskId);
+	const settled = active ? null : findSettledBatchRecord(root, taskId);
+	const record = active?.record ?? settled;
+	if (!record || !isLaneBatchRecord(record))
+		return { ok: false, reason: `no settled batch record for ${taskId}` };
+	const child = record.children.find(entry => entry.task_id === taskId);
+	const commit = child?.commit ?? null;
+	if (child?.state !== "integrated" && child?.state !== "released")
+		return { ok: false, reason: `no integrated delivery for ${taskId} (child state ${child?.state ?? "absent"})` };
+	if (!commit) return { ok: false, reason: `no integrated commit for ${taskId}` };
+	const digest = auditEvidenceDigest(root, commit, taskId);
+	if (!digest) return { ok: false, reason: `no audit evidence for ${taskId} at ${commit.slice(0, 12)}` };
+	return { ok: true, batch_id: record.batch_id, commit, digest };
 }
 
 /**

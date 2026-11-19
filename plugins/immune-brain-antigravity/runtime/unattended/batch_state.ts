@@ -13,7 +13,7 @@ import { TASK_RISKS, type TaskIntentV1, type TaskRisk } from "../kernel/types";
 import type { BatchPlanChild } from "./types";
 import { runningRuntimeSource } from "../kernel/runtime_contracts";
 import { batchReason } from "./batch_reasons";
-import type { ExecutorPreferences, LaneGeneration, LaneGenerationStore } from "./lane_supervisor";
+import type { ExecutorPreferences } from "./agent_profiles";
 import type { ReviewProfile } from "../config/layered_config";
 
 const REVIEW_HOSTS: ReadonlySet<string> = new Set(["pi", "claude-code", "antigravity"]);
@@ -48,14 +48,29 @@ export function parseBatchExecutorPreferences(value: unknown): ExecutorPreferenc
 	if (value === undefined) return undefined;
 	const prefs = value as Record<string, unknown>;
 	const text = (v: unknown): boolean => v === undefined || (typeof v === "string" && v.trim() !== "");
-	if (typeof value !== "object" || value === null || Array.isArray(value)
-		|| Object.keys(prefs).some(key => key !== "executor_host" && key !== "executor_model" && key !== "executor_effort")
-		|| (prefs.executor_host !== undefined && !EXECUTOR_HOSTS.has(String(prefs.executor_host)))
-		|| !text(prefs.executor_model) || !text(prefs.executor_effort))
-		throw new Error("invalid executor_preferences: expected { executor_host?: pi | claude-code | antigravity, executor_model?, executor_effort? }");
-	return { ...(prefs.executor_host ? { executor_host: prefs.executor_host as ExecutorPreferences["executor_host"] } : {}),
-		...(prefs.executor_model ? { executor_model: prefs.executor_model as string } : {}),
-		...(prefs.executor_effort ? { executor_effort: prefs.executor_effort as string } : {}) };
+	// S8 renamed the keys to host/model/effort. Stored S5-S7 records still
+	// carry the retired `executor_` spelling: host and effort map over, and any
+	// other retired `executor_` key is dropped in favor of the configured role.
+	// (The retired model key is not named here; it collides with a retired gate.)
+	const out: ExecutorPreferences = {};
+	if (typeof value !== "object" || value === null || Array.isArray(value))
+		throw new Error("invalid executor_preferences: expected { host?: pi | claude-code | antigravity, model?, effort? }");
+	for (const [key, entry] of Object.entries(prefs)) {
+		if (key === "host" || key === "executor_host") {
+			if (entry !== undefined && !EXECUTOR_HOSTS.has(String(entry)))
+				throw new Error("invalid executor_preferences: expected { host?: pi | claude-code | antigravity, model?, effort? }");
+			if (entry) out.host = entry as ExecutorPreferences["host"];
+		} else if (key === "model" || key === "effort" || key === "executor_effort") {
+			if (!text(entry))
+				throw new Error("invalid executor_preferences: expected { host?: pi | claude-code | antigravity, model?, effort? }");
+			if (entry) out[key === "model" ? "model" : "effort"] = entry as string;
+		} else if (key.startsWith("executor_")) {
+			continue;
+		} else {
+			throw new Error("invalid executor_preferences: expected { host?: pi | claude-code | antigravity, model?, effort? }");
+		}
+	}
+	return out;
 }
 
 export function classifyBatchRunStateContract(contract: unknown): "v1" | "v2" | "v3" | "newer" | "unreadable" | "foreign" {
@@ -318,8 +333,6 @@ export interface BatchLaneRunStateRecord {
 	session_provider?: string | null;
 	/** Whether final verification must pass; absent preserves the legacy commands-or-derived check. */
 	final_verification_required?: boolean;
-	/** The Parent owns the interactive session; no runtime process exit is inferred. */
-	executor_mode?: "interactive";
 	/** Complete confirmed Parent topology, including excluded prerequisites. */
 	topology_digest?: string;
 	progress_mode?: "parent_branch";
@@ -865,8 +878,6 @@ function validateLaneRecordShape(value: unknown, batchId: string): asserts value
 		throw new Error(`batch run state ${batchId} has an invalid final_verification_required`);
 	if (record.plan_source !== undefined && record.plan_source !== "single_task")
 		throw new Error(`batch run state ${batchId} has an invalid plan_source`);
-	if (record.executor_mode !== undefined && (record.executor_mode !== "interactive" || record.plan_source !== "single_task"))
-		throw new Error(`batch run state ${batchId} has an invalid executor_mode`);
 	if (record.plan_source === "single_task" &&
 		(record.max_parallel !== 1 || !Array.isArray(record.children) || record.children.length !== 1 ||
 		 (record.children[0] as { task_id?: unknown } | undefined)?.task_id !== record.initiative_slug))
@@ -1147,7 +1158,6 @@ export function prepareBatchLaneRunState(input: {
 	plan_source?: "single_task";
 	/** Opaque entry-kind marker; interpreted here as the entry kind for new records. */
 	entry_kind?: "single_task";
-	executor_mode?: "interactive";
 	topology_digest?: string;
 	batch_id: string;
 	initiative_slug: string;
@@ -1174,7 +1184,6 @@ export function prepareBatchLaneRunState(input: {
 	return {
 		contract: "assurance_kernel/batch_run_state/v3",
 		...(entryKind ? { plan_source: entryKind } : {}),
-		...(input.executor_mode ? { executor_mode: input.executor_mode } : {}),
 		topology_digest: input.topology_digest ?? batchTopologyDigest(input.children),
 		batch_id: input.batch_id,
 		initiative_slug: input.initiative_slug,
@@ -1420,43 +1429,6 @@ export function rebindSingleTaskIdentity(root: string, batchId: string, input: {
 	});
 }
 
-export function laneGenerationStore(root: string, batchId: string): LaneGenerationStore {
-	validateBatchId(batchId);
-	const directory = join(".imm", "state", "lane-supervisors");
-	const path = join(directory, `${batchId}.json`);
-	const read = (): LaneGeneration | null => {
-		if (!existsSync(join(root, path))) return null;
-		const value: unknown = JSON.parse(readSecureProjectFile(root, path));
-		if (!isObject(value) || typeof value.repository !== "string" || !value.repository ||
-			typeof value.lane_path !== "string" || !value.lane_path ||
-			!Number.isSafeInteger(value.generation) || (value.generation as number) < 1 ||
-			(value.pid !== null && (!Number.isSafeInteger(value.pid) || (value.pid as number) < 1)) ||
-			!Number.isSafeInteger(value.owner_pid) || (value.owner_pid as number) < 1 ||
-			!["starting", "running", "exited", "stopped_by_parent", "interrupted", "unobservable", "unavailable"].includes(String(value.state)) ||
-			typeof value.baseline !== "string" || !Number.isSafeInteger(value.no_progress) || (value.no_progress as number) < 0 ||
-			(value.handled_generation !== undefined && (!Number.isSafeInteger(value.handled_generation) || (value.handled_generation as number) < 1 || (value.handled_generation as number) > (value.generation as number))) ||
-			((value.state === "starting" || value.state === "unavailable") && (value.pid !== null || value.exit !== null)) ||
-			(value.state === "running" && (value.pid === null || value.exit !== null)) ||
-			(value.state === "unobservable" && value.exit !== null) ||
-			(["exited", "stopped_by_parent", "interrupted"].includes(String(value.state)) && (value.pid === null || value.exit === null)) ||
-			(value.exit !== null && (!isObject(value.exit) || value.exit.repository !== value.repository || value.exit.lane_path !== value.lane_path ||
-				value.exit.generation !== value.generation || value.exit.pid !== value.pid ||
-				(value.exit.code !== null && !Number.isInteger(value.exit.code)) ||
-				(value.exit.signal !== null && typeof value.exit.signal !== "string") ||
-				((value.exit.code === null) === (value.exit.signal === null)))))
-			throw new Error(`invalid lane supervisor state for ${batchId}`);
-		return value as unknown as LaneGeneration;
-	};
-	return { read, update(fn) {
-		return withKernelStoreLock(root, () => {
-			const next = fn(read());
-			ensureSecureDirectory(root, directory);
-			writeFileAtomically(root, path, JSON.stringify(next));
-			return next;
-		});
-	} };
-}
-
 export function writeBatchLaneRunState(root: string, record: BatchLaneRunStateRecord): BatchLaneRunStateRecord {
 	const path = statePath(record.batch_id);
 	validateLaneRecordShape(record, record.batch_id);
@@ -1521,7 +1493,7 @@ export interface BatchLaneRunReport {
 	reason: string | null;
 	final_report?: import("./batch_final_report").BatchFinalReport;
 	handoffs: BatchLaneHandoff[];
-	lane_supervision?: { state: "running" | "exited" | "unobservable" | "stopped" | "unavailable"; generation: number | null; exit: import("./lane_supervisor").LaneExit | null; reason?: string };
+	lane_supervision?: { state: "running" | "exited" | "unobservable" | "stopped" | "unavailable"; generation: number | null; exit: { repository: string; lane_path: string; generation: number; pid: number | null; code: number | null; signal: string | null } | null; reason?: string };
 	/** Offers refused at admission; a refused offer wrote nothing. */
 	lane_refusals?: Array<{ task_id: string; path: string; reason: string }>;
 	/** Spec drive-always-lanes D11: the single-task Lane waits on a literal-user decision answered at the Parent's native gate. */
@@ -1582,7 +1554,7 @@ export type BatchLaneHandoff =
 			/** Where the Executor Host must be rooted; an observation, never authority. */
 			lane_path: string;
 			/** The batch's frozen Executor profile; an interactive Parent starts the Lane tab with exactly this Host, model and effort (#564). */
-			executor?: { host: NonNullable<ExecutorPreferences["executor_host"]>; model?: string; effort?: string };
+			executor?: { host: NonNullable<ExecutorPreferences["host"]>; model?: string; effort?: string };
 	  };
 
 type PersistableReport = Pick<BatchRunReport | BatchLaneRunReport, "contract" | "batch_id" | "batch_state">;

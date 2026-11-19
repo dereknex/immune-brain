@@ -14,7 +14,7 @@ import { createBatchKernelPort } from "../plugins/immune-brain/runtime/unattende
 import { runBatchGitPreflight, type BatchRunnerGitPort } from "../plugins/immune-brain/runtime/unattended/batch_git";
 import { createDefaultLaneGitPort, runLaneBatch } from "../plugins/immune-brain/runtime/unattended/batch_lanes";
 import { readBatchLaneRunState, writeBatchLaneRunState, type BatchLaneRunReport } from "../plugins/immune-brain/runtime/unattended/batch_state";
-import type { StartBatchInput } from "../plugins/immune-brain/runtime/unattended/batch_runner";
+import type { StartBatchInput } from "../plugins/immune-brain/runtime/unattended/batch_lanes";
 
 const NOW = "2026-10-20T00:00:00.000Z";
 const roots: string[] = [];

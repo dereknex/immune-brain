@@ -14,19 +14,14 @@
 import { stagePlanningArtifactTransition, type VerdictAuthority } from "../assurance/verdict_authority";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
+
+/** The Lane session poll interval; shorter when the Host's tool timeout is. */
+export const LANE_WAIT_MS = 500;
 import { batchConfigErrors, resolveConfig, type ReviewProfile } from "../config/layered_config";
-import { LaneSupervisor, type ExecutorPreferences, type ExecutorHost } from "../unattended/lane_supervisor";
+import type { ExecutorPreferences, ExecutorHost } from "../unattended/agent_profiles";
 import type { AssuranceHostPort } from "../assurance/host_port";
 
-/** The Lane supervisor's poll interval; shorter when the Host's tool timeout is. */
-export const LANE_WAIT_MS = 500;
-
-function laneWaitMs(env: NodeJS.ProcessEnv): number {
-	const limit = Number(env.MCP_TOOL_TIMEOUT);
-	return Number.isFinite(limit) && limit > 0 ? Math.min(LANE_WAIT_MS, Math.floor(limit / 2)) : LANE_WAIT_MS;
-}
 import {
 	AssuranceCoordinator,
 	type AssuranceCoordinatorPorts,
@@ -87,12 +82,9 @@ import {
 import { authorizeBatch as authorizeAgreement } from "../unattended/batch_agreement";
 import { advanceLanes, openBatchSessionPort, startLanes } from "../lane_sessions/index";
 import type { BatchSessionPort } from "../unattended/batch_session_port";
-import {
-	completedParentReport, stopSingleTaskSupervisor,
-	type BatchRunnerKernelPort,
-	type BatchRunReport,
-	type BatchTrackerPort,
-} from "../unattended/batch_runner";
+import { completedParentReport } from "../unattended/batch_lanes";
+import type { BatchRunnerKernelPort, BatchTrackerPort } from "../unattended/batch_kernel_port";
+import type { BatchRunReport } from "../unattended/batch_state";
 import { findLaneRelayTarget, relayLaneDecision, type LaneDecisionOperation } from "../unattended/lane_decision";
 import {
 	ANSWER_LOOP_INTERACTION_TOOL,
@@ -109,7 +101,7 @@ import { createBatchKernelPort } from "../unattended/batch_kernel_port";
 import { createBatchTrackerPort, laneRuntimeContractRefusal, type LaneInstructionRequest, type LaneOffer, type LaneSessionCloseRequest } from "../unattended/batch_lanes";
 import { retireStaleBatch } from "../unattended/batch_disposition";
 import { runEntryManifest, type RunEntryManifest } from "../unattended/run_entry_manifest";
-import { batchTopologyDigest, isLaneBatchRecord, type BatchLaneRunReport } from "../unattended/batch_state";
+import { batchTopologyDigest, isLaneBatchRecord, parkLaneForExecutor, type BatchLaneRunReport } from "../unattended/batch_state";
 import {
 	createBatchAuthorityRegistry,
 } from "../kernel/batch_authority";
@@ -415,7 +407,6 @@ type HostBatchStartResult =
  * `HostRuntimeProfile` and composes an instance.
  */
 export class HostRuntime {
-	private readonly laneSupervisor = new LaneSupervisor();
 	private readonly parentHost: ExecutorHost;
 	readonly host: AssuranceHostPort & {
 		observe(event: any): void;
@@ -822,11 +813,11 @@ export class HostRuntime {
 				const initiativeSlug = active.record.initiative_slug;
 				const advanceKind = active.record.plan_source ? { plan_source: active.record.plan_source } : {};
 				advance = async () => this.startPreparedBatch(initiativeSlug, meta, { reuseOnly: true, ...advanceKind });
-			} else if (active.record.executor_mode !== "interactive") {
+			} else {
 				// Resolve the batch's recorded provider through the composition
-			// root: production Hosts supply no factory and reach the real
-			// provider; tests inject a fake. A refusal fails the stop closed
-			// instead of leaving the child's session running.
+				// root: production Hosts supply no factory and reach the real
+				// provider; tests inject a fake. A refusal fails the stop closed
+				// instead of leaving the child's session running.
 				const opened = openBatchSessionPort({ root: this.cwd, provider: active.record.session_provider, env: this.env,
 					host: this.parentHost, executor: active.record.executor_preferences,
 					...(this.sessionPortFactory ? { createPort: this.sessionPortFactory as never } : {}) });
@@ -841,8 +832,6 @@ export class HostRuntime {
 				project: (lanePath, id) => projectAssurance(lanePath, id, diffSnapshotOf),
 				apply: async () => laneRuntime.authorizeInRoot(taskId, operation, meta, extra),
 				applied: result => !(result && typeof result === "object" && "state" in result && result.state === "replan_selected"),
-				supervisor: this.laneSupervisor, parentHost: this.parentHost,
-				pluginDir: resolve(dirname(fileURLToPath(import.meta.url)), "../.."), waitMs: laneWaitMs(this.env), signal: meta.signal,
 				...(sessions ? { sessions } : {}),
 				...(advance ? { advance } : {}),
 			});
@@ -1164,7 +1153,20 @@ export class HostRuntime {
 		if (!probe.ok) throw new NativeAuthorityError("unsupported_host", probe.reason);
 		if (options.stop) {
 			if (options.plan_source !== "single_task") return { state: "rejected", reason: "lane_stop_requires_task", recovery_action: "Specify a task_id in the current Host." };
-			return stopSingleTaskSupervisor(this.laneSupervisor, this.cwd, initiativeSlug, meta.signal);
+			// Port-based stop (S8): close only this child's session through the
+			// batch's recorded provider, park the child, and retain its Lane.
+			const active = findActiveLaneBatchForTask(this.cwd, initiativeSlug);
+			if (!active) return { state: "blocked", reason: "lane_executor_not_running", recovery_action: "Inspect the task status in the current Host." };
+			const handle = active.record.children.find(child => child.task_id === initiativeSlug)?.session?.handle ?? null;
+			if (handle) {
+				const opened = openBatchSessionPort({ root: this.cwd, provider: active.record.session_provider, env: this.env,
+					host: this.parentHost, executor: active.record.executor_preferences,
+					...(this.sessionPortFactory ? { createPort: this.sessionPortFactory as never } : {}) });
+				if (!opened.ok) return { state: "blocked", reason: opened.reason, recovery_action: opened.recovery };
+				await opened.port.stop(handle);
+			}
+			parkLaneForExecutor(this.cwd, active.record.batch_id, initiativeSlug, "lane_executor_stopped");
+			return { state: "blocked", reason: "lane_executor_stopped", recovery_action: "The Lane task is stopped and its Lane retained; resume with a fresh drive entry." };
 		}
 		// ADR 0041: every new batch is refused on a configuration error; a reuse-only continuation runs on its frozen record.
 		if ((options.plan_source || !reuseOnly) && batchConfigErrors(resolveConfig(this.cwd)).length > 0)

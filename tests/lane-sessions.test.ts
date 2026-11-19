@@ -8,7 +8,8 @@ import { createBatchAuthorityRegistry, computeBatchPlanDigest } from "../plugins
 import { herdrSubject } from "./helpers/fake-herdr";
 import { canonicalIntentHash, readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
 import { readAnyBatchRunState, writeBatchLaneRunState, type BatchLaneRunStateRecord } from "../plugins/immune-brain/runtime/unattended/batch_state";
-import type { BatchRunnerKernelPort, StartBatchInput } from "../plugins/immune-brain/runtime/unattended/batch_runner";
+import type { BatchRunnerKernelPort } from "../plugins/immune-brain/runtime/unattended/batch_kernel_port";
+import type { StartBatchInput } from "../plugins/immune-brain/runtime/unattended/batch_lanes";
 import type { BatchPlanChild } from "../plugins/immune-brain/runtime/unattended/types";
 import type { BatchAgreement } from "../plugins/immune-brain/runtime/unattended/batch_agreement";
 import { startLanes, advanceLanes, observeLanes } from "../plugins/immune-brain/runtime/lane_sessions/index";
@@ -245,7 +246,7 @@ describe("HLS-A1: Host entries open one Herdr session per child", () => {
 			// with the profile's model/effort flags, not claude-code with none.
 			const requested = await startLanes(agreement, {
 				...depsFor(fx.repo, kernel, fake, "claude-code", env, agreement),
-				executor: { executor_host: "pi", executor_model: "m", executor_effort: "high" },
+				executor: { host: "pi", model: "m", effort: "high" },
 			} as never) as unknown as { batch_state: string };
 			expect(requested.batch_state).toBe("running");
 			expect(fake.opens).toEqual([{ host: "pi", hostArgs: ["--model", "m", "--thinking", "high"] }]);
@@ -363,7 +364,7 @@ describe("HLS-A3: re-entry never switches providers; adapter maps failures", () 
 			const kernel = fakeKernel(new Map([["task-a", "r1"]]));
 			const agreement = agreementFor(fx.repo, fx.base, "batch-hls-exec-freeze", "task-a", ["task-a"], { return_policy: "checkout_delivery", interaction_mode: "interactive_host" });
 			const env = { HERDR_ENV: "1", HERDR_WORKSPACE_ID: "ws1" };
-			const request = { executor_host: "pi", executor_model: "m", executor_effort: "high" };
+			const request = { host: "pi", model: "m", effort: "high" };
 			const started = (await startLanes(agreement, {
 				...depsFor(fx.repo, kernel, fake, "claude-code", env, agreement),
 				executor: request,

@@ -33,7 +33,6 @@ import { fileURLToPath } from "node:url";
 import { resolveConfig, type LoopConfig } from "../config/layered_config.ts";
 import { createGhTransport, type GhTransport } from "../github_issue_tracker.ts";
 import { LOOP_DAEMON_ACTOR_ID } from "../kernel/actor_identity.ts";
-import { projectAssurance } from "../kernel/assurance_projection.ts";
 import { createBatchAuthorityRegistry, type BatchAuthorizationBinding } from "../kernel/batch_authority.ts";
 import { enrollTask } from "../kernel/enrollment.ts";
 import { createEnrollmentAuthorityRegistry } from "../kernel/enrollment_authority.ts";
@@ -49,8 +48,8 @@ import { parseVerificationDescriptor, type VerificationDescriptor } from "../ver
 import { createBatchKernelPort } from "../unattended/batch_kernel_port.ts";
 import { createDefaultBatchGitPort } from "../unattended/batch_git.ts";
 import { observeSingleTask } from "../unattended/batch_plan.ts";
-import { prepareBatchPreflight } from "../unattended/batch_preflight.ts";
-import type { ExecutorHost } from "../unattended/lane_supervisor.ts";
+import { findActiveLaneBatchForTask, prepareBatchPreflight } from "../unattended/batch_preflight.ts";
+import type { ExecutorHost } from "../unattended/agent_profiles.ts";
 import {
 	analyzeCodebase,
 	analysisCacheKey,
@@ -69,7 +68,7 @@ import {
 	type AgentSessionProvider,
 	type AgentSessionRecord,
 } from "./agent_runner.ts";
-import { dispatchLoopDrive } from "./drive_dispatcher.ts";
+import { daemonAdvanceTask, dispatchLoopDrive } from "./drive_dispatcher.ts";
 import { escalationKey, planEscalation } from "./escalation.ts";
 import { createGithubInteractionChannel, withInteractionMarker } from "./interaction/github_channel.ts";
 import { createLocalInteractionChannel, retireLocalRequest } from "./interaction/local_channel.ts";
@@ -163,6 +162,8 @@ export interface AgentDriveRequest {
 	intent: AgentTaskIntent;
 	plan_digest: string;
 	confirmation_ref: string;
+	/** The BatchAgreement confirmation source; inferred from the ref when absent. */
+	confirmation_source?: "tracker_approval" | "policy_auto";
 	base_head: string;
 	now: string;
 }
@@ -194,9 +195,9 @@ function authorityChild(child: {
 }
 
 export interface AgentDriveExit {
-	state: "exited" | "stopped_by_parent" | "interrupted";
-	exit_code: number | null;
-	generation: number;
+	state: "exited";
+	exit_code: 0;
+	generation: number | null;
 	final_commit_sha: string | null;
 	verification_evidence_digest: string | null;
 }
@@ -205,6 +206,8 @@ export interface AgentDriveResult {
 	settled: boolean;
 	exit: AgentDriveExit | null;
 	reason: string;
+	/** The active child waits on a dialog the unattended daemon cannot answer; the tick escalates it. */
+	hold_for_dialog?: { task_id: string; batch_id: string; detail: string } | null;
 }
 
 export type AgentHandlerOutcome = "executed" | "failed" | "requires_standing_daemon";
@@ -295,6 +298,14 @@ export function syncWorktreeToHead(
 }
 
 const REPAIR_OUTPUT = ".imm-loop/repair.json";
+
+/** Default wait between dialog-hold re-drives; `IMM_LOOP_DIALOG_RETRY_MS` overrides it per call (test seam). */
+export const LANE_DIALOG_RETRY_MS = 30_000;
+/** Default dialog-hold window before the job fails with the escalation already posted; `IMM_LOOP_DIALOG_HOLD_MAX_MS` overrides it. */
+export const LANE_DIALOG_HOLD_MAX_MS = 60 * 60_000;
+
+const envMs = (value: string | undefined, fallback: number): number =>
+	Number.isFinite(Number(value)) && Number(value) > 0 ? Number(value) : fallback;
 
 /* ------------------------------------------------------------------ */
 /* Session output schemas: the only thing read back from a session.     */
@@ -1037,6 +1048,7 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 		// D6 re-entry: an enrolled, nonterminal TaskRecord resumes; re-entry never
 		// mints a second nonce for a task the Kernel already holds.
 		const confirmationRefs = new Map<string, string>();
+		const confirmationSources = new Map<string, "tracker_approval" | "policy_auto">();
 		let confirmationSource: string | null = null;
 		let recordRevision = "";
 		for (const candidateTaskId of taskIds) {
@@ -1061,6 +1073,7 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 			}
 			confirmationSource = resolved.source;
 			confirmationRefs.set(candidateTaskId, resolved.confirmation_ref);
+			confirmationSources.set(candidateTaskId, resolved.source);
 			try {
 				const record = await deps.enroll({
 					root: context.root,
@@ -1114,20 +1127,51 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 						continue;
 					}
 					const intent = deps.readIntent(candidateTaskId);
-					if (!intent)
-						return { outcome: "failed" as const, detail: `task intent disappeared: ${candidateTaskId}`, exit: firstExit };
-					const driven = await deps.drive({
-						root: context.root,
-						task_id: candidateTaskId,
-						intent,
-						plan_digest: plan.digest,
-						confirmation_ref: confirmationRefs.get(candidateTaskId) ?? `resume:${candidateTaskId}`,
-						base_head: baseHead,
-						now: now(),
-					});
-					const exit = driven.exit;
-					firstExit ??= exit ?? null;
-					const settled =
+				if (!intent)
+					return { outcome: "failed" as const, detail: `task intent disappeared: ${candidateTaskId}`, exit: firstExit };
+				const driveInput = () => ({
+					root: context.root,
+					task_id: candidateTaskId,
+					intent,
+					plan_digest: plan.digest,
+					confirmation_ref: confirmationRefs.get(candidateTaskId) ?? `resume:${candidateTaskId}`,
+					...(confirmationSources.get(candidateTaskId)
+						? { confirmation_source: confirmationSources.get(candidateTaskId)! }
+						: {}),
+					base_head: baseHead,
+					now: now(),
+				});
+				let driven = await deps.drive(driveInput());
+				// A startup or mid-run dialog holds the Lane open without failing the
+				// job: post the Issue escalation once per distinct detail, then re-drive
+				// every retry interval until the user answers the dialog in Herdr; the
+				// job keeps its lease while it waits, and a dialog never answered inside
+				// the hold window fails the job with the escalation already posted.
+				let escalatedDetail: string | null = null;
+				const holdDeadline = Date.now() + envMs(process.env.IMM_LOOP_DIALOG_HOLD_MAX_MS, LANE_DIALOG_HOLD_MAX_MS);
+				while (!driven.settled && driven.hold_for_dialog) {
+					if (escalatedDetail !== driven.hold_for_dialog.detail) {
+						escalatedDetail = driven.hold_for_dialog.detail;
+						await escalateOnce(
+							context,
+							"lane_entry_blocked",
+							jobTarget,
+							candidateTaskId,
+							`Lane ${candidateTaskId} waits on a dialog the daemon cannot answer (${escalatedDetail}); answer it in Herdr, and the drive resumes batch ${driven.hold_for_dialog.batch_id}`,
+						);
+					}
+					if (Date.now() >= holdDeadline)
+						return {
+							outcome: "failed" as const,
+							detail: `${candidateTaskId} still waits on a dialog: ${driven.hold_for_dialog.detail}`,
+							exit: driven.exit,
+						};
+					await new Promise((resolve) => setTimeout(resolve, envMs(process.env.IMM_LOOP_DIALOG_RETRY_MS, LANE_DIALOG_RETRY_MS)));
+					driven = await deps.drive(driveInput());
+				}
+				const exit = driven.exit;
+				firstExit ??= exit ?? null;
+				const settled =
 						driven.settled &&
 						exit?.state === "exited" &&
 						exit.exit_code === 0 &&
@@ -1761,8 +1805,10 @@ async function driveSingleTaskLane(
 	const projection = preflight.projection;
 
 	const registry = createBatchAuthorityRegistry();
+	// A resumed tick re-enters the active batch id; only first entry mints one.
+	const resumed = findActiveLaneBatchForTask(input.root, input.task_id);
 	const binding: BatchAuthorizationBinding = {
-		batch_id: `batch-${input.task_id}-${randomUUID()}`,
+		batch_id: resumed?.record.batch_id ?? `batch-${input.task_id}-${randomUUID()}`,
 		initiative_slug: input.task_id,
 		plan_digest: projection.plan_digest,
 		branch: projection.batch_branch,
@@ -1785,14 +1831,7 @@ async function driveSingleTaskLane(
 		binding,
 		// The daemon has no Host to run an Assurance attempt, so it reports the
 		// projection's obligation instead of fabricating a verdict.
-		advanceTask: async (laneRoot, taskId) => {
-			const fresh = await projectAssurance(laneRoot, taskId, undefined);
-			if (fresh.projection.lifecycle === "done" && fresh.projection.completion_ready) return { state: "completed" };
-			return {
-				state: "blocked",
-				reason: `kernel obligation ${fresh.projection.next_obligation ?? "unknown"} has no daemon Host`,
-			};
-		},
+		advanceTask: daemonAdvanceTask,
 		resume: {
 			isResuming: projection.is_resuming,
 			existingBatch: projection.existing_batch,
@@ -1800,15 +1839,19 @@ async function driveSingleTaskLane(
 		},
 	});
 
-	const { report, exit_record } = await dispatchLoopDrive({
+	const result = await dispatchLoopDrive({
 			root: input.root,
+			task_id: input.task_id,
 			batch_id: binding.batch_id,
-			initiative_slug: input.task_id,
 			registry,
 			capability,
-			children: projection.recovery_children,
+			children: authorityChildren,
 			plan_digest: projection.plan_digest,
 			base_head: binding.base_head,
+			confirmation: {
+				source: input.confirmation_source ?? (input.confirmation_ref.startsWith("policy_auto") ? "policy_auto" : "tracker_approval"),
+				ref: input.confirmation_ref,
+			},
 			confirmation_time: input.now,
 			budget: projection.budget,
 			now: input.now,
@@ -1817,56 +1860,20 @@ async function driveSingleTaskLane(
 			max_parallel: 1,
 			supervision: {
 				parent_host: context.profile.host,
-				plugin_dir: context.pluginRoot,
-				wait_ms: 60_000,
 				...(context.profile.model || context.profile.effort
 					? {
 							request: {
-								...(context.profile.model ? { executor_model: context.profile.model } : {}),
-								...(context.profile.effort ? { executor_effort: context.profile.effort } : {}),
+								...(context.profile.model ? { model: context.profile.model } : {}),
+								...(context.profile.effort ? { effort: context.profile.effort } : {}),
 							},
 						}
 					: {}),
 			},
-			run_id: input.task_id,
-			// D6: the exit record carries what the settled Kernel projection reports,
-			// not the `null` the drive used to record before it knew.
-			settled_facts: async (settledReport, laneExit) => {
-				if (settledReport.batch_state !== "completed") return { final_commit_sha: null, verification_evidence: null };
-				const lanePath = (laneExit as { lane_path?: string } | null)?.lane_path;
-				const head = lanePath ? git(lanePath, ["rev-parse", "HEAD"]) : null;
-				const final_commit_sha = head?.status === 0 && /^[0-9a-f]{40,64}$/.test(head.stdout.trim()) ? head.stdout.trim() : null;
-				let projection: Awaited<ReturnType<typeof projectAssurance>>["projection"] | null = null;
-				try {
-					projection = (await projectAssurance(lanePath ?? input.root, input.task_id)).projection;
-				} catch {
-					projection = null;
-				}
-				return {
-					final_commit_sha,
-					verification_evidence: projection
-						? JSON.stringify({
-							lifecycle: projection.lifecycle,
-							record_revision: projection.record_revision,
-							fresh_acceptance_ids: projection.fresh_acceptance_ids,
-							completion_ready: projection.completion_ready,
-						})
-						: null,
-				};
-			},
-			state_dir: context.stateDir,
 		});
 		return {
-			settled: report.batch_state === "completed",
-			exit: exit_record === null
-				? null
-				: {
-						state: exit_record.state,
-						exit_code: exit_record.exit_code,
-						generation: exit_record.generation,
-						final_commit_sha: exit_record.final_commit_sha,
-						verification_evidence_digest: exit_record.verification_evidence_digest,
-					},
-			reason: report.reason ?? `batch_state ${report.batch_state}`,
+			settled: result.settled,
+			exit: result.exit,
+			reason: result.reason,
+			...(result.hold_for_dialog ? { hold_for_dialog: result.hold_for_dialog } : {}),
 		};
 }
