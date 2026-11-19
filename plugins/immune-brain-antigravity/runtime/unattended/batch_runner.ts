@@ -181,6 +181,8 @@ export interface StartBatchInput {
 	 */
 	lane_instruction?: import("./batch_lanes").LaneInstructionRequest;
 	lane_session_close?: import("./batch_lanes").LaneSessionCloseRequest;
+	/** S4: optional session port; absent, the batch runs executor handoffs as before. */
+	sessions?: import("./batch_session_port").BatchSessionPort;
 }
 
 /** The one tracker effect a lane batch may cause: closing an integrated child's Issue. */

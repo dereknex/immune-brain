@@ -200,6 +200,8 @@ export interface BatchChildSession {
 	attention: string | null;
 	no_progress: number;
 	exit_proof: unknown | null;
+	/** Digests of recorded interventions already acted on; a digest is never handled twice. */
+	handled_interventions?: string[];
 }
 
 export interface BatchLaneChildRun {
@@ -1030,8 +1032,24 @@ function validateLaneRecordShape(value: unknown, batchId: string): asserts value
 			((record as { plan_source?: string }).plan_source === "single_task" ? "checkout_delivery" : "retain_branch");
 		const deliveryParked = effectivePolicy === "checkout_delivery" && child.state === "needs_human" && child.commit !== null &&
 			delivery?.status === "blocked" && delivery.reason === child.reason;
-		if ((child as { session?: unknown }).session !== undefined && (child as { session?: unknown }).session !== null)
-			throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid session`);
+		const session = (child as { session?: unknown }).session;
+		if (session !== undefined && session !== null) {
+			if (!isObject(session)) throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid session`);
+			const s = session as Record<string, unknown>;
+			const keyOk = s.key === null || (typeof s.key === "string" && /^imm-[a-z0-9-]+-g[0-9]+-[0-9a-f]{12}$/.test(s.key) && (s.key as string).length <= 36);
+			const generationOk = typeof s.generation === "number" && Number.isSafeInteger(s.generation) && (s.generation as number) >= 1;
+			const baselineOk = s.baseline === null || typeof s.baseline === "string";
+			const handleOk = s.handle === null || typeof s.handle === "string";
+			const entryOk = typeof s.entry_submitted === "boolean";
+			const attentionOk = s.attention === null || typeof s.attention === "string";
+			const progressOk = typeof s.no_progress === "number" && Number.isSafeInteger(s.no_progress) && (s.no_progress as number) >= 0;
+			const proof = s.exit_proof;
+			const proofOk = proof === null || (isObject(proof) && (proof as { ok?: unknown }).ok === true && (proof as { exited?: unknown }).exited === true && typeof (proof as { handle?: unknown }).handle === "string" && typeof (proof as { key?: unknown }).key === "string");
+			const handled = s.handled_interventions;
+			const handledOk = handled === undefined || (Array.isArray(handled) && handled.every((d) => typeof d === "string" && d.length > 0));
+			if (!keyOk || !generationOk || !baselineOk || !handleOk || !entryOk || !attentionOk || !progressOk || !proofOk || !handledOk)
+				throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid session`);
+		}
 		if (child.tracker_closed === true && child.state !== "integrated" && child.state !== "released" && !deliveryParked)
 			throw new Error(`batch run state ${batchId} child ${child.task_id} closed its tracker Issue before integration`);
 		if (child.lane_removed !== undefined || child.lane_retained !== undefined) {

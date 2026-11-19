@@ -312,6 +312,8 @@ describe("runtime layering boundary", () => {
 			"plugins/immune-brain/runtime/unattended/batch_git.ts",
 			"plugins/immune-brain/runtime/unattended/lane_cleanup.ts",
 			"plugins/immune-brain/runtime/assurance/run_continuation.ts",
+			"plugins/immune-brain/runtime/unattended/batch_session_port.ts",
+			"plugins/immune-brain/runtime/unattended/child_session_reconciler.ts",
 		];
 		test("AGR-A6: execution modules never mention plan_source", () => {
 			const offenders: string[] = [];

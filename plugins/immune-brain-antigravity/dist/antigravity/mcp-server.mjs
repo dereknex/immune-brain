@@ -6934,8 +6934,25 @@ function validateLaneRecordShape(value, batchId) {
     const delivery = isObject(report) && isObject(report.return_to_coordinator) ? report.return_to_coordinator : null;
     const effectivePolicy = record.return_policy ?? (record.plan_source === "single_task" ? "checkout_delivery" : "retain_branch");
     const deliveryParked = effectivePolicy === "checkout_delivery" && child.state === "needs_human" && child.commit !== null && delivery?.status === "blocked" && delivery.reason === child.reason;
-    if (child.session !== undefined && child.session !== null)
-      throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid session`);
+    const session = child.session;
+    if (session !== undefined && session !== null) {
+      if (!isObject(session))
+        throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid session`);
+      const s = session;
+      const keyOk = s.key === null || typeof s.key === "string" && /^imm-[a-z0-9-]+-g[0-9]+-[0-9a-f]{12}$/.test(s.key) && s.key.length <= 36;
+      const generationOk = typeof s.generation === "number" && Number.isSafeInteger(s.generation) && s.generation >= 1;
+      const baselineOk = s.baseline === null || typeof s.baseline === "string";
+      const handleOk = s.handle === null || typeof s.handle === "string";
+      const entryOk = typeof s.entry_submitted === "boolean";
+      const attentionOk = s.attention === null || typeof s.attention === "string";
+      const progressOk = typeof s.no_progress === "number" && Number.isSafeInteger(s.no_progress) && s.no_progress >= 0;
+      const proof = s.exit_proof;
+      const proofOk = proof === null || isObject(proof) && proof.ok === true && proof.exited === true && typeof proof.handle === "string" && typeof proof.key === "string";
+      const handled = s.handled_interventions;
+      const handledOk = handled === undefined || Array.isArray(handled) && handled.every((d) => typeof d === "string" && d.length > 0);
+      if (!keyOk || !generationOk || !baselineOk || !handleOk || !entryOk || !attentionOk || !progressOk || !proofOk || !handledOk)
+        throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid session`);
+    }
     if (child.tracker_closed === true && child.state !== "integrated" && child.state !== "released" && !deliveryParked)
       throw new Error(`batch run state ${batchId} child ${child.task_id} closed its tracker Issue before integration`);
     if (child.lane_removed !== undefined || child.lane_retained !== undefined) {
@@ -18002,7 +18019,7 @@ init_batch_final_verification();
 init_batch_final_report();
 init_checkout_delivery();
 import { spawnSync as spawnSync19 } from "node:child_process";
-import { createHash as createHash24 } from "node:crypto";
+import { createHash as createHash25 } from "node:crypto";
 import { existsSync as existsSync17, realpathSync as realpathSync17 } from "node:fs";
 import { isAbsolute as isAbsolute11, join as join30 } from "node:path";
 import { readFileSync as readFileSync21 } from "node:fs";
@@ -18840,6 +18857,270 @@ init_batch_state();
 init_batch_git();
 init_role_prompt_bridge();
 init_plugin_source_skew();
+
+// plugins/immune-brain/runtime/unattended/batch_session_port.ts
+import { createHash as createHash24 } from "node:crypto";
+function isPortRefusal(result) {
+  return typeof result === "object" && result !== null && result.ok === false;
+}
+var LANE_EXECUTOR_ENV2 = "LANE_EXECUTOR_ENV";
+function foldTask(taskId, maxLen) {
+  let folded = taskId.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  if (!folded)
+    folded = "t";
+  if (folded.length > maxLen) {
+    folded = folded.slice(0, maxLen).replace(/-+$/g, "");
+    if (!folded)
+      folded = "t";
+  }
+  return folded;
+}
+function laneSessionKey(batchId, taskId, generation) {
+  if (!Number.isSafeInteger(generation) || generation <= 0)
+    throw new Error("laneSessionKey: generation must be a positive integer");
+  const digest = createHash24("sha256").update(`${batchId}\x00${taskId}\x00${String(generation)}`).digest("hex").slice(0, 12);
+  const digits = String(generation).length;
+  const maxFold = 36 - (4 + 2 + digits + 1 + 12);
+  const folded = foldTask(taskId, Math.max(1, maxFold));
+  return `imm-${folded}-g${generation}-${digest}`;
+}
+
+// plugins/immune-brain/runtime/unattended/child_session_reconciler.ts
+function baseSession(generation) {
+  return {
+    key: null,
+    generation,
+    baseline: null,
+    handle: null,
+    entry_submitted: false,
+    attention: null,
+    no_progress: 0,
+    exit_proof: null
+  };
+}
+function openEnv(interactionMode) {
+  return interactionMode === "parent_relayed" ? { [LANE_EXECUTOR_ENV2]: "headless" } : undefined;
+}
+function normalizePending(value) {
+  if (!value)
+    return null;
+  return typeof value === "string" ? { text: value, digest: `text:${value}` } : value;
+}
+function isHandled(session, digest) {
+  return (session.handled_interventions ?? []).includes(digest);
+}
+function markHandled(session, digest) {
+  if (isHandled(session, digest))
+    return session;
+  return { ...session, handled_interventions: [...session.handled_interventions ?? [], digest] };
+}
+async function reconcileChildSession(input) {
+  const { port, batchId, taskId, kernel, interactionMode, entry, laneCwd, onWriteAhead } = input;
+  const pendingInstruction = normalizePending(input.pendingInstruction);
+  const pendingCorrection = normalizePending(input.pendingCorrection);
+  let session = input.session ? { ...input.session } : { ...baseSession(1), baseline: kernel.recordRevision };
+  if (!session.key) {
+    session.key = laneSessionKey(batchId, taskId, session.generation || 1);
+    session.baseline = kernel.recordRevision;
+    session.handle = null;
+    session.entry_submitted = false;
+    session.attention = null;
+    if (!session.no_progress)
+      session.no_progress = 0;
+    session.exit_proof = null;
+    onWriteAhead?.({ ...session });
+  }
+  const key = session.key;
+  if (!session.handle) {
+    const found = await port.find(key);
+    if (!isPortRefusal(found)) {
+      if ("handle" in found) {
+        session.handle = found.handle;
+        session.entry_submitted = true;
+        return { session, action: "adopted" };
+      }
+    } else {
+      return { session, action: "held" };
+    }
+    const opened = await port.open({
+      key,
+      cwd: laneCwd,
+      label: taskId,
+      entry,
+      ...openEnv(interactionMode) ? { env: openEnv(interactionMode) } : {}
+    });
+    if (isPortRefusal(opened))
+      return { session, action: "held" };
+    session.handle = opened.handle;
+    session.entry_submitted = opened.entry_submitted;
+    if (opened.attention !== undefined)
+      session.attention = opened.attention ?? null;
+    return { session, action: "opened" };
+  }
+  const handle = session.handle;
+  const observed = await port.observe(handle);
+  if (isPortRefusal(observed))
+    return { session, action: "held" };
+  const state = observed.state;
+  if (state === "working" || state === "unknown")
+    return { session, action: "held" };
+  if (state === "blocked")
+    return { session, action: "held" };
+  if (!session.entry_submitted) {
+    if (state === "idle" || state === "done") {
+      const resumed = await port.resume(handle, entry);
+      if (isPortRefusal(resumed))
+        return { session, action: "held" };
+      session.entry_submitted = resumed.entry_submitted;
+      return { session, action: "resumed" };
+    }
+    if (state === "exited") {
+      return await stallOrProgress(port, session, { batchId, taskId, kernel, interactionMode, entry, laneCwd, state, onWriteAhead });
+    }
+    return { session, action: "held" };
+  }
+  if (pendingCorrection && !isHandled(session, pendingCorrection.digest) && (state === "idle" || state === "done")) {
+    const closed = await port.closeWithProof(handle, key);
+    if (isPortRefusal(closed))
+      return { session, action: "held" };
+    const nextGeneration = session.generation + 1;
+    const nextKey = laneSessionKey(batchId, taskId, nextGeneration);
+    const writeAhead = {
+      ...markHandled(session, pendingCorrection.digest),
+      key: nextKey,
+      generation: nextGeneration,
+      baseline: kernel.recordRevision,
+      handle: null,
+      entry_submitted: false,
+      attention: null,
+      exit_proof: null
+    };
+    onWriteAhead?.({ ...writeAhead });
+    const opened = await port.open({
+      key: nextKey,
+      cwd: laneCwd,
+      label: taskId,
+      entry: pendingCorrection.text,
+      ...openEnv(interactionMode) ? { env: openEnv(interactionMode) } : {}
+    });
+    if (isPortRefusal(opened)) {
+      return { session: { ...writeAhead, exit_proof: closed }, action: "held" };
+    }
+    session = {
+      ...writeAhead,
+      handle: opened.handle,
+      entry_submitted: opened.entry_submitted,
+      attention: opened.attention ?? null
+    };
+    return { session, action: "rotated" };
+  }
+  if (pendingInstruction && !isHandled(session, pendingInstruction.digest) && (state === "idle" || state === "done")) {
+    const sent = await port.send(handle, pendingInstruction.text);
+    if (isPortRefusal(sent))
+      return { session, action: "held" };
+    return { session: markHandled(session, pendingInstruction.digest), action: "sent" };
+  }
+  if (pendingInstruction && isHandled(session, pendingInstruction.digest) || pendingCorrection && isHandled(session, pendingCorrection.digest)) {}
+  if (kernel.settled || kernel.hasOpenDecision || kernel.hasReplan)
+    return { session, action: "held" };
+  return await stallOrProgress(port, session, { batchId, taskId, kernel, interactionMode, entry, laneCwd, state, onWriteAhead });
+}
+async function stallOrProgress(port, session, opts) {
+  const { batchId, taskId, kernel, interactionMode, entry, laneCwd, state, onWriteAhead } = opts;
+  if (kernel.recordRevision !== session.baseline) {
+    if (state === "idle" || state === "done") {
+      const resumed = await port.resume(session.handle, entry);
+      if (isPortRefusal(resumed))
+        return { session, action: "held" };
+      session = { ...session, baseline: kernel.recordRevision, no_progress: 0 };
+      return { session, action: "resumed" };
+    }
+    const closed = await port.closeWithProof(session.handle, session.key);
+    if (isPortRefusal(closed))
+      return { session, action: "held" };
+    const nextGeneration = session.generation + 1;
+    const nextKey = laneSessionKey(batchId, taskId, nextGeneration);
+    const writeAhead = {
+      ...session,
+      key: nextKey,
+      generation: nextGeneration,
+      baseline: kernel.recordRevision,
+      handle: null,
+      entry_submitted: false,
+      attention: null,
+      no_progress: 0,
+      exit_proof: null
+    };
+    onWriteAhead?.({ ...writeAhead });
+    const opened = await port.open({
+      key: nextKey,
+      cwd: laneCwd,
+      label: taskId,
+      entry,
+      ...openEnv(interactionMode) ? { env: openEnv(interactionMode) } : {}
+    });
+    if (isPortRefusal(opened)) {
+      session = { ...writeAhead, exit_proof: closed };
+      return { session, action: "held" };
+    }
+    session = {
+      ...writeAhead,
+      handle: opened.handle,
+      entry_submitted: opened.entry_submitted,
+      attention: opened.attention ?? null
+    };
+    return { session, action: "rotated" };
+  }
+  if (state === "exited" || interactionMode === "parent_relayed") {
+    const closed = await port.closeWithProof(session.handle, session.key);
+    if (isPortRefusal(closed))
+      return { session, action: "held" };
+    const noProgress = (session.no_progress ?? 0) + 1;
+    if (noProgress >= 2) {
+      session = { ...session, no_progress: noProgress, exit_proof: closed };
+      return { session, action: "parked_no_progress", parkedReason: "lane_executor_no_progress" };
+    }
+    const nextGeneration = session.generation + 1;
+    const nextKey = laneSessionKey(batchId, taskId, nextGeneration);
+    const writeAhead = {
+      ...session,
+      key: nextKey,
+      generation: nextGeneration,
+      baseline: kernel.recordRevision,
+      handle: null,
+      entry_submitted: false,
+      attention: null,
+      no_progress: noProgress,
+      exit_proof: null
+    };
+    onWriteAhead?.({ ...writeAhead });
+    const opened = await port.open({
+      key: nextKey,
+      cwd: laneCwd,
+      label: taskId,
+      entry,
+      ...openEnv(interactionMode) ? { env: openEnv(interactionMode) } : {}
+    });
+    if (isPortRefusal(opened)) {
+      session = { ...writeAhead, exit_proof: closed };
+      return { session, action: "held" };
+    }
+    session = {
+      ...writeAhead,
+      handle: opened.handle,
+      entry_submitted: opened.entry_submitted,
+      attention: opened.attention ?? null
+    };
+    return { session, action: "rotated" };
+  }
+  if ((state === "idle" || state === "done") && interactionMode === "interactive_host") {
+    session = { ...session, attention: "stalled_idle" };
+    return { session, action: "stalled_idle" };
+  }
+  return { session, action: "held" };
+}
+
+// plugins/immune-brain/runtime/unattended/batch_lanes.ts
 var PARALLEL_MISMATCH = "batch_parallel_mismatch";
 var TASK_ID_PATTERN2 = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 var MAX_LANE_OFFERS = 64;
@@ -19558,6 +19839,15 @@ async function runLaneBatch(input, persisted) {
   const persist = () => {
     record = writeBatchLaneRunState(input.root, record);
   };
+  const sessionPort = input.sessions;
+  if (sessionPort) {
+    if (record.session_provider == null) {
+      record = { ...record, session_provider: sessionPort.provider };
+      persist();
+    } else if (record.session_provider !== sessionPort.provider) {
+      return refuse2(input, record, "lane_session_unavailable", `recorded session provider ${record.session_provider} does not match ${sessionPort.provider}`);
+    }
+  }
   if (persisted && !isParentBranch(record.branch)) {
     const entries = porcelainEntries(input.root);
     if (entries && entries.length > 0) {
@@ -19650,7 +19940,7 @@ async function runLaneBatch(input, persisted) {
         task_id: request.task_id,
         kind: request.kind,
         text: request.text,
-        text_digest: `sha256:${createHash24("sha256").update(request.text).digest("hex")}`
+        text_digest: `sha256:${createHash25("sha256").update(request.text).digest("hex")}`
       }];
       persist();
       instruction = { task_id: request.task_id, kind: request.kind, accepted: true, reason: null };
@@ -19953,6 +20243,52 @@ async function runLaneBatch(input, persisted) {
     const failed = await enrollInLane(child.task_id);
     if (failed)
       return failed;
+  }
+  if (sessionPort) {
+    for (const child of [...record.children]) {
+      if (!child.lane)
+        continue;
+      if (child.state !== "enrolled" && child.state !== "lane_admitted")
+        continue;
+      const fresh = await readLaneProjection(input, child.lane.path, child.task_id);
+      if (fresh.error !== null)
+        continue;
+      const projection = fresh.projection;
+      const kernelFacts = {
+        recordRevision: projection.record_revision,
+        settled: projection.lifecycle === "done" && projection.completion_ready,
+        hasOpenDecision: (projection.open_user_decision_count ?? 0) > 0,
+        hasReplan: (projection.replan_required_ids?.length ?? 0) > 0
+      };
+      const interventions = (record.interventions ?? []).filter((item) => item.task_id === child.task_id);
+      const lastInstruction = [...interventions].reverse().find((item) => item.kind === "instruction");
+      const lastCorrection = [...interventions].reverse().find((item) => item.kind === "correction");
+      const mode = record.interaction_mode ?? "interactive_host";
+      const onWriteAhead = (writeAhead) => {
+        record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, session: writeAhead } : c);
+        persist();
+      };
+      const result = await reconcileChildSession({
+        port: sessionPort,
+        batchId: record.batch_id,
+        taskId: child.task_id,
+        session: child.session ?? null,
+        kernel: kernelFacts,
+        interactionMode: mode,
+        entry: `drive ${child.task_id}`,
+        laneCwd: child.lane.path,
+        pendingInstruction: lastInstruction ? { text: lastInstruction.text, digest: lastInstruction.text_digest } : null,
+        pendingCorrection: lastCorrection ? { text: lastCorrection.text, digest: lastCorrection.text_digest } : null,
+        onWriteAhead
+      });
+      if (JSON.stringify(result.session) !== JSON.stringify(child.session ?? null)) {
+        record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, session: result.session } : c);
+        persist();
+      }
+      if (result.action === "parked_no_progress") {
+        parkChild(child.task_id, "lane_executor_no_progress: two consecutive stalls without Kernel progress");
+      }
+    }
   }
   if (record.children.every((c) => c.state === "integrated" || c.state === "released")) {
     const declared = readDerivedFilesAt(input.root, record.base_head);
@@ -21096,11 +21432,11 @@ import { dirname as dirname17, join as join32 } from "node:path";
 import { tmpdir as tmpdir6 } from "node:os";
 
 // plugins/immune-brain/runtime/host-core/private_file.ts
-import { createHash as createHash25 } from "node:crypto";
+import { createHash as createHash26 } from "node:crypto";
 import { constants as constants8, closeSync as closeSync7, fstatSync as fstatSync4, ftruncateSync, lstatSync as lstatSync18, mkdirSync as mkdirSync13, openSync as openSync7, readSync, rmSync as rmSync12, writeSync } from "node:fs";
 import { join as join31 } from "node:path";
 function sessionHash(sessionId) {
-  return createHash25("sha256").update(sessionId).digest("hex");
+  return createHash26("sha256").update(sessionId).digest("hex");
 }
 function cacheDir(root, cacheName) {
   return join31(root, cacheName);
@@ -21799,7 +22135,7 @@ init_coordinator();
 init_batch_preflight();
 init_intent();
 init_storage();
-import { createHash as createHash26 } from "node:crypto";
+import { createHash as createHash27 } from "node:crypto";
 var UNCHANGED_CONTINUATION_LIMIT = 1;
 var USER_WAIT_GUIDANCE = "If the remaining step is an action only the user can perform, waiting for it is a valid stop: stop without repeating the request you already made.";
 function bindRun(binding) {
@@ -21813,7 +22149,7 @@ function releasesRunBinding(prompt, phase) {
   return phase === "planner" || phase === "brainstorm" || /^(?:stop|cancel|pause)(?:\s+(?:execution|the task|this run))?[.!\s]*$/i.test(prompt.trim()) || /^(?:请)?(?:停止|取消|暂停)(?:执行|任务|本次运行|这个任务)?[。！!\s]*$/.test(prompt.trim());
 }
 function digest(value) {
-  return createHash26("sha256").update(JSON.stringify(value)).digest("hex");
+  return createHash27("sha256").update(JSON.stringify(value)).digest("hex");
 }
 function hasContiguousLaneRebind(record, fromDigest) {
   if (!isLaneBatchRecord(record))
@@ -23086,7 +23422,7 @@ init_session_result_slot();
 init_host_port();
 import { execFileSync as execFileSync15 } from "node:child_process";
 import { accessSync as accessSync4, constants as constants11, existsSync as existsSync20, readFileSync as readFileSync24 } from "node:fs";
-import { createHash as createHash27 } from "node:crypto";
+import { createHash as createHash28 } from "node:crypto";
 import { delimiter as delimiter5, dirname as dirname18, join as join38 } from "node:path";
 import { fileURLToPath as fileURLToPath4 } from "node:url";
 var REVIEW_PROFILE_RECOVERY = "Set `agents.reviewer` (a user `agents.profiles` name, `host[:model][@effort]` or { host, model?, effort? }) in the user or project configuration, then call `advance_assurance`";
@@ -23160,7 +23496,7 @@ function git9(root, argv) {
   return execFileSync15("git", argv, { cwd: root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] });
 }
 function digest2(bytes) {
-  return `sha256:${createHash27("sha256").update(bytes).digest("hex")}`;
+  return `sha256:${createHash28("sha256").update(bytes).digest("hex")}`;
 }
 function reviewTreeState(root) {
   return {
@@ -23440,7 +23776,7 @@ ${receiptInstruction(profile.host, slotId, slot.result)}`,
 }
 
 // plugins/immune-brain/runtime/assurance/review_mediation.ts
-import { createHash as createHash28 } from "node:crypto";
+import { createHash as createHash29 } from "node:crypto";
 function extractVerdictJson(input) {
   if (typeof input === "string") {
     const first = input.indexOf("{");
@@ -23472,7 +23808,7 @@ function verdictFingerprint(raw) {
   });
 }
 function digestOfReviewerBytes(bytes) {
-  return `sha256:${createHash28("sha256").update(bytes).digest("hex")}`;
+  return `sha256:${createHash29("sha256").update(bytes).digest("hex")}`;
 }
 var RELEASED_REVIEW_RECOVERY = "Call advance_assurance to obtain a new Review reservation, then dispatch one fresh reviewer with the returned envelope unchanged";
 var RETAINED_REVIEW_RECOVERY = "Await the dispatched reviewer once (a Port session's await_command when the reservation carries one), then call submit_review once; do not poll submit_review and do not dispatch another reviewer";

@@ -64,8 +64,12 @@ import {
 import { createDefaultBatchGitPort, type BatchRunnerGitPort } from "./batch_git";
 import { LANE_EXECUTOR_HOSTS } from "../role_prompt_bridge";
 import { parentRuntimeSkew, pluginSourceSkewWarning } from "../plugin_source_skew";
+import type { BatchSessionPort } from "./batch_session_port";
+import { reconcileChildSession } from "./child_session_reconciler";
 
 export { LANE_EXECUTOR_HOSTS };
+
+export const advanceBatch = runLaneBatch;
 
 export type LaneAdmissionReason =
 	| "batch_lane_foreign_repository"
@@ -1039,6 +1043,15 @@ export async function runLaneBatch(
 	const persist = (): void => {
 		record = writeBatchLaneRunState(input.root, record);
 	};
+	const sessionPort = (input as { sessions?: BatchSessionPort }).sessions;
+	if (sessionPort) {
+		if (record.session_provider == null) {
+			record = { ...record, session_provider: sessionPort.provider };
+			persist();
+		} else if (record.session_provider !== sessionPort.provider) {
+			return refuse(input, record, "lane_session_unavailable", `recorded session provider ${record.session_provider} does not match ${sessionPort.provider}`);
+		}
+	}
 	// Lane writes that leaked into the coordinator checkout, restored only now,
 	// after authorization, and only when every dirty path is provably a Lane's.
 	if (persisted && !isParentBranch(record.branch)) {
@@ -1477,6 +1490,50 @@ export async function runLaneBatch(
 		persist();
 		const failed = await enrollInLane(child!.task_id);
 		if (failed) return failed;
+	}
+
+	if (sessionPort) {
+		for (const child of [...record.children]) {
+			if (!child.lane) continue;
+			if (child.state !== "enrolled" && child.state !== "lane_admitted") continue;
+			const fresh = await readLaneProjection(input, child.lane.path, child.task_id);
+			if (fresh.error !== null) continue;
+			const projection = fresh.projection;
+			const kernelFacts = {
+				recordRevision: projection.record_revision,
+				settled: projection.lifecycle === "done" && projection.completion_ready,
+				hasOpenDecision: (projection.open_user_decision_count ?? 0) > 0,
+				hasReplan: (projection.replan_required_ids?.length ?? 0) > 0,
+			};
+			const interventions = (record.interventions ?? []).filter((item) => item.task_id === child.task_id);
+			const lastInstruction = [...interventions].reverse().find((item) => item.kind === "instruction");
+			const lastCorrection = [...interventions].reverse().find((item) => item.kind === "correction");
+			const mode = (record.interaction_mode ?? "interactive_host") as "interactive_host" | "parent_relayed";
+			const onWriteAhead = (writeAhead: NonNullable<BatchLaneChildRun["session"]>): void => {
+				record.children = record.children.map((c) => (c.task_id === child.task_id ? { ...c, session: writeAhead } : c));
+				persist();
+			};
+			const result = await reconcileChildSession({
+				port: sessionPort,
+				batchId: record.batch_id,
+				taskId: child.task_id,
+				session: child.session ?? null,
+				kernel: kernelFacts,
+				interactionMode: mode,
+				entry: `drive ${child.task_id}`,
+				laneCwd: child.lane.path,
+				pendingInstruction: lastInstruction ? { text: lastInstruction.text, digest: lastInstruction.text_digest } : null,
+				pendingCorrection: lastCorrection ? { text: lastCorrection.text, digest: lastCorrection.text_digest } : null,
+				onWriteAhead,
+			});
+			if (JSON.stringify(result.session) !== JSON.stringify(child.session ?? null)) {
+				record.children = record.children.map((c) => (c.task_id === child.task_id ? { ...c, session: result.session } : c));
+				persist();
+			}
+			if (result.action === "parked_no_progress") {
+				parkChild(child.task_id, "lane_executor_no_progress: two consecutive stalls without Kernel progress");
+			}
+		}
 	}
 
 	// 4. Schedule and report. Handoffs are observations, never readiness.
