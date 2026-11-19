@@ -3,9 +3,9 @@
 // someone else, with its own Authority Store. This module admits offered Lanes,
 // enrolls children into them, commits their settled delivery on the lane branch
 // and integrates it into the batch branch. It never switches a Git worktree and
-// never names a workspace tool; only a delivered single-task Lane with exit
-// proof is removed (lane_cleanup.ts), and Initiative batch Lanes are never.
-// Defined by docs/specs/parallel-batch-lanes.spec.md and ADR 0013.
+// never names a workspace tool; every integrated child is cleaned up through
+// two-tier proof-based `closeWithProof` cleanup (lane_cleanup.ts, Spec
+// unified-lane-sessions D11). Defined by docs/specs/parallel-batch-lanes.spec.md and ADR 0013.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, realpathSync } from "node:fs";
@@ -24,7 +24,7 @@ import { readDerivedFilesAt } from "../derived_files";
 import { reusableFinalVerification, runFinalVerification, type FinalVerificationReport } from "./batch_final_verification";
 import { buildBatchFinalReport, returnBatchToCoordinator } from "./batch_final_report";
 import { deliverSingleTask } from "./checkout_delivery";
-import { cleanupSingleTaskLane, retainedLaneReason } from "./lane_cleanup";
+import { cleanupIntegratedChildLane, cleanupParentBranch, retainedLaneReason } from "./lane_cleanup";
 import { laneDecisionFacts } from "./lane_decision";
 import { frozenExecutorPreferences, frozenReviewProfile } from "./agent_profiles";
 import { resolveConfig } from "../config/layered_config";
@@ -55,7 +55,6 @@ import {
 	isLaneBatchRecord,
 	isRetiredLaneRecord,
 	isTerminalBatchState,
-	laneGenerationStore,
 	planSourceIdentity,
 	prepareBatchLaneRunState,
 	writeBatchLaneRunState,
@@ -205,7 +204,7 @@ export interface LaneSessionCloseRequest {
 	task_id: string;
 }
 
-/** Untrusted tool input for the Executor close rule (ADR 0038, S1). */
+/** Untrusted tool input for the retired Executor close rule (Spec unified-lane-sessions D11). Kept for Host type-compat; the batch ignores it. */
 export function parseLaneSessionClose(value: unknown): LaneSessionCloseRequest | undefined {
 	if (value === undefined || value === null) return undefined;
 	if (typeof value !== "object" || Array.isArray(value)) throw new Error("invalid lane_session_close: expected an object");
@@ -213,64 +212,6 @@ export function parseLaneSessionClose(value: unknown): LaneSessionCloseRequest |
 	if (Object.keys(rest).length > 0) throw new Error("invalid lane_session_close: unknown field");
 	if (typeof taskId !== "string" || !TASK_ID_PATTERN.test(taskId)) throw new Error("invalid lane_session_close: task_id is not a valid task id");
 	return { task_id: taskId };
-}
-
-/**
- * The Executor close rule: the coordinator may close a Lane session only once
- * its child is integrated and the child's audit pair is reachable from the
- * batch head, and only once. The Lane itself is untouched: closing a session
- * removes no worktree and no branch. Null means allowed.
- */
-export function decideLaneSessionClose(
-	record: BatchLaneRunStateRecord,
-	request: LaneSessionCloseRequest,
-	auditReachable: (taskId: string) => boolean,
-): string | null {
-	const child = record.children.find((c) => c.task_id === request.task_id);
-	if (!child || !child.lane) return `${request.task_id} has no Lane in this batch`;
-	if (child.state !== "integrated") return `${request.task_id} is ${child.state}, not integrated; its session stays for the user`;
-	if (!auditReachable(request.task_id)) return `${request.task_id}'s audit pair is not reachable from the batch head`;
-	return null;
-}
-
-/**
- * Decides the Parent's `lane_session_close`, and on acceptance records the
- * close before answering, so the Parent closes the session only after the
- * record exists.
- */
-function applyLaneSessionClose(
-	input: StartBatchInput,
-	record: BatchLaneRunStateRecord,
-	lanes: BatchLaneGitPort,
-	persist: () => void,
-): BatchLaneRunReport["lane_session_close"] {
-	const request = input.lane_session_close;
-	if (!request) return undefined;
-	// Already recorded, by an earlier request or by the integrating tick: the same record again.
-	const recorded = record.session_closes?.find((c) => c.task_id === request.task_id);
-	if (recorded) return { task_id: request.task_id, accepted: true, reason: null, recorded_at: recorded.at };
-	const head = expectedBatchHead(record);
-	const refusal = decideLaneSessionClose(record, request, (taskId) => lanes.auditReachable({ root: input.root, head, task_id: taskId }));
-	if (refusal) return { task_id: request.task_id, accepted: false, reason: `batch_lane_session_close_refused: ${refusal}`, recorded_at: null };
-	record.session_closes = [...(record.session_closes ?? []), { at: input.now, task_id: request.task_id }];
-	persist();
-	return { task_id: request.task_id, accepted: true, reason: null, recorded_at: input.now };
-}
-
-/**
- * Records the close of every Lane session the close rule now allows, at the tick
- * that makes it allowed (issue #426 F6). A finished batch admits no further
- * entry, so the Parent could not otherwise ask after the last integration; it
- * reads `session_closes` from the report instead. Recording allows a close; it
- * closes nothing, and the Lane and its branch stay.
- */
-function recordClosableSessions(input: StartBatchInput, record: BatchLaneRunStateRecord, lanes: BatchLaneGitPort, persist: () => void): void {
-	const head = expectedBatchHead(record);
-	const due = record.children.filter((c) => c.state === "integrated" && c.lane && !record.session_closes?.some((r) => r.task_id === c.task_id) &&
-		decideLaneSessionClose(record, { task_id: c.task_id }, (taskId) => lanes.auditReachable({ root: input.root, head, task_id: taskId })) === null);
-	if (!due.length) return;
-	record.session_closes = [...(record.session_closes ?? []), ...due.map((c) => ({ at: input.now, task_id: c.task_id }))];
-	persist();
 }
 
 /** How many design-level coordinator corrections one child may receive. */
@@ -611,32 +552,66 @@ const TERMINAL_NEXT_ACTIONS: Record<string, string> = {
 // the runtime never deletes or recreates a Lane it created.
 export const LANE_RETAINED = "batch_lane_retained";
 export const LANE_REDO_RETAINED = "batch_lane_redo_retained";
-const NO_EXIT_EVIDENCE = "no Host reports a trusted Executor exit";
 
 function redoRetained(cause: string | null | undefined): string {
 	if (cause?.startsWith(`${LANE_REDO_RETAINED}:`)) return cause;
-	return `${LANE_REDO_RETAINED}: ${NO_EXIT_EVIDENCE}, so the Lane, its branch and its files are kept and no redo Lane is created${cause ? ` (${cause})` : ""}`;
+	return `${LANE_REDO_RETAINED}: no redo Lane is created, so the Lane, its branch and its files are kept${cause ? ` (${cause})` : ""}`;
 }
 
-/** Integrated children whose runtime-created Lane is still present; delivery never implies cleanup. */
+/** Two-tier proof-based cleanup (Spec unified-lane-sessions D11): only retained Lanes are reported; removed Lanes are gone. */
 export function retainedLaneNotices(root: string, record: BatchLaneRunStateRecord, lanes: BatchLaneGitPort = createDefaultLaneGitPort()): NonNullable<BatchLaneRunReport["lane_refusals"]> {
 	if (!isParentBranch(record.branch)) return [];
-	// A checkout return records its cleanup decision, so its notice names the failed condition.
-	if (effectiveReturnPolicy(record) === "checkout_delivery")
-		return record.children
-			.filter(child => child.lane && (child.lane_retained || (child.state === "needs_human" && child.commit !== null)) && lanes.inspectLane(root, child.lane.path).exists)
+	return record.children
+		.filter(child => child.lane && (child.lane_retained || child.state === "needs_human") && lanes.inspectLane(root, child.lane.path).exists)
 			.map(child => ({ task_id: child.task_id, path: child.lane!.path,
 				reason: retainedLaneReason(child.lane_retained?.condition ?? `the return step is parked (${child.reason})`) }));
-	return record.children
-		.filter(child => child.state === "integrated" && child.lane && lanes.inspectLane(root, child.lane.path).exists)
-		.map(child => ({ task_id: child.task_id, path: child.lane!.path,
-			reason: `${LANE_RETAINED}: ${NO_EXIT_EVIDENCE}; the delivered Lane and every file in it are kept` }));
+}
+
+/**
+ * Two-tier proof-based per-child cleanup (Spec unified-lane-sessions D11).
+ * For one integrated child, calls `closeWithProof(handle, key)` and removes
+ * the Lane worktree and `imm-lane/<slug>/<task_id>` only when the proof and
+ * per-child Git conditions hold. Parked, stopped and redo children are never
+ * passed here by the caller. Returns the record update, or null when already decided.
+ */
+export async function cleanupOneIntegratedChild(input: {
+	root: string;
+	branch: string | undefined;
+	child: BatchLaneChildRun;
+	sessions: BatchSessionPort | null | undefined;
+}): Promise<{ lane_removed?: BatchLaneChildRun["lane_removed"]; lane_retained?: BatchLaneChildRun["lane_retained"] } | null> {
+	const { child, sessions } = input;
+	if (child.state !== "integrated" || !child.lane || child.lane_removed || child.lane_retained || child.redo_head) return null;
+	const laneBranch = child.lane.branch;
+	const parentRef = input.branch ?? "";
+	if (!parentRef || !isParentBranch(parentRef)) return { lane_retained: { condition: "the batch branch is not a Parent branch" } };
+	const session = child.session;
+	if (!sessions || !session?.handle || !session?.key) {
+		return { lane_retained: { condition: "no session was supervised for this child, so no exit proof was observed" } };
+	}
+	let proof: unknown;
+	try {
+		proof = await sessions.closeWithProof(session.handle, session.key);
+	} catch (error) {
+		return { lane_retained: { condition: `closeWithProof threw: ${error instanceof Error ? error.message : String(error)}` } };
+	}
+	if (!proof || typeof proof !== "object" || (proof as { ok?: unknown }).ok !== true) {
+		const refusal = proof as { code?: unknown; reason?: unknown };
+		const code = typeof refusal.code === "string" ? refusal.code : "unproven";
+		const reason = typeof refusal.reason === "string" ? refusal.reason : "closeWithProof did not prove exit";
+		return { lane_retained: { condition: `${reason} (${code})` } };
+	}
+	const outcome = cleanupIntegratedChildLane({ root: input.root, lanePath: child.lane.path, laneBranch, parentRef, proof });
+	if (outcome.status === "removed") {
+		return { lane_removed: { exit: outcome.exit, worktree: outcome.worktree, branches: outcome.branches } };
+	}
+	return { lane_retained: { condition: outcome.condition } };
 }
 
 /** Delivery and cleanup are reported apart; only the user removes a retained Lane. */
 export function retainedLaneAction(refusals: BatchLaneRunReport["lane_refusals"]): string {
 	const count = refusals?.filter(r => r.reason.startsWith(`${LANE_RETAINED}:`)).length ?? 0;
-	return count ? ` Cleanup was not performed: ${count} runtime-created Lane(s) are kept because ${NO_EXIT_EVIDENCE}. Stop each Lane's Executor, keep the files you need, then remove the Lane yourself; removing it does not enable an automatic redo.` : "";
+	return count ? ` Cleanup was not performed: ${count} runtime-created Lane(s) are kept with named proof or Git conditions. Stop each Lane's Executor, keep the files you need, then remove the Lane yourself; removing it does not enable an automatic redo.` : "";
 }
 
 /**
@@ -710,7 +685,7 @@ function laneReport(
 	record: BatchLaneRunStateRecord,
 	reason: string | null,
 	nextAction: string,
-	extra: { handoffs?: BatchLaneHandoff[]; refusals?: BatchLaneRunReport["lane_refusals"]; tracker?: TrackerObservations; final?: FinalVerificationReport; instruction?: BatchLaneRunReport["lane_instruction"]; sessionClose?: BatchLaneRunReport["lane_session_close"] } = {},
+	extra: { handoffs?: BatchLaneHandoff[]; refusals?: BatchLaneRunReport["lane_refusals"]; tracker?: TrackerObservations; final?: FinalVerificationReport; instruction?: BatchLaneRunReport["lane_instruction"] } = {},
 ): BatchLaneRunReport {
 	return {
 		contract: "assurance_kernel/batch_run_report/v1",
@@ -729,8 +704,6 @@ function laneReport(
 		...(record.final_report ? { final_report: record.final_report } : {}),
 		...(record.interventions?.length ? { interventions: record.interventions } : {}),
 		...(extra.instruction ? { lane_instruction: extra.instruction } : {}),
-		...(record.session_closes?.length ? { session_closes: record.session_closes } : {}),
-		...(extra.sessionClose ? { lane_session_close: extra.sessionClose } : {}),
 		...(record.delegated_revisions?.length ? { delegated_revisions: record.delegated_revisions } : {}),
 		...(record.reseals?.length ? { reseals: record.reseals } : {}),
 		...(record.lane_rebinds?.length ? { lane_rebinds: record.lane_rebinds } : {}),
@@ -935,13 +908,10 @@ export async function runLaneBatch(
 			const tracker = record.batch_state === "completed"
 				? await closeIntegratedIssues(input, record, () => { record = writeBatchLaneRunState(input.root, record); })
 				: [];
-			// Integrated children's sessions are closed after the batch ends too.
-			const sessionClose = applyLaneSessionClose(input, record, lanes, () => { record = writeBatchLaneRunState(input.root, record); });
 			return finalizeLane(input.root, record, `terminal state already reached: ${record.batch_state}`, "", {
 				handoffs: record.batch_state === "completed" ? releaseHandoffs(input, record, lanes) : [],
 				refusals: retainedLaneNotices(input.root, record, lanes),
 				tracker,
-				sessionClose,
 			});
 		}
 		if (record.batch_state === "needs_human") {
@@ -1154,7 +1124,6 @@ export async function runLaneBatch(
 			instruction = { task_id: request.task_id, kind: request.kind, accepted: true, reason: null };
 		}
 	}
-	const sessionClose = applyLaneSessionClose(input, record, lanes, persist);
 	const refusals: NonNullable<BatchLaneRunReport["lane_refusals"]> = [];
 
 	// A parked child ends only itself and its dependents; the batch keeps moving
@@ -1421,7 +1390,23 @@ export async function runLaneBatch(
 
 	// Close each integrated child's Issue now that its commit is on the batch branch.
 	const tracker = await closeIntegratedIssues(input, record, persist);
-	recordClosableSessions(input, record, lanes, persist);
+
+	// Two-tier proof-based per-child cleanup (Spec unified-lane-sessions D11):
+	// for retain_branch batches, every integrated child closes its session with
+	// proof and removes its worktree + imm-lane branch now, leaving siblings
+	// and the batch branch alone. For checkout_delivery batches cleanup is
+	// deferred until after deliverSingleTask succeeds in the completion block
+	// below: a parked delivery must leave the Lane in place with no
+	// lane_removed/lane_retained decision, otherwise a needs_human child would
+	// carry lane_removed and fail validation.
+	if (effectiveReturnPolicy(record) === "retain_branch") {
+		for (const child of [...record.children]) {
+			const update = await cleanupOneIntegratedChild({ root: input.root, branch: record.branch, child, sessions: sessionPort });
+			if (!update) continue;
+			record.children = record.children.map(c => c.task_id === child.task_id ? { ...c, ...update } : c);
+			persist();
+		}
+	}
 
 	// New records create their Lanes but never remove them; legacy records still admit offered paths.
 	refusals.push(...retainedLaneNotices(input.root, record, lanes));
@@ -1574,15 +1559,37 @@ export async function runLaneBatch(
 						record.children = record.children.map(c => c.task_id === child.task_id ? { ...c, state: "needs_human", reason: delivery.reason } : c);
 						record.batch_state = "needs_human";
 						persist();
-						return finalizeLane(input.root, record, delivery.reason!, "", { refusals: [...refusals, ...retainedLaneNotices(input.root, record, lanes)], tracker, instruction, sessionClose, ...(final ? { final } : {}) });
+						return finalizeLane(input.root, record, delivery.reason!, "", { refusals: [...refusals, ...retainedLaneNotices(input.root, record, lanes)], tracker, instruction, ...(final ? { final } : {}) });
 					}
-					persist(); // The delivery is recorded before any cleanup step.
-					const outcome = cleanupSingleTaskLane({ root: input.root, lanePath: child.lane!.path, laneBranch: child.lane!.branch,
-						parentRef: record.branch, generation: laneGenerationStore(input.root, record.batch_id).read(),
-						observation: input.lane_exit_observation });
-					record.children = record.children.map(c => c.task_id !== child.task_id ? c : outcome.status === "removed"
-						? { ...c, lane_removed: { exit: outcome.exit, worktree: outcome.worktree, branches: outcome.branches } }
-						: { ...c, lane_retained: { condition: outcome.condition } });
+					persist(); // The delivery is recorded before the batch-branch cleanup step.
+					// Two-tier cleanup for single-task checkout_delivery: tier 1 was
+					// deferred until delivery succeeded (a parked delivery leaves the
+					// Lane untouched). Now close with proof and remove the worktree +
+					// imm-lane branch, then delete refs/heads/imm/<slug>.
+					// Under retain_branch this never runs and the branch is kept.
+					const fresh = record.children[0]!;
+					if (!fresh.lane_removed && !fresh.lane_retained) {
+						const update = await cleanupOneIntegratedChild({ root: input.root, branch: record.branch, child: fresh, sessions: sessionPort });
+						if (update) {
+							record.children = record.children.map(c => c.task_id === fresh.task_id ? { ...c, ...update } : c);
+							persist();
+						}
+					}
+					const current = record.children[0]!;
+					if (current.lane_removed && record.branch && isParentBranch(record.branch)) {
+						const parent = cleanupParentBranch({ root: input.root, parentRef: record.branch });
+						if (parent.removed) {
+							record.children = record.children.map(c => c.task_id === current.task_id
+								? { ...c, lane_removed: { ...current.lane_removed!, branches: [...current.lane_removed!.branches, record.branch!.replace("refs/heads/", "")] } } : c);
+							persist();
+						} else if (parent.condition) {
+							// The Lane itself is gone; keep lane_removed (never set
+							// lane_retained alongside it) and surface the
+							// parent-branch condition through refusals.
+							refusals.push({ task_id: current.task_id, path: current.lane_removed!.worktree,
+								reason: retainedLaneReason(parent.condition) });
+						}
+					}
 				} else {
 					const delivery = unverified ? { ...record.final_report.return_to_coordinator, status: "blocked" as const, reason: unverified }
 						: deliverSingleTask(input.root, record.base_head, record.final_report.head);
@@ -1590,9 +1597,29 @@ export async function runLaneBatch(
 					if (delivery.status === "blocked") {
 						record.batch_state = "needs_human";
 						persist();
-						return finalizeLane(input.root, record, delivery.reason!, "", { refusals: [...refusals, ...retainedLaneNotices(input.root, record, lanes)], tracker, instruction, sessionClose, ...(final ? { final } : {}) });
+						return finalizeLane(input.root, record, delivery.reason!, "", { refusals: [...refusals, ...retainedLaneNotices(input.root, record, lanes)], tracker, instruction, ...(final ? { final } : {}) });
 					}
 					persist();
+					// Tier 1 was deferred for checkout_delivery: now that delivery
+					// succeeded, close each integrated child with proof and remove
+					// its worktree + imm-lane branch, then delete the shared Parent
+					// branch only when every child was removed.
+					for (const child of [...record.children]) {
+						if (child.lane_removed || child.lane_retained) continue;
+						const update = await cleanupOneIntegratedChild({ root: input.root, branch: record.branch, child, sessions: sessionPort });
+						if (!update) continue;
+						record.children = record.children.map(c => c.task_id === child.task_id ? { ...c, ...update } : c);
+						persist();
+					}
+					if (record.branch && isParentBranch(record.branch) && record.children.length > 1 &&
+						record.children.every(c => c.lane_removed)) {
+						const parent = cleanupParentBranch({ root: input.root, parentRef: record.branch });
+						if (!parent.removed && parent.condition) {
+							// Parent remains; surface through refusals. Per-child Lanes stay removed.
+							refusals.push({ task_id: record.children[0]!.task_id, path: record.children[0]!.lane!.path,
+								reason: retainedLaneReason(parent.condition) });
+						}
+					}
 				}
 			} else record.final_report.return_to_coordinator = returnBatchToCoordinator(input.root, record.final_report.head, final ?? null);
 		}
@@ -1609,7 +1636,7 @@ export async function runLaneBatch(
 				? "Every child is integrated but the batch did not pass its final verification; inspect the failing commands against the delivered content. Integrated commits were not rolled back."
 				: "",
 			{ handoffs: releaseHandoffs(input, record, lanes), refusals: isCheckout ? [...refusals, ...retainedLaneNotices(input.root, record, lanes)] : refusals,
-				tracker, instruction, sessionClose, ...(final ? { final } : {}) },
+				tracker, instruction, ...(final ? { final } : {}) },
 		);
 	}
 	const handoffs: BatchLaneHandoff[] = [];
@@ -1664,7 +1691,7 @@ export async function runLaneBatch(
 		persist();
 		return finalizeLane(input.root, record, reloadRequired,
 			"Reload the Host so it loads the Parent tip's plugin build (Claude Code: /mcp reconnect; Pi: /reload), then resume the batch with a fresh literal-user confirmation. A resume without reload admits the child with runtime_skew_acknowledged recorded.",
-			{ handoffs, refusals, tracker, instruction, sessionClose });
+			{ handoffs, refusals, tracker, instruction });
 	}
 	if (!inFlight.length && (!startable.length || overBudget)) {
 		const parked = record.children.some((c) => c.state === "needs_human" || c.state === "skipped_blocked");
@@ -1679,7 +1706,7 @@ export async function runLaneBatch(
 			record,
 			parkedMessage ?? (parked ? "a parked child needs a human decision" : overBudget ? `max_children budget exhausted (${record.budget.max_children})` : "no child can start"),
 			"",
-			{ refusals, tracker, instruction, sessionClose },
+			{ refusals, tracker, instruction },
 		);
 	}
 	if (!overBudget && !isParentBranch(record.branch)) {
@@ -1701,7 +1728,7 @@ export async function runLaneBatch(
 				? `child ${reviewOpen[0]} holds an open Review reservation`
 				: `children ${reviewOpen.join(", ")} hold open Review reservations`,
 			"Submit each reserved foreground Review verdict in its own Lane, then call start_unattended_batch again to continue.",
-			{ handoffs, refusals, tracker, instruction, sessionClose },
+			{ handoffs, refusals, tracker, instruction },
 		);
 	}
 	return laneReport(
@@ -1712,6 +1739,6 @@ export async function runLaneBatch(
 			: handoffs.some((h) => h.role === "lane-steward" && h.action === "provision")
 				? "Provide a Lane for each provision handoff, then call start_unattended_batch again with lane_offers."
 				: "Run each executor handoff in its Lane. When a Lane finishes, call start_unattended_batch again with the same Initiative.",
-		{ handoffs, refusals, tracker, instruction, sessionClose },
+		{ handoffs, refusals, tracker, instruction },
 	);
 }

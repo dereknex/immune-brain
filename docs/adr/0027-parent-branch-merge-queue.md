@@ -90,6 +90,28 @@ deleted automatically later.
 Initiative (multi-child) Lanes stay under the retained-Lane rule below: no
 Executor exit is observed for them, so they remain retained.
 
+## Amendment: two-tier proof-based cleanup (unified-lane-sessions S6)
+
+Supersedes the S4 single-task-only rule and the retained-Lane rule below for
+session Lanes. For every integrated child of any agreement (single-task or
+Initiative, Host or daemon), `advanceBatch` calls
+`BatchSessionPort.closeWithProof(handle, key)`. Only when that call returns a
+proven `exited` exit proof bound to `(handle, key)` and per-child Git
+conditions hold (clean Lane worktree by
+`git status --porcelain --untracked-files=all`, `refs/heads/imm-lane/<slug>/<task_id>`
+ancestor of the batch branch) does cleanup remove that child's Lane worktree
+and `imm-lane/<slug>/<task_id>`, recording `lane_removed` with the exit proof
+while leaving sibling Lanes and `refs/heads/imm/<slug>` untouched. Only when
+the whole batch completes under `return_policy: checkout_delivery` and
+`deliverSingleTask` succeeds (with `refs/heads/imm/<slug>` not checked out in
+any worktree) is `refs/heads/imm/<slug>` deleted; under `retain_branch` it is
+kept. Any failed proof (`unknown`/`timeout`/`events_lost`, foreign or
+superseded handle/key) or failed Git condition retains the Lane and reports
+`batch_lane_retained` naming the condition, with no time-based relaxation.
+Parked, stopped and redo children are never removed. `session_closes` and
+`closeRecordUnproven` are retired: `closeWithProof` owns closure, and the
+Parent never runs `imm-session close` from a batch record.
+
 ## Amendment: single-task Herdr execution
 
 The owner's 2026-11-05 correction replaces Spec drive-always-lanes D3 inside

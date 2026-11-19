@@ -7170,8 +7170,6 @@ function validateLaneRecordShape(value, batchId) {
   }
   if (record.interventions !== undefined && (!Array.isArray(record.interventions) || record.interventions.some((i) => typeof i !== "object" || i === null || typeof i.task_id !== "string" || i.kind !== "instruction" && i.kind !== "correction" || typeof i.text !== "string" || typeof i.text_digest !== "string")))
     throw new Error(`batch run state ${batchId} has an invalid interventions list`);
-  if (record.session_closes !== undefined && (!Array.isArray(record.session_closes) || record.session_closes.some((c) => !isObject(c) || typeof c.task_id !== "string" || !isCanonicalTimestamp(c.at))))
-    throw new Error(`batch run state ${batchId} has an invalid session_closes list`);
   if (record.revision_delegation !== undefined && (!isObject(record.revision_delegation) || Object.keys(record.revision_delegation).join() !== "confirmation_time" || !isCanonicalTimestamp(record.revision_delegation.confirmation_time)))
     throw new Error(`batch run state ${batchId} has an invalid revision_delegation`);
   if (record.delegated_revisions !== undefined && (!Array.isArray(record.delegated_revisions) || record.delegated_revisions.some((r) => !isObject(r) || typeof r.task_id !== "string" || !isRevision(r.from_revision) || !isRevision(r.to_revision) || r.to_revision <= r.from_revision || !isHash(r.intent_content_hash) || typeof r.confirmation_ref !== "string" || !r.confirmation_ref.startsWith(`delegated-batch:${batchId}@`) || !isCanonicalTimestamp(r.at))))
@@ -7236,7 +7234,8 @@ function validateLaneRecordShape(value, batchId) {
     if (child.lane_removed !== undefined || child.lane_retained !== undefined) {
       const { lane_removed: removed, lane_retained: retained } = child;
       const exit = isObject(removed) && isObject(removed.exit) ? removed.exit : null;
-      if (child.state !== "integrated" && child.state !== "released" || removed !== undefined === (retained !== undefined) || removed !== undefined && (!exit || !Number.isSafeInteger(exit.generation) || exit.code !== 0 || exit.signal !== null || typeof removed.worktree !== "string" || !Array.isArray(removed.branches)) || retained !== undefined && (!isObject(retained) || typeof retained.condition !== "string" || !retained.condition))
+      const proofOk = !!exit && exit.ok === true && exit.exited === true && typeof exit.handle === "string" && !!exit.handle && (typeof exit.key === "string" || typeof exit.session_key === "string");
+      if (child.state !== "integrated" && child.state !== "released" || removed !== undefined === (retained !== undefined) || removed !== undefined && (!proofOk || typeof removed.worktree !== "string" || !Array.isArray(removed.branches)) || retained !== undefined && (!isObject(retained) || typeof retained.condition !== "string" || !retained.condition))
         throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid lane cleanup record`);
     }
     const skew = child.runtime_skew_acknowledged;
@@ -18064,14 +18063,29 @@ function git8(cwd, ...args) {
   return spawnSync18("git", ["--no-optional-locks", "-C", cwd, ...args], { encoding: "utf8" });
 }
 function retainedLaneReason(condition) {
-  return `${LANE_RETAINED_REASON}: ${condition}; the Lane worktree and both branches are kept`;
+  return `${LANE_RETAINED_REASON}: ${condition}; the Lane worktree and branch are kept`;
 }
-function cleanupSingleTaskLane(input) {
+function proofCondition(proof) {
+  if (!proof || typeof proof !== "object")
+    return "no exit proof was returned for this Lane session";
+  const p = proof;
+  if (p.ok !== true || p.exited !== true) {
+    const code = typeof p.code === "string" ? String(p.code) : "unproven";
+    const reason = typeof p.reason === "string" ? String(p.reason) : "closeWithProof did not prove exit";
+    return `${reason} (${code})`;
+  }
+  if (typeof p.handle !== "string" || !p.handle)
+    return "the exit proof carries no handle";
+  if (typeof p.key !== "string" && typeof p.session_key !== "string")
+    return "the exit proof carries no session key";
+  return null;
+}
+function cleanupIntegratedChildLane(input) {
   const retain = (condition) => ({ status: "retained", condition });
-  const proof = exitProofCondition(input.generation, input.observation);
-  if (proof)
-    return retain(proof);
-  const exit = input.observation ?? input.generation.exit;
+  const unproven = proofCondition(input.proof);
+  if (unproven)
+    return retain(unproven);
+  const exit = input.proof;
   const status = git8(input.lanePath, "status", "--porcelain", "--untracked-files=all");
   if (status.status !== 0)
     return retain("the Lane status is unreadable");
@@ -18096,17 +18110,25 @@ function cleanupSingleTaskLane(input) {
   const removed = git8(input.root, "worktree", "remove", input.lanePath);
   if (removed.status !== 0)
     return retain(`the Lane worktree could not be removed: ${removed.stderr.trim()}`);
-  for (const [ref, tip] of [[laneRef, laneTip.stdout.trim()], [input.parentRef, parentTip.stdout.trim()]]) {
-    const deleted = git8(input.root, "update-ref", "-d", ref, tip);
-    if (deleted.status !== 0)
-      return retain(`${ref.replace("refs/heads/", "")} could not be removed: ${deleted.stderr.trim()}`);
-  }
-  return {
-    status: "removed",
-    exit,
-    worktree: input.lanePath,
-    branches: [input.laneBranch, input.parentRef.replace("refs/heads/", "")]
-  };
+  const deleted = git8(input.root, "update-ref", "-d", laneRef, laneTip.stdout.trim());
+  if (deleted.status !== 0)
+    return retain(`${laneRef.replace("refs/heads/", "")} could not be removed: ${deleted.stderr.trim()}`);
+  return { status: "removed", exit, worktree: input.lanePath, branches: [input.laneBranch] };
+}
+function cleanupParentBranch(input) {
+  const listed = git8(input.root, "worktree", "list", "--porcelain");
+  if (listed.status !== 0)
+    return { removed: false, condition: "the worktree list is unreadable" };
+  if (listed.stdout.split(`
+`).includes(`branch ${input.parentRef}`))
+    return { removed: false, condition: `${input.parentRef.replace("refs/heads/", "")} is checked out in a worktree` };
+  const tip = git8(input.root, "rev-parse", "--verify", "--quiet", `${input.parentRef}^{commit}`);
+  if (tip.status !== 0)
+    return { removed: false, condition: "the batch branch is unreadable" };
+  const deleted = git8(input.root, "update-ref", "-d", input.parentRef, tip.stdout.trim());
+  if (deleted.status !== 0)
+    return { removed: false, condition: `${input.parentRef.replace("refs/heads/", "")} could not be removed: ${deleted.stderr.trim()}` };
+  return { removed: true };
 }
 
 // plugins/immune-brain/runtime/unattended/lane_decision.ts
@@ -18500,7 +18522,6 @@ async function completedParentReport(root, initiativeSlug, readInitiative, track
     final_verification: batch.final_verification_result,
     ...sync ? { tracker: sync } : {},
     ...retained.length ? { lane_refusals: retained } : {},
-    ...isLaneBatchRecord(batch) && batch.session_closes?.length ? { session_closes: batch.session_closes } : {},
     reason: sync?.status === "failed" ? "Local Parent completion proved; tracker synchronization failed" : null,
     next_action: (sync?.status === "failed" ? sync.message : "Parent delivery and final verification passed") + (retained.length ? "." : "") + retainedLaneAction(retained),
     created_at: new Date().toISOString(),
@@ -19069,39 +19090,6 @@ function parseLaneSessionClose(value) {
     throw new Error("invalid lane_session_close: task_id is not a valid task id");
   return { task_id: taskId };
 }
-function decideLaneSessionClose(record, request, auditReachable) {
-  const child = record.children.find((c) => c.task_id === request.task_id);
-  if (!child || !child.lane)
-    return `${request.task_id} has no Lane in this batch`;
-  if (child.state !== "integrated")
-    return `${request.task_id} is ${child.state}, not integrated; its session stays for the user`;
-  if (!auditReachable(request.task_id))
-    return `${request.task_id}'s audit pair is not reachable from the batch head`;
-  return null;
-}
-function applyLaneSessionClose(input, record, lanes, persist) {
-  const request = input.lane_session_close;
-  if (!request)
-    return;
-  const recorded = record.session_closes?.find((c) => c.task_id === request.task_id);
-  if (recorded)
-    return { task_id: request.task_id, accepted: true, reason: null, recorded_at: recorded.at };
-  const head = expectedBatchHead(record);
-  const refusal = decideLaneSessionClose(record, request, (taskId) => lanes.auditReachable({ root: input.root, head, task_id: taskId }));
-  if (refusal)
-    return { task_id: request.task_id, accepted: false, reason: `batch_lane_session_close_refused: ${refusal}`, recorded_at: null };
-  record.session_closes = [...record.session_closes ?? [], { at: input.now, task_id: request.task_id }];
-  persist();
-  return { task_id: request.task_id, accepted: true, reason: null, recorded_at: input.now };
-}
-function recordClosableSessions(input, record, lanes, persist) {
-  const head = expectedBatchHead(record);
-  const due = record.children.filter((c) => c.state === "integrated" && c.lane && !record.session_closes?.some((r) => r.task_id === c.task_id) && decideLaneSessionClose(record, { task_id: c.task_id }, (taskId) => lanes.auditReachable({ root: input.root, head, task_id: taskId })) === null);
-  if (!due.length)
-    return;
-  record.session_closes = [...record.session_closes ?? [], ...due.map((c) => ({ at: input.now, task_id: c.task_id }))];
-  persist();
-}
 var MAX_COORDINATOR_CORRECTIONS = 2;
 var CORRECTION_LIMIT_REACHED = "batch_correction_limit_reached";
 var LANE_CONTRACT_MISMATCH = "batch_lane_contract_mismatch";
@@ -19331,30 +19319,53 @@ var TERMINAL_NEXT_ACTIONS = {
 };
 var LANE_RETAINED = "batch_lane_retained";
 var LANE_REDO_RETAINED = "batch_lane_redo_retained";
-var NO_EXIT_EVIDENCE = "no Host reports a trusted Executor exit";
 function redoRetained(cause) {
   if (cause?.startsWith(`${LANE_REDO_RETAINED}:`))
     return cause;
-  return `${LANE_REDO_RETAINED}: ${NO_EXIT_EVIDENCE}, so the Lane, its branch and its files are kept and no redo Lane is created${cause ? ` (${cause})` : ""}`;
+  return `${LANE_REDO_RETAINED}: no redo Lane is created, so the Lane, its branch and its files are kept${cause ? ` (${cause})` : ""}`;
 }
 function retainedLaneNotices(root, record, lanes = createDefaultLaneGitPort()) {
   if (!isParentBranch(record.branch))
     return [];
-  if (effectiveReturnPolicy(record) === "checkout_delivery")
-    return record.children.filter((child) => child.lane && (child.lane_retained || child.state === "needs_human" && child.commit !== null) && lanes.inspectLane(root, child.lane.path).exists).map((child) => ({
-      task_id: child.task_id,
-      path: child.lane.path,
-      reason: retainedLaneReason(child.lane_retained?.condition ?? `the return step is parked (${child.reason})`)
-    }));
-  return record.children.filter((child) => child.state === "integrated" && child.lane && lanes.inspectLane(root, child.lane.path).exists).map((child) => ({
+  return record.children.filter((child) => child.lane && (child.lane_retained || child.state === "needs_human") && lanes.inspectLane(root, child.lane.path).exists).map((child) => ({
     task_id: child.task_id,
     path: child.lane.path,
-    reason: `${LANE_RETAINED}: ${NO_EXIT_EVIDENCE}; the delivered Lane and every file in it are kept`
+    reason: retainedLaneReason(child.lane_retained?.condition ?? `the return step is parked (${child.reason})`)
   }));
+}
+async function cleanupOneIntegratedChild(input) {
+  const { child, sessions } = input;
+  if (child.state !== "integrated" || !child.lane || child.lane_removed || child.lane_retained || child.redo_head)
+    return null;
+  const laneBranch = child.lane.branch;
+  const parentRef = input.branch ?? "";
+  if (!parentRef || !isParentBranch(parentRef))
+    return { lane_retained: { condition: "the batch branch is not a Parent branch" } };
+  const session = child.session;
+  if (!sessions || !session?.handle || !session?.key) {
+    return { lane_retained: { condition: "no session was supervised for this child, so no exit proof was observed" } };
+  }
+  let proof;
+  try {
+    proof = await sessions.closeWithProof(session.handle, session.key);
+  } catch (error) {
+    return { lane_retained: { condition: `closeWithProof threw: ${error instanceof Error ? error.message : String(error)}` } };
+  }
+  if (!proof || typeof proof !== "object" || proof.ok !== true) {
+    const refusal = proof;
+    const code = typeof refusal.code === "string" ? refusal.code : "unproven";
+    const reason = typeof refusal.reason === "string" ? refusal.reason : "closeWithProof did not prove exit";
+    return { lane_retained: { condition: `${reason} (${code})` } };
+  }
+  const outcome = cleanupIntegratedChildLane({ root: input.root, lanePath: child.lane.path, laneBranch, parentRef, proof });
+  if (outcome.status === "removed") {
+    return { lane_removed: { exit: outcome.exit, worktree: outcome.worktree, branches: outcome.branches } };
+  }
+  return { lane_retained: { condition: outcome.condition } };
 }
 function retainedLaneAction(refusals) {
   const count = refusals?.filter((r) => r.reason.startsWith(`${LANE_RETAINED}:`)).length ?? 0;
-  return count ? ` Cleanup was not performed: ${count} runtime-created Lane(s) are kept because ${NO_EXIT_EVIDENCE}. Stop each Lane's Executor, keep the files you need, then remove the Lane yourself; removing it does not enable an automatic redo.` : "";
+  return count ? ` Cleanup was not performed: ${count} runtime-created Lane(s) are kept with named proof or Git conditions. Stop each Lane's Executor, keep the files you need, then remove the Lane yourself; removing it does not enable an automatic redo.` : "";
 }
 function laneAuthorityChange(record, taskId, lanePath) {
   const recorded = record.intent_identities?.[taskId];
@@ -19420,8 +19431,6 @@ function laneReport(record, reason, nextAction, extra = {}) {
     ...record.final_report ? { final_report: record.final_report } : {},
     ...record.interventions?.length ? { interventions: record.interventions } : {},
     ...extra.instruction ? { lane_instruction: extra.instruction } : {},
-    ...record.session_closes?.length ? { session_closes: record.session_closes } : {},
-    ...extra.sessionClose ? { lane_session_close: extra.sessionClose } : {},
     ...record.delegated_revisions?.length ? { delegated_revisions: record.delegated_revisions } : {},
     ...record.reseals?.length ? { reseals: record.reseals } : {},
     ...record.lane_rebinds?.length ? { lane_rebinds: record.lane_rebinds } : {},
@@ -19564,14 +19573,10 @@ async function runLaneBatch(input, persisted) {
       const tracker = record.batch_state === "completed" ? await closeIntegratedIssues(input, record, () => {
         record = writeBatchLaneRunState(input.root, record);
       }) : [];
-      const sessionClose = applyLaneSessionClose(input, record, lanes, () => {
-        record = writeBatchLaneRunState(input.root, record);
-      });
       return finalizeLane(input.root, record, `terminal state already reached: ${record.batch_state}`, "", {
         handoffs: record.batch_state === "completed" ? releaseHandoffs(input, record, lanes) : [],
         refusals: retainedLaneNotices(input.root, record, lanes),
-        tracker,
-        sessionClose
+        tracker
       });
     }
     if (record.batch_state === "needs_human") {
@@ -19792,7 +19797,6 @@ async function runLaneBatch(input, persisted) {
       instruction = { task_id: request.task_id, kind: request.kind, accepted: true, reason: null };
     }
   }
-  const sessionClose = applyLaneSessionClose(input, record, lanes, persist);
   const refusals = [];
   let parkedMessage = null;
   const reviewOpen = [];
@@ -20018,7 +20022,15 @@ async function runLaneBatch(input, persisted) {
     }
   }
   const tracker = await closeIntegratedIssues(input, record, persist);
-  recordClosableSessions(input, record, lanes, persist);
+  if (effectiveReturnPolicy(record) === "retain_branch") {
+    for (const child of [...record.children]) {
+      const update = await cleanupOneIntegratedChild({ root: input.root, branch: record.branch, child, sessions: sessionPort });
+      if (!update)
+        continue;
+      record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, ...update } : c);
+      persist();
+    }
+  }
   refusals.push(...retainedLaneNotices(input.root, record, lanes));
   const offers = [...input.lane_offers ?? []];
   let skewAcknowledged;
@@ -20162,27 +20174,59 @@ async function runLaneBatch(input, persisted) {
             record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "needs_human", reason: delivery.reason } : c);
             record.batch_state = "needs_human";
             persist();
-            return finalizeLane(input.root, record, delivery.reason, "", { refusals: [...refusals, ...retainedLaneNotices(input.root, record, lanes)], tracker, instruction, sessionClose, ...final ? { final } : {} });
+            return finalizeLane(input.root, record, delivery.reason, "", { refusals: [...refusals, ...retainedLaneNotices(input.root, record, lanes)], tracker, instruction, ...final ? { final } : {} });
           }
           persist();
-          const outcome = cleanupSingleTaskLane({
-            root: input.root,
-            lanePath: child.lane.path,
-            laneBranch: child.lane.branch,
-            parentRef: record.branch,
-            generation: laneGenerationStore(input.root, record.batch_id).read(),
-            observation: input.lane_exit_observation
-          });
-          record.children = record.children.map((c) => c.task_id !== child.task_id ? c : outcome.status === "removed" ? { ...c, lane_removed: { exit: outcome.exit, worktree: outcome.worktree, branches: outcome.branches } } : { ...c, lane_retained: { condition: outcome.condition } });
+          const fresh = record.children[0];
+          if (!fresh.lane_removed && !fresh.lane_retained) {
+            const update = await cleanupOneIntegratedChild({ root: input.root, branch: record.branch, child: fresh, sessions: sessionPort });
+            if (update) {
+              record.children = record.children.map((c) => c.task_id === fresh.task_id ? { ...c, ...update } : c);
+              persist();
+            }
+          }
+          const current = record.children[0];
+          if (current.lane_removed && record.branch && isParentBranch(record.branch)) {
+            const parent = cleanupParentBranch({ root: input.root, parentRef: record.branch });
+            if (parent.removed) {
+              record.children = record.children.map((c) => c.task_id === current.task_id ? { ...c, lane_removed: { ...current.lane_removed, branches: [...current.lane_removed.branches, record.branch.replace("refs/heads/", "")] } } : c);
+              persist();
+            } else if (parent.condition) {
+              refusals.push({
+                task_id: current.task_id,
+                path: current.lane_removed.worktree,
+                reason: retainedLaneReason(parent.condition)
+              });
+            }
+          }
         } else {
           const delivery = unverified ? { ...record.final_report.return_to_coordinator, status: "blocked", reason: unverified } : deliverSingleTask(input.root, record.base_head, record.final_report.head);
           record.final_report.return_to_coordinator = delivery;
           if (delivery.status === "blocked") {
             record.batch_state = "needs_human";
             persist();
-            return finalizeLane(input.root, record, delivery.reason, "", { refusals: [...refusals, ...retainedLaneNotices(input.root, record, lanes)], tracker, instruction, sessionClose, ...final ? { final } : {} });
+            return finalizeLane(input.root, record, delivery.reason, "", { refusals: [...refusals, ...retainedLaneNotices(input.root, record, lanes)], tracker, instruction, ...final ? { final } : {} });
           }
           persist();
+          for (const child of [...record.children]) {
+            if (child.lane_removed || child.lane_retained)
+              continue;
+            const update = await cleanupOneIntegratedChild({ root: input.root, branch: record.branch, child, sessions: sessionPort });
+            if (!update)
+              continue;
+            record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, ...update } : c);
+            persist();
+          }
+          if (record.branch && isParentBranch(record.branch) && record.children.length > 1 && record.children.every((c) => c.lane_removed)) {
+            const parent = cleanupParentBranch({ root: input.root, parentRef: record.branch });
+            if (!parent.removed && parent.condition) {
+              refusals.push({
+                task_id: record.children[0].task_id,
+                path: record.children[0].lane.path,
+                reason: retainedLaneReason(parent.condition)
+              });
+            }
+          }
         }
       } else
         record.final_report.return_to_coordinator = returnBatchToCoordinator(input.root, record.final_report.head, final ?? null);
@@ -20196,7 +20240,6 @@ async function runLaneBatch(input, persisted) {
       refusals: isCheckout ? [...refusals, ...retainedLaneNotices(input.root, record, lanes)] : refusals,
       tracker,
       instruction,
-      sessionClose,
       ...final ? { final } : {}
     });
   }
@@ -20247,7 +20290,7 @@ async function runLaneBatch(input, persisted) {
     record.final_report = await buildBatchFinalReport(input.root, record);
     record.final_report.return_to_coordinator.reason = "children_not_integrated";
     persist();
-    return finalizeLane(input.root, record, reloadRequired, "Reload the Host so it loads the Parent tip's plugin build (Claude Code: /mcp reconnect; Pi: /reload), then resume the batch with a fresh literal-user confirmation. A resume without reload admits the child with runtime_skew_acknowledged recorded.", { handoffs, refusals, tracker, instruction, sessionClose });
+    return finalizeLane(input.root, record, reloadRequired, "Reload the Host so it loads the Parent tip's plugin build (Claude Code: /mcp reconnect; Pi: /reload), then resume the batch with a fresh literal-user confirmation. A resume without reload admits the child with runtime_skew_acknowledged recorded.", { handoffs, refusals, tracker, instruction });
   }
   if (!inFlight.length && (!startable.length || overBudget)) {
     const parked = record.children.some((c) => c.state === "needs_human" || c.state === "skipped_blocked");
@@ -20257,7 +20300,7 @@ async function runLaneBatch(input, persisted) {
       record.final_report.return_to_coordinator.reason = "children_not_integrated";
     }
     persist();
-    return finalizeLane(input.root, record, parkedMessage ?? (parked ? "a parked child needs a human decision" : overBudget ? `max_children budget exhausted (${record.budget.max_children})` : "no child can start"), "", { refusals, tracker, instruction, sessionClose });
+    return finalizeLane(input.root, record, parkedMessage ?? (parked ? "a parked child needs a human decision" : overBudget ? `max_children budget exhausted (${record.budget.max_children})` : "no child can start"), "", { refusals, tracker, instruction });
   }
   if (!overBudget && !isParentBranch(record.branch)) {
     for (const taskId of startable) {
@@ -20272,9 +20315,9 @@ async function runLaneBatch(input, persisted) {
     }
   }
   if (reviewOpen.length > 0) {
-    return laneReport(record, reviewOpen.length === 1 ? `child ${reviewOpen[0]} holds an open Review reservation` : `children ${reviewOpen.join(", ")} hold open Review reservations`, "Submit each reserved foreground Review verdict in its own Lane, then call start_unattended_batch again to continue.", { handoffs, refusals, tracker, instruction, sessionClose });
+    return laneReport(record, reviewOpen.length === 1 ? `child ${reviewOpen[0]} holds an open Review reservation` : `children ${reviewOpen.join(", ")} hold open Review reservations`, "Submit each reserved foreground Review verdict in its own Lane, then call start_unattended_batch again to continue.", { handoffs, refusals, tracker, instruction });
   }
-  return laneReport(record, null, handoffs.some((h) => h.role === "coordinator") ? "For each coordinator handoff, read every round's findings in that Lane, start a new Lane session and send one design-level correction as lane_instruction kind correction; run the other handoffs as usual." : handoffs.some((h) => h.role === "lane-steward" && h.action === "provision") ? "Provide a Lane for each provision handoff, then call start_unattended_batch again with lane_offers." : "Run each executor handoff in its Lane. When a Lane finishes, call start_unattended_batch again with the same Initiative.", { handoffs, refusals, tracker, instruction, sessionClose });
+  return laneReport(record, null, handoffs.some((h) => h.role === "coordinator") ? "For each coordinator handoff, read every round's findings in that Lane, start a new Lane session and send one design-level correction as lane_instruction kind correction; run the other handoffs as usual." : handoffs.some((h) => h.role === "lane-steward" && h.action === "provision") ? "Provide a Lane for each provision handoff, then call start_unattended_batch again with lane_offers." : "Run each executor handoff in its Lane. When a Lane finishes, call start_unattended_batch again with the same Initiative.", { handoffs, refusals, tracker, instruction });
 }
 
 // plugins/immune-brain/runtime/host-core/mcp_runtime.ts

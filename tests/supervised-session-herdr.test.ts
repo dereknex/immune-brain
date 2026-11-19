@@ -412,29 +412,19 @@ describe("imm-session CLI", () => {
 		expect((await runSessionCli(["await", first.handle, first.handle, "--provider", "herdr"], env)).returncode).toBe(2);
 	});
 
-	// S1 + F2: the proof is the batch's own run state, not a well-formed pair of flags.
-	it("closes only a session whose close the batch record lists (S1, F2)", async () => {
+	// D11: `close` proves exit with closeWithProof(handle, session_key); no batch record.
+	it("closes with proof bound to (handle, session_key)", async () => {
 		const { port, env, stateFile } = subject();
-		const created = await port.createSession(INPUT);
+		const created = await port.createSession({ ...INPUT, session_key: "proof-key-1" });
 		if (!created.ok) throw new Error(created.reason);
 		const root = mkdtempSync(join(tmpdir(), "imm-session-close-"));
-		const at = "2020-01-01T00:00:00.000Z";
-		const writeRecord = (closes: unknown[]) => {
-			mkdirSync(join(root, ".imm/state/batches"), { recursive: true });
-			writeFileSync(join(root, ".imm/state/batches/batch-one.json"), JSON.stringify({ batch_id: "batch-one", session_closes: closes }));
-		};
 		const close = (...extra: string[]) => runSessionCli(["close", created.handle, "--provider", "herdr", ...extra], env, undefined, root);
 		const refusal = async (...extra: string[]) => JSON.parse((await close(...extra)).stdout);
 		try {
-			expect((await close("--task", "slice-a", "--recorded-at", at)).returncode).toBe(2);
-			expect(await refusal("--batch", "batch-one", "--task", "slice-a", "--recorded-at", "now")).toMatchObject({ ok: false, code: "close_unproven" });
-			// Well-formed but unrecorded: no record file, then a record without this close.
-			expect(await refusal("--batch", "batch-one", "--task", "slice-a", "--recorded-at", at)).toMatchObject({ ok: false, code: "close_unproven" });
-			writeRecord([{ task_id: "slice-b", at }, { task_id: "slice-a", at: "2020-01-02T00:00:00.000Z" }]);
-			expect(await refusal("--batch", "batch-one", "--task", "slice-a", "--recorded-at", at)).toMatchObject({ ok: false, code: "close_unproven" });
+			expect((await close()).returncode).toBe(2);
+			expect(await refusal("--session-key", "other-key")).toMatchObject({ ok: false, code: "not_owned" });
 			expect(acting(herdrCalls(stateFile)).some((c) => c[1] === "close")).toBe(false);
-			writeRecord([{ task_id: "slice-a", at }]);
-			expect(await refusal("--batch", "batch-one", "--task", "slice-a", "--recorded-at", at)).toEqual({ ok: true });
+			expect(await refusal("--session-key", "proof-key-1")).toEqual({ ok: true, exited: true, handle: created.handle, session_key: "proof-key-1" });
 			expect(acting(herdrCalls(stateFile)).at(-1)).toEqual(["tab", "close", "t1"]);
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});

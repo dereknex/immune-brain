@@ -13,7 +13,7 @@ import { TASK_RISKS, type TaskIntentV1, type TaskRisk } from "../kernel/types";
 import type { BatchPlanChild } from "./types";
 import { runningRuntimeSource } from "../kernel/runtime_contracts";
 import { batchReason } from "./batch_reasons";
-import type { ExecutorPreferences, LaneExit, LaneGeneration, LaneGenerationStore } from "./lane_supervisor";
+import type { ExecutorPreferences, LaneGeneration, LaneGenerationStore } from "./lane_supervisor";
 import type { ReviewProfile } from "../config/layered_config";
 
 const REVIEW_HOSTS: ReadonlySet<string> = new Set(["pi", "claude-code", "antigravity"]);
@@ -248,9 +248,9 @@ export interface BatchLaneChildRun {
 	runtime_skew_acknowledged?: RuntimeSkewAcknowledgement;
 	/** The integrated plugin build change that held this child's Lane admission or redo. */
 	runtime_reload?: RuntimeReloadGate;
-	/** Single task only (Spec drive-always-lanes D7): the Lane was removed on this runtime-observed exit. */
-	lane_removed?: { exit: LaneExit; worktree: string; branches: string[] };
-	/** Single task only: the delivered Lane is kept because this exit-proof or cleanliness condition failed. */
+	/** Two-tier proof-based cleanup (Spec unified-lane-sessions D11): the Lane was removed on a proven `closeWithProof` exit. */
+	lane_removed?: { exit: { ok: true; exited: true; handle: string; key?: string; session_key?: string }; worktree: string; branches: string[] };
+	/** Two-tier proof-based cleanup: the delivered Lane is kept because this proof or cleanliness condition failed. */
 	lane_retained?: { condition: string };
 }
 
@@ -352,8 +352,6 @@ export interface BatchLaneRunStateRecord {
 	 * own behavior afterwards.
 	 */
 	interventions?: LaneIntervention[];
-	/** Every Lane session the coordinator closed, recorded before the close. Absent until one happens. */
-	session_closes?: LaneSessionClose[];
 	/** Commands run on the batch branch once every child is integrated; fixed when the batch starts. */
 	final_verification?: string[];
 	final_verification_result?: import("./batch_final_verification").FinalVerificationReport;
@@ -960,12 +958,6 @@ function validateLaneRecordShape(value: unknown, batchId: string): asserts value
 			))
 	)
 		throw new Error(`batch run state ${batchId} has an invalid interventions list`);
-	if (
-		record.session_closes !== undefined &&
-		(!Array.isArray(record.session_closes) ||
-			record.session_closes.some((c: unknown) => !isObject(c) || typeof c.task_id !== "string" || !isCanonicalTimestamp(c.at)))
-	)
-		throw new Error(`batch run state ${batchId} has an invalid session_closes list`);
 	// ADR 0018 fields carry authority effects, so a malformed one fails closed.
 	if (record.revision_delegation !== undefined &&
 		(!isObject(record.revision_delegation) || Object.keys(record.revision_delegation).join() !== "confirmation_time" ||
@@ -1054,11 +1046,13 @@ function validateLaneRecordShape(value: unknown, batchId: string): asserts value
 			throw new Error(`batch run state ${batchId} child ${child.task_id} closed its tracker Issue before integration`);
 		if (child.lane_removed !== undefined || child.lane_retained !== undefined) {
 			const removed = child.lane_removed as unknown, retained = child.lane_retained as unknown;
-			const exit = isObject(removed) && isObject(removed.exit) ? removed.exit : null;
+			const exit = isObject(removed) && isObject((removed as { exit?: unknown }).exit) ? (removed as { exit: unknown }).exit as Record<string, unknown> : null;
+			const proofOk = !!exit && exit.ok === true && exit.exited === true && typeof exit.handle === "string" && !!exit.handle &&
+				(typeof exit.key === "string" || typeof (exit as { session_key?: unknown }).session_key === "string");
 			if ((child.state !== "integrated" && child.state !== "released") || (removed !== undefined) === (retained !== undefined) ||
-				(removed !== undefined && (!exit || !Number.isSafeInteger(exit.generation) || exit.code !== 0 || exit.signal !== null ||
+				(removed !== undefined && (!proofOk ||
 					typeof (removed as { worktree?: unknown }).worktree !== "string" || !Array.isArray((removed as { branches?: unknown }).branches))) ||
-				(retained !== undefined && (!isObject(retained) || typeof retained.condition !== "string" || !retained.condition)))
+				(retained !== undefined && (!isObject(retained) || typeof (retained as { condition?: unknown }).condition !== "string" || !(retained as { condition: string }).condition)))
 				throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid lane cleanup record`);
 		}
 		const skew = child.runtime_skew_acknowledged;
@@ -1530,10 +1524,6 @@ export interface BatchLaneRunReport {
 	delegated_revisions?: BatchLaneRunStateRecord["delegated_revisions"];
 	reseals?: BatchLaneRunStateRecord["reseals"];
 	lane_rebinds?: BatchLaneRunStateRecord["lane_rebinds"];
-	/** Lane sessions the coordinator closed (see BatchLaneRunStateRecord.session_closes). */
-	session_closes?: LaneSessionClose[];
-	/** This tick's decision on the Parent's `lane_session_close`: close the session only when accepted. */
-	lane_session_close?: { task_id: string; accepted: boolean; reason: string | null; recorded_at: string | null };
 	/** This tick's decision on the Parent's `lane_instruction`: send the text only when accepted. */
 	lane_instruction?: { task_id: string; kind: LaneIntervention["kind"]; accepted: boolean; reason: string | null };
 	/** Restored Lane leaks with their backup location (see BatchLaneRunStateRecord.restores). */

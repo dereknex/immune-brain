@@ -171,14 +171,14 @@ The runner then commits the settled delivery on the Lane branch and fast-forward
 the recorded progress ref only to a candidate whose changed paths and per-path content equal
 that commit; a mismatch or conflict moves nothing and parks the child. New
 Parent-branch batches do not copy the integrated delta into the coordinator
-checkout. No Host reports a trusted Executor exit, so the runtime never removes
-or recreates a Lane it created: after integration the Lane, its branch and all
-its files are kept, and `lane_refusals` reports `batch_lane_retained` for it,
-also in a completed report. Delivery is complete; cleanup is the user's: stop
-the Lane's Executor, keep the files needed, then remove the Lane. Reclaim a Lane
-in this order: (1) stop the Lane's Executor; (2) keep the files still needed
-from the Lane; (3) remove the Lane. Removing it
-records `released` and never enables an automatic redo. Final verification runs in a
+checkout. Two-tier proof-based cleanup owns Lane removal (Spec
+unified-lane-sessions D11): for every integrated child, `advanceBatch` calls
+`BatchSessionPort.closeWithProof(handle, key)`; only a proven `exited` exit
+proof bound to `(handle, key)` plus clean-Lane Git checks removes that child's
+worktree and `imm-lane/<slug>/<task_id>`, recording `lane_removed` with the
+proof while siblings and `refs/heads/imm/<slug>` stay. Any failed proof or Git
+condition retains the Lane and reports `batch_lane_retained` naming it; parked,
+stopped and redo Lanes are never removed. Final verification runs in a
 detached worktree at the Parent tip and removes that worktree afterwards; a
 failure is reported without moving the Parent ref.
 With `max_parallel` above 1 the reconcile tick keeps up to that many Lanes in
@@ -495,19 +495,16 @@ the user which tab and `task_id` Herdr cannot classify. A
 `provider_error` or `timeout` proves nothing about delivery; inspect the session
 with `imm-session observe` before repeating a command.
 
-The Parent closes a tab only under the Executor close rule, and only one it
-created. At the tick that integrates a child whose audit pair is reachable from
-the batch head, the runner records that session's close in the report's
-`session_closes` (`task_id`, `at`); the record is there even when that tick
-finishes the batch, so the Parent never re-enters a finished batch to ask.
+The runtime closes each integrated child session with proof via
+`closeWithProof(handle, key)`; the Parent never closes a session (`session_closes`
+and the `imm-session close --batch/--task/--recorded-at` rule are retired).
 Once the wait has returned that session `idle`, `done` or `exited`, the Parent
-   The runtime closes each integrated child session with proof; the Parent never closes a session. Once the wait has returned that session idle, done or exited, the Parent calls `start_unattended_batch` again to advance the batch.
-from the coordinator checkout; `imm-session` reads the batch record and closes
-only a session it lists. Every other tab (a parked, failed,
-stopped or not yet integrated child's, and any tab the Parent did not create)
-stays open for the user to read and close. Closing a session removes no Lane and
-no branch. It splits no pane and creates no workspace. The Parent never invokes
-`herdr` itself, and outside Herdr it never invokes `imm-session`.
+calls `start_unattended_batch` again to advance the batch. Every other tab (a
+parked, failed, stopped or not yet integrated child's, and any tab the Parent
+did not create) stays open for the user to read and close. Closing a session
+removes no Lane and no branch beyond the proven per-child cleanup. It splits no
+pane and creates no workspace. The Parent never invokes `herdr` itself, and
+outside Herdr it never invokes `imm-session`.
 
 Supervision is event-driven. Each session end is the cue to call
 `start_unattended_batch` again with the same Initiative, and that report is the
@@ -598,16 +595,19 @@ Spec drive-always-lanes D1 to D11 and ADR 0027 own the details below.
   `needs_human` with `checkout_delivery_overlap: <paths>` and writes nothing; a
   delivery that cannot apply parks as `checkout_delivery_conflict`. Unrelated
   user edits are never blocked and stay byte-identical.
-- **Exit-proof cleanup.** Right after a successful delivery, in the same call,
-  the runtime removes the Lane worktree, `imm-lane/<task_id>/<task_id>` and
-  `imm/<task_id>` only when the current generation's exit was observed as a
-  normal exit and `git status --porcelain --untracked-files=all` in the Lane is
-  empty. In every other case (interrupted, unobserved or abnormal exit, a dirty
-  Lane, a parked delivery) the Lane is kept and reported as
-  `batch_lane_retained` with the failed condition; the Parent deletes nothing.
-  Initiative batch Lanes are always retained as described above. A fresh
-  `drive <task_id>` on a parked or retained Lane opens a fresh native gate and
-  resumes in the same Lane with a new generation.
+- **Exit-proof cleanup.** Two-tier proof-based cleanup (Spec unified-lane-sessions
+  D11). For every integrated child, `advanceBatch` calls
+  `closeWithProof(handle, key)`; only a proven `exited` exit proof bound to
+  `(handle, key)` plus a clean Lane (`git status --porcelain
+  --untracked-files=all` empty, `imm-lane/<slug>/<task_id>` ancestor of the
+  batch branch) removes that child's worktree and `imm-lane/<slug>/<task_id>`,
+  recording `lane_removed` with the proof. Only when the whole batch completes
+  under `checkout_delivery` and `deliverSingleTask` succeeds is
+  `refs/heads/imm/<slug>` deleted (kept under `retain_branch`). Any failed
+  proof or Git condition keeps the Lane and reports `batch_lane_retained` with
+  the failed condition; the Parent deletes nothing. Parked, stopped and redo
+  Lanes are never removed. A fresh `drive <task_id>` on a parked or retained
+  Lane opens a fresh native gate and resumes in the same Lane.
 - **Parent decision relay.** When the Lane's Executor stops on a literal-user
   decision, the report carries `lane_decision_required` (task, run and record
   revision, authorization and pending decisions). A headless Executor has no

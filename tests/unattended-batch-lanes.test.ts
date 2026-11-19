@@ -23,7 +23,6 @@ import {
 	createDefaultLaneGitPort,
 	decideLaneAdmission,
 	decideLaneInstruction,
-	decideLaneSessionClose,
 	laneBranchName,
 	laneRuntimeContractRefusal,
 	parseLaneInstruction,
@@ -545,8 +544,10 @@ describe("runtime-owned Parent Lane lifecycle", () => {
 			expect(readFileSync(join(fx.repo, "a.txt"), "utf8")).toBe("coordinator dirt must not reach Lane\n");
 		} finally { fx.cleanup(); }
 	});
-	// Spec batch-resource-safety-s2 AC1/AC3: no Host reports a trusted Executor exit, so a
-	// delivered Lane stays whether its Executor looks idle, left files behind or still runs.
+	// Two-tier proof-based cleanup (Spec unified-lane-sessions D11): without a
+	// sessions port there is no exit proof, so a delivered Lane stays with a
+	// named batch_lane_retained condition whether its Executor looks idle,
+	// left files behind or still runs.
 	for (const mode of ["clean", "untracked", "ignored", "live"] as const) it(`retains a delivered runtime-owned Lane: ${mode}`, async () => {
 		const fx = fixture({},
 			{ "task-a": ["a.txt"], "task-b": ["b.txt"] });
@@ -652,9 +653,7 @@ describe("runtime-owned Parent Lane lifecycle", () => {
 				tasks: [{ task_id: "task-a", slice_id: "S1", blocked_by: [] }, { task_id: "task-b", slice_id: "S2", blocked_by: ["task-a"] }] });
 			const reopened = await completedParentReport(fx.repo, SLUG, reader, tracker) as unknown as BatchLaneRunReport;
 			expect(reopened).toMatchObject({ batch_state: "completed", lane_refusals: [retainedA, retainedB] });
-			// #426 F18: the rebuilt Parent report keeps the recorded closes, or the Parent never closes the tabs.
-			expect(done.session_closes?.map(c => c.task_id)).toEqual(["task-a", "task-b"]);
-			expect(reopened.session_closes).toEqual(done.session_closes);
+			// S6 retires session_closes: closeWithProof owns closure, no batch record.
 			expect(reopened.next_action).toStartWith("Parent delivery and final verification passed. Cleanup was not performed");
 			expect(resources()).toEqual(kept);
 			git(fx.repo, "update-ref", `refs/heads/${BATCH_BRANCH}`, fx.base);
@@ -2679,11 +2678,14 @@ describe("coordinator instruction to a Lane session (#195)", () => {
 	});
 });
 
-describe("Executor close rule for Lane sessions (#426 S1)", () => {
-	it("records a session close at the tick that integrates the child with its audit pair on the batch head, once, and leaves the Lane in place", () => {
-		// L1: the close rule is the pure decision over a prepared record; the
-		// driver wiring (recording the close, the idempotent re-ask) stays in
-		// the close-rule tests that run the driver.
+describe("Executor close rule retired (unified-lane-sessions D11)", () => {
+	it("parses lane_session_close for compat but records no session_closes; closeWithProof owns closure", () => {
+		// S6 retires session_closes/closeRecordUnproven: the batch ignores
+		// lane_session_close input and never writes session_closes.
+		expect(parseLaneSessionClose({ task_id: "task-a" })).toEqual({ task_id: "task-a" });
+		expect(parseLaneSessionClose(undefined)).toBeUndefined();
+		expect(() => parseLaneSessionClose({ task_id: "task-a", handle: "x" })).toThrow(/unknown field/);
+		expect(() => parseLaneSessionClose({ task_id: "../x" })).toThrow(/task id/);
 		const kids = [child("task-a", "S1")];
 		const record = prepareBatchLaneRunState({
 			batch_id: BATCH_ID, initiative_slug: SLUG, children: kids,
@@ -2691,25 +2693,7 @@ describe("Executor close rule for Lane sessions (#426 S1)", () => {
 			base_head: FAKE_BASE, confirmation_time: CONFIRMED_AT,
 			budget: { max_children: 1, qa_failure_limit: 3 }, max_parallel: 1, now: FAR_FUTURE,
 		});
-		record.children[0]!.state = "enrolled";
-		record.children[0]!.lane = laneBinding("/lane-task-a", "task-a", FAKE_BASE);
-		const before = JSON.stringify(record);
-		const ask = (task_id: string, reachable: boolean) =>
-			decideLaneSessionClose(record, parseLaneSessionClose({ task_id })!, () => reachable);
-		// Still running: the session stays for the user.
-		expect(ask("task-a", true) ?? "").toContain("not integrated; its session stays for the user");
-		expect(ask("task-z", true) ?? "").toContain("task-z has no Lane");
 		expect((record as { session_closes?: unknown }).session_closes).toBeUndefined();
-		expect(JSON.stringify(record)).toBe(before);
-		// Integrated with the audit pair reachable: allowed.
-		record.children[0]!.state = "integrated";
-		const integrated = JSON.stringify(record);
-		expect(ask("task-a", true)).toBeNull();
-		// Without the audit pair on the batch head the rule refuses, whatever the child state says.
-		expect(ask("task-a", false)).toBe("task-a's audit pair is not reachable from the batch head");
-		expect(() => parseLaneSessionClose({ task_id: "task-a", handle: "x" })).toThrow(/unknown field/);
-		expect(() => parseLaneSessionClose({ task_id: "../x" })).toThrow(/task id/);
-		expect(JSON.stringify(record)).toBe(integrated);
 	});
 });
 

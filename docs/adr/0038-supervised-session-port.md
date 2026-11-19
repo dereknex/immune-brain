@@ -230,3 +230,19 @@ tool and its file-only entry sentence.
 Unified-lane-sessions S2 (#570, Spec D5/D10) adds `runtime/session/provider_registry.ts`: one descriptor per provider with a pure environment check, recovery text, adapter factory, and `roles.executor/authority/advisory`. `resolveSessionProvider` selects the first configured entry of top-level `session_providers` (`["herdr"]` by default, project replaces user) whose env check holds and whose executor role admits the host with `find_by_key: true` and `workspace: "local_path"`, else refuses `lane_session_unavailable`. `herdr` admits all three executor hosts with exit proof; `herdr-core` admits none until #495.
 
 `CreateSessionInput.session_key` (`[a-z0-9-]{1,64}`) binds caller identity into the session (`herdr` tab label suffix `[imm:<session_key>]`), with trailing-12-char agent names so sibling keys never collide. New port verbs `findSession(session_key)` and idempotent `closeWithProof(handle, session_key)` own lookup and proven exit without a `CloseRecord`; a mismatched key is `not_owned`. The conformance suite runs every registered descriptor under its fake CLI plus `fake` against this contract, and the boundary test pins `runtime/session/` to `node:*` imports with no provider-literal comparison outside.
+
+## Addendum: two-tier proof-based cleanup (S6, 2026-11-19)
+
+Unified-lane-sessions S6 (#570, Spec D11) puts `closeWithProof` at the center of
+Lane lifecycle. For every integrated child, `advanceBatch` calls
+`BatchSessionPort.closeWithProof(handle, key)` (backed by the provider's
+`closeWithProof(handle, session_key)`); only a proven `exited` bound to
+`(handle, key)` plus clean-Lane Git checks removes the child's worktree and
+`imm-lane/<slug>/<task_id>`, recording `lane_removed` with the `SessionExitProof`
+while siblings and `refs/heads/imm/<slug>` stay. The batch branch is deleted
+only after whole-batch `checkout_delivery` success, kept under `retain_branch`.
+Any failed proof or Git condition reports `batch_lane_retained` naming it;
+parked, stopped and redo Lanes are never removed. `session_closes`,
+`closeRecordUnproven` and the `imm-session close --batch/--task/--recorded-at`
+rule retire: `imm-session close` now takes `--session-key` and proves exit
+directly, and the Parent never closes from a batch record.

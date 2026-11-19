@@ -26,8 +26,16 @@ A provider missing any of these, or implementing another port protocol, is refus
 | `readOutput` | Owned handle | Text labelled `visible` or `scrollback` | For people only; never progress evidence |
 | `observeState` | Owned handle | State and provenance | No readable state is `unknown`, never an invented `idle` or `done` |
 | `stopSession` | Owned handle | Soft interrupt, then the provider's hard stop | Foreign handle: `not_owned` |
-| `closeSession` | Owned handle (the Parent created it) and the batch runner's accepted close record (`task_id`, `recorded_at`): the runner's `decideLaneSessionClose` admits only an integrated child whose audit pair is reachable from the batch head, once, and records the close in `session_closes` before answering | Session resources released, recorded; the Lane and its branch untouched | Missing or malformed record: `close_unproven`, nothing closed. The rule no longer waits for a Lane release handoff: Parent-branch batches never issue one, since Lanes are retained for the user (ADR 0027) |
+| `closeSession` | Owned handle (retired batch-record rule, Spec unified-lane-sessions D11: `closeWithProof` owns closure; `session_closes`/`closeRecordUnproven` retired) | Session resources released; the Lane and its branch untouched | Foreign handle: `not_owned` |
 | `reconcile` | The caller's own handles | The last known state of each | A foreign handle is listed `unknown` with `refused: not_owned`; there is no "all sessions" listing |
+| `findSession` | Caller-chosen `session_key` (`[a-z0-9-]{1,64}`) | Live handle bound to the key, or `not_found` | Unknown key: `not_found` |
+| `closeWithProof` | Owned handle bound to `session_key` | Idempotent proven exit (`exited` bound to `(handle, key)`); owns two-tier per-child Lane cleanup with `lane_removed`/`batch_lane_retained` | Mismatched key or superseded handle: `not_owned`, nothing closed |
+
+Two-tier proof-based cleanup (Spec unified-lane-sessions D11): for every
+integrated child, `advanceBatch` calls `closeWithProof(handle, key)`; only a
+proven `exited` plus clean-Lane Git checks removes the worktree and
+`imm-lane/<slug>/<task_id>` (`lane_removed`), otherwise `batch_lane_retained`.
+The batch branch is deleted only after whole-batch `checkout_delivery` success.
 
 ### Optional capabilities
 
@@ -63,7 +71,7 @@ imm-session <verb> --provider herdr|herdr-core [options]
   read <handle> [--source visible|scrollback] [--lines <n>] [--extract advisory]
   attach <handle>
   stop <handle>
-  close <handle> --batch <batch_id> --task <task_id> --recorded-at <session_closes[].at> [--root <coordinator checkout>]
+  close <handle> --session-key <session_key>   (proves exit with closeWithProof; no batch record)
   reconcile <handle>...
 ```
 
