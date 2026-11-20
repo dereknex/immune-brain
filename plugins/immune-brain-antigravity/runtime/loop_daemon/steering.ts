@@ -116,7 +116,10 @@ export function applySteeringRequests(stateDir: string, now: string): SteeringAp
 			continue;
 		}
 		const paused = request.action === "pause";
-		const next = { ...item, paused, revision: item.revision + 1, updated_at: now };
+		// D4.3: a resume of an item with a batch owes that batch one observed advance
+		// with a stall exemption; a pause withdraws the debt.
+		const resumePending = !paused && item.paused === true && Boolean(item.binding.batch_id);
+		const next = { ...item, paused, resume_pending: resumePending, revision: item.revision + 1, updated_at: now };
 		writeWorkItem(stateDir, next);
 		result.applied.push({ target: item.target, action: request.action, state: next.state, paused });
 		rmSync(path, { force: true });

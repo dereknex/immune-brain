@@ -605,6 +605,8 @@ describe("unattended batch contract text", () => {
 			"reseals",
 			// Issue #500 / Spec lane-rebind-resume: single-task plan_digest rebind history.
 			"lane_rebinds",
+			// loop-leader-uls-alignment D4.1: the loop daemon's abandon progress (removed Lanes, retained conditions).
+			"discard",
 			"created_at",
 			"updated_at",
 		]);

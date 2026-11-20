@@ -15,7 +15,7 @@ import { resolveSessionProvider, SESSION_PROVIDER_REGISTRY, type SessionProvider
 import type { ExecutorHostKind, SupervisedSessionPort } from "../session/supervised_session_port";
 import { laneExecutorChoice } from "../unattended/agent_profiles";
 import type { ExecutorPreferences } from "../unattended/agent_profiles";
-import { runLaneBatch as advanceBatch } from "../unattended/batch_lanes";
+import { discardBatchLanes, runLaneBatch as advanceBatch, type DiscardBatchResult } from "../unattended/batch_lanes";
 import type { BatchRunnerKernelPort, BatchTrackerPort } from "../unattended/batch_kernel_port";
 import type { BatchRunnerGitPort } from "../unattended/batch_git";
 import {
@@ -84,6 +84,8 @@ export interface LaneSessionsDeps {
 	review_profile?: unknown;
 	final_verification?: string[];
 	topology_digest?: string;
+	/** One advance only (loop-leader-uls-alignment D4.3): hold idle sessions instead of judging them stalled. */
+	stall_exempt?: boolean;
 }
 
 export interface ObserveLanesDeps {
@@ -275,6 +277,9 @@ export async function advanceLanes(
 	if (!persisted || !isLaneBatchRecord(persisted)) {
 		return { ok: false, code: "lane_session_unavailable", reason: `lane_session_unavailable: no active v3 batch ${batchId}`, recovery: "start a fresh batch" };
 	}
+	// A batch being discarded is torn down, never advanced (loop-leader-uls-alignment D4.1).
+	if (persisted.batch_state === "discarding")
+		return { ok: false, code: "lane_session_unavailable", reason: `lane_session_unavailable: batch ${batchId} is being discarded`, recovery: "the loop daemon retries the discard on its next tick" };
 	const recordedProvider = (persisted as { session_provider?: string | null }).session_provider ?? null;
 	const registry = deps.providerRegistry ?? SESSION_PROVIDER_REGISTRY;
 	if (recordedProvider) {
@@ -319,6 +324,7 @@ export async function advanceLanes(
 			...(deps.lane_session_close !== undefined ? { lane_session_close: deps.lane_session_close } : {}),
 			...(deps.lane_offers !== undefined ? { lane_offers: deps.lane_offers } : {}),
 			...(deps.review_profile !== undefined ? { review_profile: deps.review_profile } : {}),
+			...(deps.stall_exempt ? { stall_exempt: true } : {}),
 			sessions: adapter,
 		};
 		const rawAdv = await advanceBatch(input as never, persisted);
@@ -355,12 +361,56 @@ export async function advanceLanes(
 		...(deps.lane_session_close !== undefined ? { lane_session_close: deps.lane_session_close } : {}),
 		...(deps.lane_offers !== undefined ? { lane_offers: deps.lane_offers } : {}),
 		...(deps.review_profile !== undefined ? { review_profile: deps.review_profile } : {}),
+		...(deps.stall_exempt ? { stall_exempt: true } : {}),
 		sessions: adapter,
 	};
 	const raw2 = await advanceBatch(input as never, persisted);
 	const report2 = raw2 as unknown as { handoffs?: Array<{ role?: string }> };
 	if (Array.isArray(report2.handoffs)) report2.handoffs = report2.handoffs.filter((h) => h.role !== "executor");
 	return report2 as unknown as Record<string, unknown>;
+}
+
+export interface DiscardLanesDeps {
+	env: Record<string, string | undefined>;
+	host: ExecutorHostKind;
+	providerRegistry?: readonly SessionProviderDescriptor[];
+	createPort?: (provider: string, env: Record<string, string | undefined>) => SupervisedSessionPort;
+	now?: string;
+}
+
+/**
+ * Discard one non-terminal batch for the loop daemon's abandon (Spec
+ * loop-leader-uls-alignment D4.1): resolve the session port from the record's
+ * provider, then stop and prove-close each child's session, remove proven Lanes,
+ * and delete `imm/<slug>` once every Lane is gone. An unusable provider retains
+ * every session-bearing Lane with the named condition instead of guessing.
+ * Re-callable: a `discarding` record is retried and removed children are skipped.
+ */
+export async function discardLanes(root: string, batchId: string, deps: DiscardLanesDeps): Promise<DiscardBatchResult | { ok: false; code: "batch_not_discardable"; reason: string }> {
+	let record: AnyBatchRunStateRecord | null = null;
+	try {
+		record = readAnyBatchRunState(root, batchId);
+	} catch {
+		return { ok: false, code: "batch_not_discardable", reason: `batch_not_discardable: unreadable batch ${batchId}` };
+	}
+	if (!record || !isLaneBatchRecord(record))
+		return { ok: false, code: "batch_not_discardable", reason: `batch_not_discardable: no v3 Lane batch ${batchId}` };
+	const opened = openBatchSessionPort({
+		root,
+		provider: record.session_provider,
+		env: deps.env,
+		host: deps.host,
+		executor: record.executor_preferences,
+		...(deps.providerRegistry ? { providerRegistry: deps.providerRegistry } : {}),
+		...(deps.createPort ? { createPort: deps.createPort } : {}),
+	});
+	return discardBatchLanes({
+		root,
+		batch_id: batchId,
+		sessions: opened.ok ? opened.port : null,
+		...(opened.ok ? {} : { sessions_unavailable: `${opened.reason}; ${opened.recovery}` }),
+		now: deps.now ?? new Date().toISOString(),
+	});
 }
 
 async function snapshotChildren(

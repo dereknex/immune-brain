@@ -50,6 +50,12 @@ export interface ReconcileChildInput {
 	pendingCorrection?: PendingIntervention | string | null;
 	/** Persisted by the caller before each `open`, so a crash after `open` recovers via `find`. */
 	onWriteAhead?: (session: BatchChildSession) => void;
+	/**
+	 * One-shot stall exemption (loop-leader-uls-alignment D4.3): an idle or done
+	 * session at the unchanged baseline is held, not judged, so time spent paused
+	 * never counts toward `no_progress`. An exited session is still handled as exited.
+	 */
+	stallExempt?: boolean;
 }
 
 export interface ReconcileChildResult {
@@ -254,7 +260,7 @@ export async function reconcileChildSession(input: ReconcileChildInput): Promise
 	// Settled children and children waiting on a user decision or replan stay for the integrator.
 	if (kernel.settled || kernel.hasOpenDecision || kernel.hasReplan) return { session, action: "held" };
 
-	return await stallOrProgress(port, session, { batchId, taskId, kernel, interactionMode, entry, laneCwd, state, onWriteAhead, adopted });
+	return await stallOrProgress(port, session, { batchId, taskId, kernel, interactionMode, entry, laneCwd, state, onWriteAhead, adopted, stallExempt: input.stallExempt === true });
 }
 
 async function stallOrProgress(
@@ -271,6 +277,7 @@ async function stallOrProgress(
 		onWriteAhead?: (session: BatchChildSession) => void;
 		/** A session adopted this tick has not been observed working yet, so its idle is not a stall. */
 		adopted?: boolean;
+		stallExempt?: boolean;
 	},
 ): Promise<ReconcileChildResult> {
 	const { batchId, taskId, kernel, interactionMode, entry, laneCwd, state, onWriteAhead, adopted } = opts;
@@ -315,6 +322,10 @@ async function stallOrProgress(
 		});
 		return { session, action: "rotated" };
 	}
+
+	// A one-shot exemption holds an idle or done session without judging it; an
+	// exited session falls through to the exit handling below.
+	if (opts.stallExempt && state !== "exited") return { session, action: "held" };
 
 	// Stall at an unchanged baseline. A session adopted this tick was never
 	// observed working, so its idle or done is not evidence of a stall.

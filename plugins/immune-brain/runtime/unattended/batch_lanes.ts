@@ -24,7 +24,7 @@ import { readDerivedFilesAt } from "../derived_files";
 import { reusableFinalVerification, runFinalVerification, type FinalVerificationReport } from "./batch_final_verification";
 import { buildBatchFinalReport, returnBatchToCoordinator } from "./batch_final_report";
 import { deliverSingleTask } from "./checkout_delivery";
-import { cleanupIntegratedChildLane, cleanupParentBranch, retainedLaneReason } from "./lane_cleanup";
+import { cleanupDiscardedChildLane, cleanupIntegratedChildLane, cleanupParentBranch, retainedLaneReason } from "./lane_cleanup";
 import { laneDecisionFacts, type LaneDecisionFacts } from "./lane_decision";
 import { frozenExecutorPreferences, frozenReviewProfile } from "./agent_profiles";
 import { resolveConfig } from "../config/layered_config";
@@ -94,6 +94,8 @@ export interface StartBatchInput {
 	review_profile?: ReviewProfile;
 	/** Bounds each final command; absent, the verifier's own default applies. Not a Host tool parameter. */
 	final_verification_timeout_ms?: number;
+	/** One advance only: idle or done sessions are held instead of judged as stalled (loop-leader-uls-alignment D4.3). Not a Host tool parameter. */
+	stall_exempt?: boolean;
 	/**
 	 * Lane mode only: one text instruction the Parent wants to send a Lane
 	 * session. The tick records it and answers whether it may be sent; it is
@@ -657,6 +659,8 @@ const TERMINAL_NEXT_ACTIONS: Record<string, string> = {
 	failed: "A lineage failure stopped the batch; inspect the failing child and the branch state.",
 	rejected: "The batch was rejected before any enrollment; correct the stated reason and re-confirm.",
 	superseded: "The plan moved past this record and an explicit disposition retired it; it grants no handoff and no child delivery.",
+	discarded: "The owner abandoned the batch: its sessions were closed with proof and its Lanes and branch were removed; nothing was delivered.",
+	discarding: "The batch is being discarded; the next tick retries each retained Lane and branch until every one is removed.",
 	needs_human: LANE_NEEDS_HUMAN_NEXT_ACTION,
 	running: "The batch is still running; no terminal report is due yet.",
 	prepared: "The batch is prepared but not started.",
@@ -731,6 +735,124 @@ export async function cleanupOneIntegratedChild(input: {
 		return { lane_removed: { exit: outcome.exit, worktree: outcome.worktree, branches: outcome.branches } };
 	}
 	return { lane_retained: { condition: outcome.condition } };
+}
+
+export interface DiscardBatchResult {
+	batch_id: string;
+	batch_state: "discarding" | "discarded";
+	/** Children whose Lane worktree and `imm-lane/` branch are gone. */
+	removed: string[];
+	/** Every retained resource with its `batch_lane_retained` condition. */
+	retained: Array<{ task_id: string; path: string; condition: string; reason: string }>;
+	parent_branch_removed: boolean;
+}
+
+function refExists(root: string, ref: string): boolean {
+	return spawnSync("git", ["--no-optional-locks", "-C", root, "rev-parse", "--verify", "--quiet", `${ref}^{commit}`], { encoding: "utf8" }).status === 0;
+}
+
+/**
+ * Tear one non-terminal batch down for the loop daemon's abandon (Spec
+ * loop-leader-uls-alignment D4.1). Per child: stop, then `closeWithProof`; only
+ * a proven exit (or a child that never held a session) lets its Lane worktree and
+ * `imm-lane/` branch go, and a dirty worktree is kept. The batch branch
+ * `refs/heads/imm/<slug>` is deleted only once every child Lane is removed, and
+ * only then does the record become terminal `discarded`. Anything else leaves it
+ * `discarding` with `batch_lane_retained` conditions, so the next call retries
+ * only the retained parts (a removed child is never revisited). A terminal record
+ * is returned untouched: a completed batch's retained branch is never deleted here.
+ */
+export async function discardBatchLanes(input: {
+	root: string;
+	batch_id: string;
+	/** The batch's recorded session port, or null with `sessions_unavailable` naming why. */
+	sessions: BatchSessionPort | null;
+	sessions_unavailable?: string;
+	now: string;
+}): Promise<DiscardBatchResult | { ok: false; code: "batch_not_discardable"; reason: string }> {
+	const { root } = input;
+	const loaded = readAnyBatchRunState(root, input.batch_id);
+	if (!loaded || !isLaneBatchRecord(loaded))
+		return { ok: false, code: "batch_not_discardable", reason: `batch_not_discardable: no v3 Lane batch ${input.batch_id}` };
+	let record: BatchLaneRunStateRecord = loaded;
+	if (isTerminalBatchState(record.batch_state))
+		return { batch_id: record.batch_id, batch_state: record.batch_state === "discarded" ? "discarded" : "discarding",
+			removed: record.discard?.removed ?? [], retained: [], parent_branch_removed: record.discard?.parent_branch_removed ?? false };
+	const progress = record.discard ?? { removed: [], retained: [], parent_branch_removed: false, parent_branch_condition: null };
+	const save = (patch: Partial<BatchLaneRunStateRecord>): void => {
+		record = writeBatchLaneRunState(root, { ...record, ...patch });
+	};
+	save({ batch_state: "discarding", discard: progress });
+	const removed = new Set(progress.removed);
+	const retained: DiscardBatchResult["retained"] = [];
+	for (const child of record.children) {
+		if (removed.has(child.task_id)) continue;
+		if (!child.lane) { removed.add(child.task_id); continue; }
+		const lane = child.lane;
+		const retain = (condition: string): void => { retained.push({ task_id: child.task_id, path: lane.path, condition, reason: retainedLaneReason(condition) }); };
+		const session = child.session;
+		let proof: unknown = null;
+		if (session?.key || session?.handle) {
+			if (!input.sessions) { retain(input.sessions_unavailable ?? "no session port was available to close this Lane's session"); continue; }
+			let handle = session.handle;
+			if (!handle && session.key) {
+				const found = await input.sessions.find(session.key).catch(() => null);
+				if (!found || (found as { ok?: unknown }).ok === false) { retain("the session could not be looked up, so no exit proof was observed"); continue; }
+				handle = "handle" in found ? found.handle : null;
+			}
+			if (handle) {
+				if (!session.key) { retain("the session carries no key, so its ownership cannot be proven"); continue; }
+				try { await input.sessions.stop(handle); } catch { /* closeWithProof is the authority on exit */ }
+				try {
+					proof = await input.sessions.closeWithProof(handle, session.key);
+				} catch (error) {
+					retain(`closeWithProof threw: ${error instanceof Error ? error.message : String(error)}`);
+					continue;
+				}
+				if (!proof || typeof proof !== "object" || (proof as { ok?: unknown }).ok !== true) {
+					const refusal = (proof ?? {}) as { code?: unknown; reason?: unknown };
+					retain(`${typeof refusal.reason === "string" ? refusal.reason : "closeWithProof did not prove exit"} (${typeof refusal.code === "string" ? refusal.code : "unproven"})`);
+					continue;
+				}
+			}
+		}
+		const outcome = cleanupDiscardedChildLane({ root, lanePath: lane.path, laneBranch: lane.branch, proof });
+		if (outcome.status === "removed") removed.add(child.task_id);
+		else retain(outcome.condition);
+	}
+	const everyLaneGone = record.children.every(child => removed.has(child.task_id));
+	const parentRef = record.branch ?? `refs/heads/imm/${record.initiative_slug}`;
+	let parentRemoved = false;
+	let parentCondition: string | null = null;
+	if (everyLaneGone) {
+		if (!isParentBranch(parentRef)) parentRemoved = true;
+		else if (!refExists(root, parentRef)) parentRemoved = true;
+		else {
+			const parent = cleanupParentBranch({ root, parentRef });
+			parentRemoved = parent.removed;
+			parentCondition = parent.removed ? null : parent.condition ?? "the batch branch could not be removed";
+		}
+		if (parentCondition) retained.push({ task_id: record.children[0]?.task_id ?? record.initiative_slug, path: parentRef, condition: parentCondition, reason: retainedLaneReason(parentCondition) });
+	}
+	save({ discard: { removed: [...removed], retained: retained.map(r => ({ task_id: r.task_id, condition: r.condition, reason: r.reason })), parent_branch_removed: parentRemoved, parent_branch_condition: parentCondition },
+		...(parentRemoved && everyLaneGone ? { batch_state: "discarded" as const } : {}) });
+	if (record.batch_state === "discarded") {
+		writeBatchRunReport(root, {
+			contract: "assurance_kernel/batch_run_report/v1",
+			batch_id: record.batch_id,
+			initiative_slug: record.initiative_slug,
+			batch_state: "discarded",
+			max_parallel: record.max_parallel,
+			children: record.children,
+			commits: record.commits,
+			reason: "The owner abandoned the loop work item; every session was closed with proof and every Lane and the batch branch were removed.",
+			handoffs: [],
+			next_action: TERMINAL_NEXT_ACTIONS.discarded!,
+			created_at: input.now,
+		} satisfies BatchLaneRunReport);
+	}
+	return { batch_id: record.batch_id, batch_state: record.batch_state === "discarded" ? "discarded" : "discarding",
+		removed: [...removed], retained, parent_branch_removed: parentRemoved };
 }
 
 /** Delivery and cleanup are reported apart; only the user removes a retained Lane. */
@@ -1669,6 +1791,7 @@ async function runLaneBatchEngine(
 				pendingInstruction: lastInstruction ? { text: lastInstruction.text, digest: lastInstruction.text_digest } : null,
 				pendingCorrection: lastCorrection ? { text: lastCorrection.text, digest: lastCorrection.text_digest } : null,
 				onWriteAhead,
+				...(input.stall_exempt === true ? { stallExempt: true } : {}),
 			});
 			if (JSON.stringify(result.session) !== JSON.stringify(child.session ?? null)) {
 				record.children = record.children.map((c) => (c.task_id === child.task_id ? { ...c, session: result.session } : c));

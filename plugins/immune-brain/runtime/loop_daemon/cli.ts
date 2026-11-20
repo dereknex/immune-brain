@@ -77,6 +77,7 @@ import {
 	type JudgedEventSelection,
 } from "./work_items.ts";
 import { readLeaderJournal } from "./leader_journal.ts";
+import { discardAbandonedBatches, type DiscardTickEntry } from "./discard.ts";
 import { applySteeringRequests } from "./steering.ts";
 import { loadRepairRetries } from "./repair_agent.ts";
 import { budgetExhausted, type ScheduleBudget } from "./scheduler.ts";
@@ -406,6 +407,8 @@ export async function runLoopDaemonCli(
 		};
 		/** True only inside the standing `imm-loop run` process. */
 		standingDaemon?: boolean;
+		/** Test seam for the Lane session provider the abandon discard closes sessions through. */
+		createPort?: Parameters<typeof discardAbandonedBatches>[0]["createPort"];
 		/** Deterministic clock seam for reconciliation schedule tests. */
 		now?: () => string;
 		/** Subprocess seams for testing `start` and `stop` lifecycle deterministically. */
@@ -1231,11 +1234,20 @@ Options:
 
 			// S5/D5: the rebuildable work-item store is restored before scheduling, and a
 			// level event is judged only when its fact fingerprint changed.
+			let discardedBatches: DiscardTickEntry[] = [];
 			if (!isDryRun) {
 				ensureWorkItems(absoluteRoot, stateDir, obs.snapshot, loadPublishedPlanDigests(stateDir), recordedAt);
 				// D5.2: a natively confirmed steer request lands before this tick judges,
 				// dispatches and briefs, so the gate sees it once and the file is removed.
 				applySteeringRequests(stateDir, recordedAt);
+				// ULS D4.2: an abandoned item's batch is discarded until its record is terminal.
+				discardedBatches = await discardAbandonedBatches({
+					root: absoluteRoot,
+					stateDir,
+					now: recordedAt,
+					host: (resolved.agents?.roles?.executor?.host ?? "claude-code") as never,
+					...(options?.createPort ? { createPort: options.createPort } : {}),
+				});
 			}
 			const judged: JudgedEventSelection = isDryRun
 				? { events: obs.events, pending: [] }
@@ -1293,7 +1305,7 @@ Options:
 							relayInputFactory: (taskId) =>
 								options?.relayInputFactory ??
 								(options?.laneRuntime
-									? createDefaultRelayInputFactory(absoluteRoot, taskId, { laneRuntime: options.laneRuntime })
+									? createDefaultRelayInputFactory(absoluteRoot, taskId, { laneRuntime: options.laneRuntime, stateDir })
 									: undefined),
 							...(options?.relayDecision ? { relayDecision: options.relayDecision } : {}),
 						});
@@ -1509,6 +1521,7 @@ Options:
 				dispatches_count: dispatchRes.dispatches.length,
 				local_answers: localAnswers,
 				local_answers_count: localAnswers.length,
+				discarded_batches: discardedBatches,
 				leader: leaderTick,
 				leader_items: leaderItems,
 				leader_items_count: leaderItems.length,
@@ -1528,6 +1541,10 @@ Options:
 				(decisions.length > 0 ? "\n" : "") +
 				dispatchRes.dispatches.map((d) => `  => dispatch: ${d.handler} [${d.outcome}] ${d.detail}`).join("\n") +
 				(dispatchRes.dispatches.length > 0 ? "\n" : "") +
+				discardedBatches
+					.map((d) => `  => discard: ${d.target} batch ${d.batch_id} ${d.batch_state}${d.retained.map((r) => `\n     ${r.reason}`).join("")}`)
+					.join("\n") +
+				(discardedBatches.length > 0 ? "\n" : "") +
 				`  => leader: ${leaderTick.woke ? "woke" : "idle"} (${leaderTick.reason}) fingerprint ${leaderTick.briefing_fingerprint}` +
 				(leaderItems.length === 0
 					? ""

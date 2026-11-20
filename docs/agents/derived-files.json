@@ -199,6 +199,7 @@
         "plugins/immune-brain-antigravity/runtime/loop_daemon/cli.ts",
         "plugins/immune-brain-antigravity/runtime/loop_daemon/decision_record.ts",
         "plugins/immune-brain-antigravity/runtime/loop_daemon/decision_relay.ts",
+        "plugins/immune-brain-antigravity/runtime/loop_daemon/discard.ts",
         "plugins/immune-brain-antigravity/runtime/loop_daemon/dispatch.ts",
         "plugins/immune-brain-antigravity/runtime/loop_daemon/drive_dispatcher.ts",
         "plugins/immune-brain-antigravity/runtime/loop_daemon/duplicate_candidates.ts",

@@ -115,6 +115,8 @@ import {
 	readWorkItem,
 	releaseClarifyWait,
 	setEnvironmentBlock,
+	takeResumeExemption,
+	workItemGate,
 	writeWorkItem,
 } from "./work_items.ts";
 import type { NormalizedLoopEvent, ObservationInput, RawComment, RawPR } from "./types.ts";
@@ -177,6 +179,8 @@ export interface AgentDriveRequest {
 	confirmation_source?: "tracker_approval" | "policy_auto";
 	base_head: string;
 	now: string;
+	/** D4.3: the first advance after a resume observes first and exempts one stall judgment. */
+	stall_exempt?: boolean;
 }
 
 /** Drive one Initiative-shaped WorkItem as a single v3 batch (ULS Spec D2). */
@@ -191,6 +195,8 @@ export interface AgentDriveInitiativeRequest {
 	confirmation_ref: string;
 	base_head: string;
 	now: string;
+	/** D4.3: the first advance after a resume observes first and exempts one stall judgment. */
+	stall_exempt?: boolean;
 }
 
 /** One enrollable child plan entry, in the Kernel authorization registry's own shape. */
@@ -237,6 +243,8 @@ export interface AgentDriveResult {
 	parked?: { task_id: string; reason: string } | null;
 	/** An Initiative drive's batch record, or null when none exists; absent leaves the binding as it is. */
 	batch_id?: string | null;
+	/** D4.3: the item is paused, so no advance ran; the job waits without spending its deadlines. */
+	paused?: boolean;
 }
 
 export type AgentHandlerOutcome = "executed" | "failed" | "requires_standing_daemon";
@@ -1194,6 +1202,11 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 					const intent = deps.readIntent(candidateTaskId);
 				if (!intent)
 					return { outcome: "failed" as const, detail: `task intent disappeared: ${candidateTaskId}`, exit: firstExit };
+				const driveStep = async (): Promise<AgentDriveResult> => {
+					const gate = driveGate(context.stateDir, workItemTargetOf(context), now());
+					if (!gate.run) return gate.result;
+					return deps.drive({ ...driveInput(), ...(gate.stall_exempt ? { stall_exempt: true } : {}) });
+				};
 				const driveInput = () => ({
 					root: context.root,
 					task_id: candidateTaskId,
@@ -1206,7 +1219,7 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 					base_head: baseHead,
 					now: now(),
 				});
-				let driven = await deps.drive(driveInput());
+				let driven = await driveStep();
 				noteDriveEnvironment(context, driven.reason, now());
 				// A startup or mid-run dialog holds the Lane open without failing the
 				// job: post the Issue escalation once per distinct detail, then re-drive
@@ -1216,10 +1229,19 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 				// A Lane that is merely running is advanced again at the same interval
 				// (D15) until it settles or the job's runtime limit is reached.
 				let escalatedDetail: string | null = null;
-				const holdDeadline = Date.now() + envMs(process.env.IMM_LOOP_DIALOG_HOLD_MAX_MS, LANE_DIALOG_HOLD_MAX_MS);
-				const driveDeadline = Date.now() + envMs(process.env.IMM_LOOP_DRIVE_MAX_MS, LANE_DRIVE_MAX_MS);
-				const retry = () => new Promise((resolve) => setTimeout(resolve, envMs(process.env.IMM_LOOP_DIALOG_RETRY_MS, LANE_DIALOG_RETRY_MS)));
+				let holdDeadline = Date.now() + envMs(process.env.IMM_LOOP_DIALOG_HOLD_MAX_MS, LANE_DIALOG_HOLD_MAX_MS);
+				let driveDeadline = Date.now() + envMs(process.env.IMM_LOOP_DRIVE_MAX_MS, LANE_DRIVE_MAX_MS);
+				const retryMs = envMs(process.env.IMM_LOOP_DIALOG_RETRY_MS, LANE_DIALOG_RETRY_MS);
+				const retry = () => new Promise((resolve) => setTimeout(resolve, retryMs));
 				while (!driven.settled) {
+					if (driven.paused) {
+						// A paused item advances nothing and spends no deadline.
+						holdDeadline += retryMs;
+						driveDeadline += retryMs;
+						await retry();
+						driven = await driveStep();
+						continue;
+					}
 					// A parked child is a human decision: escalate once and stop retrying.
 					if (driven.parked) {
 						const detail = `Lane ${candidateTaskId} is parked needs_human (${driven.parked.reason}); a literal-user confirmation must resume it`;
@@ -1257,7 +1279,7 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 							exit: driven.exit,
 						};
 					await retry();
-					driven = await deps.drive(driveInput());
+					driven = await driveStep();
 					noteDriveEnvironment(context, driven.reason, now());
 				}
 				const exit = driven.exit;
@@ -1329,8 +1351,11 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 				if (prior.length > 0)
 					return { outcome: "settled" as const, detail: `initiative ${input.initiativeSlug} batch already settled`, exit: prior[0]!.exit };
 				const step = async (): Promise<AgentDriveResult> => {
+					const gate = driveGate(context.stateDir, workTarget, now());
+					if (!gate.run) return gate.result;
 					const recorded = readWorkItem(context.stateDir, workTarget)?.binding.batch_id ?? null;
 					const driven = await deps.driveInitiative({
+						...(gate.stall_exempt ? { stall_exempt: true } : {}),
 						root: context.root,
 						slug: input.initiativeSlug,
 						task_ids: input.taskIds,
@@ -1348,10 +1373,19 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 				};
 				let driven = await step();
 				let escalatedDetail: string | null = null;
-				const holdDeadline = Date.now() + envMs(process.env.IMM_LOOP_DIALOG_HOLD_MAX_MS, LANE_DIALOG_HOLD_MAX_MS);
-				const driveDeadline = Date.now() + envMs(process.env.IMM_LOOP_DRIVE_MAX_MS, LANE_DRIVE_MAX_MS);
-				const retry = () => new Promise((resolve) => setTimeout(resolve, envMs(process.env.IMM_LOOP_DIALOG_RETRY_MS, LANE_DIALOG_RETRY_MS)));
+				let holdDeadline = Date.now() + envMs(process.env.IMM_LOOP_DIALOG_HOLD_MAX_MS, LANE_DIALOG_HOLD_MAX_MS);
+				let driveDeadline = Date.now() + envMs(process.env.IMM_LOOP_DRIVE_MAX_MS, LANE_DRIVE_MAX_MS);
+				const retryMs = envMs(process.env.IMM_LOOP_DIALOG_RETRY_MS, LANE_DIALOG_RETRY_MS);
+				const retry = () => new Promise((resolve) => setTimeout(resolve, retryMs));
 				while (!driven.settled) {
+					if (driven.paused) {
+						// A paused item advances nothing and spends no deadline.
+						holdDeadline += retryMs;
+						driveDeadline += retryMs;
+						await retry();
+						driven = await step();
+						continue;
+					}
 					if (driven.parked) {
 						const detail = `Lane ${driven.parked.task_id} of initiative ${input.initiativeSlug} is parked needs_human (${driven.parked.reason}); a literal-user confirmation must resume it`;
 						await escalateOnce(context, "lane_entry_blocked", jobTarget, driven.parked.task_id, detail);
@@ -1995,6 +2029,23 @@ export function createDefaultAgentHandlerDeps(
  * `advanceTask` reads the Kernel projection instead of claiming a Host verdict
  * the daemon has none of.
  */
+/**
+ * ULS D4.3: what one drive pass may do for this WorkItem right now. A paused item
+ * is skipped (sessions stay as they are), an abandoned one is refused so the
+ * tick's discard owns the batch, and the first pass after a resume carries the
+ * one-shot stall exemption (consumed here, once).
+ */
+export function driveGate(stateDir: string, target: string, at: string):
+	| { run: true; stall_exempt: boolean }
+	| { run: false; result: AgentDriveResult } {
+	const item = readWorkItem(stateDir, target);
+	const gate = workItemGate(item);
+	const batch_id = item?.binding.batch_id ?? null;
+	if (gate === "work_item_paused") return { run: false, result: { settled: false, exit: null, reason: "lane running", batch_id, paused: true } };
+	if (gate === "work_item_abandoned") return { run: false, result: { settled: false, exit: null, reason: "work_item_abandoned: the owner abandoned this item; the loop daemon discards its batch", batch_id } };
+	return { run: true, stall_exempt: takeResumeExemption(stateDir, target, at) };
+}
+
 async function driveSingleTaskLane(
 	input: AgentDriveRequest,
 	context: { stateDir: string; profile: { host: ExecutorHost; model?: string | null; effort?: string | null }; pluginRoot: string },
@@ -2062,6 +2113,7 @@ async function driveSingleTaskLane(
 			kernel,
 			git: createDefaultBatchGitPort(),
 			max_parallel: 1,
+			...(input.stall_exempt ? { stall_exempt: true } : {}),
 			supervision: {
 				parent_host: context.profile.host,
 				...(context.profile.model || context.profile.effort
@@ -2179,6 +2231,7 @@ export async function driveInitiativeLane(
 		git: createDefaultBatchGitPort(),
 		max_parallel: maxParallel,
 		final_verification: finalVerification,
+		...(input.stall_exempt ? { stall_exempt: true } : {}),
 		supervision: {
 			parent_host: context.profile.host,
 			...(context.profile.model || context.profile.effort

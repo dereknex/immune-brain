@@ -29,7 +29,7 @@ import { findActiveLaneBatchForTask } from "../unattended/batch_preflight";
 import { isLaneBatchRecord, isTerminalBatchState, readAnyBatchRunState } from "../unattended/batch_state";
 import { randomUUID } from "node:crypto";
 import { resolveConfig } from "../config/layered_config";
-import { advanceLanes, startLanes } from "../lane_sessions/index";
+import { advanceLanes, observeLanes, startLanes } from "../lane_sessions/index";
 import type { ExecutorPreferences } from "../unattended/agent_profiles";
 import { createEnrollmentAuthorityRegistry } from "../kernel/enrollment_authority";
 import { projectAssurance } from "../kernel/assurance_projection";
@@ -70,6 +70,8 @@ export interface LoopDriveBase {
 	git?: BatchRunnerGitPort;
 	max_parallel?: number;
 	supervision: LoopDriveSupervision;
+	/** D4.3: this one advance observes first and holds idle sessions instead of judging them stalled. */
+	stall_exempt?: boolean;
 	/** Test seam for the session provider; production resolves the real one and fails closed outside Herdr. */
 	createPort?: (provider: string, env: Record<string, string | undefined>) => never;
 }
@@ -156,6 +158,7 @@ export async function dispatchLoopDrive(input: LoopDriveInput): Promise<LoopDriv
 		now: input.now,
 		confirmation_time: input.confirmation_time,
 		entry_kind: "single_task" as const,
+		...(input.stall_exempt ? { stall_exempt: true } : {}),
 		...(input.createPort ? { createPort: input.createPort as never } : {}),
 	};
 	if (!active || !isLaneBatchRecord(active.record)) {
@@ -181,6 +184,7 @@ export async function dispatchLoopDrive(input: LoopDriveInput): Promise<LoopDriv
 		}
 		return { settled: false, exit: null, hold_for_dialog: holdOf(input.root, batchId, input.task_id), parked: parkedOf(input.root, batchId, input.task_id), batch_id: batchId, reason: "lane started" };
 	}
+	if (input.stall_exempt) await observeBeforeResume(laneDeps, batchId);
 	const advanced = await advanceLanes(input.root, batchId, laneDeps as never);
 	if (advanced && typeof advanced === "object" && (advanced as { ok?: unknown }).ok === false) {
 		const refusal = advanced as { code: string; reason: string; recovery: string };
@@ -218,7 +222,29 @@ export async function daemonAdvanceTask(laneRoot: string, taskId: string) {
 	};
 }
 
+/**
+ * D4.3: the first advance after a resume observes the batch (read-only) before it
+ * advances, so the reconciler sees sessions as they are now, not as paused.
+ */
+async function observeBeforeResume(
+	deps: { root: string; kernel: BatchRunnerKernelPort; env: Record<string, string | undefined>; host: string; createPort?: unknown },
+	batchId: string,
+): Promise<void> {
+	try {
+		await observeLanes(deps.root, batchId, {
+			kernel: deps.kernel,
+			env: deps.env,
+			host: deps.host as never,
+			...(deps.createPort ? { createPort: deps.createPort as never } : {}),
+		});
+	} catch {
+		// Observation is advisory; the advance below reads the same record.
+	}
+}
+
 export interface DaemonAdvanceOptions {
+	/** D4.3: this one advance observes first and holds idle sessions instead of judging them stalled. */
+	stall_exempt?: boolean;
 	parent_host?: string;
 	createPort?: (provider: string, env: Record<string, string | undefined>) => never;
 }
@@ -286,8 +312,10 @@ export async function advanceDaemonLanes(root: string, batchId: string, options:
 		max_parallel: record.max_parallel,
 		now: new Date().toISOString(),
 		confirmation_time: record.confirmation_time,
+		...(options.stall_exempt ? { stall_exempt: true } : {}),
 		...(options.createPort ? { createPort: options.createPort as never } : {}),
 	};
+	if (options.stall_exempt) await observeBeforeResume(laneDeps, batchId);
 	const advanced = await advanceLanes(root, batchId, laneDeps as never);
 	return advanced as unknown as Record<string, unknown>;
 }
@@ -394,10 +422,12 @@ async function dispatchInitiativeDrive(input: LoopInitiativeDriveInput): Promise
 		now: input.now,
 		confirmation_time: input.confirmation_time,
 		entry_kind: "initiative" as const,
+		...(input.stall_exempt ? { stall_exempt: true } : {}),
 		...(input.createPort ? { createPort: input.createPort as never } : {}),
 	};
 	let outcome: unknown;
 	if (existing && !isTerminalBatchState(existing.batch_state)) {
+		if (input.stall_exempt) await observeBeforeResume(laneDeps, input.batch_id);
 		outcome = await advanceLanes(input.root, input.batch_id, laneDeps as never);
 	} else {
 		if (input.final_verification.length === 0)

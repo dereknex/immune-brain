@@ -96,7 +96,7 @@ import {
 	rollDailyStats,
 	saveLoopState,
 } from "./state.ts";
-import { isWorkItemGate, plannedWorkItemCount, readWorkItem, workItemGate, workItemScopeHint } from "./work_items.ts";
+import { isWorkItemGate, plannedWorkItemCount, readWorkItem, takeResumeExemption, workItemGate, workItemOfBatch, workItemScopeHint } from "./work_items.ts";
 import {
 	planStatusIssue,
 	type LoopStatusSnapshot,
@@ -196,6 +196,8 @@ export function createDefaultRelayInputFactory(
 		meta?: ToolMeta;
 		laneRuntime: LaneRuntimeFactory;
 		createPort?: (provider: string, env: Record<string, string | undefined>) => never;
+		/** The loop state directory, so a relayed advance honours its WorkItem's pause (ULS D4.3). */
+		stateDir?: string;
 	},
 ): RelayInputFactory<unknown> {
 	const config = resolveConfig(root);
@@ -266,11 +268,18 @@ export function createDefaultRelayInputFactory(
 		...(sessions ? { sessions } : {}),
 		// The answered decision resumes through the daemon's own advance: the
 		// composition root re-issues the batch binding from the v3 record.
-		advance: async (batchId: string) =>
-			advanceDaemonLanes(root, batchId, {
+		advance: async (batchId: string) => {
+			// D4.3: a paused item's batch is skipped; the decision is already relayed and
+			// the advance happens on the first pass after resume.
+			const item = options.stateDir ? workItemOfBatch(options.stateDir, batchId, taskId) : null;
+			if (workItemGate(item) !== null) return { ok: true, skipped: workItemGate(item), batch_id: batchId };
+			const stallExempt = options.stateDir && item ? takeResumeExemption(options.stateDir, item.target, new Date().toISOString()) : false;
+			return advanceDaemonLanes(root, batchId, {
 				parent_host: parentHost,
+				...(stallExempt ? { stall_exempt: true } : {}),
 				...(options.createPort ? { createPort: options.createPort } : {}),
-			}),
+			});
+		},
 		extra: { chosen_option: choice.option_id },
 	});
 }
@@ -956,6 +965,7 @@ export async function dispatchDecisions(
 								? createDefaultRelayInputFactory(options.root, taskId, {
 										commentId: event.comment_id,
 										laneRuntime: options.laneRuntime,
+										stateDir: options.stateDir,
 									})
 								: undefined),
 					);
@@ -1056,6 +1066,7 @@ export async function dispatchDecisions(
 							? createDefaultRelayInputFactory(options.root, taskId, {
 									commentId: event.comment_id,
 									laneRuntime: options.laneRuntime,
+									stateDir: options.stateDir,
 								})
 							: undefined),
 				);

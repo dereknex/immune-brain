@@ -123,6 +123,11 @@ export interface WorkItem {
 	/** D5.2: a natively confirmed `pause` holds every dispatch path, not the state machine. */
 	paused?: boolean;
 	/**
+	 * ULS D4.3: set by `resume` on an item with a batch. The next advance of that
+	 * batch observes first and exempts one stall judgment, then clears this.
+	 */
+	resume_pending?: boolean;
+	/**
 	 * ULS D5.3: the environment fact holding this item (no usable Lane session
 	 * provider). It is shown in status and never enters the briefing, a refusal
 	 * count or a replan round, so waiting on the environment burns no leader budget.
@@ -245,6 +250,23 @@ export function workItemGate(item: WorkItem | null | undefined): WorkItemGate | 
 	if (!item) return null;
 	if (item.state === "abandoned") return "work_item_abandoned";
 	return item.paused === true ? "work_item_paused" : null;
+}
+
+/**
+ * ULS D4.3: consume the one-shot stall exemption a `resume` left on this item.
+ * Returns true exactly once per resume; a paused or abandoned item keeps it.
+ */
+export function takeResumeExemption(stateDir: string, target: string, now: string): boolean {
+	const item = readWorkItem(stateDir, target);
+	if (!item || item.resume_pending !== true || workItemGate(item) !== null) return false;
+	writeWorkItem(stateDir, { ...item, resume_pending: false, revision: item.revision + 1, updated_at: now });
+	return true;
+}
+
+/** The WorkItem whose batch or bound task this is, so a relayed advance honours its pause. */
+export function workItemOfBatch(stateDir: string, batchId: string, taskId: string | null): WorkItem | null {
+	return listWorkItems(stateDir).find(item =>
+		item.binding.batch_id === batchId || (taskId !== null && item.binding.task_ids.includes(taskId))) ?? null;
 }
 
 /** Move one item; an illegal transition is recorded and refused, leaving the state unchanged. */

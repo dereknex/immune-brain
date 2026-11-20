@@ -90,6 +90,48 @@ export function cleanupIntegratedChildLane(input: {
 }
 
 /**
+ * Remove one child's Lane worktree and `imm-lane/` branch for a discarded batch
+ * (loop-leader-uls-alignment D4.1). Unlike integrated cleanup the branch may
+ * carry commits the batch never took, because the owner abandoned the work; the
+ * exit proof and a clean worktree are still required, so uncommitted edits are
+ * never deleted. A worktree or branch already gone counts as removed, which
+ * makes a retry after a partial removal converge.
+ */
+export function cleanupDiscardedChildLane(input: {
+	root: string;
+	lanePath: string;
+	laneBranch: string;
+	/** The exit proof of the child's session; `null` only when the child never held a session. */
+	proof: unknown;
+}): { status: "removed"; worktree: string; branches: string[] } | { status: "retained"; condition: string } {
+	const retain = (condition: string): { status: "retained"; condition: string } => ({ status: "retained", condition });
+	const unproven = input.proof === null ? null : proofCondition(input.proof);
+	if (unproven) return retain(unproven);
+	const listed = git(input.root, "worktree", "list", "--porcelain");
+	if (listed.status !== 0) return retain("the worktree list is unreadable");
+	const registered = listed.stdout.split("\n").includes(`worktree ${input.lanePath}`);
+	if (registered) {
+		const status = git(input.lanePath, "status", "--porcelain", "--untracked-files=all");
+		if (status.status !== 0) return retain("the Lane status is unreadable");
+		if (status.stdout.trim()) {
+			const paths = status.stdout.split("\n").filter(Boolean).map(line => line.slice(3)).sort();
+			return retain(`the Lane has tracked modifications or untracked files: ${paths.join(", ")}`);
+		}
+		const removed = git(input.root, "worktree", "remove", input.lanePath);
+		if (removed.status !== 0) return retain(`the Lane worktree could not be removed: ${removed.stderr.trim()}`);
+	}
+	const laneRef = `refs/heads/${input.laneBranch}`;
+	const laneTip = git(input.root, "rev-parse", "--verify", "--quiet", `${laneRef}^{commit}`);
+	if (laneTip.status === 0) {
+		if (git(input.root, "worktree", "list", "--porcelain").stdout.split("\n").includes(`branch ${laneRef}`))
+			return retain(`${input.laneBranch} is checked out in another worktree`);
+		const deleted = git(input.root, "update-ref", "-d", laneRef, laneTip.stdout.trim());
+		if (deleted.status !== 0) return retain(`${input.laneBranch} could not be removed: ${deleted.stderr.trim()}`);
+	}
+	return { status: "removed", worktree: input.lanePath, branches: [input.laneBranch] };
+}
+
+/**
  * Delete the batch branch `refs/heads/imm/<slug>` after a successful
  * `checkout_delivery`. Only the checkout path calls this, only once the whole
  * batch completed and `deliverSingleTask` succeeded, and only when the branch

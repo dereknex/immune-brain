@@ -7286,7 +7286,7 @@ function writeBatchRunReport(root, report) {
       const prior = original;
       if (canonicalReportBytes(prior) === canonicalReportBytes(report))
         return prior;
-      if (prior.batch_state !== "needs_human")
+      if (prior.batch_state !== "needs_human" && !(report.batch_state === "discarded" && prior.batch_state !== "discarded"))
         return prior;
     }
     ensureSecureDirectory2(root, join8(".imm", "state", "batches"));
@@ -7299,7 +7299,7 @@ function canonicalReportBytes(report) {
 `;
 }
 function isTerminalBatchState(state) {
-  return state === "completed" || state === "budget_stopped" || state === "failed" || state === "rejected" || state === "superseded";
+  return state === "completed" || state === "budget_stopped" || state === "failed" || state === "rejected" || state === "superseded" || state === "discarded";
 }
 var REVIEW_HOSTS, EXECUTOR_HOSTS, BatchRuntimeTooOldError, BATCH_ID_PATTERN, CHILD_RUN_STATES, BATCH_RUN_STATES, ISO_TIMESTAMP_PATTERN, isObject = (v) => typeof v === "object" && v !== null && !Array.isArray(v), isHash = (v) => typeof v === "string" && /^sha256:[0-9a-f]{64}$/.test(v), isRevision = (v) => typeof v === "number" && Number.isSafeInteger(v) && v > 0, isCommit = (v) => typeof v === "string" && /^[0-9a-f]{40}$/.test(v), LANE_CHILD_STATES, LANE_BOUND_STATES, REVIEWABLE_CHILD_STATES;
 var init_batch_state = __esm(() => {
@@ -7345,7 +7345,9 @@ var init_batch_state = __esm(() => {
     "budget_stopped",
     "failed",
     "rejected",
-    "superseded"
+    "superseded",
+    "discarding",
+    "discarded"
   ]);
   ISO_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
   LANE_CHILD_STATES = new Set([
@@ -18736,7 +18738,7 @@ async function reconcileChildSession(input) {
   if (pendingInstruction && isHandled(session, pendingInstruction.digest) || pendingCorrection && isHandled(session, pendingCorrection.digest)) {}
   if (kernel.settled || kernel.hasOpenDecision || kernel.hasReplan)
     return { session, action: "held" };
-  return await stallOrProgress(port, session, { batchId, taskId, kernel, interactionMode, entry, laneCwd, state, onWriteAhead, adopted });
+  return await stallOrProgress(port, session, { batchId, taskId, kernel, interactionMode, entry, laneCwd, state, onWriteAhead, adopted, stallExempt: input.stallExempt === true });
 }
 async function stallOrProgress(port, session, opts) {
   const { batchId, taskId, kernel, interactionMode, entry, laneCwd, state, onWriteAhead, adopted } = opts;
@@ -18782,6 +18784,8 @@ async function stallOrProgress(port, session, opts) {
     });
     return { session, action: "rotated" };
   }
+  if (opts.stallExempt && state !== "exited")
+    return { session, action: "held" };
   if (state === "exited" || interactionMode === "parent_relayed" && !adopted) {
     const closed = await port.closeWithProof(session.handle, session.key);
     if (isPortRefusal(closed))
@@ -19192,6 +19196,8 @@ var TERMINAL_NEXT_ACTIONS = {
   failed: "A lineage failure stopped the batch; inspect the failing child and the branch state.",
   rejected: "The batch was rejected before any enrollment; correct the stated reason and re-confirm.",
   superseded: "The plan moved past this record and an explicit disposition retired it; it grants no handoff and no child delivery.",
+  discarded: "The owner abandoned the batch: its sessions were closed with proof and its Lanes and branch were removed; nothing was delivered.",
+  discarding: "The batch is being discarded; the next tick retries each retained Lane and branch until every one is removed.",
   needs_human: LANE_NEEDS_HUMAN_NEXT_ACTION,
   running: "The batch is still running; no terminal report is due yet.",
   prepared: "The batch is prepared but not started."
@@ -20054,7 +20060,8 @@ async function runLaneBatchEngine(input, persisted) {
         laneCwd: child.lane.path,
         pendingInstruction: lastInstruction ? { text: lastInstruction.text, digest: lastInstruction.text_digest } : null,
         pendingCorrection: lastCorrection ? { text: lastCorrection.text, digest: lastCorrection.text_digest } : null,
-        onWriteAhead
+        onWriteAhead,
+        ...input.stall_exempt === true ? { stallExempt: true } : {}
       });
       if (JSON.stringify(result.session) !== JSON.stringify(child.session ?? null)) {
         record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, session: result.session } : c);
@@ -22330,6 +22337,8 @@ async function advanceLanes(root, batchId, deps) {
   if (!persisted || !isLaneBatchRecord(persisted)) {
     return { ok: false, code: "lane_session_unavailable", reason: `lane_session_unavailable: no active v3 batch ${batchId}`, recovery: "start a fresh batch" };
   }
+  if (persisted.batch_state === "discarding")
+    return { ok: false, code: "lane_session_unavailable", reason: `lane_session_unavailable: batch ${batchId} is being discarded`, recovery: "the loop daemon retries the discard on its next tick" };
   const recordedProvider = persisted.session_provider ?? null;
   const registry = deps.providerRegistry ?? SESSION_PROVIDER_REGISTRY;
   if (recordedProvider) {
@@ -22377,6 +22386,7 @@ async function advanceLanes(root, batchId, deps) {
       ...deps.lane_session_close !== undefined ? { lane_session_close: deps.lane_session_close } : {},
       ...deps.lane_offers !== undefined ? { lane_offers: deps.lane_offers } : {},
       ...deps.review_profile !== undefined ? { review_profile: deps.review_profile } : {},
+      ...deps.stall_exempt ? { stall_exempt: true } : {},
       sessions: adapter
     };
     const rawAdv = await runLaneBatch(input, persisted);
@@ -22416,6 +22426,7 @@ async function advanceLanes(root, batchId, deps) {
     ...deps.lane_session_close !== undefined ? { lane_session_close: deps.lane_session_close } : {},
     ...deps.lane_offers !== undefined ? { lane_offers: deps.lane_offers } : {},
     ...deps.review_profile !== undefined ? { review_profile: deps.review_profile } : {},
+    ...deps.stall_exempt ? { stall_exempt: true } : {},
     sessions: adapter
   };
   const raw2 = await runLaneBatch(input, persisted);
