@@ -17138,7 +17138,7 @@ var init_batch_leak_restore = __esm(() => {
 
 // plugins/immune-brain/runtime/unattended/batch_preflight.ts
 import { existsSync as existsSync16, readdirSync as readdirSync10, readFileSync as readFileSync19 } from "node:fs";
-import { randomUUID as randomUUID9 } from "node:crypto";
+import { createHash as createHash23, randomUUID as randomUUID9 } from "node:crypto";
 import { dirname as dirname15, join as join27 } from "node:path";
 import { spawnSync as spawnSync17 } from "node:child_process";
 function batchRejection(key, detail = "") {
@@ -18025,7 +18025,7 @@ import { stdin, stdout } from "node:process";
 var PLUGIN_VERSION = "9.1.0";
 
 // plugins/immune-brain/runtime/host-core/interaction.ts
-import { createHash as createHash23, randomUUID as randomUUID10 } from "node:crypto";
+import { createHash as createHash24, randomUUID as randomUUID10 } from "node:crypto";
 
 // plugins/immune-brain/runtime/assurance/phase_entry.ts
 var RUN_ENTRY_REQUIRED = "run_entry_required";
@@ -18227,7 +18227,7 @@ function entryTokenRequestId(token) {
 var ALLOW_RULE_REQUEST_PREFIX = "allow-rule:";
 function hostConfirmationRef(host, input) {
   const kind = input.requestId.startsWith(ENTRY_TOKEN_REQUEST_PREFIX) ? "entry" : input.requestId.startsWith(ALLOW_RULE_REQUEST_PREFIX) ? "allow-rule" : "confirm";
-  return `${host}-${kind}-${createHash23("sha256").update(`${input.connectionId}\x00${input.toolCallId}\x00${input.requestId}\x00${input.operation}\x00${input.taskId ?? ""}\x00${input.initiativeSlug ?? ""}\x00${input.intentRevision ?? ""}\x00${input.intentContentHash ?? ""}\x00${input.bindingDigest ?? ""}\x00${input.planDigest ?? ""}`).digest("hex").slice(0, 16)}`;
+  return `${host}-${kind}-${createHash24("sha256").update(`${input.connectionId}\x00${input.toolCallId}\x00${input.requestId}\x00${input.operation}\x00${input.taskId ?? ""}\x00${input.initiativeSlug ?? ""}\x00${input.intentRevision ?? ""}\x00${input.intentContentHash ?? ""}\x00${input.bindingDigest ?? ""}\x00${input.planDigest ?? ""}`).digest("hex").slice(0, 16)}`;
 }
 function enrollmentNonce() {
   return randomUUID10();
@@ -18246,7 +18246,7 @@ init_batch_final_verification();
 init_batch_final_report();
 init_checkout_delivery();
 import { spawnSync as spawnSync19 } from "node:child_process";
-import { createHash as createHash25 } from "node:crypto";
+import { createHash as createHash26 } from "node:crypto";
 import { existsSync as existsSync18, realpathSync as realpathSync17 } from "node:fs";
 import { isAbsolute as isAbsolute12, join as join29 } from "node:path";
 import { readFileSync as readFileSync21 } from "node:fs";
@@ -18564,7 +18564,7 @@ init_role_prompt_bridge();
 init_plugin_source_skew();
 
 // plugins/immune-brain/runtime/unattended/batch_session_port.ts
-import { createHash as createHash24 } from "node:crypto";
+import { createHash as createHash25 } from "node:crypto";
 function isPortRefusal(result) {
   return typeof result === "object" && result !== null && result.ok === false;
 }
@@ -18583,13 +18583,13 @@ function foldTask(taskId, maxLen) {
 function laneSessionLabel(taskId) {
   if (taskId.length > 0 && taskId.length <= 32)
     return taskId;
-  const digest = createHash24("sha256").update(taskId).digest("hex").slice(0, 12);
+  const digest = createHash25("sha256").update(taskId).digest("hex").slice(0, 12);
   return `${foldTask(taskId, 32 - 1 - 12)}-${digest}`;
 }
 function laneSessionKey(batchId, taskId, generation) {
   if (!Number.isSafeInteger(generation) || generation <= 0)
     throw new Error("laneSessionKey: generation must be a positive integer");
-  const digest = createHash24("sha256").update(`${batchId}\x00${taskId}\x00${String(generation)}`).digest("hex").slice(0, 12);
+  const digest = createHash25("sha256").update(`${batchId}\x00${taskId}\x00${String(generation)}`).digest("hex").slice(0, 12);
   const digits = String(generation).length;
   const maxFold = 36 - (4 + 2 + digits + 1 + 12);
   const folded = foldTask(taskId, Math.max(1, maxFold));
@@ -19723,7 +19723,7 @@ async function runLaneBatchEngine(input, persisted) {
         task_id: request.task_id,
         kind: request.kind,
         text: request.text,
-        text_digest: `sha256:${createHash25("sha256").update(request.text).digest("hex")}`
+        text_digest: `sha256:${createHash26("sha256").update(request.text).digest("hex")}`
       }];
       persist();
       instruction = { task_id: request.task_id, kind: request.kind, accepted: true, reason: null };
@@ -20274,7 +20274,7 @@ init_plugin_source_skew();
 init_assurance_projection();
 
 // plugins/immune-brain/runtime/loop_daemon/steering.ts
-import { createHash as createHash26, randomUUID as randomUUID11 } from "node:crypto";
+import { createHash as createHash27, randomUUID as randomUUID11 } from "node:crypto";
 import { chmodSync as chmodSync4, existsSync as existsSync20, mkdirSync as mkdirSync14, readFileSync as readFileSync23, readdirSync as readdirSync12, rmSync as rmSync13, writeFileSync as writeFileSync14 } from "node:fs";
 import { join as join31 } from "node:path";
 
@@ -22568,7 +22568,7 @@ function steeringDir(stateDir) {
   return join31(stateDir, "steering");
 }
 function steeringBindingDigest(target, action, reason) {
-  return `sha256:${createHash26("sha256").update(`${target}\x00${action}\x00${reason ?? ""}`).digest("hex")}`;
+  return `sha256:${createHash27("sha256").update(`${target}\x00${action}\x00${reason ?? ""}`).digest("hex")}`;
 }
 function writeSteeringRequest(stateDir, request) {
   const dir = steeringDir(stateDir);
@@ -23778,11 +23778,11 @@ import { dirname as dirname17, join as join33 } from "node:path";
 import { tmpdir as tmpdir6 } from "node:os";
 
 // plugins/immune-brain/runtime/host-core/private_file.ts
-import { createHash as createHash27 } from "node:crypto";
+import { createHash as createHash28 } from "node:crypto";
 import { constants as constants7, closeSync as closeSync7, fstatSync as fstatSync4, ftruncateSync, lstatSync as lstatSync18, mkdirSync as mkdirSync15, openSync as openSync7, readSync, rmSync as rmSync14, writeSync } from "node:fs";
 import { join as join32 } from "node:path";
 function sessionHash(sessionId) {
-  return createHash27("sha256").update(sessionId).digest("hex");
+  return createHash28("sha256").update(sessionId).digest("hex");
 }
 function cacheDir(root, cacheName) {
   return join32(root, cacheName);
@@ -24509,7 +24509,7 @@ init_coordinator();
 init_batch_preflight();
 init_intent();
 init_storage();
-import { createHash as createHash28 } from "node:crypto";
+import { createHash as createHash29 } from "node:crypto";
 var UNCHANGED_CONTINUATION_LIMIT = 1;
 var USER_WAIT_GUIDANCE = "If the remaining step is an action only the user can perform, waiting for it is a valid stop: stop without repeating the request you already made.";
 function bindRun(binding) {
@@ -24523,7 +24523,7 @@ function releasesRunBinding(prompt, phase) {
   return phase === "planner" || phase === "brainstorm" || /^(?:stop|cancel|pause)(?:\s+(?:execution|the task|this run))?[.!\s]*$/i.test(prompt.trim()) || /^(?:请)?(?:停止|取消|暂停)(?:执行|任务|本次运行|这个任务)?[。！!\s]*$/.test(prompt.trim());
 }
 function digest(value) {
-  return createHash28("sha256").update(JSON.stringify(value)).digest("hex");
+  return createHash29("sha256").update(JSON.stringify(value)).digest("hex");
 }
 function hasContiguousLaneRebind(record, fromDigest) {
   if (!isLaneBatchRecord(record))
@@ -25073,7 +25073,7 @@ import { realpathSync as realpathSync22, openSync as openSync9, fstatSync as fst
 import { tmpdir as tmpdir9, homedir as homedir3 } from "node:os";
 
 // plugins/immune-brain/runtime/assurance/review_mediation.ts
-import { createHash as createHash29 } from "node:crypto";
+import { createHash as createHash30 } from "node:crypto";
 function extractVerdictJson(input) {
   if (typeof input === "string") {
     const first = input.indexOf("{");
@@ -25105,7 +25105,7 @@ function verdictFingerprint(raw) {
   });
 }
 function digestOfReviewerBytes(bytes) {
-  return `sha256:${createHash29("sha256").update(bytes).digest("hex")}`;
+  return `sha256:${createHash30("sha256").update(bytes).digest("hex")}`;
 }
 var RELEASED_REVIEW_RECOVERY = "Call advance_assurance to obtain a new Review reservation, then dispatch one fresh reviewer with the returned envelope unchanged";
 var RETAINED_REVIEW_RECOVERY = "Await the dispatched reviewer once (a Port session's await_command when the reservation carries one), then call submit_review once; do not poll submit_review and do not dispatch another reviewer";
@@ -25961,7 +25961,7 @@ init_session_result_slot();
 init_host_port();
 import { execFileSync as execFileSync15 } from "node:child_process";
 import { accessSync as accessSync3, constants as constants9, existsSync as existsSync23, readFileSync as readFileSync25 } from "node:fs";
-import { createHash as createHash30 } from "node:crypto";
+import { createHash as createHash31 } from "node:crypto";
 import { delimiter as delimiter4, dirname as dirname19, join as join40 } from "node:path";
 import { fileURLToPath as fileURLToPath4 } from "node:url";
 var REVIEW_PROFILE_RECOVERY = "Set `agents.reviewer` (a user `agents.profiles` name, `host[:model][@effort]` or { host, model?, effort? }) in the user or project configuration, then call `advance_assurance`";
@@ -26035,7 +26035,7 @@ function git9(root, argv) {
   return execFileSync15("git", argv, { cwd: root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] });
 }
 function digest2(bytes) {
-  return `sha256:${createHash30("sha256").update(bytes).digest("hex")}`;
+  return `sha256:${createHash31("sha256").update(bytes).digest("hex")}`;
 }
 function reviewTreeState(root) {
   return {

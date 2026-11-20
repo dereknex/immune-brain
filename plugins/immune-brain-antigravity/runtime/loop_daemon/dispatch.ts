@@ -29,7 +29,8 @@ import { diffSnapshotOf, type HostRuntimeOptions, type ToolMeta } from "../host-
 import { projectAssurance } from "../kernel/assurance_projection.ts";
 import { relayLaneDecision, type LaneRelayTarget } from "../unattended/lane_decision.ts";
 import type { ExecutorHost } from "../unattended/agent_profiles.ts";
-import { findActiveLaneBatchForTask, laneDeliveryEvidence } from "../unattended/batch_preflight.ts";
+import { batchDeliveryEvidence, findActiveLaneBatchForTask, laneDeliveryEvidence } from "../unattended/batch_preflight.ts";
+import { isLaneBatchRecord, readAnyBatchRunState } from "../unattended/batch_state.ts";
 import type { BatchSessionPort } from "../unattended/batch_session_port.ts";
 import { openBatchSessionPort } from "../lane_sessions/index.ts";
 import { advanceDaemonLanes } from "./drive_dispatcher.ts";
@@ -410,6 +411,31 @@ function githubLocalOnlyGate(input: {
 			return posted !== "already_posted";
 		},
 	};
+}
+
+/** The Initiative batch a WorkItem recorded, or null when it has none or the record is a single-task batch. */
+function initiativeBatchOf(root: string, batchId: string | null): { batch_id: string; initiative_slug: string } | null {
+	if (!batchId) return null;
+	try {
+		const record = readAnyBatchRunState(root, batchId);
+		if (!record || !isLaneBatchRecord(record) || record.plan_source === "single_task") return null;
+		return { batch_id: record.batch_id, initiative_slug: record.initiative_slug };
+	} catch {
+		return null;
+	}
+}
+
+/** A child's TaskIntent as delivered at the batch commit, else as published in the working tree. */
+function readChildIntent(root: string, commit: string, taskId: string): any | null {
+	const path = `docs/plans/${taskId}.intent.json`;
+	const shown = spawnSync("git", ["-C", root, "show", `${commit}:${path}`], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+	try {
+		if (shown.status === 0) return JSON.parse(shown.stdout);
+		const local = join(root, path);
+		return existsSync(local) ? JSON.parse(readFileSync(local, "utf8")) : null;
+	} catch {
+		return null;
+	}
 }
 
 export async function dispatchDecisions(
@@ -1068,6 +1094,65 @@ export async function dispatchDecisions(
 						);
 						continue;
 					}
+				}
+
+				// ULS D3: a settled Initiative batch opens one PR from imm/<slug> with
+				// every child's audit digest; single-task delivery stays on the path below.
+				const initiative = initiativeBatchOf(options.root, readWorkItem(stateDir, `issue-${issueNum}`)?.binding.batch_id ?? null);
+				if (initiative) {
+					const evidence = batchDeliveryEvidence(options.root, initiative.batch_id);
+					if (!evidence.ok) {
+						emitDispatch(
+							decision.decision_id,
+							decision.handler,
+							"failed",
+							`no delivery evidence for initiative ${initiative.initiative_slug} (batch ${initiative.batch_id}): ${evidence.reason}`,
+						);
+						continue;
+					}
+					const children = evidence.children.map((child) => ({
+						...child,
+						intent: readChildIntent(options.root, evidence.commit, child.task_id),
+					}));
+					const missing = children.find((child) => !child.intent);
+					if (missing) {
+						emitDispatch(
+							decision.decision_id,
+							decision.handler,
+							"failed",
+							`no task intent for ${missing.task_id} of initiative ${initiative.initiative_slug} at ${evidence.commit.slice(0, 12)}`,
+						);
+						continue;
+					}
+					const baseBranch = detectBaseBranch(options.root);
+					const risk = children.map((child) => child.intent?.risk).find((value) => value && value !== "routine") ?? "routine";
+					const prReq: LoopPullRequestRequest = {
+						slug: evidence.slug,
+						task_id: evidence.slug,
+						issue_number: parseInt(issueNum, 10),
+						risk,
+						base: baseBranch,
+						title: `imm(${evidence.slug}): deliver initiative (${children.length} slice${children.length === 1 ? "" : "s"})`,
+						verification_summary: [
+							`Batch: \`${evidence.batch_id}\``,
+							`Initiative evidence digest: \`${evidence.digest}\``,
+							`Commit SHA: \`${evidence.commit}\``,
+							"",
+							"### Slices",
+							...children.map(
+								(child) =>
+									`- \`${child.task_id}\` — ${(child.intent?.acceptance ?? []).map((ac: any) => ac.id).join(", ") || "no acceptance"} — audit digest \`${child.digest}\``,
+							),
+						].join("\n"),
+					};
+					const opened = await openLoopPullRequest(prReq, gitHubPort);
+					emitDispatch(
+						decision.decision_id,
+						decision.handler,
+						"executed",
+						`${opened.created ? "opened" : "found existing"} PR #${opened.number} for initiative ${evidence.slug} (head: ${opened.branch}, base: ${baseBranch}, commit: ${evidence.commit}, digest: ${evidence.digest})`,
+					);
+					continue;
 				}
 
 				// 1. Resolve TaskIntent

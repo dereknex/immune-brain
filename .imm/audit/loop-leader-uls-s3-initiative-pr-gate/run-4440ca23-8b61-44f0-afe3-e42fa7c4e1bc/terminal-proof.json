@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "loop-leader-uls-s3-initiative-pr-gate",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:loop-leader-uls-s3-initiative-pr-gate:2026-11-20T16:44:40.454Z",
+  "final_record_hash": "sha256:df40d76e96721de1b636bd1f5f361cf4061c15ee07a0119a7d7eeaa21e7fcf1e",
+  "terminalized_at": "2026-11-20T16:44:40.454Z"
+}
