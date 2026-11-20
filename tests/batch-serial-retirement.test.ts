@@ -8,7 +8,12 @@ import { canonicalIntentHash, parseTaskIntentV1, readTaskIntent } from "../plugi
 import type { AssuranceProjectionResult } from "../plugins/immune-brain/runtime/kernel/assurance_projection";
 import { prepareBatchPreflight, projectBatchPreflight } from "../plugins/immune-brain/runtime/unattended/batch_preflight";
 import { readStaleBatchLookup, retireStaleBatch } from "../plugins/immune-brain/runtime/unattended/batch_disposition";
-import { startBatch, type BatchRunnerKernelPort, type StartBatchInput } from "../plugins/immune-brain/runtime/unattended/batch_runner";
+import { runLaneBatch } from "../plugins/immune-brain/runtime/unattended/batch_lanes";
+import type { BatchRunnerKernelPort } from "../plugins/immune-brain/runtime/unattended/batch_kernel_port";
+import type { StartBatchInput } from "../plugins/immune-brain/runtime/unattended/batch_lanes";
+
+/** S8: the engine entry reads the persisted record the way the retired transitional entry did. */
+const startBatch = (input: StartBatchInput) => runLaneBatch(input, readAnyBatchRunState(input.root, input.batch_id));
 import { prepareBatchRunState, readAnyBatchRunState, writeBatchRunState, type BatchLaneRunReport } from "../plugins/immune-brain/runtime/unattended/batch_state";
 
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
@@ -57,7 +62,8 @@ function fixture(independent = false) {
 		projectTask: async (_root, task_id) => ({ task_id, error: null,
 			claim: enrolled.has(task_id) && !settled.has(task_id) ? { task_id, lifecycle_status: "active" } : null,
 			projection: { run_id: enrolled.has(task_id) ? `run-${task_id}` : null, record_revision: "r1", lifecycle: settled.has(task_id) ? "done" : "active",
-				artifact_state: "active", completion_ready: settled.has(task_id), open_user_decision_count: 0, replan_required_ids: [], next_obligation: "submit_assurance" },
+				artifact_state: "active", completion_ready: settled.has(task_id), open_user_decision_count: 0, replan_required_ids: [], next_obligation: "submit_assurance",
+				authorization: { state: "none", blocked: null } },
 		} as unknown as AssuranceProjectionResult),
 	};
 	const input: StartBatchInput = { root, ...binding, children, registry, capability, confirmation_time: now, now, kernel };
@@ -67,7 +73,7 @@ function fixture(independent = false) {
 }
 
 describe("serial runner retirement", () => {
-	it.each(["v3", "v9", "vnext", "v0"])("refuses unsupported batch contract %s without any writes", async version => {
+	it.each(["v4", "v9", "vnext", "v0"])("refuses unsupported batch contract %s without any writes", async version => {
 		const f = fixture();
 		try {
 			const dir = join(f.root, ".imm/state/batches"); mkdirSync(dir, { recursive: true });
@@ -77,7 +83,7 @@ describe("serial runner retirement", () => {
 			writeFileSync(path, bytes);
 			const before = f.snapshot();
 			const result = await prepareBatchPreflight({ root: f.root, initiative_slug: "retirement", now });
-			const newer = version === "v3" || version === "v9";
+			const newer = version === "v4" || version === "v9";
 			expect(result.ok).toBe(false);
 			if (result.ok) throw new Error("unsupported contract was accepted");
 			expect(result.state).toBe("blocked");
@@ -115,7 +121,7 @@ describe("serial runner retirement", () => {
 			expect(first.handoffs).toMatchObject([{ role: "executor", task_id: "first" }]);
 			expect(f.enrolled.size).toBe(1);
 			const statePath = join(f.root, ".imm/state/batches/retirement-batch.json");
-			expect(readAnyBatchRunState(f.root, input.batch_id)).toMatchObject({ contract: "assurance_kernel/batch_run_state/v2", max_parallel: 1, branch: "refs/heads/imm/retirement" });
+			expect(readAnyBatchRunState(f.root, input.batch_id)).toMatchObject({ contract: "assurance_kernel/batch_run_state/v3", max_parallel: 1, branch: "refs/heads/imm/retirement" });
 			const persisted = readFileSync(statePath);
 			expect((await tick()).handoffs).toEqual(first.handoffs);
 			expect(readFileSync(statePath)).toEqual(persisted);

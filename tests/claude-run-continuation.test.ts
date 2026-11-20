@@ -6,7 +6,8 @@ import { tmpdir } from "node:os";
 import { canonicalIntentHash, parseTaskIntentV1, readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
 import { computeBatchPlanDigest } from "../plugins/immune-brain/runtime/kernel/batch_authority";
 import { recoverKernelStoreFollowUps, readSettledRunEvidence } from "../plugins/immune-brain/runtime/kernel/storage";
-import { prepareBatchLaneRunState, rebindSingleTaskIdentity, writeBatchLaneRunState,
+import { hasContiguousLaneRebind } from "../plugins/immune-brain/runtime/assurance/run_continuation";
+import { prepareBatchLaneRunState, rebindBatchChildIdentity, rebindSingleTaskIdentity, writeBatchLaneRunState,
 	type BatchLaneRunStateRecord } from "../plugins/immune-brain/runtime/unattended/batch_state";
 import { recordParentRepair } from "../plugins/immune-brain/runtime/unattended/batch_git";
 import * as coordinator from "../plugins/immune-brain/runtime/assurance/coordinator";
@@ -315,8 +316,8 @@ function laneParent(options: {
 			children: [{ ...prepared.children[0]!, state: "released", commit: head,
 				lane: { ...lane, lane_commit: head },
 				...(options.laneRemoved
-					? { lane_removed: { exit: { generation: 1, code: 0, signal: null }, worktree: lanePath,
-						branches: [laneBranch, `imm/${LANE_TASK}`] } }
+					? { lane_removed: { exit: { ok: true as const, exited: true as const, handle: "herdr:ws1/tab1/pane1/key", key: "imm-lane-task-g1-000000000000" },
+						worktree: lanePath, branches: [laneBranch, `imm/${LANE_TASK}`] } }
 					: { lane_retained: { condition: "exit_proof_unavailable" } }) }] }
 		: { ...prepared, batch_state: "running", children: [{ ...prepared.children[0]!, state: "enrolled", lane }] };
 	writeBatchLaneRunState(root, record);
@@ -458,6 +459,68 @@ describe("Claude run continuation: lane_rebinds plan_digest", () => {
 			expect(JSON.parse((await p.stop())!).systemMessage)
 				.toContain("Parent continuation has no matching persisted batch identity");
 		} finally { p.dispose(); }
+	});
+});
+
+describe("hasContiguousLaneRebind: Initiative and negative controls (AGR-A2)", () => {
+	const NOW = "2026-01-01T00:00:00.000Z";
+	function intent(taskId: string, revision: number) {
+		return parseTaskIntentV1({ contract: "assurance_kernel/task_intent/v1", task_id: taskId, owner: "user",
+			goal: `Goal ${taskId}`, acceptance: [{ id: "A1", assertion: "done", verification: "bun test x" }],
+			scope_hint: [`docs/plans/${taskId}.intent.json`], risk: "material", revision });
+	}
+	function twoChildRecord() {
+		const a = intent("task-a", 1), b = intent("task-b", 1);
+		const kids = [
+			{ task_id: "task-a", slice_id: "A", blocked_by: [], intent_path: "docs/plans/task-a.intent.json", intent_revision: 1, intent_content_hash: canonicalIntentHash(a) },
+			{ task_id: "task-b", slice_id: "B", blocked_by: [], intent_path: "docs/plans/task-b.intent.json", intent_revision: 1, intent_content_hash: canonicalIntentHash(b) },
+		];
+		const root = mkdtempSync(join(tmpdir(), "rebind-neg-"));
+		try { execFileSync("git", ["init", "-q"], { cwd: root }); } catch { /* git optional for pure rebind math */ }
+		const planDigest = computeBatchPlanDigest(kids);
+		const record = prepareBatchLaneRunState({ batch_id: "neg", initiative_slug: "init-neg", children: kids,
+			plan_digest: planDigest, base_head: "a".repeat(40), branch: "imm/init-neg", confirmation_time: NOW,
+			budget: { max_children: 2, qa_failure_limit: 2 }, max_parallel: 2, now: NOW });
+		return { root, record, planDigest, cleanup: () => rmSync(root, { recursive: true, force: true }) };
+	}
+	test("accepts a contiguous Initiative child chain", () => {
+		const f = twoChildRecord();
+		try {
+			writeBatchLaneRunState(f.root, f.record);
+			const revised = intent("task-b", 2);
+			const rebound = rebindBatchChildIdentity(f.root, "neg", { task_id: "task-b", intent: revised, content_hash: canonicalIntentHash(revised) });
+			expect(hasContiguousLaneRebind(rebound, f.planDigest)).toBe(true);
+		} finally { f.cleanup(); }
+	});
+	test("refuses a chain with a gap", () => {
+		const f = twoChildRecord();
+		try {
+			writeBatchLaneRunState(f.root, f.record);
+			const r2 = intent("task-b", 2);
+			const first = rebindBatchChildIdentity(f.root, "neg", { task_id: "task-b", intent: r2, content_hash: canonicalIntentHash(r2) });
+			const gapped = { ...first, lane_rebinds: [{ ...first.lane_rebinds![0]!, to_digest: `sha256:${"c".repeat(64)}` }] };
+			expect(hasContiguousLaneRebind(gapped as BatchLaneRunStateRecord, f.planDigest)).toBe(false);
+		} finally { f.cleanup(); }
+	});
+	test("refuses a foreign task_id", () => {
+		const f = twoChildRecord();
+		try {
+			writeBatchLaneRunState(f.root, f.record);
+			const r2 = intent("task-b", 2);
+			const rebound = rebindBatchChildIdentity(f.root, "neg", { task_id: "task-b", intent: r2, content_hash: canonicalIntentHash(r2) });
+			const foreign = { ...rebound, lane_rebinds: [{ ...rebound.lane_rebinds![0]!, task_id: "task-foreign" }] };
+			expect(hasContiguousLaneRebind(foreign as BatchLaneRunStateRecord, f.planDigest)).toBe(false);
+		} finally { f.cleanup(); }
+	});
+	test("refuses a target digest off the chain", () => {
+		const f = twoChildRecord();
+		try {
+			writeBatchLaneRunState(f.root, f.record);
+			const r2 = intent("task-b", 2);
+			const rebound = rebindBatchChildIdentity(f.root, "neg", { task_id: "task-b", intent: r2, content_hash: canonicalIntentHash(r2) });
+			expect(hasContiguousLaneRebind(rebound, `sha256:${"d".repeat(64)}`)).toBe(false);
+			expect(hasContiguousLaneRebind({ ...rebound, plan_digest: `sha256:${"e".repeat(64)}` } as BatchLaneRunStateRecord, f.planDigest)).toBe(false);
+		} finally { f.cleanup(); }
 	});
 });
 

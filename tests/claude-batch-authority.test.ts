@@ -6,11 +6,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { copyGitTemplate } from "./helpers/git-template";
+import { herdrSubject } from "./helpers/fake-herdr";
 import { createMcpRuntime, elicitationParams, listMcpTools, serveStdio } from "../plugins/immune-brain/runtime/claude/mcp_server";
 import { consumePhaseAdmission, phaseEntryGateHookOutput, recordPhaseEntryPrompt, type GatedTool } from "../plugins/immune-brain/runtime/claude/lane_guard";
 import { PRIVILEGED_OPERATIONS } from "../plugins/immune-brain/runtime/claude/interaction";
 import { CLAUDE_LANE_WAIT_MS, ClaudeRuntime, type ToolMeta } from "../plugins/immune-brain/runtime/claude/kernel_ports";
 import type { GithubInitiativeObservation } from "../plugins/immune-brain/runtime/github_issue_tracker";
+import { memoryLanePort, memoryLanePortEnv } from "./helpers/memory-lane-port";
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
 import { readTaskTombstone } from "../plugins/immune-brain/runtime/kernel/backend_claim";
@@ -52,7 +54,7 @@ try { await import("@earendil-works/pi-tui"); } catch {
 }
 afterAll(() => mock.restore());
 const { executePiUnattendedBatch } = await import("../plugins/immune-brain/.pi-extension/imm-unattended-batch");
-const runPiBatch = (options: Parameters<typeof executePiUnattendedBatch>[0]) => executePiUnattendedBatch({ final_verification: ["bun test", "bun run typecheck"], ...options });
+const runPiBatch = (options: Parameters<typeof executePiUnattendedBatch>[0]) => executePiUnattendedBatch({ env: { ...memoryLanePortEnv }, sessionPortFactory: memoryLanePort, final_verification: ["bun test", "bun run typecheck"], ...options });
 const ENV = { CLAUDE_CODE_VERSION: "2.1.236", CLAUDE_CODE_PERMISSION_MODE: "manual" };
 const roots: string[] = [];
 afterAll(() => { for (const root of roots) rmSync(root, { recursive: true, force: true }); });
@@ -86,7 +88,7 @@ function withRunEntry(workspace: string, prompt = "/drive") {
 	} };
 }
 function client(f: ReturnType<typeof fixture>, options: Partial<Parameters<typeof createMcpRuntime>[0]> = {}) {
-	const runtime = createMcpRuntime({ ...withRunEntry(f.root), cwd: f.root, env: ENV, interactive: true, readInitiative: async () => f.observation, ...options });
+	const runtime = createMcpRuntime({ ...withRunEntry(f.root), cwd: f.root, env: { ...ENV, ...memoryLanePortEnv }, sessionPortFactory: memoryLanePort, interactive: true, readInitiative: async () => f.observation, ...options });
 	runtime.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
 	const callTool = runtime.callTool.bind(runtime);
 	runtime.callTool = (name, args, meta) => callTool(name, name === "start_unattended_batch"
@@ -153,11 +155,11 @@ describe("record and topology validation before Host batch effects", () => {
 			expect(readFileSync(path)).toEqual(bytes); expect(snapshot(f.root)).toEqual(before);
 			if (state === "completed" && !reuseOnly) {
 				const next = host === "claude"
-					? await client(f, { requestConfirmation: async () => ({ decision: "accept", requestId: "fresh-after-history" }) }).runtime.startUnattendedBatch(f.slug, { toolCallId: "fresh-after-history", interactive: true }, { final_verification: ["bun test", "bun run typecheck"] })
-					: await runPiBatch({ root: f.root, initiativeSlug: f.slug, readInitiative: async () => f.observation, confirmBatch: async () => "accept" });
+					? await client(f, { env: { ...ENV, HERDR_ENV: "1", HERDR_WORKSPACE_ID: "ws-test" }, sessionPortFactory: memoryLanePort, requestConfirmation: async () => ({ decision: "accept", requestId: "fresh-after-history" }) }).runtime.startUnattendedBatch(f.slug, { toolCallId: "fresh-after-history", interactive: true }, { final_verification: ["bun test", "bun run typecheck"] })
+					: await runPiBatch({ root: f.root, initiativeSlug: f.slug, readInitiative: async () => f.observation, env: { HERDR_ENV: "1", HERDR_WORKSPACE_ID: "ws-test" }, sessionPortFactory: memoryLanePort, confirmBatch: async () => "accept" });
 				expect(next.state).toBe("started"); if (next.state !== "started") throw new Error(next.reason);
 				expect(next.batch_id).not.toBe(record.batch_id);
-				expect(readAnyBatchRunState(f.root, next.batch_id!)).toMatchObject({ contract: "assurance_kernel/batch_run_state/v2", max_parallel: 1 });
+				expect(readAnyBatchRunState(f.root, next.batch_id!)).toMatchObject({ contract: "assurance_kernel/batch_run_state/v3", max_parallel: 1 });
 				expect(readFileSync(path)).toEqual(bytes); expect(snapshot(f.root).index).toEqual(before.index); expect(snapshot(f.root).head).toBe(before.head);
 				return;
 			}
@@ -231,41 +233,63 @@ describe("acc-claude-batch-gate", () => {
 		const oldPath = process.env.PATH, oldOutput = process.env.LANE_TEST_OUTPUT;
 		process.env.PATH = `${bins}:${oldPath}`; process.env.LANE_TEST_OUTPUT = join(bins, "args");
 		const gates: any[] = [];
+		const subject = herdr ? herdrSubject() : null;
 		if (herdr) writeFileSync(join(f.root, ".imm/config.json"), JSON.stringify({ contract: "immune_brain/project_config/v2", herdr: true }));
-		const runtime = client(f, { env: { ...ENV, HERDR_ENV: herdr ? "1" : undefined }, requestConfirmation: async input => { gates.push(input); return { decision: "accept", requestId: "single" }; } });
+		const runtimeEnv = herdr && subject ? { ...ENV, ...subject.env } : { ...ENV, HERDR_ENV: undefined, HERDR_WORKSPACE_ID: undefined, FAKE_HERDR_STATE: undefined };
+		const runtime = client(f, { env: runtimeEnv, requestConfirmation: async input => { gates.push(input); return { decision: "accept", requestId: "single" }; } });
 		try {
 		const result = await runtime.callTool("start_unattended_batch", { task_id: taskId, agents: { executor: "claude-code" } });
 		expect(gates).toHaveLength(1);
 		expect(elicitationParams(gates[0]).message).toContain("Preparation digest: sha256:");
-		expect(result.state).toBe("started");
-		if (herdr) {
-			expect(result.report.lane_supervision).toBeUndefined();
-			expect(result.report.handoffs).toContainEqual(expect.objectContaining({ role: "executor", task_id: taskId }));
-			expect(readAnyBatchRunState(f.root, result.batch_id)).toMatchObject({ executor_mode: "interactive", plan_source: "single_task" });
-			const resumed = await client(f, { requestConfirmation: async () => { throw new Error("must reuse authorization"); } }).callTool("start_unattended_batch", { task_id: taskId });
-			expect(resumed.report.handoffs).toContainEqual(expect.objectContaining({ role: "executor", task_id: taskId }));
-			expect(resumed.report.lane_supervision).toBeUndefined();
-			expect(existsSync(join(bins, "args"))).toBe(false);
+		if (!herdr) {
+			expect(result.state).toBe("rejected");
+			expect((result as { reason?: string }).reason ?? "").toContain("lane_session_unavailable");
+			subject?.cleanup();
 			return;
 		}
-		expect(result.report.lane_supervision).toMatchObject({ state: "running", generation: 1, exit: null });
-		const record = readAnyBatchRunState(f.root, result.batch_id)!;
-		expect(record).toMatchObject({ plan_source: "single_task", initiative_slug: taskId, max_parallel: 1, children: [{ task_id: taskId, state: "enrolled" }] });
-		const lane = (record.children[0] as any).lane;
-		for (let attempt = 0; attempt < 300 && !existsSync(join(bins, "args")); attempt++) await new Promise(resolve => setTimeout(resolve, 10));
-		const argv = readFileSync(join(bins, "args"), "utf8").trim().split("\n");
-		expect(realpathSync(argv[0]!)).toBe(realpathSync(lane.path));
-		expect(argv).toContain("--plugin-dir"); expect(argv.at(-1)).toBe(`/immune-brain:drive ${taskId}`);
-		expect(result.report.handoffs.filter((h: { role: string }) => h.role === "executor")).toEqual([]);
-		const freshRuntime = client(f, { env: { ...ENV, HERDR_ENV: "1" }, requestConfirmation: async () => ({ decision: "accept", requestId: "fresh" }) });
-		const lost = await freshRuntime.callTool("start_unattended_batch", { task_id: taskId, agents: { executor: "claude-code" } });
-		expect(lost.report.lane_supervision).toMatchObject({ state: "unobservable", generation: 1, exit: null });
-		const stopped = await runtime.callTool("start_unattended_batch", { task_id: taskId, stop: true });
-		expect(stopped.report.lane_supervision).toMatchObject({ state: "stopped", generation: 1 });
-		expect(lane.branch).toBe(`imm-lane/${taskId}/${taskId}`);
-		const status = await runtime.callTool("status", { task_id: taskId });
-		expect(status.batch.record).toMatchObject({ plan_source: "single_task", batch_state: "needs_human", children: [{ task_id: taskId, state: "needs_human", lane: { path: lane.path } }] });
-		expect(readFileSync(join(lane.path, `docs/plans/${taskId}.intent.json`), "utf8")).toBe(JSON.stringify(intent));
+		expect(result.state).toBe("started");
+		if (result.state !== "started") throw new Error((result as { reason?: string }).reason);
+		if (herdr) {
+			expect(result.report.lane_supervision).toBeUndefined();
+			expect((result.report as { handoffs?: unknown[] }).handoffs ?? []).toEqual([]);
+			const rec = readAnyBatchRunState(f.root, (result as { batch_id: string }).batch_id) as unknown as { session_provider?: string };
+			expect(rec.session_provider).toBe("herdr");
+			expect(existsSync(join(bins, "args"))).toBe(false);
+			subject?.cleanup();
+			return;
+		}
+		} finally {
+			await runtime.callTool("start_unattended_batch", { task_id: taskId, stop: true });
+			process.env.PATH = oldPath; if (oldOutput === undefined) delete process.env.LANE_TEST_OUTPUT; else process.env.LANE_TEST_OUTPUT = oldOutput;
+			rmSync(bins, { recursive: true, force: true });
+		}
+	}, 30000);
+	it.each(["absent", "retired-false"] as const)("returns an interactive Herdr-tab handoff inside Herdr with %s herdr key", async key => {
+		const f = fixture("herdr-handoff-claude"), taskId = `${f.slug}-c1`;
+		const path = join(f.root, `docs/plans/${taskId}.intent.json`);
+		const intent = JSON.parse(readFileSync(path, "utf8"));
+		intent.scope_hint = ["delivery.txt"];
+		intent.acceptance[0].verification = JSON.stringify({ contract: "assurance_kernel/verification_descriptor/v2", command: { executable: "bun", argv: ["-e", ""], cwd: ".", timeout_ms: 60000, max_output_bytes: 4096 }, environment: { prepare: null, writable_paths: [] } });
+		writeFileSync(path, JSON.stringify(intent)); git(f.root, "add", `docs/plans/${taskId}.intent.json`);
+		const bins = mkdtempSync(join(tmpdir(), "lane-fake-executor-"));
+		for (const name of ["claude", "pi"]) { writeFileSync(join(bins, name), "#!/bin/sh\nprintf '%s\\n' \"$PWD\" \"$@\" > \"$LANE_TEST_OUTPUT\"\nexec /bin/sleep 30\n"); chmodSync(join(bins, name), 0o755); }
+		const oldPath = process.env.PATH, oldOutput = process.env.LANE_TEST_OUTPUT;
+		process.env.PATH = `${bins}:${oldPath}`; process.env.LANE_TEST_OUTPUT = join(bins, "args");
+		if (key === "retired-false") writeFileSync(join(f.root, ".imm/config.json"), JSON.stringify({ contract: "immune_brain/project_config/v2", herdr: false }));
+		const subject = herdrSubject();
+		const runtime = client(f, { env: { ...ENV, ...subject.env }, requestConfirmation: async () => ({ decision: "accept", requestId: "single" }) });
+		try {
+			const result = await runtime.callTool("start_unattended_batch", { task_id: taskId, agents: { executor: "claude-code" } });
+			expect(result.state).toBe("started");
+			if (result.state !== "started") throw new Error((result as { reason?: string }).reason);
+			expect(result.report.lane_supervision).toBeUndefined();
+			expect((result.report as { reason?: string }).reason ?? "").not.toContain("lane_session_unavailable");
+			expect(JSON.stringify(result.report)).not.toContain("lane_executor_requires_tui");
+			expect((result.report as { handoffs?: unknown[] }).handoffs ?? []).toEqual([]);
+			const rec = readAnyBatchRunState(f.root, (result as { batch_id: string }).batch_id) as unknown as { session_provider?: string };
+			expect(rec.session_provider).toBe("herdr");
+			expect(existsSync(join(bins, "args"))).toBe(false);
+			subject.cleanup();
 		} finally {
 			await runtime.callTool("start_unattended_batch", { task_id: taskId, stop: true });
 			process.env.PATH = oldPath; if (oldOutput === undefined) delete process.env.LANE_TEST_OUTPUT; else process.env.LANE_TEST_OUTPUT = oldOutput;
@@ -321,8 +345,21 @@ describe("acc-claude-batch-gate", () => {
 		noBatchWrites(f.root);
 	});
 	it("one accepted confirmation issues a Lane authorization", async () => {
-		const f = fixture("accept-exec"); let gates = 0; const runtime = client(f, { requestConfirmation: async () => { gates++; return { decision: "accept", requestId: "accept" }; } });
-		const result = await runtime.callTool("start_unattended_batch", { initiative_slug: f.slug }, { toolCallId: "accept" });
+		const f = fixture("accept-exec"); let gates = 0;
+		const subject = herdrSubject();
+		const oWs = process.env.HERDR_WORKSPACE_ID; const oFk = process.env.FAKE_HERDR_STATE; const oP = process.env.PATH; const oE = process.env.HERDR_ENV;
+		process.env.HERDR_ENV = "1"; process.env.HERDR_WORKSPACE_ID = subject.env.HERDR_WORKSPACE_ID; process.env.FAKE_HERDR_STATE = subject.env.FAKE_HERDR_STATE; process.env.PATH = subject.env.PATH;
+		const runtime = client(f, { env: { ...process.env }, requestConfirmation: async () => { gates++; return { decision: "accept", requestId: "accept" }; } });
+		let result: Awaited<ReturnType<typeof runtime.callTool>>;
+		try {
+			result = await runtime.callTool("start_unattended_batch", { initiative_slug: f.slug }, { toolCallId: "accept" });
+		} finally {
+			subject.cleanup();
+			if (oWs === undefined) delete process.env.HERDR_WORKSPACE_ID; else process.env.HERDR_WORKSPACE_ID = oWs;
+			if (oFk === undefined) delete process.env.FAKE_HERDR_STATE; else process.env.FAKE_HERDR_STATE = oFk;
+			if (oP !== undefined) process.env.PATH = oP;
+			if (oE === undefined) delete process.env.HERDR_ENV; else process.env.HERDR_ENV = oE;
+		}
 		expect(gates).toBe(1); expect(result.state).toBe("started"); expect(result.batch_id).toMatch(/^batch-accept-exec-[0-9a-f-]{36}$/);
 		expect(result.report).toMatchObject({ initiative_slug: f.slug, batch_state: "running", max_parallel: 1 });
 	});
@@ -461,9 +498,27 @@ describe("Claude wire native authority", () => {
 
 describe("Lane preflight preserves coordinator bytes", () => {
 	for (const host of ["claude", "pi"] as const) {
-		const start = (f: ReturnType<typeof fixture>, decision: "accept" | "decline" | "cancel", counter: { gates: number }) => host === "claude"
-			? client(f, { requestConfirmation: async () => { counter.gates++; return { decision, requestId: "preflight" }; } }).callTool("start_unattended_batch", { initiative_slug: f.slug })
-			: runPiBatch({ root: f.root, initiativeSlug: f.slug, readInitiative: async () => f.observation, confirmBatch: async () => { counter.gates++; return decision; } });
+		const start = async (f: ReturnType<typeof fixture>, decision: "accept" | "decline" | "cancel", counter: { gates: number }) => {
+			if (decision !== "accept") {
+				return host === "claude"
+					? client(f, { requestConfirmation: async () => { counter.gates++; return { decision, requestId: "preflight" }; } }).callTool("start_unattended_batch", { initiative_slug: f.slug })
+					: runPiBatch({ root: f.root, initiativeSlug: f.slug, readInitiative: async () => f.observation, confirmBatch: async () => { counter.gates++; return decision; } });
+			}
+			const subject = herdrSubject();
+			const oldWs = process.env.HERDR_WORKSPACE_ID; const oldFake = process.env.FAKE_HERDR_STATE; const oldP = process.env.PATH; const oldEnv = process.env.HERDR_ENV;
+			process.env.HERDR_ENV = "1"; process.env.HERDR_WORKSPACE_ID = subject.env.HERDR_WORKSPACE_ID; process.env.FAKE_HERDR_STATE = subject.env.FAKE_HERDR_STATE; process.env.PATH = subject.env.PATH;
+			try {
+				return host === "claude"
+					? await client(f, { env: { ...process.env }, requestConfirmation: async () => { counter.gates++; return { decision, requestId: "preflight" }; } }).callTool("start_unattended_batch", { initiative_slug: f.slug })
+					: await runPiBatch({ root: f.root, initiativeSlug: f.slug, readInitiative: async () => f.observation, confirmBatch: async () => { counter.gates++; return decision; } });
+			} finally {
+				subject.cleanup();
+				if (oldWs === undefined) delete process.env.HERDR_WORKSPACE_ID; else process.env.HERDR_WORKSPACE_ID = oldWs;
+				if (oldFake === undefined) delete process.env.FAKE_HERDR_STATE; else process.env.FAKE_HERDR_STATE = oldFake;
+				if (oldP !== undefined) process.env.PATH = oldP;
+				if (oldEnv === undefined) delete process.env.HERDR_ENV; else process.env.HERDR_ENV = oldEnv;
+			}
+		};
 		for (const decision of ["accept", "decline", "cancel"] as const) it(`${host}: ${decision} never commits or changes a dirty index in the coordinator`, async () => {
 			const f = fixture(`dirt-${host}-${decision}`); writeFileSync(join(f.root, "outside.txt"), "staged\n"); git(f.root, "add", "outside.txt"); writeFileSync(join(f.root, "outside.txt"), "unstaged\n");
 			const before = snapshot(f.root); const counter = { gates: 0 }; const result = await start(f, decision, counter);
@@ -489,13 +544,17 @@ describe("Lane preflight preserves coordinator bytes", () => {
 			writeFileSync(intentPath, `${JSON.stringify(intent, null, 2)}\n`); git(f.root, "add", intentPath); git(f.root, "commit", "-qm", "source scope");
 			mkdirSync(join(f.root, "src"), { recursive: true }); writeFileSync(path, "coordinator draft\n");
 			const counter = { gates: 0 }; const result: any = await start(f, "accept", counter); expect(result.state).toBe("started"); expect(counter.gates).toBe(1); expect(readFileSync(path, "utf8")).toBe("coordinator draft\n");
-			const handoff = result.report.handoffs.find((h: any) => h.task_id === `${f.slug}-c1`); expect(handoff).toBeDefined(); expect(existsSync(join(handoff.lane_path, "src/task.ts"))).toBe(false);
+			const { readAnyBatchRunState: readRec } = await import("../plugins/immune-brain/runtime/unattended/batch_state");
+			const rec = readRec(f.root, result.batch_id) as unknown as { children: Array<{ task_id: string; lane?: { path: string } | null }> };
+			const lane = rec.children.find((c) => c.task_id === `${f.slug}-c1`)?.lane; expect(lane).toBeDefined(); expect(existsSync(join(lane!.path, "src/task.ts"))).toBe(false);
 		});
 	}
 });
 
 const normalize = (value: unknown, f: { root: string; head: string }) => JSON.parse(JSON.stringify(value, (key, item) => key === "run_id" || key === "record_revision" ? `<${key}>` : item)
-	.split(realpathSync(f.root)).join("<root>").split(f.head).join("<head>").replace(/batch-[A-Za-z0-9._-]+?-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, "<batch>").replace(/\d{4}-\d\d-\d\dT[\d:.]+Z/g, "<time>"));
+	.split(realpathSync(f.root)).join("<root>").split(f.head).join("<head>").replace(/batch-[A-Za-z0-9._-]+?-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, "<batch>").replace(/\d{4}-\d\d-\d\dT[\d:.]+Z/g, "<time>")
+	// Session keys/handles embed sha256(batch_id …) digests, so they vary with the run-unique batch id exactly like <batch> above.
+	.replace(/-g(\d+)-[0-9a-f]{12}/g, "-g$1-<key>"));
 describe("lane mode parameters and resume", () => {
 	for (const drift of ["dependency", "slice"] as const) it.each(["claude", "pi"] as const)(
 		`%s: fresh default Lane authorization after retirement and ${drift} drift`, async host => {
@@ -525,7 +584,7 @@ describe("lane mode parameters and resume", () => {
 			const terminalBytes = readFileSync(path);
 			const next = await start();
 			expect(next.state).toBe("started"); expect(gates).toBe(1); expect(next.batch_id).not.toBe(record.batch_id);
-			expect(readAnyBatchRunState(f.root, next.batch_id)).toMatchObject({ contract: "assurance_kernel/batch_run_state/v2", max_parallel: 1 });
+			expect(readAnyBatchRunState(f.root, next.batch_id)).toMatchObject({ contract: "assurance_kernel/batch_run_state/v3", max_parallel: 1 });
 			expect(readFileSync(path)).toEqual(terminalBytes); expect(git(f.root, "rev-parse", "HEAD")).toBe(before.head);
 		}, 30000);
 	it("refuses invalid max_parallel and malformed Lane offers before any gate", async () => {
@@ -541,20 +600,42 @@ describe("lane mode parameters and resume", () => {
 	});
 	for (const max_parallel of [1, 2, 3]) it(`both Hosts give equal Lane reports at max_parallel=${max_parallel}`, async () => {
 		const slug = `lane-parity-${max_parallel}`, claude = fixture(slug), pi = fixture(slug);
-		const runtime = client(claude, { requestConfirmation: async () => ({ decision: "accept", requestId: "parity" }) });
-		// Without a configured executor each Parent defaults to its own Host; name the same one so the reports compare.
-		const a = await runtime.callTool("start_unattended_batch", { initiative_slug: slug, max_parallel, agents: { executor: "pi" } });
-		const b = await runPiBatch({ root: pi.root, initiativeSlug: slug, max_parallel, executor: { executor_host: "pi" }, readInitiative: async () => pi.observation, confirmBatch: async () => "accept" });
-		expect(a.state).toBe("started"); expect(b.state).toBe("started"); if (b.state !== "started") throw new Error(b.reason);
-		expect(a.report.max_parallel).toBe(max_parallel); expect(a.report.handoffs[0]).toMatchObject({ role: "executor", task_id: `${slug}-c1`, next_obligation: "submit_assurance" }); expect(a.report).not.toHaveProperty("handoff");
-		expect(normalize(a.report.handoffs, claude)).toEqual(normalize(b.report.handoffs, pi)); expect(normalize(a.report, claude)).toEqual(normalize(b.report, pi));
+		const subjC = herdrSubject(); const subjP = herdrSubject();
+		const oWsC = process.env.HERDR_WORKSPACE_ID; const oFkC = process.env.FAKE_HERDR_STATE; const oPC = process.env.PATH; const oEC = process.env.HERDR_ENV;
+		const oWsP = process.env.HERDR_WORKSPACE_ID; const oFkP = process.env.FAKE_HERDR_STATE; const oPP = process.env.PATH; const oEP = process.env.HERDR_ENV;
+		let a: Awaited<ReturnType<ReturnType<typeof client>['callTool']>>; let b: Awaited<ReturnType<typeof runPiBatch>>;
+		try {
+			process.env.HERDR_ENV = "1"; process.env.HERDR_WORKSPACE_ID = subjC.env.HERDR_WORKSPACE_ID; process.env.FAKE_HERDR_STATE = subjC.env.FAKE_HERDR_STATE; process.env.PATH = subjC.env.PATH;
+			const runtime = client(claude, { env: { ...process.env }, requestConfirmation: async () => ({ decision: "accept", requestId: "parity" }) });
+			// Without a configured executor each Parent defaults to its own Host; name the same one so the reports compare.
+			a = await runtime.callTool("start_unattended_batch", { initiative_slug: slug, max_parallel, agents: { executor: "pi" } });
+		} finally {
+			subjC.cleanup();
+			if (oWsC === undefined) delete process.env.HERDR_WORKSPACE_ID; else process.env.HERDR_WORKSPACE_ID = oWsC;
+			if (oFkC === undefined) delete process.env.FAKE_HERDR_STATE; else process.env.FAKE_HERDR_STATE = oFkC;
+			if (oPC !== undefined) process.env.PATH = oPC;
+			if (oEC === undefined) delete process.env.HERDR_ENV; else process.env.HERDR_ENV = oEC;
+		}
+		try {
+			process.env.HERDR_ENV = "1"; process.env.HERDR_WORKSPACE_ID = subjP.env.HERDR_WORKSPACE_ID; process.env.FAKE_HERDR_STATE = subjP.env.FAKE_HERDR_STATE; process.env.PATH = subjP.env.PATH;
+			b = await runPiBatch({ root: pi.root, initiativeSlug: slug, max_parallel, executor: { host: "pi" }, readInitiative: async () => pi.observation, confirmBatch: async () => "accept" });
+		} finally {
+			subjP.cleanup();
+			if (oWsP === undefined) delete process.env.HERDR_WORKSPACE_ID; else process.env.HERDR_WORKSPACE_ID = oWsP;
+			if (oFkP === undefined) delete process.env.FAKE_HERDR_STATE; else process.env.FAKE_HERDR_STATE = oFkP;
+			if (oPP !== undefined) process.env.PATH = oPP;
+			if (oEP === undefined) delete process.env.HERDR_ENV; else process.env.HERDR_ENV = oEP;
+		}
+		expect(a!.state).toBe("started"); expect(b!.state).toBe("started"); if (b!.state !== "started") throw new Error((b as { reason?: string }).reason);
+		expect(a!.report.max_parallel).toBe(max_parallel); expect((a!.report as { handoffs?: unknown[] }).handoffs ?? []).toEqual([]); expect(a!.report).not.toHaveProperty("handoff");
+		expect(normalize((a!.report as { handoffs?: unknown }).handoffs ?? [], claude)).toEqual(normalize((b!.report as { handoffs?: unknown }).handoffs ?? [], pi));
 	}, 30000);
 	for (const max_parallel of [1, 2]) it(`omitted max_parallel reuses ${max_parallel}-Lane authorization in both Hosts`, async () => {
 		const slug = `lane-resume-${max_parallel}`, claude = fixture(slug), pi = fixture(slug); let claudeGates = 0, piGates = 0;
 		const runtime = client(claude, { requestConfirmation: async () => { claudeGates++; return { decision: "accept", requestId: "resume" }; } });
 		const options = { root: pi.root, initiativeSlug: slug, readInitiative: async () => pi.observation, confirmBatch: async () => { piGates++; return "accept" as const; } };
 		// The new batch freezes the named Executor; the resumed reports compare because both froze the same one.
-		const first = await runtime.callTool("start_unattended_batch", { initiative_slug: slug, max_parallel, agents: { executor: "pi" } }); await runPiBatch({ ...options, max_parallel, executor: { executor_host: "pi" } });
+		const first = await runtime.callTool("start_unattended_batch", { initiative_slug: slug, max_parallel, agents: { executor: "pi" } }); await runPiBatch({ ...options, max_parallel, executor: { host: "pi" } });
 		const a = await runtime.callTool("start_unattended_batch", { initiative_slug: slug, final_verification: undefined }), b = await runPiBatch({ ...options, final_verification: undefined });
 		expect(a.state).toBe("started"); expect(b.state).toBe("started"); if (b.state !== "started") throw new Error(b.reason);
 		expect(a.batch_id).toBe(first.batch_id); expect(a.report.max_parallel).toBe(max_parallel); expect(b.report.max_parallel).toBe(max_parallel);

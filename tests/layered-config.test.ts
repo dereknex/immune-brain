@@ -34,7 +34,7 @@ const point = Object.keys(POINT_REGISTRY)[0]!, other = Object.keys(POINT_REGISTR
 const PLAIN: Array<[string, (v: unknown) => object, unknown, unknown, unknown, (c: Config) => unknown]> = [
 	["initiative_carrier", (v) => ({ initiative_carrier: v }), "local", "github", null, (c) => c.initiative_carrier],
 	["review_verifier", (v) => ({ review_verifier: v }), "on", "off", "off", (c) => c.review_verifier],
-	["herdr", (v) => ({ herdr: v }), true, false, false, (c) => c.herdr],
+	["session_providers", (v) => ({ session_providers: v }), ["herdr-core"], ["herdr", "herdr-core"], ["herdr"], (c) => c.session_providers],
 	["batch.max_parallel", (v) => ({ batch: { max_parallel: v } }), 3, 5, 1, (c) => c.batch.max_parallel],
 	["batch.final_verification", (v) => ({ batch: { final_verification: v } }), ["bun test"], ["bun run typecheck"], null, (c) => c.batch.final_verification],
 ];
@@ -52,7 +52,7 @@ test.each(PLAIN)("%s resolves project over user over default", (_key, set, userV
 test.each([
 	["initiative_carrier", { initiative_carrier: "gitlab" }, { initiative_carrier: "local" }, (c: Config) => c.initiative_carrier, { value: "local", source: "user" }],
 	["review_verifier", { review_verifier: true }, {}, (c: Config) => c.review_verifier, { value: "off", source: "default" }],
-	["herdr", { herdr: "yes" }, { herdr: true }, (c: Config) => c.herdr, { value: true, source: "user" }],
+	["session_providers", { session_providers: [] }, { session_providers: ["herdr-core"] }, (c: Config) => c.session_providers, { value: ["herdr-core"], source: "user" }],
 	["batch.max_parallel", { batch: { max_parallel: 9 } }, { batch: { max_parallel: 8 } }, (c: Config) => c.batch.max_parallel, { value: 8, source: "user" }],
 	["batch.max_parallel", { batch: { max_parallel: 0 } }, {}, (c: Config) => c.batch.max_parallel, { value: 1, source: "default" }],
 	["batch.final_verification", { batch: { final_verification: [""] } }, {}, (c: Config) => c.batch.final_verification, { value: null, source: "default" }],
@@ -63,6 +63,36 @@ test.each([
 	const c = f.read();
 	expect(get(c)).toEqual(expected);
 	expect(errorAt(c, key)).toMatchObject({ code: "config_invalid", file: f.projectPath });
+});
+
+test.each([["user"], ["project"]] as const)("a retired %s herdr key warns once without blocking or resolving", (layer) => {
+	for (const value of [true, "yes"]) {
+		const f = fixture();
+		if (layer === "user") f.user({ herdr: value }); else f.project({ herdr: value });
+		const c = f.read();
+		const warnings = c.diagnostics.filter((d) => d.key_path === "herdr");
+		expect(warnings).toHaveLength(1);
+		expect(warnings[0]).toMatchObject({ code: "retired_key", severity: "warning", key_path: "herdr" });
+		expect(c.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+		expect(batchConfigErrors(c)).toEqual([]);
+		expect("herdr" in c).toBe(false);
+	}
+});
+
+test("an unknown top-level key is still a config_invalid error", () => {
+	const f = fixture();
+	f.user({ unknown_top_key: 1 });
+	const c = f.read();
+	expect(errorAt(c, "unknown_top_key")).toMatchObject({ code: "config_invalid", file: f.userPath });
+});
+
+test.each([[[]], [["process"]], [["fake"]], [["herdr", "herdr"]], ["herdr"]] as const)("an invalid session_providers %p is a blocking config_invalid error", (value) => {
+	const f = fixture();
+	f.user({ session_providers: value });
+	const c = f.read();
+	expect(c.session_providers).toEqual({ value: ["herdr"], source: "default" });
+	expect(errorAt(c, "session_providers")).toMatchObject({ code: "config_invalid", file: f.userPath });
+	expect(batchConfigErrors(c).length).toBeGreaterThan(0);
 });
 
 test.each([
@@ -172,7 +202,10 @@ test("batchConfigErrors counts only agents, batch, herdr and whole-file errors",
 	for (const [data, blocks] of [
 		[{ agents: { executor: "codex" } }, true],
 		[{ batch: { max_parallel: 9 } }, true],
-		[{ herdr: "yes" }, true],
+		[{ session_providers: [] }, true],
+		[{ session_providers: ["fake"] }, true],
+		[{ herdr: "yes" }, false],
+		[{ herdr: true }, false],
 		[{ loop: { mode: "always" } }, false],
 		[{ initiative_carrier: "gitlab" }, false],
 		[{ decision_models: { bindings: { [point]: "missing" } } }, false],
@@ -188,7 +221,7 @@ test("CLI config --json prints the v2 effective configuration, exits on errors a
 	const f = fixture(), configHome = join(temp, "xdg"); mkdirSync(join(configHome, "immune-brain"), { recursive: true });
 	f.project({ batch: { max_parallel: 2 }, agents: { executor: "pi:project-model" } });
 	const userPath = join(configHome, "immune-brain/config.json");
-	writeFileSync(userPath, JSON.stringify({ contract: USER, herdr: true, decision_models: { profiles: { x: { kind: "clef", model: "clef", account_id_env: "TEST_ACCOUNT", token_env: "TEST_TOKEN" } } } }));
+	writeFileSync(userPath, JSON.stringify({ contract: USER, session_providers: ["herdr-core"], decision_models: { profiles: { x: { kind: "clef", model: "clef", account_id_env: "TEST_ACCOUNT", token_env: "TEST_TOKEN" } } } }));
 	const cli = resolve("plugins/immune-brain/bin/imm-kernel");
 	const env = { ...process.env, XDG_CONFIG_HOME: configHome, TEST_ACCOUNT: "secret-value" }; delete env.TEST_TOKEN;
 	const run = () => spawnSync(cli, ["config", "--json", "--check-env"], { cwd: f.root, encoding: "utf8", env });
@@ -197,7 +230,8 @@ test("CLI config --json prints the v2 effective configuration, exits on errors a
 	expect(parsed.contract).toBe("immune_brain/effective_config/v2");
 	expect(parsed.decision_models.environment.x).toEqual({ account_id_env: "set", token_env: "unset" });
 	expect(parsed.batch.max_parallel).toEqual({ value: 2, source: "project" });
-	expect(parsed.herdr).toEqual({ value: true, source: "user" });
+	expect(parsed.session_providers).toEqual({ value: ["herdr-core"], source: "user" });
+	expect(parsed).not.toHaveProperty("herdr");
 	expect(parsed.agents.roles.executor).toEqual({ host: "pi", model: "project-model", effort: null, source: "project" });
 	expect(parsed).not.toHaveProperty("project_key");
 	expect(parsed).not.toHaveProperty("lanes");
@@ -239,7 +273,6 @@ test("config migrate rewrites v1 user and project files as v2: dry run writes no
 			profiles: { opus: { host: "claude-code", model: "opus-5-5", effort: "medium" }, sonnet: { host: "claude-code", model: "sonnet-5-5" } },
 			executor: "sonnet", reviewer: "opus", planner: "opus", triage: "sonnet",
 		},
-		herdr: true,
 		batch: { max_parallel: 2 },
 		decision_models: { profiles: { main: fake } },
 		git_integration: "manual",
@@ -256,6 +289,7 @@ test("config migrate rewrites v1 user and project files as v2: dry run writes no
 
 	const report = migrateConfig(f.root, { userConfigPath: userPath });
 	expect(report.user).toMatchObject({ path: userPath, before: v1User, after: userAfter, changed: true });
+	expect(report.user.after).not.toHaveProperty("herdr");
 	expect(report.project).toMatchObject({ before: v1Project, after: projectAfter, changed: true });
 	expect(report.written).toBe(false);
 	expect(report.notes.some((n) => n.includes("projects.github.com/X/Y"))).toBe(true);
@@ -289,6 +323,27 @@ test("config migrate rewrites v1 user and project files as v2: dry run writes no
 	expect(second.user).toMatchObject({ after: userAfter, changed: false });
 	const usage = spawnSync(cli, ["config", "migrate", "--force"], { cwd: f.root, encoding: "utf8", env });
 	expect({ status: usage.status, stderr: usage.stderr }).toEqual({ status: 2, stderr: "usage: imm-kernel config migrate [--write]\n" });
+});
+
+test("config migrate --write deletes a stored herdr key from v2 files and preserves every other key", () => {
+	const f = fixture();
+	const configHome = join(temp, `xdg-retired-${counter}`), userPath = join(configHome, "immune-brain/config.json");
+	mkdirSync(join(configHome, "immune-brain"), { recursive: true });
+	const userBefore = { contract: USER, herdr: true, initiative_carrier: "local" };
+	const projectBefore = { contract: PROJECT, herdr: false, batch: { max_parallel: 3 } };
+	writeFileSync(userPath, JSON.stringify(userBefore));
+	writeFileSync(f.projectPath, JSON.stringify(projectBefore));
+	const dry = migrateConfig(f.root, { userConfigPath: userPath });
+	expect(dry.user.after).toEqual({ contract: USER, initiative_carrier: "local" });
+	expect(dry.project.after).toEqual({ contract: PROJECT, batch: { max_parallel: 3 } });
+	expect(dry.user.changed).toBe(true);
+	expect(dry.project.changed).toBe(true);
+	expect(readFileSync(userPath, "utf8")).toBe(JSON.stringify(userBefore));
+	const wrote = migrateConfig(f.root, { userConfigPath: userPath, write: true });
+	expect(wrote.written).toBe(true);
+	expect(JSON.parse(readFileSync(userPath, "utf8"))).toEqual({ contract: USER, initiative_carrier: "local" });
+	expect(JSON.parse(readFileSync(f.projectPath, "utf8"))).toEqual({ contract: PROJECT, batch: { max_parallel: 3 } });
+	expect(resolveConfig(f.root, { userConfigPath: userPath }).diagnostics).toEqual([]);
 });
 
 test("config migrate turns flat v1 user lanes into the executor and reviewer roles", () => {

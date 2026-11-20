@@ -1,0 +1,380 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "batch-session-port",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "batch-session-port",
+    "goal": "unified-lane-sessions S4 (#570; Spec docs/specs/unified-lane-sessions.spec.md D2 transitional, D8, OD-15, BR-DEC-1, BR-DEC-3). Export BatchSessionPort (provider, open, resume, find, observe, send, stop, closeWithProof) with its own SessionObservation (working | blocked | idle | done | exited | unknown) and structural SessionExitProof in runtime/unattended/batch_session_port.ts, and child_session_reconciler.ts driven by advanceBatch (the exported runLaneBatch): bounded laneSessionKey <=36 chars with trailing 12-hex hash, write-ahead key + baseline, find recovery, HoldForDialog vs resume, baseline revision progress, interaction_mode-dependent stall handling (exited in either mode or idle/done under parent_relayed: closeWithProof + g(n+1), park at no_progress 2; idle/done under interactive_host: hold as stalled_idle with no send, close, or open), holds on unknown or observe refusal, and recorded instruction/correction interventions. The S3 v3 record shape is unchanged; the sessions port stays optional (executor handoffs when absent) until S8.",
+    "acceptance": [
+      {
+        "id": "BSP-A1",
+        "assertion": "In tests/batch-session-port.test.ts: advanceBatch over a two-child Initiative agreement with an in-memory BatchSessionPort records batch-level session_provider, creates each Lane worktree before open, writes session { key: laneSessionKey(...), generation: 1, baseline, handle: null } before open runs (key matching ^imm-[a-z0-9-]+-g1-[0-9a-f]{12}$, <=36 chars, distinct trailing 12-hex per child), records handle and entry_submitted on return, and passes LANE_EXECUTOR_ENV=headless in env when interaction_mode is parent_relayed.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-session-port.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "BSP-A2",
+        "assertion": "In tests/batch-session-port.test.ts: interrupting after open returns and before handle is persisted causes the next advanceBatch to call find(key), adopt the handle, and call open zero more times (1 total); find returning not_found calls open once with the same stored key; re-entering with a BatchSessionPort whose provider differs from recorded session_provider refuses lane_session_unavailable before any port call.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-session-port.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "BSP-A3",
+        "assertion": "In tests/batch-session-port.test.ts, for single-task and two-child Initiative agreements alike: entry_submitted false or observed blocked holds without incrementing no_progress and calls resume once observed idle; observed idle or done with record_revision != baseline resets no_progress to 0, updates baseline, and calls resume; under parent_relayed, observed idle or done at unchanged baseline with no pending decision calls closeWithProof, increments no_progress to 1, and opens g2, and a second consecutive stall parks lane_executor_no_progress with no g3; under interactive_host the same idle or done stall calls none of send, closeWithProof, or open, leaves no_progress at 0, and reports the child stalled_idle; observed exited at unchanged baseline closes with proof and opens g2 under either mode; a recorded instruction calls send once; a recorded correction closes g1 with proof and opens g2.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-session-port.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "BSP-A4",
+        "assertion": "In tests/batch-session-port.test.ts: observed working, observed unknown, and an observe PortRefusal each leave no_progress, baseline, generation, and handle unchanged and call none of send, resume, open, or closeWithProof, and the next advanceBatch observes again; SessionObservation and SessionExitProof are declared in batch_session_port.ts without importing runtime/session/.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-session-port.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "BSP-A5",
+        "assertion": "batch_session_port.ts and child_session_reconciler.ts never mention plan_source, and tests/runtime-layering-boundary.test.ts enforces that rule for both files and proves runtime/unattended/ imports neither runtime/session/ nor runtime/lane_sessions/.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"u=plugins/immune-brain/runtime/unattended; ! grep -n plan_source $u/batch_session_port.ts $u/child_session_reconciler.ts && bun test tests/runtime-layering-boundary.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "BSP-A6",
+        "assertion": "Transitional startBatch-based Host and daemon callers pass their existing focused suites unchanged.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-lane-decision.test.ts\",\n      \"tests/single-task-lane-cleanup.test.ts\",\n      \"tests/claude-batch-authority.test.ts\",\n      \"tests/pi-batch-authority.test.ts\",\n      \"tests/loop-daemon-drive-pr.test.ts\",\n      \"tests/batch-final-report.test.ts\",\n      \"tests/batch-stale-disposition.test.ts\",\n      \"tests/batch-serial-retirement.test.ts\",\n      \"tests/pi-batch-acceptance-integration.test.ts\",\n      \"tests/unattended-contracts.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "BSP-A7",
+        "assertion": "Claude bundle, Antigravity artifact, dist reference mirrors, and repository typecheck are current.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun scripts/sync-dist-docs.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/batch-session-port.md",
+      "docs/plans/batch-session-port.intent.json",
+      "docs/specs/unified-lane-sessions.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+      "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+      "plugins/immune-brain/runtime/unattended/batch_session_port.ts",
+      "plugins/immune-brain/runtime/unattended/batch_state.ts",
+      "plugins/immune-brain/runtime/unattended/child_session_reconciler.ts",
+      "tests/batch-session-port.test.ts",
+      "tests/runtime-layering-boundary.test.ts",
+      "tests/unattended-batch-lanes.test.ts"
+    ],
+    "scope_size_reason": "The port, the reconciler, and advanceBatch's call into it land together so every session state transition has exactly one writer from the first commit.",
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/batch-session-port.intent.json",
+    "content_hash": "sha256:62c2eb00ad25cb6ad8bf5cbbdec86ac2b9217ae951c7efda2695928130e5ce38"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:62c2eb00ad25cb6ad8bf5cbbdec86ac2b9217ae951c7efda2695928130e5ce38",
+  "git_base_head": "0fc2c7ea2dbe9f9e0f6b00b4a4b7a5c1bd519118",
+  "attestations": [
+    {
+      "id": "approval-qa-7b8634f8",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:62c2eb00ad25cb6ad8bf5cbbdec86ac2b9217ae951c7efda2695928130e5ce38",
+      "diff_hash": "sha256:d0e47513277c59e0f5d717ba1f2ebe43d321103fbb077b94b16e0c843e3634e2",
+      "actor_id": "deterministic-qa",
+      "summary": "all 8 project verification check(s) passed; execution=sha256:617bdde89ec025b3b73257f50eee9a99e0ac0362dd40478ecaf5f2f15d4b5a79",
+      "acceptance_results": [
+        {
+          "acceptance_id": "BSP-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:617bdde89ec025b3b73257f50eee9a99e0ac0362dd40478ecaf5f2f15d4b5a79"
+        },
+        {
+          "acceptance_id": "BSP-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:617bdde89ec025b3b73257f50eee9a99e0ac0362dd40478ecaf5f2f15d4b5a79"
+        },
+        {
+          "acceptance_id": "BSP-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:617bdde89ec025b3b73257f50eee9a99e0ac0362dd40478ecaf5f2f15d4b5a79"
+        },
+        {
+          "acceptance_id": "BSP-A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:617bdde89ec025b3b73257f50eee9a99e0ac0362dd40478ecaf5f2f15d4b5a79"
+        },
+        {
+          "acceptance_id": "BSP-A5",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:617bdde89ec025b3b73257f50eee9a99e0ac0362dd40478ecaf5f2f15d4b5a79"
+        },
+        {
+          "acceptance_id": "BSP-A6",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:617bdde89ec025b3b73257f50eee9a99e0ac0362dd40478ecaf5f2f15d4b5a79"
+        },
+        {
+          "acceptance_id": "BSP-A7",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:617bdde89ec025b3b73257f50eee9a99e0ac0362dd40478ecaf5f2f15d4b5a79"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-b617c76b",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:62c2eb00ad25cb6ad8bf5cbbdec86ac2b9217ae951c7efda2695928130e5ce38",
+      "diff_hash": "sha256:cf4e6990a80e88c82d7ee2891f526ad1ac76e77f0c04b4f0744ca95efd09c510",
+      "actor_id": "deterministic-qa",
+      "summary": "all 8 project verification check(s) passed; execution=sha256:d6de6e17782ebeb64b7f724b04fda317667aecb7f5b732d2b880c618dc4095e7",
+      "acceptance_results": [
+        {
+          "acceptance_id": "BSP-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:d6de6e17782ebeb64b7f724b04fda317667aecb7f5b732d2b880c618dc4095e7"
+        },
+        {
+          "acceptance_id": "BSP-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:d6de6e17782ebeb64b7f724b04fda317667aecb7f5b732d2b880c618dc4095e7"
+        },
+        {
+          "acceptance_id": "BSP-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:d6de6e17782ebeb64b7f724b04fda317667aecb7f5b732d2b880c618dc4095e7"
+        },
+        {
+          "acceptance_id": "BSP-A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:d6de6e17782ebeb64b7f724b04fda317667aecb7f5b732d2b880c618dc4095e7"
+        },
+        {
+          "acceptance_id": "BSP-A5",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:d6de6e17782ebeb64b7f724b04fda317667aecb7f5b732d2b880c618dc4095e7"
+        },
+        {
+          "acceptance_id": "BSP-A6",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:d6de6e17782ebeb64b7f724b04fda317667aecb7f5b732d2b880c618dc4095e7"
+        },
+        {
+          "acceptance_id": "BSP-A7",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:d6de6e17782ebeb64b7f724b04fda317667aecb7f5b732d2b880c618dc4095e7"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-ee4794da",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:62c2eb00ad25cb6ad8bf5cbbdec86ac2b9217ae951c7efda2695928130e5ce38",
+      "diff_hash": "sha256:cf4e6990a80e88c82d7ee2891f526ad1ac76e77f0c04b4f0744ca95efd09c510",
+      "actor_id": "cli:claude-code:8621bf6e-abe1-47c7-a88f-8ad98c29cfe0",
+      "summary": "BatchSessionPort + reconciler satisfy BSP-A1..A7: write-ahead g1 keys, find-adopt recovery, provider-mismatch refusal before port calls, mode-dependent stall/rotate/park, working/unknown/refusal holds, plan_source-free layering, Antigravity runtime mirrors byte-identical and bundles regenerated; blast radius medium (runLaneBatch in batch_lanes.ts, persisted batch_run_state child session shape validation in batch_state.ts).",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "0fc2c7ea2dbe9f9e0f6b00b4a4b7a5c1bd519118",
+        "review_commit": "a5bfcdfd25023a9516051d255186981e3d751071"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-9cfc1ac7ec04-1-review-1",
+          "acceptance_id": "BSP-A2",
+          "summary": "The find-not_found test asserts only action 'opened' and a non-null handle; it does not pin that open ran exactly once or with the same stored key.",
+          "anchor": "sha256:3bc66d301ef885d4fec4d770fbfc944da943d9fd979c3bc3acafb6a52fe08570",
+          "evidence": {
+            "trigger": "a regression that recomputes the key or opens twice after find not_found → the 'find not_found opens once with the same stored key' test still passes",
+            "caller_chain": [
+              "tests/batch-session-port.test.ts",
+              "plugins/immune-brain/runtime/unattended/child_session_reconciler.ts:reconcileChildSession"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "BSP-A2"
+            }
+          }
+        },
+        {
+          "id": "review-9cfc1ac7ec04-2-review-2",
+          "acceptance_id": "BSP-A3",
+          "summary": "The 'single-task and two-child alike' coverage drives reconcileChildSession directly with task-id lists and checks only the dialog hold; progress, stall, rotation and intervention cases are not exercised through advanceBatch over single-task and Initiative agreements.",
+          "anchor": "sha256:69d0b0cb5242cb16c14564a99fa83ea3b99e5ae75c47d8ec37709a3e325b79a6",
+          "evidence": {
+            "trigger": "a plan-shape-specific regression in the runLaneBatch reconcile loop (e.g. single-task child skipped) → BSP-A3 tests stay green because they bypass advanceBatch",
+            "caller_chain": [
+              "tests/batch-session-port.test.ts",
+              "plugins/immune-brain/runtime/unattended/batch_lanes.ts:runLaneBatch",
+              "plugins/immune-brain/runtime/unattended/child_session_reconciler.ts:reconcileChildSession"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "BSP-A3"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:c12780bab44aab448b4801111685eeb14c7b5071707bf723f9c19a23edc6ee1c"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-1b1c5bc07f77-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "BSP-A3",
+      "source": "review",
+      "review_round": 1,
+      "summary": "Recorded interventions are never consumed: the last instruction is re-sent and the last correction re-rotates on every idle/done tick forever.",
+      "anchor": "sha256:c009e23112fcbb1ee3f72e4ccb003b304d212f65b22e35e86fefd195bf8726e5",
+      "evidence": {
+        "trigger": "An accepted lane_instruction (batch_lanes.ts:1146 appends to record.interventions, which nothing ever removes) followed by repeated advanceBatch ticks while the Lane observes idle or done. Each tick runLaneBatch hands the last instruction to reconcileChildSession as pendingInstruction, which calls port.send again. This breaks 'a recorded instruction calls send once'. For a recorded correction, every idle or done tick runs closeWithProof plus open and increments generation without bound (g2, g3, g4 ...). That path also skips the no_progress stall accounting, so lane_executor_no_progress never parks. The test only calls reconcileChildSession once, so the repeat is never checked.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/unattended/batch_lanes.ts:runLaneBatch",
+          "plugins/immune-brain/runtime/unattended/batch_lanes.ts:lastInstruction/lastCorrection from record.interventions",
+          "plugins/immune-brain/runtime/unattended/child_session_reconciler.ts:reconcileChildSession"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "BSP-A3"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-1b1c5bc07f77-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "BSP-A1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "The session key is not written ahead of open: reconcileChildSession sets the key only in memory and calls find/open, and runLaneBatch persists only after the reconciler returns.",
+      "anchor": "sha256:83780db4c56b8c83015754f8dc730c6d103a9a6d25cada4c6009cf4fa36fc718",
+      "evidence": {
+        "trigger": "Rotation to g2 (correction, exited, or a parent_relayed stall), followed by a crash after port.open(g2 key) returns but before runLaneBatch persists. The stored record still holds the g1 key and the g1 handle, which is already closed. On the next tick the reconciler observes the dead g1 handle and never calls find on the g2 key. A refusal holds forever and leaves the g2 session orphaned. An 'exited' reading runs closeWithProof again and opens a second session under the same g2 key. This breaks the write-ahead rule: BSP-A1 says the session must be written before open runs, and BSP-A2 says recovery goes through find(key). The g1 test passes only because laneSessionKey happens to be deterministic, and no test checks that the record is persisted before open.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/unattended/batch_lanes.ts:runLaneBatch",
+          "plugins/immune-brain/runtime/unattended/child_session_reconciler.ts:reconcileChildSession",
+          "plugins/immune-brain/runtime/unattended/child_session_reconciler.ts:stallOrProgress",
+          "plugins/immune-brain/runtime/unattended/batch_session_port.ts:BatchSessionPort.open"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "BSP-A1"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:batch-session-port:2026-11-19T02:02:22.586Z",
+      "at": "2026-11-19T02:02:22.586Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/batch-session-port.intent.json"
+    },
+    {
+      "id": "record_approval:batch-session-port:2026-11-19T02:06:42.308Z",
+      "at": "2026-11-19T02:06:42.308Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-7b8634f8\naction_v2_sha256:8028aabec957fb444ea1fdbf62fd3cf0139910c128049f7e66008b0c6978f5d4",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-19T02:06:42.309Z"
+      }
+    },
+    {
+      "id": "request_rework:batch-session-port:2026-11-19T02:08:44.414Z",
+      "at": "2026-11-19T02:08:44.414Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:08a63b51e2c13e8771358036c55736d3998008a7092d79ab4d5f9f984f976d9b",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:fc3b98dc-7067-4244-b15b-e308a96d4275",
+        "confirmation_ref": "pi:cli:claude-code:fc3b98dc-7067-4244-b15b-e308a96d4275",
+        "issued_at": "2026-11-19T02:08:44.415Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "0fc2c7ea2dbe9f9e0f6b00b4a4b7a5c1bd519118",
+        "review_commit": "3f4b8c32743f9753719398504b0ffe6ffd6d5ea5"
+      },
+      "review_started_at": "2026-11-19T02:07:21.111Z",
+      "review_submitted_at": "2026-11-19T02:08:43.431Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "resolve_finding:batch-session-port:2026-11-19T02:12:39.914Z",
+      "at": "2026-11-19T02:12:39.914Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-1b1c5bc07f77-1-review-1\naction_v2_sha256:c527da58f07a7a2ff7da9a298645e995c9091c6a7bd2ccf58d162ba1b66d8865"
+    },
+    {
+      "id": "resolve_finding:batch-session-port:2026-11-19T02:12:48.920Z",
+      "at": "2026-11-19T02:12:48.920Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-1b1c5bc07f77-2-review-2\naction_v2_sha256:1f0b65e1bffb95c96021d9c3fb42c166272ff550fd10e72d498baa33cc946541"
+    },
+    {
+      "id": "freeze_artifacts:batch-session-port:2026-11-19T02:12:56.979Z",
+      "at": "2026-11-19T02:12:56.979Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/batch-session-port.intent.json"
+    },
+    {
+      "id": "record_approval:batch-session-port:2026-11-19T02:16:54.115Z",
+      "at": "2026-11-19T02:16:54.115Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-b617c76b\naction_v2_sha256:53cfb7e1c22f8f3afe7bee9208a09f618b7cb81ddb8f0bbed6d22c06488773ba",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-19T02:16:54.115Z"
+      }
+    },
+    {
+      "id": "record_approval:batch-session-port:2026-11-19T02:19:04.658Z",
+      "at": "2026-11-19T02:19:04.658Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-ee4794da\naction_v2_sha256:992ac38c6fad78023354540111cbb1b10c4bdbfbc848a24aeacbf76df064f2b1",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:8621bf6e-abe1-47c7-a88f-8ad98c29cfe0",
+        "confirmation_ref": "pi:cli:claude-code:8621bf6e-abe1-47c7-a88f-8ad98c29cfe0",
+        "issued_at": "2026-11-19T02:19:04.658Z"
+      },
+      "review_started_at": "2026-11-19T02:16:57.671Z",
+      "review_submitted_at": "2026-11-19T02:19:03.700Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:batch-session-port:2026-11-19T02:19:07.664Z",
+      "at": "2026-11-19T02:19:07.664Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:7cfba5342d70324758af1eb83e53d72d16ad08df04848f305dc7e405e8308a99"
+    }
+  ]
+}

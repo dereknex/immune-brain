@@ -1,0 +1,541 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "session-lane-cleanup",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "session-lane-cleanup",
+    "goal": "unified-lane-sessions S6 (#570; Spec docs/specs/unified-lane-sessions.spec.md D11, D19, BR-DEC-2, BR-DEC-3, BR-SCN-1, BR-SCN-2, BR-SCN-5). Implement two-tier proof-based cleanup: (1) per integrated child of any agreement, advanceBatch calls BatchSessionPort.closeWithProof(handle, key) and removes that child's Lane worktree and refs/heads/imm-lane/<slug>/<task_id> once exit proof and per-child Git cleanliness hold, recording lane_removed while leaving sibling Lanes and refs/heads/imm/<slug> untouched; (2) only when the whole batch completes under return_policy checkout_delivery and deliverSingleTask succeeds is refs/heads/imm/<slug> deleted (retained under retain_branch). Any failed proof or Git check retains the Lane with named batch_lane_retained; parked, stopped, and redo Lanes are never removed. Retire session_closes and closeRecordUnproven.",
+    "acceptance": [
+      {
+        "id": "SLC-A1",
+        "assertion": "In tests/session-lane-cleanup.test.ts: (a) for a single-task checkout_delivery agreement with Pi Executor, after integration and checkout staging, closeWithProof closes the handle and cleanup removes the Lane worktree, imm-lane/<task_id>/<task_id>, and refs/heads/imm/<task_id>, recording lane_removed; (b) for Child 1 of a two-child Initiative retain_branch agreement while Child 2 is still running, closeWithProof closes Child 1's handle and removes Child 1's worktree and imm-lane/<slug>/<child_1>, while Child 2's Lane/session and shared refs/heads/imm/<slug> remain intact.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/session-lane-cleanup.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "SLC-A2",
+        "assertion": "In tests/session-lane-cleanup.test.ts: each negative control keeps the Lane worktree and branches and reports batch_lane_retained naming the failed condition: provider with exit_proof false; unproven closeWithProof (unknown, timeout, events_lost, mismatched session_key, or superseded handle); untracked or modified file in the Lane worktree (naming the file); parked child; stopped child.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/session-lane-cleanup.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "SLC-A3",
+        "assertion": "In tests/single-task-lane-cleanup.test.ts, tests/unattended-batch-lanes.test.ts, and tests/supervised-session-herdr.test.ts: lane_removed (with SessionExitProof) and lane_retained validate for Initiative children as well as single tasks, integrated Initiative children no longer emit the static no-exit-evidence notice, and closeRecordUnproven and session_closes are removed from runtime/session/cli.ts and runtime/unattended/batch_lanes.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"! grep -n 'closeRecordUnproven' plugins/immune-brain/runtime/session/cli.ts && ! grep -n 'recordClosableSessions' plugins/immune-brain/runtime/unattended/batch_lanes.ts && bun test tests/single-task-lane-cleanup.test.ts tests/unattended-batch-lanes.test.ts tests/supervised-session-herdr.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "SLC-A4",
+        "assertion": "docs/adr/0027-parent-branch-merge-queue.md, docs/adr/0038-supervised-session-port.md, and plugins/immune-brain/dist/drive-batch.md document two-tier closeWithProof cleanup, lane_removed, and batch_lane_retained; boundary and lane-sessions tests pass.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"grep -q lane_removed docs/adr/0027-parent-branch-merge-queue.md && grep -qi 'exit proof' docs/adr/0027-parent-branch-merge-queue.md && grep -q lane_removed plugins/immune-brain/dist/drive-batch.md && grep -q batch_lane_retained plugins/immune-brain/dist/drive-batch.md && bun test tests/runtime-layering-boundary.test.ts tests/supervised-session-boundary.test.ts tests/lane-sessions.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "SLC-A5",
+        "assertion": "Claude bundle, Antigravity artifact, dist reference mirrors, and repository typecheck are current.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun scripts/sync-dist-docs.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/session-lane-cleanup.md",
+      "docs/adr/0027-parent-branch-merge-queue.md",
+      "docs/adr/0038-supervised-session-port.md",
+      "docs/plans/session-lane-cleanup.intent.json",
+      "docs/reference/supervised-session-port.md",
+      "docs/specs/unified-lane-sessions.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/docs/reference/supervised-session-port.md",
+      "plugins/immune-brain/dist/drive-batch.md",
+      "plugins/immune-brain/runtime/session/cli.ts",
+      "plugins/immune-brain/runtime/session/herdr_core_provider.ts",
+      "plugins/immune-brain/runtime/session/herdr_provider.ts",
+      "plugins/immune-brain/runtime/session/supervised_session_port.ts",
+      "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+      "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+      "plugins/immune-brain/runtime/unattended/batch_state.ts",
+      "plugins/immune-brain/runtime/unattended/lane_cleanup.ts",
+      "tests/lane-sessions.test.ts",
+      "tests/session-lane-cleanup.test.ts",
+      "tests/single-task-lane-cleanup.test.ts",
+      "tests/supervised-session-boundary.test.ts",
+      "tests/supervised-session-herdr.test.ts",
+      "tests/unattended-batch-lanes.test.ts"
+    ],
+    "scope_size_reason": "Two-tier cleanup in unattended/ and retiring the superseded session_closes / closeRecordUnproven close guard in runtime/session/ must land together so integrated child sessions close through one proven contract without leaving dead session_closes checks.",
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/session-lane-cleanup.intent.json",
+    "content_hash": "sha256:bd10f54e2c6d7470eacb47adad55422f9d9035332667a7b9b5615176bb807eb1"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:bd10f54e2c6d7470eacb47adad55422f9d9035332667a7b9b5615176bb807eb1",
+  "git_base_head": "a882fa80b0280de819d9d5eb2cdfc07cde36cb27",
+  "attestations": [
+    {
+      "id": "approval-qa-5ec5fbd0",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:bd10f54e2c6d7470eacb47adad55422f9d9035332667a7b9b5615176bb807eb1",
+      "diff_hash": "sha256:ca50971676913fe4f13ee70ee6f2153db9afd59ac500ff6e58893987a884309b",
+      "actor_id": "deterministic-qa",
+      "summary": "all 6 project verification check(s) passed; execution=sha256:3951b3a211519b3ef895830e34a53be5b729d254945f0437a77fadeeeb3879be",
+      "acceptance_results": [
+        {
+          "acceptance_id": "SLC-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:3951b3a211519b3ef895830e34a53be5b729d254945f0437a77fadeeeb3879be"
+        },
+        {
+          "acceptance_id": "SLC-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:3951b3a211519b3ef895830e34a53be5b729d254945f0437a77fadeeeb3879be"
+        },
+        {
+          "acceptance_id": "SLC-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:3951b3a211519b3ef895830e34a53be5b729d254945f0437a77fadeeeb3879be"
+        },
+        {
+          "acceptance_id": "SLC-A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:3951b3a211519b3ef895830e34a53be5b729d254945f0437a77fadeeeb3879be"
+        },
+        {
+          "acceptance_id": "SLC-A5",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:3951b3a211519b3ef895830e34a53be5b729d254945f0437a77fadeeeb3879be"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-c492f9a0",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:bd10f54e2c6d7470eacb47adad55422f9d9035332667a7b9b5615176bb807eb1",
+      "diff_hash": "sha256:abc74973ca3e3dda6b872ea0bd9947822cbf7eb8af24a5433477cceef4e44dea",
+      "actor_id": "deterministic-qa",
+      "summary": "all 6 project verification check(s) passed; execution=sha256:ef0027f0b101eb8bc075ea987d45780d9f17c974bd5b66ecef16710d678446ff",
+      "acceptance_results": [
+        {
+          "acceptance_id": "SLC-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:ef0027f0b101eb8bc075ea987d45780d9f17c974bd5b66ecef16710d678446ff"
+        },
+        {
+          "acceptance_id": "SLC-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:ef0027f0b101eb8bc075ea987d45780d9f17c974bd5b66ecef16710d678446ff"
+        },
+        {
+          "acceptance_id": "SLC-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:ef0027f0b101eb8bc075ea987d45780d9f17c974bd5b66ecef16710d678446ff"
+        },
+        {
+          "acceptance_id": "SLC-A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:ef0027f0b101eb8bc075ea987d45780d9f17c974bd5b66ecef16710d678446ff"
+        },
+        {
+          "acceptance_id": "SLC-A5",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:ef0027f0b101eb8bc075ea987d45780d9f17c974bd5b66ecef16710d678446ff"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-13489eb3",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:bd10f54e2c6d7470eacb47adad55422f9d9035332667a7b9b5615176bb807eb1",
+      "diff_hash": "sha256:fb2b69e40ed162577d078582098c374f2989d00098788719362c6d4322f8927a",
+      "actor_id": "deterministic-qa",
+      "summary": "all 6 project verification check(s) passed; execution=sha256:0a18fcf26d2a8446b3cfb95c7187491fc0b04aa36de1d2a136c7dfcefc38e679",
+      "acceptance_results": [
+        {
+          "acceptance_id": "SLC-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:0a18fcf26d2a8446b3cfb95c7187491fc0b04aa36de1d2a136c7dfcefc38e679"
+        },
+        {
+          "acceptance_id": "SLC-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:0a18fcf26d2a8446b3cfb95c7187491fc0b04aa36de1d2a136c7dfcefc38e679"
+        },
+        {
+          "acceptance_id": "SLC-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:0a18fcf26d2a8446b3cfb95c7187491fc0b04aa36de1d2a136c7dfcefc38e679"
+        },
+        {
+          "acceptance_id": "SLC-A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:0a18fcf26d2a8446b3cfb95c7187491fc0b04aa36de1d2a136c7dfcefc38e679"
+        },
+        {
+          "acceptance_id": "SLC-A5",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:0a18fcf26d2a8446b3cfb95c7187491fc0b04aa36de1d2a136c7dfcefc38e679"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-3d5cd044",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:bd10f54e2c6d7470eacb47adad55422f9d9035332667a7b9b5615176bb807eb1",
+      "diff_hash": "sha256:fb2b69e40ed162577d078582098c374f2989d00098788719362c6d4322f8927a",
+      "actor_id": "cli:claude-code:b1b2c0a2-df00-4b82-b2db-541e6b7bc7b8",
+      "summary": "Round-3 delta (tests/session-lane-cleanup.test.ts only) adds parked/stopped batch_lane_retained notice assertions, lane_removed SessionExitProof persistence round-trip for single-task and Initiative children, and an end-to-end runLaneBatch checkout_delivery test proving worktree, imm-lane and imm branch removal with persisted lane_removed; other paths carried forward from round 2; blast radius medium (batch_lanes.ts, lane_cleanup.ts, batch_state.ts v3 persisted child shape).",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "a882fa80b0280de819d9d5eb2cdfc07cde36cb27",
+        "review_commit": "21c64d4c8403b8624a5349fcc9fb801be35f587d"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-4695e2f85d23-1-review-1",
+          "acceptance_id": "SLC-A1",
+          "summary": "E2E test passes the retired plan_source field to prepareBatchLaneRunState/runLaneBatch behind `as never` casts and adds static imports (startBatch, BatchRunnerKernelPort, StartBatchInput, readTaskIntent, computeBatchPlanDigest, createDefaultBatchGitPort, createDefaultLaneGitPort) that are unused or shadowed by dynamic imports, masking type drift in the fixture.",
+          "anchor": "sha256:06891adf9167a720b7038b1459f909bfa1ab2053f5035fb4931cfe1a3f7ca6d7",
+          "evidence": {
+            "trigger": "S3 removed plan_source from the v3 record API; the test still supplies plan_source:\"single_task\" cast to never → a future signature change would not be caught by typecheck at this seam",
+            "caller_chain": [
+              "tests/session-lane-cleanup.test.ts",
+              "plugins/immune-brain/runtime/unattended/batch_lanes.ts:runLaneBatch",
+              "plugins/immune-brain/runtime/unattended/batch_state.ts:prepareBatchLaneRunState"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "SLC-A1"
+            }
+          }
+        },
+        {
+          "id": "review-4695e2f85d23-2-review-2",
+          "acceptance_id": "SLC-A1",
+          "summary": "SLC-A1(a) names a Pi Executor, but the e2e test uses a generic provider \"fake\" BatchSessionPort; Pi-specific handle/key shape is not exercised at this seam.",
+          "anchor": "sha256:21aa29bbbab4990559b14664e5288b3e8a42653ca195a21bd487fe850ec95bc0",
+          "evidence": {
+            "trigger": "single-task checkout_delivery run with a Pi Executor session → only a fake-provider handle is asserted, so Pi provider exit-proof shape is unpinned in this file",
+            "caller_chain": [
+              "tests/session-lane-cleanup.test.ts",
+              "plugins/immune-brain/runtime/unattended/batch_lanes.ts:cleanupOneIntegratedChild"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "SLC-A1"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:3ba0227cfcc331a9b1b4f4611cfd2b924ebe1bca68e2d10b99551c9d553fe545"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-17bf47121832-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "SLC-A2",
+      "source": "review",
+      "review_round": 1,
+      "summary": "Tier-1 cleanup now runs before single-task checkout delivery, so a parked return step leaves child.state needs_human with lane_removed set, which validateLaneRecordShape rejects and the tick throws instead of reporting batch_lane_retained",
+      "anchor": "sha256:027d021fefc85d17eadd66bc6415fee71a5d9bad9aeaf08ddc00efb05abc19d7",
+      "evidence": {
+        "trigger": "single-task checkout_delivery with a proving sessions port, where the user's checkout has an overlapping dirty file (checkout_delivery_overlap) or final verification fails → the per-child loop (batch_lanes.ts ~1397) records lane_removed while the child is integrated, then the blocked-delivery branch (~1552) sets state needs_human and calls persist(); writeBatchLaneRunState → validateLaneRecordShape throws 'invalid lane cleanup record' because lane_removed requires state integrated|released → the tick throws, no needs_human report or batch_lane_retained is delivered. The removed end-to-end test 'retains the Lane and reports a parked return step' covered this path and was deleted without a replacement",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/unattended/batch_lanes.ts:runLaneBatch",
+          "plugins/immune-brain/runtime/unattended/batch_lanes.ts:cleanupOneIntegratedChild",
+          "plugins/immune-brain/runtime/unattended/batch_lanes.ts:runLaneBatch (checkout_delivery blocked branch)",
+          "plugins/immune-brain/runtime/unattended/batch_state.ts:writeBatchLaneRunState",
+          "plugins/immune-brain/runtime/unattended/batch_state.ts:validateLaneRecordShape"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "SLC-A2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-17bf47121832-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "SLC-A2",
+      "source": "review",
+      "review_round": 1,
+      "summary": "Single-task tier-2 failure writes lane_retained next to lane_removed, which validateLaneRecordShape rejects as mutually exclusive, so a failed Parent-branch deletion throws instead of reporting batch_lane_retained",
+      "anchor": "sha256:117f17e45f85f4aaea5d7c513a1420ccfdcf03ae2dd3ff3ad9df9873449ca7ac",
+      "evidence": {
+        "trigger": "single-task checkout_delivery whose delivery succeeds and tier 1 recorded lane_removed, but cleanupParentBranch returns removed:false (imm/<task_id> checked out in a worktree, unreadable, or update-ref -d fails) → batch_lanes.ts ~1572 sets lane_retained on the same child and calls persist(); validateLaneRecordShape throws because (removed !== undefined) === (retained !== undefined) → the completed tick throws after delivery was staged, and the failed condition is never reported. No test drives runLaneBatch through this branch",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/unattended/batch_lanes.ts:runLaneBatch (single-task checkout tier 2)",
+          "plugins/immune-brain/runtime/unattended/lane_cleanup.ts:cleanupParentBranch",
+          "plugins/immune-brain/runtime/unattended/batch_state.ts:writeBatchLaneRunState",
+          "plugins/immune-brain/runtime/unattended/batch_state.ts:validateLaneRecordShape"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "SLC-A2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-c972d595ac47-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "SLC-A1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "SLC-A1(a) is tested only by calling cleanupOneIntegratedChild and cleanupParentBranch by hand; the end-to-end single-task checkout_delivery tests were deleted and nothing drives runLaneBatch through integration, deliverSingleTask staging, deferred closeWithProof cleanup and the persisted lane_removed record.",
+      "anchor": "sha256:43fa7f297ad935afac10c2ad1175cac8d3b2b9f0c1774312e1969db9db068857",
+      "evidence": {
+        "trigger": "Single-task checkout_delivery batch driven through runLaneBatch with a sessions port → the new driver wiring at batch_lanes.ts (cleanup deferred until deliverSingleTask succeeds, imm/<slug> appended to lane_removed.branches, persist + validateLaneRecordShape) runs with no test. tests/session-lane-cleanup.test.ts says checkout staging 'would happen here' and calls the units directly. So if cleanup ran before staging, never ran because sessions is not threaded through (sessionPort is read via an untyped cast of input), or wrote a lane_removed that fails validation, the suite would still pass. The deleted single-task-lane-cleanup end-to-end tests (manual/auto staging plus a persisted lane_removed) previously pinned this order.",
+        "caller_chain": [
+          "tests/session-lane-cleanup.test.ts",
+          "plugins/immune-brain/runtime/unattended/batch_lanes.ts:runLaneBatch",
+          "plugins/immune-brain/runtime/unattended/checkout_delivery.ts:deliverSingleTask",
+          "plugins/immune-brain/runtime/unattended/batch_lanes.ts:cleanupOneIntegratedChild",
+          "plugins/immune-brain/runtime/unattended/lane_cleanup.ts:cleanupParentBranch",
+          "plugins/immune-brain/runtime/unattended/batch_state.ts:validateLaneRecordShape"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "SLC-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-c972d595ac47-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "SLC-A3",
+      "source": "review",
+      "review_round": 2,
+      "summary": "No test in the three named files persists and re-reads a lane_removed carrying a SessionExitProof, for either an Initiative child or a single task, so the rewritten lane_removed validation in batch_state.ts is never exercised.",
+      "anchor": "sha256:5e33bc27f2f777993e82f8e092201bb92c49deb3b540b6cb85a10c5555e35ad1",
+      "evidence": {
+        "trigger": "A batch record whose child has lane_removed.exit = {ok:true, exited:true, handle, key|session_key} is written and read back through writeBatchLaneRunState/readAnyBatchRunState → the new proofOk branch in validateLaneRecordShape is not covered. single-task-lane-cleanup.test.ts only unit-tests cleanupIntegratedChildLane's return value. unattended-batch-lanes.test.ts only covers lane_retained without a sessions port. supervised-session-herdr.test.ts only covers CLI close. So a validator that rejects the herdr session_key-shaped proof, or rejects Initiative children, would go unnoticed, and SLC-A3's 'lane_removed (with SessionExitProof) ... validate for Initiative children as well as single tasks' stays unproven.",
+        "caller_chain": [
+          "tests/single-task-lane-cleanup.test.ts",
+          "tests/unattended-batch-lanes.test.ts",
+          "plugins/immune-brain/runtime/unattended/batch_state.ts:validateLaneRecordShape",
+          "plugins/immune-brain/runtime/unattended/batch_lanes.ts:cleanupOneIntegratedChild"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "SLC-A3"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-c972d595ac47-3-review-3",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "SLC-A2",
+      "source": "review",
+      "review_round": 2,
+      "summary": "SLC-A2's parked-child and stopped-child negative controls must report batch_lane_retained naming the failed condition. The test only checks that cleanupOneIntegratedChild returns null, and its 'stopped' case is actually a lane_committed redo child.",
+      "anchor": "sha256:d3d92c651f9718c2187593435951b30028a5719078f59da5d16a4ee0fce37d9e",
+      "evidence": {
+        "trigger": "Parked (needs_human) or stopped child with a Lane under retain_branch or checkout_delivery → no test asserts the lane_refusals entry from retainedLaneNotices. retainedLaneNotices now reports every needs_human child as 'the return step is parked (<reason>)' even when the child parked during execution. A stopped child is never set up at all, since the test uses state lane_committed with redo_head. The previous end-to-end 'retains the Lane and reports a parked return step' test was deleted.",
+        "caller_chain": [
+          "tests/session-lane-cleanup.test.ts",
+          "plugins/immune-brain/runtime/unattended/batch_lanes.ts:retainedLaneNotices",
+          "plugins/immune-brain/runtime/unattended/lane_cleanup.ts:retainedLaneReason"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "SLC-A2"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:session-lane-cleanup:2026-11-19T06:24:34.089Z",
+      "at": "2026-11-19T06:24:34.089Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/session-lane-cleanup.intent.json"
+    },
+    {
+      "id": "record_approval:session-lane-cleanup:2026-11-19T06:25:49.790Z",
+      "at": "2026-11-19T06:25:49.790Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-5ec5fbd0\naction_v2_sha256:7885687013de9d020c699af9f1fb5359f2c2075e4eeaf787a68855f7d711bb2c",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-19T06:25:49.790Z"
+      }
+    },
+    {
+      "id": "request_rework:session-lane-cleanup:2026-11-19T06:28:19.110Z",
+      "at": "2026-11-19T06:28:19.110Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:24081762c722537b8dcd9b8054e0e87439eb6deacc435f36cae1ccbcb33b5bb3",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:14d47bfb-05f3-409f-9533-a15d4ca8fd1c",
+        "confirmation_ref": "pi:cli:claude-code:14d47bfb-05f3-409f-9533-a15d4ca8fd1c",
+        "issued_at": "2026-11-19T06:28:19.110Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "a882fa80b0280de819d9d5eb2cdfc07cde36cb27",
+        "review_commit": "acecc2f03aee066f17e1e664ff734766dac0464b"
+      },
+      "review_started_at": "2026-11-19T06:25:55.555Z",
+      "review_submitted_at": "2026-11-19T06:28:17.683Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "resolve_finding:session-lane-cleanup:2026-11-19T06:30:22.132Z",
+      "at": "2026-11-19T06:30:22.132Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-17bf47121832-1-review-1\naction_v2_sha256:db59611d186770e4bab82326cb19ae4db3c397510ed009168a09c416d9fd92cc"
+    },
+    {
+      "id": "resolve_finding:session-lane-cleanup:2026-11-19T06:30:32.314Z",
+      "at": "2026-11-19T06:30:32.314Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-17bf47121832-2-review-2\naction_v2_sha256:175b2cbb53b62792b0369334a7fce72207b4c3c7971edf29389d4cbe5a54ad1f"
+    },
+    {
+      "id": "freeze_artifacts:session-lane-cleanup:2026-11-19T06:30:42.975Z",
+      "at": "2026-11-19T06:30:42.975Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/session-lane-cleanup.intent.json"
+    },
+    {
+      "id": "record_approval:session-lane-cleanup:2026-11-19T06:32:06.689Z",
+      "at": "2026-11-19T06:32:06.689Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-c492f9a0\naction_v2_sha256:d88041edcdf18db7a17e4eda503a8971601b91c46e980193cd09ff917a684127",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-19T06:32:06.689Z"
+      }
+    },
+    {
+      "id": "request_rework:session-lane-cleanup:2026-11-19T06:34:33.439Z",
+      "at": "2026-11-19T06:34:33.439Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:73da6e79e1e40d689c29b524e0de5c1234d328e6deff04cd3c1b66dd81398212",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:1c10800f-1395-4d2f-a7e8-e6ddb7a9e844",
+        "confirmation_ref": "pi:cli:claude-code:1c10800f-1395-4d2f-a7e8-e6ddb7a9e844",
+        "issued_at": "2026-11-19T06:34:33.439Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "a882fa80b0280de819d9d5eb2cdfc07cde36cb27",
+        "review_commit": "0903979719fde621437ecad58d6b5c6579e7296a"
+      },
+      "review_started_at": "2026-11-19T06:32:12.371Z",
+      "review_submitted_at": "2026-11-19T06:34:32.044Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "resolve_finding:session-lane-cleanup:2026-11-19T06:43:37.148Z",
+      "at": "2026-11-19T06:43:37.148Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-c972d595ac47-1-review-1\naction_v2_sha256:cadcd3914ac49fbec2d4c12ad20f7475563e7c3685a97bc17e5f0443c52f5a32"
+    },
+    {
+      "id": "resolve_finding:session-lane-cleanup:2026-11-19T06:43:50.721Z",
+      "at": "2026-11-19T06:43:50.721Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-c972d595ac47-2-review-2\naction_v2_sha256:afeb5e3ac747a2e88eaa7f6b18d99548a300e8a1f2070877337a86bc2af590a2"
+    },
+    {
+      "id": "resolve_finding:session-lane-cleanup:2026-11-19T06:44:02.913Z",
+      "at": "2026-11-19T06:44:02.913Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-c972d595ac47-3-review-3\naction_v2_sha256:af6c12fb158227d855f8c99dd7ad6ac9711ebca96bf87637764689cce8aca206"
+    },
+    {
+      "id": "freeze_artifacts:session-lane-cleanup:2026-11-19T06:44:14.010Z",
+      "at": "2026-11-19T06:44:14.010Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/session-lane-cleanup.intent.json"
+    },
+    {
+      "id": "record_approval:session-lane-cleanup:2026-11-19T06:45:38.856Z",
+      "at": "2026-11-19T06:45:38.856Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-13489eb3\naction_v2_sha256:2429fcff14a224b71cd489d9efa18e0ffc320c927df820fcbf0d6dd35125caf4",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-19T06:45:38.856Z"
+      }
+    },
+    {
+      "id": "record_approval:session-lane-cleanup:2026-11-19T06:46:48.927Z",
+      "at": "2026-11-19T06:46:48.927Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-3d5cd044\naction_v2_sha256:8c48c09c5f6633e283f314d6c75048b6d13adcf15a76c9f5946d0709d6dfd140",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:b1b2c0a2-df00-4b82-b2db-541e6b7bc7b8",
+        "confirmation_ref": "pi:cli:claude-code:b1b2c0a2-df00-4b82-b2db-541e6b7bc7b8",
+        "issued_at": "2026-11-19T06:46:48.927Z"
+      },
+      "review_started_at": "2026-11-19T06:45:44.565Z",
+      "review_submitted_at": "2026-11-19T06:46:47.552Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:session-lane-cleanup:2026-11-19T06:46:53.033Z",
+      "at": "2026-11-19T06:46:53.033Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:5976ed0287e22cb846b99212797dbc44ccc261d3ac8d56a45c72f151636766bf"
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "batch-session-port",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:batch-session-port:2026-11-19T02:19:07.664Z",
+  "final_record_hash": "sha256:e43554bcfa61b136f844b1b125ea191d54a28ab8d50010d20d3d7512af7c252a",
+  "terminalized_at": "2026-11-19T02:19:07.664Z"
+}

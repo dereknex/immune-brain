@@ -171,14 +171,14 @@ The runner then commits the settled delivery on the Lane branch and fast-forward
 the recorded progress ref only to a candidate whose changed paths and per-path content equal
 that commit; a mismatch or conflict moves nothing and parks the child. New
 Parent-branch batches do not copy the integrated delta into the coordinator
-checkout. No Host reports a trusted Executor exit, so the runtime never removes
-or recreates a Lane it created: after integration the Lane, its branch and all
-its files are kept, and `lane_refusals` reports `batch_lane_retained` for it,
-also in a completed report. Delivery is complete; cleanup is the user's: stop
-the Lane's Executor, keep the files needed, then remove the Lane. Reclaim a Lane
-in this order: (1) stop the Lane's Executor; (2) keep the files still needed
-from the Lane; (3) remove the Lane. Removing it
-records `released` and never enables an automatic redo. Final verification runs in a
+checkout. Two-tier proof-based cleanup owns Lane removal (Spec
+unified-lane-sessions D11): for every integrated child, `advanceBatch` calls
+`BatchSessionPort.closeWithProof(handle, key)`; only a proven `exited` exit
+proof bound to `(handle, key)` plus clean-Lane Git checks removes that child's
+worktree and `imm-lane/<slug>/<task_id>`, recording `lane_removed` with the
+proof while siblings and `refs/heads/imm/<slug>` stay. Any failed proof or Git
+condition retains the Lane and reports `batch_lane_retained` naming it; parked,
+stopped and redo Lanes are never removed. Final verification runs in a
 detached worktree at the Parent tip and removes that worktree afterwards; a
 failure is reported without moving the Parent ref.
 With `max_parallel` above 1 the reconcile tick keeps up to that many Lanes in
@@ -292,73 +292,60 @@ request or project config supplies it.
 
 #### Lane Executor Supervision
 
-This section and its supervised-session table describe Initiative batches and
-single-task Lanes recorded with `executor_mode: "interactive"` inside Herdr.
-Other single-task Lanes use runtime supervision under
-[Single-Task Lane](#single-task-lane).
+The runtime owns every Lane session through `runtime/lane_sessions/`; the
+Parent never launches, polls, closes, or re-attaches a session itself. For
+each enrolled child, `advanceBatch` reconciles exactly one session through the
+injected `BatchSessionPort`: it writes a write-ahead session key and baseline,
+opens the session (resuming the recorded handle first), sends recorded
+instructions only to idle or done sessions, and closes generations with proof.
+A Lane never has two sessions for one generation key. The same port drives
+Initiative children and single-task Lanes alike, inside Herdr and (once a
+provider admits it) anywhere a provider resolves.
 
-The Parent launches and supervises every Lane's Executor Host; no other role
-starts one. This is the one case in which the Parent starts another Loop
-process, and it starts it only in an admitted Lane. For each `executor` handoff
-whose Lane has no live session of its own, the Parent starts exactly one
-**supervised session** and keeps its handle. Handoffs of one report start
-together; a Lane never has two sessions.
-
-A supervised session is defined by what it guarantees, not by a Host's name:
+A session is defined by what it guarantees, not by a Host's name:
 
 - It is a separate Host process whose working directory is the Lane, so its
   Kernel root is the Lane's own Authority Store. A subagent that runs inside the
   Parent's process shares the Parent's root and is never a Lane Executor.
 - It is given one explicit `drive` entry for that `task_id`, and nothing else.
-- When it stops working — it exits, or it settles waiting for input — control
-  returns to the Parent without the Parent polling or sleeping.
-- The Parent can stop it.
+- When it stops working — it exits, or it settles waiting for input — the
+  reconciler observes it on the next `advanceLanes` without the Parent polling
+  or sleeping.
+- A native-gated stop closes it with proof through `BatchSessionPort.stop`.
 
 The Parent Host and the Executor Host are chosen independently. The Executor
-Host is any allowlisted Host (`claude-code`, `pi` or `antigravity`) that the
-`lane-steward` reported available in that Lane. The `executor` field of the
-`executor` handoff decides it: the batch's frozen profile under
-[Lane Preferences](#lane-preferences) as `{ host, model?, effort? }`. Without
-that field, prefer the Parent's own Host type, and use another available one
-when it is not available, naming the Host chosen in the report. The child's QA and Review then run under that
-Executor Host's own Assurance adapter in the Lane. The Executor Host loads the
-same Immune-Brain plugin or package the Parent runs: a Parent started from a
-local plugin directory passes that same directory to the Executor Host. A Pi
-session loads one Immune-Brain only: when that directory and an installed Pi
-package both load, the first loaded (the `-e` directory) is used and the other
-registers nothing and shows a notice naming both. The
-Parent adds no permission or trust option of its own; the Executor Host runs
-under the user's own settings, with the model and effort of its own defaults
-unless the handoff's `executor` field sets them. How the Parent obtains a supervised session
-depends on where the Parent runs; the first matching row applies, and the user
-is not asked to choose:
+Host is any allowlisted Host (`claude-code`, `pi` or `antigravity`); the
+`executor` field of the batch's frozen profile under
+[Lane Preferences](#lane-preferences) as `{ host, model?, effort? }` decides
+it, else the configured `executor` role, else the Parent's own Host on its
+defaults. Without a resolvable provider the entry refuses
+`lane_session_unavailable` and the Parent substitutes nothing: no detached
+job, no in-process subagent, no serial in-place work, and no second session
+for a Lane that already has one.
 
-| Parent Host | Supervised session | Stop |
-| --- | --- | --- |
-| Either Host, inside Herdr (`HERDR_ENV=1`) | One Herdr tab per Lane holding an interactive Executor Host, under [Herdr Lane Tabs](#herdr-lane-tabs) | Close the tab the Parent created |
-| Claude Code | The Host's background command execution, running the Executor Host's non-interactive entry in the Lane; its completion notice re-invokes the Parent. The `Agent` tool does not qualify. | The Host's own stop for that background task |
-| Pi | A background process facility from the Pi user's own configuration that notifies the Parent on exit. Pi ships none that Immune-Brain may assume. | That facility's own stop |
-| Any Host without one | None. The Parent launches nothing. | — |
-
-When the Parent Host offers no supervised session, or no allowlisted Executor
-Host is available in the Lane, the Parent does not substitute a detached job, an
-in-process subagent or serial in-place work. It reports each `executor` handoff
-to the user with the Lane path, `task_id` and the `drive` entry to start
-there, and calls `start_unattended_batch` again when the user says a Lane has
-finished. Supervision is per Lane: Lanes that can be supervised are, and the
-rest are reported.
+How a session is observed depends on where the batch runs; the runtime maps
+provider states one-to-one onto its own observation vocabulary (`working`,
+`blocked`, `idle`, `done`, `exited`, `unknown`), and every provider failure
+that is not a proven exit reads as `unknown` and holds the child. Progress at
+an unchanged baseline rotates the generation under `parent_relayed` and parks
+`lane_executor_no_progress` on the second stall; under `interactive_host` an
+idle or done stall holds for the user instead. Startup and mid-run dialogs
+(`entry_submitted: false`, `blocked`, attention) hold the batch open for the
+user and never advance past the user.
 
 ##### Herdr Lane Tabs
 
 This facility applies to Initiative batches and single-task Lanes inside Herdr.
 For a single task, call `start_unattended_batch` with the same `task_id` on every
-re-entry; keep `initiative_slug` absent. The runtime creates the Lane and returns
-its `executor` handoff; the Parent opens and supervises its interactive tab below.
-The recorded `executor_mode: "interactive"` survives re-entry outside Herdr: resume
-it in Herdr instead of launching a non-interactive replacement. Existing tasks
-with a runtime-owned Executor keep that process until settlement; never add a tab.
-For a single-task user decision, follow [Parent decision relay](#single-task-lane)
-and resume the existing tab after the native decision is applied.
+re-entry; keep `initiative_slug` absent. The runtime creates the Lane, opens
+its Executor session through `runtime/lane_sessions/` below, and reconciles it
+on every `advanceLanes`; a re-entry never opens a second session for the same
+child. Existing tasks with a runtime-owned Executor session keep that session
+until settlement; never add a tab. Outside Herdr the same entry refuses
+`lane_session_unavailable` instead of launching a replacement. For a
+single-task user decision, follow [Parent decision relay](#single-task-lane)
+and let the next `advanceLanes` resume the existing session after the native
+decision is applied.
 
 The Parent coordinates; it never does a child's work. An `executor` handoff is
 started in that child's Lane session as below, never implemented, edited or
@@ -385,7 +372,17 @@ read. For each `executor` handoff without a live session:
 2. Create the session, which opens a tab rooted in the Lane in the Parent's own
    Herdr workspace without taking focus, starts the Host there and submits the
    entry and nothing else (later text follows only the instruction rule below):
-   `imm-session create --provider herdr --cwd <lane_path> --label <name> --host <executor_host> --entry "<drive entry> <task_id>" -- <host arguments>`.
+   The runtime opens each Lane session itself through `runtime/lane_sessions/`; the Parent never creates a session. The Parent waits read-only with `imm-session await --batch <batch_id>` and follows the returned `next_action` table below.
+
+   `imm-session await --batch` returns at the first D20 wake event with `next_action`:
+
+   | Wake | `next_action` | Parent action |
+   | --- | --- | --- |
+   | settlement or idle/done/exited progress | `advance` | call `start_unattended_batch` to run `advanceLanes` |
+   | startup or mid-run dialog (`entry_submitted: false`, `blocked`) | `relay_dialog` | relay the dialog to the user |
+   | `interactive_host` child stalled idle | `ask_user` | ask the user; their answer arrives as instruction, correction, or stop |
+   | timeout with nothing pending | `wait` | re-arm the wait |
+   | batch terminal | `complete` | finish; the batch is done |
    `<name>` is a label of at most 32 characters such as the Slice ID; a
    `task_id` is usually too long. Host arguments are only those that load the
    Parent's plugin and `--model` and `--effort` (`--thinking` for `pi`)
@@ -485,19 +482,16 @@ the user which tab and `task_id` Herdr cannot classify. A
 `provider_error` or `timeout` proves nothing about delivery; inspect the session
 with `imm-session observe` before repeating a command.
 
-The Parent closes a tab only under the Executor close rule, and only one it
-created. At the tick that integrates a child whose audit pair is reachable from
-the batch head, the runner records that session's close in the report's
-`session_closes` (`task_id`, `at`); the record is there even when that tick
-finishes the batch, so the Parent never re-enters a finished batch to ask.
+The runtime closes each integrated child session with proof via
+`closeWithProof(handle, key)`; the Parent never closes a session (`session_closes`
+and the `imm-session close --batch/--task/--recorded-at` rule are retired).
 Once the wait has returned that session `idle`, `done` or `exited`, the Parent
-runs `imm-session close <handle> --provider herdr --batch <batch_id> --task <task_id> --recorded-at <at>`
-from the coordinator checkout; `imm-session` reads the batch record and closes
-only a session it lists. Every other tab (a parked, failed,
-stopped or not yet integrated child's, and any tab the Parent did not create)
-stays open for the user to read and close. Closing a session removes no Lane and
-no branch. It splits no pane and creates no workspace. The Parent never invokes
-`herdr` itself, and outside Herdr it never invokes `imm-session`.
+calls `start_unattended_batch` again to advance the batch. Every other tab (a
+parked, failed, stopped or not yet integrated child's, and any tab the Parent
+did not create) stays open for the user to read and close. Closing a session
+removes no Lane and no branch beyond the proven per-child cleanup. It splits no
+pane and creates no workspace. The Parent never invokes `herdr` itself, and
+outside Herdr it never invokes `imm-session`.
 
 Supervision is event-driven. Each session end is the cue to call
 `start_unattended_batch` again with the same Initiative, and that report is the
@@ -543,39 +537,31 @@ HEAD, copies uncommitted planning input, and enrolls the child there; the
 Parent enrolls nothing itself and implements nothing.
 Spec drive-always-lanes D1 to D11 and ADR 0027 own the details below.
 
-- **Inside Herdr (`HERDR_ENV=1`).** A new single-task entry records
-  `executor_mode: "interactive"` and returns an `executor` handoff instead of
-  spawning a child process. The Parent creates one Herdr tab in the admitted
-  Lane, starts the selected interactive Executor with the resolved model and
-  effort, submits its `drive` entry and arms `imm-session await` under
-  [Herdr Lane Tabs](#herdr-lane-tabs). Re-entry uses the recorded mode and the
-  existing tab, never a second Executor. `stop: true` reports
-  `lane_executor_interactive` and asks the user to close that tab; it invents
-  no process exit. The Lane and branches remain retained after delivery because
-  Herdr session state is never exit proof.
-- **Synchronous runtime supervision outside Herdr.** The
-  runtime spawns one non-interactive Executor (`claude --print` or the
-  antigravity print entry) with the Lane as working directory and
-  `drive <task_id>` as its only prompt, and waits for it inside the Host tool
-  call. A Pi Executor outside Herdr is never spawned: Pi writes to the Kernel
-  only in its TUI, so the runtime reports reason `lane_executor_requires_tui`
-  and hands the Lane to the user under the no-supervised-session rule above.
-  The child stays enrolled, nothing is parked, and the report keeps its
-  `executor` handoff with the Lane path and `task_id`; the user runs
-  `/skill:drive <task_id>` in interactive pi in that Lane and calls
-  `start_unattended_batch` again when it finishes. Arguments come only from the
-  loaded plugin location and [Lane Preferences](#lane-preferences), which the
-  runtime resolves itself; the Parent passes only a literal request. Existing runtime-owned tasks
-  keep this supervision even when resumed inside Herdr. The report carries `lane_supervision` with `generation`, `state`
-  (`running`, `exited`, `unobservable`, `stopped` or `unavailable`) and `exit`.
-  When the wait window elapses the call returns `running` for the same
-  generation; call the same entry again to re-attach, which never spawns a second
-  Executor. `stop: true` on the same entry terminates the current generation;
-  cancelling the call does the same and records `interrupted`. An exit is
-  observed only from the runtime's own child-process exit event for that
-  generation. The Executor's exit code and output, Claude Code background
-  notices, Herdr state and elapsed time are never exit proof, and the Parent
-  never launches, polls or closes a session for a runtime-supervised single task.
+- **Session-port drive (every Host, inside Herdr).** The runtime drives every
+  Lane through `runtime/lane_sessions/`: `authorizeBatch` seals a one-child
+  agreement (`confirmation` from the native gate, `return_policy:
+  "checkout_delivery"`, `interaction_mode: "interactive_host"`) and
+  `startLanes` opens exactly one Executor session through the configured
+  `session_providers` — the first provider whose environment check holds — then
+  reconciles and advances the batch. No runtime child process is ever spawned,
+  and no report carries process supervision: completion is read from the v3
+  Batch Record plus `.imm/audit/`, never from an exit code. When no provider
+  is available — including every drive outside Herdr — the entry refuses
+  `lane_session_unavailable` naming each provider's reason and recovery, and
+  creates no Lane worktree, branch, tab, or Executor process. Re-entry calls
+  `advanceLanes(root, batch_id)` on the active batch id and never switches
+  providers; a recorded provider that no longer resolves refuses the same way.
+  `stop: true` on the same entry closes only that child's session through
+  `BatchSessionPort.stop`, parks the child `lane_executor_stopped` and retains
+  its Lane while the batch record stays for resume. A fresh `drive <task_id>`
+  resumes in the same Lane.
+- **Dialogs surface, never hang.** A child whose session reports
+  `entry_submitted: false` or `blocked` holds the batch open without advancing
+  and without counting `no_progress`; the Parent relays the dialog to the user
+  instead of answering it. An `interactive_host` child stalled idle holds for
+  the user rather than rotating its session. Answered decisions and approved
+  revisions rebind that child and resume it through `advanceLanes` without
+  `retire_stale_batch`; a native-gated stop parks only that child.
 - **One native gate.** The entry opens one native gate and nothing after it asks
   for a second confirmation. A declined, cancelled or failed gate reports one
   same-Host recovery action and is never retried automatically.
@@ -588,17 +574,20 @@ Spec drive-always-lanes D1 to D11 and ADR 0027 own the details below.
   `needs_human` with `checkout_delivery_overlap: <paths>` and writes nothing; a
   delivery that cannot apply parks as `checkout_delivery_conflict`. Unrelated
   user edits are never blocked and stay byte-identical.
-- **Exit-proof cleanup.** Right after a successful delivery, in the same call,
-  the runtime removes the Lane worktree, `imm-lane/<task_id>/<task_id>` and
-  `imm/<task_id>` only when the current generation's exit was observed as a
-  normal exit and `git status --porcelain --untracked-files=all` in the Lane is
-  empty. In every other case (interrupted, unobserved or abnormal exit, a dirty
-  Lane, a parked delivery) the Lane is kept and reported as
-  `batch_lane_retained` with the failed condition; the Parent deletes nothing.
-  Initiative batch Lanes are always retained as described above. A fresh
-  `drive <task_id>` on a parked or retained Lane opens a fresh native gate and
-  resumes in the same Lane with a new generation.
-- **Parent decision relay.** When the Lane's Executor stops on a literal-user
+- **Exit-proof cleanup.** Two-tier proof-based cleanup (Spec unified-lane-sessions
+  D11). For every integrated child, `advanceBatch` calls
+  `closeWithProof(handle, key)`; only a proven `exited` exit proof bound to
+  `(handle, key)` plus a clean Lane (`git status --porcelain
+  --untracked-files=all` empty, `imm-lane/<slug>/<task_id>` ancestor of the
+  batch branch) removes that child's worktree and `imm-lane/<slug>/<task_id>`,
+  recording `lane_removed` with the proof. Only when the whole batch completes
+  under `checkout_delivery` and `deliverSingleTask` succeeds is
+  `refs/heads/imm/<slug>` deleted (kept under `retain_branch`). Any failed
+  proof or Git condition keeps the Lane and reports `batch_lane_retained` with
+  the failed condition; the Parent deletes nothing. Parked, stopped and redo
+  Lanes are never removed. A fresh `drive <task_id>` on a parked or retained
+  Lane opens a fresh native gate and resumes in the same Lane.
+- **Parent decision relay (per-child).** When a Lane Executor stops on a literal-user
   decision, the report carries `lane_decision_required` (task, run and record
   revision, authorization and pending decisions). A headless Executor has no
   native gate, so its `approve_breaking_intent_revision` call only leaves a
@@ -609,22 +598,29 @@ Spec drive-always-lanes D1 to D11 and ADR 0027 own the details below.
   Parent answers on its own Host with the native-gate tool the facts call for:
   `request_authorization`, `approve_breaking_intent_revision` with the complete
   next intent, or a stop request, each passing the Lane's `task_id` and the
-  `record_revision` it read. The runtime applies the approved decision to the
-  Lane store through the same Kernel operation and starts the next generation
-  for runtime supervision. An interactive Lane keeps its existing Herdr tab and
-  starts no runtime child; after the gate succeeds, re-enter the same `task_id`
-  and resume the tab's `drive` entry once it is idle. A
-  breaking revision approved this way also rebinds the single-task batch's
-  approved identity, and a stop ends the Lane task. An interactive Lane waiting
+  `record_revision` it read. `findActiveLaneBatchForTask(root, taskId)` locates
+  the matching child of any single-task or Initiative batch by child `task_id`
+  (unknown tasks return relayed false; corrupt records or two active batches
+  claiming the same child fail closed). The runtime applies the approved decision
+  to the Lane store through the same Kernel operation, then triggers
+  `advanceLanes(root, batch_id)`: answered decisions reset that child's
+  `no_progress` to `0` and resume it while siblings are untouched; the existing
+  session is reused and no second session opens. A
+  breaking revision approved this way calls `rebindBatchChildIdentity` for that
+  child, appends `lane_rebinds` and advances `plan_digest` along the contiguous
+  chain accepted by `hasContiguousLaneRebind` (including after a Revision
+  Delegation reseal), continuing without `batch_plan_changed` or
+  `retire_stale_batch`, while a stale `from_digest` is refused. A
+  native-gated stop closes only that child's session via `BatchSessionPort.stop`,
+  parks that child `lane_executor_stopped` and retains its Lane while siblings
+  keep running. A `coordinator: correct` instruction closes `g(n)` with proof
+  and opens `g(n+1)`. A Lane waiting
   on a decision stays enrolled even when its artifacts are frozen; the batch
   skips another Assurance attempt and returns `lane_decision_required`. The
   same decision facts remain visible for an already parked child. An approved
-  interactive stop records `lane_executor_stopped` in the batch immediately;
-  `lane_relay.next_action` asks the user to close the tab while retaining the
-  Lane and branches. A changed record is refused
+  stop records `lane_executor_stopped` in the batch immediately. A changed record is refused
   as `lane_decision_stale`, and a cancelled or failed gate applies nothing. The
-  Parent never decides for the user, and a child of an Initiative batch keeps the
-  batch behavior above.
+  Parent never decides for the user.
 
 An in-place TaskRecord enrolled before this change stays resumable through the
 Execution Loop in [`drive.md`](drive.md#execution-loop) until terminal.

@@ -1,0 +1,708 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "host-entries-via-lane-sessions",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "host-entries-via-lane-sessions",
+    "goal": "unified-lane-sessions S5 (#570; Spec docs/specs/unified-lane-sessions.spec.md D1, D10, D14, D19, D20, BR-DEC-1, BR-DEC-5, BR-SCN-3). Add runtime/lane_sessions/ (startLanes(agreement), advanceLanes(root, batch_id), observeLanes(root, batch_id, options), and SessionPortAdapter) as the sole module importing both runtime/session/ and runtime/unattended/, with no side-door steerLane. Switch Claude Code, Pi, and Antigravity start_unattended_batch in host-core/runtime.ts to authorizeBatch + startLanes on creation and advanceLanes on continuation, removing Host calls to startBatch and executor_mode. Route read-only imm-session await --batch <id> in v4_runtime.ts directly to runtime/lane_sessions/ while rejecting ungated send|stop --batch flags and keeping runtime/session/ pure. observeLanes returns at the D20 wake set with next_action (advance | relay_dialog | ask_user | wait | complete), and SessionPortAdapter maps provider pane_not_found to exited and other provider failures to unknown. runtime/lane_sessions/ is a composition root, not a domain term. Update drive-batch.md (next_action table), drive.md, ADR 0005 Decision 4, ADR 0038 Decisions 2 and 4, and CONTEXT.md (Batch Agreement; no Lane Session Coordinator term).",
+    "acceptance": [
+      {
+        "id": "HLS-A1",
+        "assertion": "In tests/lane-sessions.test.ts: with HERDR_ENV=1, HERDR_WORKSPACE_ID=ws1, default config, and an injected herdr adapter, Claude Code, Pi, and Antigravity Host start_unattended_batch for both a single task (checkout_delivery) and a two-child Initiative (retain_branch) open one session per runnable child in its Lane path, record session_provider herdr, and emit zero executor handoffs and zero --print processes.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/lane-sessions.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "HLS-A2",
+        "assertion": "In tests/lane-sessions.test.ts: with HERDR_ENV unset or HERDR_WORKSPACE_ID empty and default config, single-task and Initiative Host entries return lane_session_unavailable listing herdr and herdr-core reasons and recoveries, create zero Lane worktrees and zero sessions, and never return lane_executor_requires_tui.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/lane-sessions.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "HLS-A3",
+        "assertion": "In tests/lane-sessions.test.ts: an active v3 batch recorded with session_provider herdr re-entered via advanceLanes with HERDR_ENV unset under an injected registry where herdr-core admits the Host refuses lane_session_unavailable naming herdr without switching providers; re-entered with HERDR_ENV=1 and HERDR_WORKSPACE_ID=ws1 it reconciles existing handles via observe/find and opens zero duplicate tabs; with the fake herdr CLI, the SessionPortAdapter reports a pane_not_found handle as exited and any other provider failure as unknown.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/lane-sessions.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "HLS-A4",
+        "assertion": "In tests/lane-sessions.test.ts through v4_runtime imm-session dispatch with fake provider: imm-session await --batch <id> waits read-only and returns at the first D20 wake event (a child observed idle, done, blocked, or exited; entry_submitted false; a Kernel settlement or pending user decision) or at timeout, reporting next_action advance after a settlement, relay_dialog for a blocked startup dialog, ask_user for an interactive_host child stalled at baseline, wait on a timeout with nothing pending, and complete for a terminal batch; imm-session send --batch <id> and imm-session stop --batch <id> fail with usage exit code 2 (negative controls); an unknown batch id returns a refusal with exit code 1.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/lane-sessions.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "HLS-A5",
+        "assertion": "plugins/immune-brain/dist/drive-batch.md has no claude --print Executor row and no Parent imm-session create or close step for Lanes, documents imm-session await --batch and its next_action table; ADR 0005 names runtime/lane_sessions/ as the composition root; ADR 0038 names BatchSessionPort and persisted orchestration handles; CONTEXT.md defines Batch Agreement and does not define a Lane Session Coordinator term.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"f=plugins/immune-brain/dist/drive-batch.md; ! grep -n 'claude --print' $f && ! grep -nE 'imm-session (create|close)' $f && grep -q 'imm-session await --batch' $f && grep -q next_action $f && grep -q 'runtime/lane_sessions/' docs/adr/0005-unattended-initiative-batch-run.md && grep -q BatchSessionPort docs/adr/0038-supervised-session-port.md && ! grep -q 'Lane Session Coordinator' CONTEXT.md && grep -q 'Batch Agreement' CONTEXT.md\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "HLS-A6",
+        "assertion": "host-core/runtime.ts never mentions startBatch or executor_mode; tests/runtime-layering-boundary.test.ts and tests/supervised-session-boundary.test.ts prove only runtime/lane_sessions/ imports both runtime/session/ and runtime/unattended/ and runtime/session/ remains node:*-only; Host authority and dist consistency suites pass.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"! grep -nE 'startBatch|executor_mode' plugins/immune-brain/runtime/host-core/runtime.ts && bun test tests/runtime-layering-boundary.test.ts tests/supervised-session-boundary.test.ts tests/claude-batch-authority.test.ts tests/pi-batch-authority.test.ts tests/single-task-lane-batch.test.ts tests/unattended-contracts.test.ts tests/pi-only-current-contracts.test.ts tests/skill-dist-consistency.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "HLS-A7",
+        "assertion": "Claude bundle, Antigravity artifact, dist reference mirrors, and repository typecheck are current.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun scripts/sync-dist-docs.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/host-entries-via-lane-sessions.md",
+      "CONTEXT.md",
+      "docs/adr/0005-unattended-initiative-batch-run.md",
+      "docs/adr/0038-supervised-session-port.md",
+      "docs/plans/host-entries-via-lane-sessions.intent.json",
+      "docs/reference/supervised-session-port.md",
+      "docs/specs/unified-lane-sessions.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/docs/reference/supervised-session-port.md",
+      "plugins/immune-brain/dist/drive-batch.md",
+      "plugins/immune-brain/dist/drive.md",
+      "plugins/immune-brain/runtime/host-core/runtime.ts",
+      "plugins/immune-brain/runtime/lane_sessions/index.ts",
+      "plugins/immune-brain/runtime/lane_sessions/session_port_adapter.ts",
+      "plugins/immune-brain/runtime/v4_runtime.ts",
+      "tests/claude-batch-authority.test.ts",
+      "tests/lane-sessions.test.ts",
+      "tests/pi-batch-authority.test.ts",
+      "tests/pi-only-current-contracts.test.ts",
+      "tests/runtime-layering-boundary.test.ts",
+      "tests/single-task-lane-batch.test.ts",
+      "tests/supervised-session-boundary.test.ts",
+      "tests/unattended-contracts.test.ts"
+    ],
+    "scope_size_reason": "Switching Host entries to startLanes/advanceLanes, routing imm-session await --batch in v4_runtime, and removing Parent session creation prose in drive-batch.md must land together so Host and Parent model never both open or neither opens a Lane session.",
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/host-entries-via-lane-sessions.intent.json",
+    "content_hash": "sha256:18f4da0e930ba3e8975552ef5904ae6b5726ef3a6604ddf945599542700622c3"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:18f4da0e930ba3e8975552ef5904ae6b5726ef3a6604ddf945599542700622c3",
+  "git_base_head": "2467c047ed1a184fc626a16e55fd85e350624521",
+  "attestations": [
+    {
+      "id": "approval-qa-9ad55a22",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:18f4da0e930ba3e8975552ef5904ae6b5726ef3a6604ddf945599542700622c3",
+      "diff_hash": "sha256:48913522f4691e1219c88286956c1d8aec53e7d43fccacf799dd87a29eb58f9c",
+      "actor_id": "deterministic-qa",
+      "summary": "all 8 project verification check(s) passed; execution=sha256:b92376a144fae33858ea04f05138931d928473d76b42dece753ee0099d0c3982",
+      "acceptance_results": [
+        {
+          "acceptance_id": "HLS-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:b92376a144fae33858ea04f05138931d928473d76b42dece753ee0099d0c3982"
+        },
+        {
+          "acceptance_id": "HLS-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:b92376a144fae33858ea04f05138931d928473d76b42dece753ee0099d0c3982"
+        },
+        {
+          "acceptance_id": "HLS-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:b92376a144fae33858ea04f05138931d928473d76b42dece753ee0099d0c3982"
+        },
+        {
+          "acceptance_id": "HLS-A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:b92376a144fae33858ea04f05138931d928473d76b42dece753ee0099d0c3982"
+        },
+        {
+          "acceptance_id": "HLS-A5",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:b92376a144fae33858ea04f05138931d928473d76b42dece753ee0099d0c3982"
+        },
+        {
+          "acceptance_id": "HLS-A6",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:b92376a144fae33858ea04f05138931d928473d76b42dece753ee0099d0c3982"
+        },
+        {
+          "acceptance_id": "HLS-A7",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:b92376a144fae33858ea04f05138931d928473d76b42dece753ee0099d0c3982"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-c48470e4",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:18f4da0e930ba3e8975552ef5904ae6b5726ef3a6604ddf945599542700622c3",
+      "diff_hash": "sha256:bf82f07f43c22b1d7e06652aab8301dc586cd9355c198bbee83526b933a39abf",
+      "actor_id": "deterministic-qa",
+      "summary": "all 8 project verification check(s) passed; execution=sha256:525944e11d2b63dd8624067d7b317701e7d05757b131c77d2cfbffff56390e03",
+      "acceptance_results": [
+        {
+          "acceptance_id": "HLS-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:525944e11d2b63dd8624067d7b317701e7d05757b131c77d2cfbffff56390e03"
+        },
+        {
+          "acceptance_id": "HLS-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:525944e11d2b63dd8624067d7b317701e7d05757b131c77d2cfbffff56390e03"
+        },
+        {
+          "acceptance_id": "HLS-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:525944e11d2b63dd8624067d7b317701e7d05757b131c77d2cfbffff56390e03"
+        },
+        {
+          "acceptance_id": "HLS-A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:525944e11d2b63dd8624067d7b317701e7d05757b131c77d2cfbffff56390e03"
+        },
+        {
+          "acceptance_id": "HLS-A5",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:525944e11d2b63dd8624067d7b317701e7d05757b131c77d2cfbffff56390e03"
+        },
+        {
+          "acceptance_id": "HLS-A6",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:525944e11d2b63dd8624067d7b317701e7d05757b131c77d2cfbffff56390e03"
+        },
+        {
+          "acceptance_id": "HLS-A7",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:525944e11d2b63dd8624067d7b317701e7d05757b131c77d2cfbffff56390e03"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-b4c7c21b",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:18f4da0e930ba3e8975552ef5904ae6b5726ef3a6604ddf945599542700622c3",
+      "diff_hash": "sha256:8962511dd107f0696af4b89ab481ba92f30037ed80f7925e9713343fb8e9654a",
+      "actor_id": "deterministic-qa",
+      "summary": "all 8 project verification check(s) passed; execution=sha256:1dae36840dafe129487dbc47afea865a680f4ad7871d700d50cf392f9b54aa32",
+      "acceptance_results": [
+        {
+          "acceptance_id": "HLS-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:1dae36840dafe129487dbc47afea865a680f4ad7871d700d50cf392f9b54aa32"
+        },
+        {
+          "acceptance_id": "HLS-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:1dae36840dafe129487dbc47afea865a680f4ad7871d700d50cf392f9b54aa32"
+        },
+        {
+          "acceptance_id": "HLS-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:1dae36840dafe129487dbc47afea865a680f4ad7871d700d50cf392f9b54aa32"
+        },
+        {
+          "acceptance_id": "HLS-A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:1dae36840dafe129487dbc47afea865a680f4ad7871d700d50cf392f9b54aa32"
+        },
+        {
+          "acceptance_id": "HLS-A5",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:1dae36840dafe129487dbc47afea865a680f4ad7871d700d50cf392f9b54aa32"
+        },
+        {
+          "acceptance_id": "HLS-A6",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:1dae36840dafe129487dbc47afea865a680f4ad7871d700d50cf392f9b54aa32"
+        },
+        {
+          "acceptance_id": "HLS-A7",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:1dae36840dafe129487dbc47afea865a680f4ad7871d700d50cf392f9b54aa32"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-f84865a4",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:18f4da0e930ba3e8975552ef5904ae6b5726ef3a6604ddf945599542700622c3",
+      "diff_hash": "sha256:c1822f5517341369a2dc33737fe99359f6fbb67f53ce4c786f82455dbcd379d4",
+      "actor_id": "deterministic-qa",
+      "summary": "all 8 project verification check(s) passed; execution=sha256:fbf86fc1b1be767183d216f8842d7f928d0665daffd9f1affa8b61c4c802bdda",
+      "acceptance_results": [
+        {
+          "acceptance_id": "HLS-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:fbf86fc1b1be767183d216f8842d7f928d0665daffd9f1affa8b61c4c802bdda"
+        },
+        {
+          "acceptance_id": "HLS-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:fbf86fc1b1be767183d216f8842d7f928d0665daffd9f1affa8b61c4c802bdda"
+        },
+        {
+          "acceptance_id": "HLS-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:fbf86fc1b1be767183d216f8842d7f928d0665daffd9f1affa8b61c4c802bdda"
+        },
+        {
+          "acceptance_id": "HLS-A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:fbf86fc1b1be767183d216f8842d7f928d0665daffd9f1affa8b61c4c802bdda"
+        },
+        {
+          "acceptance_id": "HLS-A5",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:fbf86fc1b1be767183d216f8842d7f928d0665daffd9f1affa8b61c4c802bdda"
+        },
+        {
+          "acceptance_id": "HLS-A6",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:fbf86fc1b1be767183d216f8842d7f928d0665daffd9f1affa8b61c4c802bdda"
+        },
+        {
+          "acceptance_id": "HLS-A7",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:fbf86fc1b1be767183d216f8842d7f928d0665daffd9f1affa8b61c4c802bdda"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-d2835785",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:18f4da0e930ba3e8975552ef5904ae6b5726ef3a6604ddf945599542700622c3",
+      "diff_hash": "sha256:c1822f5517341369a2dc33737fe99359f6fbb67f53ce4c786f82455dbcd379d4",
+      "actor_id": "cli:claude-code:7899272d-959d-4f0b-b0bb-502145f9dbbd",
+      "summary": "Round-4 delta threads executor_freeze {request, parentHost} from lane_sessions toBatchInput into the existing StartBatchInput.executor_freeze consumed by batch_lanes.ts frozenExecutorPreferences, mirrored identically in the Antigravity copy and both bundles, and pins resume-from-another-Host regeneration on the frozen host/argv in tests/lane-sessions.test.ts; blast radius medium (lane_sessions composition root, persisted v3 executor_preferences).",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "2467c047ed1a184fc626a16e55fd85e350624521",
+        "review_commit": "e2c6051e2ffba80b1d2adb9f1eb844428068f519"
+      },
+      "reviewer_verdict_sha256": "sha256:e578fd636a177a12fea3ecd6d4eaf87356e8b6fcd3d167399229e0e659044fd4"
+    }
+  ],
+  "findings": [
+    {
+      "id": "qa-HLS-A6-d2f1a986-2a28e4",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "HLS-A6",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1) stdout=28B stderr=88795B",
+      "anchor": null,
+      "evidence": null,
+      "counterevidence": null
+    },
+    {
+      "id": "qa-HLS-A7-d2f1a986-9b888e",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "HLS-A7",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1) stdout=0B stderr=823B",
+      "anchor": null,
+      "evidence": null,
+      "counterevidence": null
+    },
+    {
+      "id": "review-5b50fe64cd6e-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "HLS-A2",
+      "source": "review",
+      "review_round": 1,
+      "summary": "Outside Herdr, a Host entry with the default config refuses lane_session_unavailable but names no provider at all, so neither the herdr nor the herdr-core reason or recovery is listed.",
+      "anchor": "sha256:d121e4b9cbe90814ab1b31294bd48350ef44a97e8c5342a4ecb2929325e3f5ce",
+      "evidence": {
+        "trigger": "HERDR_ENV unset and default config (session_providers defaults to [\"herdr\"] per runtime/config/layered_config.ts). Host start_unattended_batch reaches the sessionProviders IIFE in host-core/runtime.ts, which filters out \"herdr\" when not inside Herdr, so providers is []. resolveSessionProvider then loops over nothing and returns reasons []. refusalFromReasons([]) yields reason \"lane_session_unavailable: \" with no provider names and only the fallback recovery, and runtime.ts drops the reasons array when it maps the refusal to {state:\"rejected\"}. Observable result: the Host refusal lists neither herdr nor herdr-core. The tests miss this: tests/lane-sessions.test.ts HLS-A2 calls startLanes directly and overrides providers to [\"herdr\",\"herdr-core\"], not the default-config Host-entry path, and the Host suites (tests/claude-batch-authority.test.ts, tests/pi-batch-authority.test.ts) only assert the substring lane_session_unavailable. Fix the provider list so the default-config Host refusal names herdr and herdr-core with their reasons and recoveries, and pin it at the Host-entry seam for single-task and Initiative.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/host-core/runtime.ts:HostRuntime.startUnattendedBatch (sessionProviders filter)",
+          "plugins/immune-brain/runtime/lane_sessions/index.ts:startLanes",
+          "plugins/immune-brain/runtime/session/provider_registry.ts:resolveSessionProvider",
+          "plugins/immune-brain/runtime/lane_sessions/index.ts:refusalFromReasons"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "HLS-A2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-5b50fe64cd6e-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "HLS-A3",
+      "source": "review",
+      "review_round": 1,
+      "summary": "With the real Herdr provider, SessionPortAdapter never reports a pane_not_found handle as exited, because herdr observeState returns ok with state unknown for a gone pane; the test pins this with a synthetic FakeSupervised refusal instead of the fake herdr CLI.",
+      "anchor": "sha256:32502e95d452059a56346f185dbb8e6dde90b28ce4ea0e530fbbed9341b4446c",
+      "evidence": {
+        "trigger": "A Lane session whose Herdr pane has closed. The fake herdr CLI answers `pane get` with error code pane_not_found. In herdr_provider.ts, own() returns {gone:true}, and observeState then returns {ok:true, state:\"unknown\"}, not a refusal. SessionPortAdapter.observe only maps pane_not_found when it finds the text inside a refusal reason, so it returns unknown. The S4 reconciler holds on unknown, so the exited child is never closed with proof or advanced to the next generation. Observable result: a pane_not_found handle is reported as unknown instead of exited. Unchanged file read: plugins/immune-brain/runtime/session/herdr_provider.ts (createHerdrSessionProvider.observeState), because the changed session_port_adapter.ts wraps it directly and HLS-A3 names it. The HLS-A3 adapter test uses FakeSupervised, which returns a refusal whose reason contains \"pane_not_found\"; that replaces the agreed fake-herdr-CLI seam. Fix the mapping for the provider's gone-pane outcome and drive the test through createHerdrSessionProvider with the fake herdr CLI.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/lane_sessions/session_port_adapter.ts:SessionPortAdapter.observe",
+          "plugins/immune-brain/runtime/session/herdr_provider.ts:createHerdrSessionProvider.observeState",
+          "plugins/immune-brain/runtime/lane_sessions/index.ts:advanceLanes",
+          "tests/lane-sessions.test.ts:HLS-A3 adapter maps pane_not_found"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "HLS-A3"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "qa-HLS-A7-0cb749a6-9f23e6",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "HLS-A7",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1) stdout=32B stderr=959B",
+      "anchor": null,
+      "evidence": null,
+      "counterevidence": null
+    },
+    {
+      "id": "review-92484daaae9d-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "HLS-A1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "Host Lane entry silently drops the requested Executor profile (agents.executor host/model/effort): startLanes always opens sessions with this.parentHost and empty hostArgs, and the parity test that would catch it was weakened.",
+      "anchor": "sha256:de68e36a24d5f5304a27f7760c3336a495380dc84e472ec160eb7a35157a9f6f",
+      "evidence": {
+        "trigger": "Claude Code Host inside Herdr calls start_unattended_batch { initiative_slug, agents: { executor: \"pi\" } } → runtime.ts laneDeps passes host: this.parentHost (claude-code) and no executor_freeze/hostArgs, options.executor is no longer read anywhere in host-core/runtime.ts, batch_lanes.ts frozenExecutorPreferences(root, undefined, undefined) records no request, and SessionPortAdapter.open uses its fixed host (BatchSessionOpenInput carries no host) → each Lane opens a claude-code Executor tab instead of the requested pi Executor, with no refusal or diagnostic. tests/claude-batch-authority.test.ts 'both Hosts give equal Lane reports' removed the full-report parity assertion expect(normalize(a.report)).toEqual(normalize(b.report)) and now compares only empty handoffs, so the divergence is unasserted. Fix: carry the frozen executor request (executor_freeze / executor_preferences host and args) into startLanes/advanceLanes and the adapter's host/hostArgs, and restore an assertion that a requested executor host is the one opened.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/host-core/runtime.ts:HostRuntime.startUnattendedBatch (laneDeps host: this.parentHost, executor_freeze removed)",
+          "plugins/immune-brain/runtime/lane_sessions/index.ts:startLanes",
+          "plugins/immune-brain/runtime/lane_sessions/index.ts:hostArgsFor",
+          "plugins/immune-brain/runtime/lane_sessions/session_port_adapter.ts:SessionPortAdapter.open",
+          "plugins/immune-brain/runtime/unattended/batch_lanes.ts:frozenExecutorPreferences (unchanged; read because the changed caller stopped passing executor_freeze)",
+          "tests/claude-batch-authority.test.ts:both Hosts give equal Lane reports"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "HLS-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-db8c98f4383c-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "HLS-A3",
+      "source": "review",
+      "review_round": 3,
+      "summary": "startLanes opens sessions with the requested Executor profile but never freezes it into the v3 record, so advanceLanes re-entry opens regenerated or missing child sessions on a different Host and argv than the batch started with.",
+      "anchor": "sha256:128d604324b23adf2a68f2809e4d6a5e2037e5d453dd35a40091776abc9c3b07",
+      "evidence": {
+        "trigger": "Claude Code Parent inside Herdr, no configured executor role, start_unattended_batch with agents.executor pi:m@high → startLanes opens pi tabs with --model m --thinking high, but toBatchInput passes neither executor_freeze nor supervision, so batch_lanes.ts:1019-1020 calls frozenExecutorPreferences(root, undefined, undefined) and the record has no executor_preferences (or, with a configured executor role, freezes that role instead); a later re-entry without agents.executor (HostRuntime laneDeps omits executor) hits advanceLanes, where executorSessionTarget falls back to the Parent Host or the configured role → a regenerated session (exited child, g(n+1)) or a not-yet-opened child opens claude-code with no model/effort flags instead of pi, contradicting the delta's own comment 'Resume honors the record's frozen Executor profile'. Unchanged batch_lanes.ts was read only because the changed caller toBatchInput feeds its freeze step; the new test covers startLanes only and asserts no resume case.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/host-core/runtime.ts:HostRuntime laneDeps (executor option, line 1473)",
+          "plugins/immune-brain/runtime/lane_sessions/index.ts:startLanes",
+          "plugins/immune-brain/runtime/lane_sessions/index.ts:toBatchInput",
+          "plugins/immune-brain/runtime/unattended/batch_lanes.ts:frozenExecutorPreferences(input.executor_freeze ?? input.supervision)",
+          "plugins/immune-brain/runtime/lane_sessions/index.ts:advanceLanes executorSessionTarget(persisted.executor_preferences ?? deps.executor)"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "HLS-A3"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:host-entries-via-lane-sessions:2026-11-19T04:13:12.096Z",
+      "at": "2026-11-19T04:13:12.096Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/host-entries-via-lane-sessions.intent.json"
+    },
+    {
+      "id": "request_rework:host-entries-via-lane-sessions:2026-11-19T04:15:18.251Z",
+      "at": "2026-11-19T04:15:18.251Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:2f62275c8fe5585d8fa75fd13d123962a3c0f9c02e4684df64154b6653bef420",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-19T04:15:18.252Z"
+      }
+    },
+    {
+      "id": "resolve_finding:host-entries-via-lane-sessions:2026-11-19T04:42:46.083Z",
+      "at": "2026-11-19T04:42:46.083Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-HLS-A6-d2f1a986-2a28e4\naction_v2_sha256:8083c2111a70eec53bc6468c2b80c174b9f86541ff04ac074e79f58d0319afbe"
+    },
+    {
+      "id": "resolve_finding:host-entries-via-lane-sessions:2026-11-19T04:42:55.392Z",
+      "at": "2026-11-19T04:42:55.392Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-HLS-A7-d2f1a986-9b888e\naction_v2_sha256:a5db1e3b420e423bdfbe73157584fd73ca54dbdd1f959a715794af467b3b9cca"
+    },
+    {
+      "id": "freeze_artifacts:host-entries-via-lane-sessions:2026-11-19T04:43:05.313Z",
+      "at": "2026-11-19T04:43:05.313Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/host-entries-via-lane-sessions.intent.json"
+    },
+    {
+      "id": "record_approval:host-entries-via-lane-sessions:2026-11-19T04:45:39.697Z",
+      "at": "2026-11-19T04:45:39.697Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-9ad55a22\naction_v2_sha256:1ebae19702f8b8b4d5bfdd2c297fcb04ca690b85ba6671417414b0f4060b4c66",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-19T04:45:39.697Z"
+      }
+    },
+    {
+      "id": "request_rework:host-entries-via-lane-sessions:2026-11-19T04:47:53.518Z",
+      "at": "2026-11-19T04:47:53.518Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:46880d8acc520afc59479873fb2584cc386dfc94a1579e6149846ff9b2fbcf1f",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:cd5e65ae-aafd-4309-b158-cc0500620360",
+        "confirmation_ref": "pi:cli:claude-code:cd5e65ae-aafd-4309-b158-cc0500620360",
+        "issued_at": "2026-11-19T04:47:53.518Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "2467c047ed1a184fc626a16e55fd85e350624521",
+        "review_commit": "03db56ded49f0038b5edfb6f56edde476acc68bd"
+      },
+      "review_started_at": "2026-11-19T04:45:44.703Z",
+      "review_submitted_at": "2026-11-19T04:47:52.313Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "resolve_finding:host-entries-via-lane-sessions:2026-11-19T05:01:08.971Z",
+      "at": "2026-11-19T05:01:08.971Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-5b50fe64cd6e-1-review-1\naction_v2_sha256:803fc9450f37fc51d864e3daa5acd156942ac55af4ec475e151494bccf3ec6e1"
+    },
+    {
+      "id": "resolve_finding:host-entries-via-lane-sessions:2026-11-19T05:01:21.160Z",
+      "at": "2026-11-19T05:01:21.160Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-5b50fe64cd6e-2-review-2\naction_v2_sha256:eabae3bd39170975f7da1a28f20b3108a74793fb4b26bf5b3b80ff34feed26ef"
+    },
+    {
+      "id": "freeze_artifacts:host-entries-via-lane-sessions:2026-11-19T05:01:32.017Z",
+      "at": "2026-11-19T05:01:32.017Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/host-entries-via-lane-sessions.intent.json"
+    },
+    {
+      "id": "request_rework:host-entries-via-lane-sessions:2026-11-19T05:04:06.446Z",
+      "at": "2026-11-19T05:04:06.446Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:47f650d9315014c7ee3ccd0550abfdf27862ecf7fcf48ab478b15194a2dc2428",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-19T05:04:06.446Z"
+      }
+    },
+    {
+      "id": "resolve_finding:host-entries-via-lane-sessions:2026-11-19T05:04:41.033Z",
+      "at": "2026-11-19T05:04:41.033Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-HLS-A7-0cb749a6-9f23e6\naction_v2_sha256:610056bdcc92e3f43a6d4e305516e2fb93d079820b53114b8a6a4e206f48bf2d"
+    },
+    {
+      "id": "freeze_artifacts:host-entries-via-lane-sessions:2026-11-19T05:04:51.857Z",
+      "at": "2026-11-19T05:04:51.857Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/host-entries-via-lane-sessions.intent.json"
+    },
+    {
+      "id": "record_approval:host-entries-via-lane-sessions:2026-11-19T05:07:27.602Z",
+      "at": "2026-11-19T05:07:27.602Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-c48470e4\naction_v2_sha256:2d9dc0be1042e3215eaa1b4bbbb086beea34dfda7a01736dafb44b93d96a4d81",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-19T05:07:27.602Z"
+      }
+    },
+    {
+      "id": "request_rework:host-entries-via-lane-sessions:2026-11-19T05:09:37.196Z",
+      "at": "2026-11-19T05:09:37.196Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:26285118c2aa3f17bb30018ed7d4d360df6a8cb4c226292ad379d27dbd27a8cd",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:036e3e2b-70e6-4dde-a29c-37f589b048ab",
+        "confirmation_ref": "pi:cli:claude-code:036e3e2b-70e6-4dde-a29c-37f589b048ab",
+        "issued_at": "2026-11-19T05:09:37.196Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "2467c047ed1a184fc626a16e55fd85e350624521",
+        "review_commit": "e32e66c80d8e999a8b32efa7d15b624a2631c003"
+      },
+      "review_started_at": "2026-11-19T05:07:33.438Z",
+      "review_submitted_at": "2026-11-19T05:09:35.660Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "resolve_finding:host-entries-via-lane-sessions:2026-11-19T05:19:07.043Z",
+      "at": "2026-11-19T05:19:07.043Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-92484daaae9d-1-review-1\naction_v2_sha256:8c9be057e15069fe946a7cbb1394a37ad6e8e02b8c92506a02b38176d500e4f3"
+    },
+    {
+      "id": "freeze_artifacts:host-entries-via-lane-sessions:2026-11-19T05:19:18.446Z",
+      "at": "2026-11-19T05:19:18.446Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/host-entries-via-lane-sessions.intent.json"
+    },
+    {
+      "id": "record_approval:host-entries-via-lane-sessions:2026-11-19T05:21:56.905Z",
+      "at": "2026-11-19T05:21:56.905Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-b4c7c21b\naction_v2_sha256:88b39f438835e8c84ba08e260505a9600b10a2f3b5e6da1103af6b0aaf50d81e",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-19T05:21:56.905Z"
+      }
+    },
+    {
+      "id": "request_rework:host-entries-via-lane-sessions:2026-11-19T05:24:16.923Z",
+      "at": "2026-11-19T05:24:16.923Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_3\naction_v2_sha256:59d3a808f5bc808aa8b6912a2c7b7ffb9464d2d350e5db036acdc9dc5129b732",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:19f79040-9ff5-484c-b9b6-eb221df65d2b",
+        "confirmation_ref": "pi:cli:claude-code:19f79040-9ff5-484c-b9b6-eb221df65d2b",
+        "issued_at": "2026-11-19T05:24:16.923Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "2467c047ed1a184fc626a16e55fd85e350624521",
+        "review_commit": "80605ebe823ee6a333189e7d6cf38e52bdf5cc53"
+      },
+      "review_started_at": "2026-11-19T05:22:03.170Z",
+      "review_submitted_at": "2026-11-19T05:24:15.444Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "resolve_finding:host-entries-via-lane-sessions:2026-11-19T05:30:00.955Z",
+      "at": "2026-11-19T05:30:00.955Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-db8c98f4383c-1-review-1\naction_v2_sha256:2f81f272398940ff07c538ed0b3208c6947b7e8d1bf0570bec71861857ece1e4"
+    },
+    {
+      "id": "freeze_artifacts:host-entries-via-lane-sessions:2026-11-19T05:30:11.805Z",
+      "at": "2026-11-19T05:30:11.805Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/host-entries-via-lane-sessions.intent.json"
+    },
+    {
+      "id": "record_approval:host-entries-via-lane-sessions:2026-11-19T05:32:51.691Z",
+      "at": "2026-11-19T05:32:51.691Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-f84865a4\naction_v2_sha256:c1aea2e5e4495dc4e72aad92a514eece47a8b7cb5109037ddd5d75df36b39c7b",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-19T05:32:51.691Z"
+      }
+    },
+    {
+      "id": "record_approval:host-entries-via-lane-sessions:2026-11-19T05:34:02.180Z",
+      "at": "2026-11-19T05:34:02.180Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-d2835785\naction_v2_sha256:6b0d6d47b3bd522d027811f97abc92d79d7bf3019994869acb771364a63f743f",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:7899272d-959d-4f0b-b0bb-502145f9dbbd",
+        "confirmation_ref": "pi:cli:claude-code:7899272d-959d-4f0b-b0bb-502145f9dbbd",
+        "issued_at": "2026-11-19T05:34:02.180Z"
+      },
+      "review_started_at": "2026-11-19T05:32:57.867Z",
+      "review_submitted_at": "2026-11-19T05:34:00.694Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:host-entries-via-lane-sessions:2026-11-19T05:34:06.562Z",
+      "at": "2026-11-19T05:34:06.562Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:1156bd3e0a93f46ac9bef67517200a43fa369861c5737a067eb0e1a9c1bd4ee6"
+    }
+  ]
+}

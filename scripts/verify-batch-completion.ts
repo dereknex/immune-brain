@@ -65,8 +65,8 @@ export function verify(root: string, batch: string, afterCapture?: (path: string
 	const statePath = inside(root, `.imm/state/batches/${batch}.json`);
 	const stateRaw = capture(statePath);
 	const stateText = decode(stateRaw);
-	// A v2 record is only ever parsed as v2; the v1 parser and its results are untouched.
-	const lane = ((): boolean => { try { return (JSON.parse(stateText) as { contract?: unknown } | null)?.contract === "assurance_kernel/batch_run_state/v2"; } catch { return false; } })();
+	// A Lane record is only ever parsed as Lane; the v1 parser and its results are untouched.
+	const lane = ((): boolean => { try { const contract = (JSON.parse(stateText) as { contract?: unknown } | null)?.contract; return contract === "assurance_kernel/batch_run_state/v2" || contract === "assurance_kernel/batch_run_state/v3"; } catch { return false; } })();
 	// A v2 record that breaks its own invariants (for example completed with an unintegrated child) contradicts itself: state_report_mismatch, never read_failed.
 	const state = lane ? ((): ReturnType<typeof parseBatchLaneRunState> => { try { return parseBatchLaneRunState(stateText, batch); } catch { return fail("state_report_mismatch"); } })() : parseBatchRunState(stateText, batch);
 	const { report, raw: reportRaw } = reportOf(root, batch, lane);

@@ -1,0 +1,340 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "session-provider-registry",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "session-provider-registry",
+    "goal": "unified-lane-sessions S2 (#570; Spec docs/specs/unified-lane-sessions.spec.md D5, D6, D7, D10, D19, BR-DEC-3, BR-DEC-5, BR-REQ-3, BR-REQ-4). Add role-indexed runtime/session/provider_registry.ts (roles: executor, authority, advisory) and pure resolveSessionProvider({ role, providers, host, env, registry }): herdr requires HERDR_ENV=1 and non-empty HERDR_WORKSPACE_ID and declares executor hosts claude-code, pi, antigravity with workspace local_path, find_by_key true, and exit_proof true; herdr-core declares executor hosts [] and exit_proof false until #495; fake stays test-only. Extend SupervisedSessionPort with optional CreateSessionInput.session_key ([a-z0-9-], 1-64 chars), trailing-12-char herdrAgentName suffix uniqueness, findSession(session_key) (using herdr tab list --workspace on herdr), and idempotent closeWithProof(handle, session_key) that verifies live [imm:<session_key>] ownership before pane/tab close and proves crash re-entry via pane_not_found + findSession === not_found. Enforce across all registered descriptors in tests/supervised-session-conformance.test.ts.",
+    "acceptance": [
+      {
+        "id": "SPR-A1",
+        "assertion": "In tests/session-provider-registry.test.ts and tests/supervised-session-herdr.test.ts: the config-visible registry lists exactly herdr and herdr-core; herdr requires HERDR_ENV=1 and non-empty HERDR_WORKSPACE_ID and declares roles.executor with claude-code, pi, antigravity, workspace local_path, find_by_key true, and exit_proof true; herdr-core declares roles.executor hosts [] and exit_proof false; runSessionCli builds adapters from the registry and rejects --provider fake or --provider unknown_name with invalid_input.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/session-provider-registry.test.ts\",\n      \"tests/supervised-session-herdr.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "SPR-A2",
+        "assertion": "In tests/session-provider-registry.test.ts: resolveSessionProvider for role executor with [\"herdr\", \"herdr-core\"] selects herdr when HERDR_ENV=1 and HERDR_WORKSPACE_ID=ws1, refuses lane_session_unavailable listing both providers and recoveries when HERDR_ENV is unset or HERDR_WORKSPACE_ID is empty, selects herdr-core outside Herdr when an injected descriptor admits pi while refusing claude-code, skips descriptors with find_by_key false (reason no find_by_key), and invokes zero adapter factory, probe, or createSession calls.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/session-provider-registry.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "SPR-A3",
+        "assertion": "In tests/supervised-session-conformance.test.ts, across every registered descriptor under its fake CLI and fake: createSession with session_key binds it into session identity and rejects uppercase, underscore, empty, or 65-char keys with invalid_input; findSession returns that handle or not_found; repeated closeWithProof(handle, session_key) calls return the same exited proof bound to handle and session_key while a mismatched session_key returns not_owned; an injected descriptor claiming find_by_key or exit_proof without implementing the method fails.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/supervised-session-conformance.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "SPR-A4",
+        "assertion": "In tests/supervised-session-herdr.test.ts: createSession with session_key writes [imm:<session_key>] into the tab label; herdrAgentName uses the trailing 12 characters so two sibling keys sharing a 20-character prefix produce distinct agent names; findSession queries herdr tab list --workspace; closeWithProof verifies live [imm:<session_key>] before closing pane and tab, returns exited proof on crash re-entry when pane get is pane_not_found and tab list finds no matching key, and refuses not_owned without closing when a live tab carries another key. Existing herdr-core and advisory tests pass.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/supervised-session-herdr.test.ts\",\n      \"tests/supervised-session-herdr-core.test.ts\",\n      \"tests/supervised-session-advisory.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "SPR-A5",
+        "assertion": "docs/reference/supervised-session-port.md, docs/adr/0038-supervised-session-port.md, and CONTEXT.md document resolveSessionProvider, session_key, findSession, closeWithProof, and lane_session_unavailable.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"r=docs/reference/supervised-session-port.md; a=docs/adr/0038-supervised-session-port.md; grep -q resolveSessionProvider $r && grep -q findSession $r && grep -q closeWithProof $r && grep -q session_key $r && grep -q lane_session_unavailable $r && grep -q session_providers $a && grep -q session_key $a && grep -q 'Session Provider' CONTEXT.md\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "SPR-A6",
+        "assertion": "Claude bundle, Antigravity artifact, dist reference mirrors, and repository typecheck are current.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun scripts/sync-dist-docs.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "SPR-A7",
+        "assertion": "In tests/supervised-session-boundary.test.ts: runtime/session/ imports only its own modules and node:* builtins, session imports stay inside allowed callers, and no runtime file outside runtime/session/ compares a provider name literal.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/supervised-session-boundary.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/session-provider-registry.md",
+      "CONTEXT.md",
+      "docs/adr/0038-supervised-session-port.md",
+      "docs/plans/session-provider-registry.intent.json",
+      "docs/reference/supervised-session-port.md",
+      "docs/specs/unified-lane-sessions.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/docs/reference/supervised-session-port.md",
+      "plugins/immune-brain/runtime/session/cli.ts",
+      "plugins/immune-brain/runtime/session/fake_provider.ts",
+      "plugins/immune-brain/runtime/session/herdr_core_provider.ts",
+      "plugins/immune-brain/runtime/session/herdr_provider.ts",
+      "plugins/immune-brain/runtime/session/provider_registry.ts",
+      "plugins/immune-brain/runtime/session/supervised_session_port.ts",
+      "tests/session-provider-registry.test.ts",
+      "tests/supervised-session-advisory.test.ts",
+      "tests/supervised-session-boundary.test.ts",
+      "tests/supervised-session-conformance.test.ts",
+      "tests/supervised-session-herdr-core.test.ts",
+      "tests/supervised-session-herdr.test.ts"
+    ],
+    "scope_size_reason": "Role-indexed provider descriptors, the Port primitives honoring them (session_key, findSession, closeWithProof) across herdr, herdr-core, and fake, and the conformance suite verifying declaration-to-adapter parity form one atomic session contract alongside its ADR and reference docs.",
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/session-provider-registry.intent.json",
+    "content_hash": "sha256:5b3ba0759b61b372e7d884022144b08cfd9a3a32cf5d9c5813201d57fda9c632"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:5b3ba0759b61b372e7d884022144b08cfd9a3a32cf5d9c5813201d57fda9c632",
+  "git_base_head": "8144003da29b3bf560c0f72eac5a8420b646d2cf",
+  "attestations": [
+    {
+      "id": "approval-qa-067a3f13",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5b3ba0759b61b372e7d884022144b08cfd9a3a32cf5d9c5813201d57fda9c632",
+      "diff_hash": "sha256:3de8d784496f839a344f1d46047e79dc17f8cff2072ff20b1a2c41d5ac6faa54",
+      "actor_id": "deterministic-qa",
+      "summary": "all 8 project verification check(s) passed; execution=sha256:d521a571242edbf1d56638b2f7822f3b51dbe1ec5054d5cb692ad9c4910b7f13",
+      "acceptance_results": [
+        {
+          "acceptance_id": "SPR-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:d521a571242edbf1d56638b2f7822f3b51dbe1ec5054d5cb692ad9c4910b7f13"
+        },
+        {
+          "acceptance_id": "SPR-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:d521a571242edbf1d56638b2f7822f3b51dbe1ec5054d5cb692ad9c4910b7f13"
+        },
+        {
+          "acceptance_id": "SPR-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:d521a571242edbf1d56638b2f7822f3b51dbe1ec5054d5cb692ad9c4910b7f13"
+        },
+        {
+          "acceptance_id": "SPR-A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:d521a571242edbf1d56638b2f7822f3b51dbe1ec5054d5cb692ad9c4910b7f13"
+        },
+        {
+          "acceptance_id": "SPR-A5",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:d521a571242edbf1d56638b2f7822f3b51dbe1ec5054d5cb692ad9c4910b7f13"
+        },
+        {
+          "acceptance_id": "SPR-A6",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:d521a571242edbf1d56638b2f7822f3b51dbe1ec5054d5cb692ad9c4910b7f13"
+        },
+        {
+          "acceptance_id": "SPR-A7",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:d521a571242edbf1d56638b2f7822f3b51dbe1ec5054d5cb692ad9c4910b7f13"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-8afd55c1",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5b3ba0759b61b372e7d884022144b08cfd9a3a32cf5d9c5813201d57fda9c632",
+      "diff_hash": "sha256:e65317520ac8744f4e4bbc36177cbd7eac89c21ff0aceca79d0b3f67537c53a4",
+      "actor_id": "deterministic-qa",
+      "summary": "all 8 project verification check(s) passed; execution=sha256:495962cb4408d28838b087bf9eae9df6f50cab8926d559757dd91dc49d70ca99",
+      "acceptance_results": [
+        {
+          "acceptance_id": "SPR-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:495962cb4408d28838b087bf9eae9df6f50cab8926d559757dd91dc49d70ca99"
+        },
+        {
+          "acceptance_id": "SPR-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:495962cb4408d28838b087bf9eae9df6f50cab8926d559757dd91dc49d70ca99"
+        },
+        {
+          "acceptance_id": "SPR-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:495962cb4408d28838b087bf9eae9df6f50cab8926d559757dd91dc49d70ca99"
+        },
+        {
+          "acceptance_id": "SPR-A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:495962cb4408d28838b087bf9eae9df6f50cab8926d559757dd91dc49d70ca99"
+        },
+        {
+          "acceptance_id": "SPR-A5",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:495962cb4408d28838b087bf9eae9df6f50cab8926d559757dd91dc49d70ca99"
+        },
+        {
+          "acceptance_id": "SPR-A6",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:495962cb4408d28838b087bf9eae9df6f50cab8926d559757dd91dc49d70ca99"
+        },
+        {
+          "acceptance_id": "SPR-A7",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:495962cb4408d28838b087bf9eae9df6f50cab8926d559757dd91dc49d70ca99"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-1692c5b0",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5b3ba0759b61b372e7d884022144b08cfd9a3a32cf5d9c5813201d57fda9c632",
+      "diff_hash": "sha256:e65317520ac8744f4e4bbc36177cbd7eac89c21ff0aceca79d0b3f67537c53a4",
+      "actor_id": "cli:claude-code:e50d335a-b984-4b64-b693-3957cdfbf6ef",
+      "summary": "Registry descriptors, pure resolveSessionProvider (no factory/probe calls, lane_session_unavailable with per-provider reasons), session_key validation, herdr tab-label binding with trailing-12 agent names, findSession via tab list --workspace, idempotent closeWithProof with crash re-entry and not_owned on foreign/re-keyed tabs, fake and herdr-core parity, docs/ADR/CONTEXT and byte-identical Antigravity mirrors all match SPR-A1..A7; blast radius medium: runtime/session port contract (supervised_session_port.ts, herdr_provider.ts, provider_registry.ts, cli.ts) with no persisted-shape change.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "8144003da29b3bf560c0f72eac5a8420b646d2cf",
+        "review_commit": "410e2d93c508fcaadaaba752163af4f0c7edd2cd"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-aae542a45c8c-1-review-1",
+          "acceptance_id": "SPR-A3",
+          "summary": "herdr-core closeWithProof accepts a keyless terminal when session_key equals its random owner token, contradicting its own comment that a missing key label means mismatch; harmless today since herdr-core admits no executor host.",
+          "anchor": "sha256:e594fe80d7c0550d5739577257cbf682102aff9a3ac88e471c08afae0f103881",
+          "evidence": {
+            "trigger": "herdr-core terminal created without session_key (owner label = newToken() value matching [a-z0-9-]) → closeWithProof(handle, <that owner token>) kills and removes it and returns an exited proof instead of not_owned",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/session/herdr_core_provider.ts:closeWithProof",
+              "plugins/immune-brain/runtime/session/herdr_core_provider.ts:owned"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "SPR-A3"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:590ff13a8570705a8912fee22bab794c77893fe81c8512083769c1b2cbfe1e32"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-12fe33ddfbfe-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "SPR-A4",
+      "source": "review",
+      "review_round": 1,
+      "summary": "herdr closeWithProof crash re-entry closes any tab whose label carries the key (not the handle's tab), ignores tab close failure, and still returns an exited proof; it must prove exit only when tab list finds no matching key",
+      "anchor": "sha256:2bb534ac3a3a904d8367538a517788880f4ac519e0ced0eb22674e6e9a031b57",
+      "evidence": {
+        "trigger": "session A created with session_key k (tab t1/pane p1) crashes so pane get is pane_not_found and t1 is gone; a retry createSession with the same k makes live tab t2/pane p2; closeWithProof(handleA, k) takes the found.gone branch, tab list finds t2 ending in [imm:k], runs herdr tab close t2 without checking tab_id === ids.tab or that t2's pane is dead, discards the close exit code, and returns {ok:true, exited:true} -> the live re-created Executor session is killed, and when tab close fails the port returns an exit proof while a live session still carries [imm:k] (fabricated success vs SessionExitProof contract and the reference doc 'proves exit ... when findSession reports not_found'); no test pins the matching-survivor case",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/session/herdr_provider.ts:createHerdrSessionProvider.closeWithProof",
+          "plugins/immune-brain/runtime/session/herdr_provider.ts:own",
+          "plugins/immune-brain/runtime/session/herdr_provider.ts:HERDR_CLI.tabList",
+          "plugins/immune-brain/runtime/session/herdr_provider.ts:HERDR_CLI.tabClose",
+          "plugins/immune-brain-antigravity/runtime/session/herdr_provider.ts:createHerdrSessionProvider.closeWithProof"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "SPR-A4"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:session-provider-registry:2026-11-18T10:09:01.882Z",
+      "at": "2026-11-18T10:09:01.882Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/session-provider-registry.intent.json"
+    },
+    {
+      "id": "record_approval:session-provider-registry:2026-11-18T10:09:30.004Z",
+      "at": "2026-11-18T10:09:30.004Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-067a3f13\naction_v2_sha256:32bf1f0a089b1a30a26ee0b52b454883bdd1105e313e018b14f19a418dc706a3",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-18T10:09:30.004Z"
+      }
+    },
+    {
+      "id": "request_rework:session-provider-registry:2026-11-18T10:11:53.473Z",
+      "at": "2026-11-18T10:11:53.473Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:10b32f8a73318852171f14afc14fa472b4ba26a5809590d671c5e7e99c5dc45a",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:d605f6f6-08ec-40b1-af7f-c1de8c19d56f",
+        "confirmation_ref": "pi:cli:claude-code:d605f6f6-08ec-40b1-af7f-c1de8c19d56f",
+        "issued_at": "2026-11-18T10:11:53.473Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "8144003da29b3bf560c0f72eac5a8420b646d2cf",
+        "review_commit": "1d11cb62e30cf826931e16a7175f74af7b60b88d"
+      },
+      "review_started_at": "2026-11-18T10:09:34.593Z",
+      "review_submitted_at": "2026-11-18T10:11:52.281Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "resolve_finding:session-provider-registry:2026-11-18T10:13:14.145Z",
+      "at": "2026-11-18T10:13:14.145Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-12fe33ddfbfe-1-review-1\naction_v2_sha256:b59973c6bd90d51e249d3bc49efc4c6fbf5003d94d7794e523f43236e5781572"
+    },
+    {
+      "id": "freeze_artifacts:session-provider-registry:2026-11-18T10:13:41.658Z",
+      "at": "2026-11-18T10:13:41.658Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/session-provider-registry.intent.json"
+    },
+    {
+      "id": "record_approval:session-provider-registry:2026-11-18T10:14:09.357Z",
+      "at": "2026-11-18T10:14:09.357Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-8afd55c1\naction_v2_sha256:c4c701096c21308b63fd8f264c6aa3af663c5edbba976ef423389d5dc4e81747",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-18T10:14:09.357Z"
+      }
+    },
+    {
+      "id": "record_approval:session-provider-registry:2026-11-18T10:15:52.878Z",
+      "at": "2026-11-18T10:15:52.878Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-1692c5b0\naction_v2_sha256:14eeb38b2105fa51fc708eb787d195e9d02a8e71282fbef45a75edc827ecd43a",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:e50d335a-b984-4b64-b693-3957cdfbf6ef",
+        "confirmation_ref": "pi:cli:claude-code:e50d335a-b984-4b64-b693-3957cdfbf6ef",
+        "issued_at": "2026-11-18T10:15:52.878Z"
+      },
+      "review_started_at": "2026-11-18T10:14:14.311Z",
+      "review_submitted_at": "2026-11-18T10:15:51.662Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:session-provider-registry:2026-11-18T10:15:56.233Z",
+      "at": "2026-11-18T10:15:56.233Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:59a1d1ba5f703da6f48769ce77ec5de687356c6032c658329bb68f0f77dd6f7a"
+    }
+  ]
+}

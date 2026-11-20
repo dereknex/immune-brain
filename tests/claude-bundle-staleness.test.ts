@@ -102,7 +102,7 @@ describe("Claude MCP server bundle staleness", () => {
 		const cwd = workspace("hook-newer");
 		const dir = join(cwd, ".imm/state/batches"); mkdirSync(dir, { recursive: true });
 		const path = join(dir, "newer.json");
-		const bytes = JSON.stringify({ contract: "assurance_kernel/batch_run_state/v3", initiative_slug: "future" }); writeFileSync(path, bytes);
+		const bytes = JSON.stringify({ contract: "assurance_kernel/batch_run_state/v4", initiative_slug: "future" }); writeFileSync(path, bytes);
 		const sessionId = `newer-${randomUUID()}`;
 		try {
 			execFileSync("bun", [join(process.cwd(), "plugins/immune-brain/runtime/claude/mcp_server.ts"), "--hook"], {

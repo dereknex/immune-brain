@@ -10,13 +10,14 @@
 // adapter that owns the transport.
 
 export type BatchReasonKey =
+	| "batch_agreement_invalid"
 	| "batch_entry_ambiguous"
 	| "batch_entry_kind_mismatch"
+	| "batch_record_retired"
 	| "lane_config_invalid"
 	| "lane_executor_unavailable"
 	| "lane_executor_unobservable"
 	| "lane_executor_no_progress"
-	| "lane_executor_requires_tui"
 	| "lane_decision_stale"
 	| "lane_decision_rebind_failed"
 	| "invalid_slug"
@@ -65,7 +66,6 @@ export const BATCH_REASONS: Readonly<Record<BatchReasonKey, BatchReasonSpec>> = 
 	lane_executor_unavailable: { state: "blocked", reason: "lane_executor_unavailable", recovery_action: "Install the selected Executor on PATH and retry in the current Host." },
 	lane_executor_unobservable: { state: "blocked", reason: "lane_executor_unobservable", recovery_action: "Inspect the retained Lane and Executor process in the current Host." },
 	lane_executor_no_progress: { state: "blocked", reason: "lane_executor_no_progress", recovery_action: "Inspect the Lane and resume with a fresh drive entry." },
-	lane_executor_requires_tui: { state: "blocked", reason: "lane_executor_requires_tui", recovery_action: "Open interactive pi in the Lane and run `/skill:drive <task_id>` there; when it finishes, call `start_unattended_batch` again with that task_id in the current Host." },
 	lane_decision_stale: { state: "rejected", reason: "lane_decision_stale", recovery_action: "Read the Lane decision facts again with status and relay the decision for the current record revision." },
 	lane_decision_rebind_failed: { state: "blocked", reason: "lane_decision_rebind_failed", recovery_action: "The decision was applied in the Lane; inspect the batch record with status before any further entry." },
 	batch_entry_ambiguous: {
@@ -81,6 +81,16 @@ export const BATCH_REASONS: Readonly<Record<BatchReasonKey, BatchReasonSpec>> = 
 	batch_record_shape_retired: {
 		state: "rejected",
 		reason: "batch_record_shape_retired: v1 serial batch records are read-and-retire only",
+		recovery_action: "Inspect the recorded batch, then use retire_stale_batch for this Initiative in the current Host.",
+	},
+	batch_agreement_invalid: {
+		state: "rejected",
+		reason: (detail: string) => detail || "batch_agreement_invalid",
+		recovery_action: "Correct the agreement fields and retry in the current Host.",
+	},
+	batch_record_retired: {
+		state: "rejected",
+		reason: (detail: string) => detail || "batch_record_retired: v2 Lane records are read-and-retire only",
 		recovery_action: "Inspect the recorded batch, then use retire_stale_batch for this Initiative in the current Host.",
 	},
 	batch_parent_branch_exists: {

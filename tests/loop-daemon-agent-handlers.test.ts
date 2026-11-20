@@ -19,6 +19,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -45,8 +46,13 @@ import {
 import { runLoopDaemonCli } from "../plugins/immune-brain/runtime/loop_daemon/cli.ts";
 import { type LoopDecisionRecord } from "../plugins/immune-brain/runtime/loop_daemon/decision_record.ts";
 import { dispatchDecisions } from "../plugins/immune-brain/runtime/loop_daemon/dispatch.ts";
-import { readExecutorExit } from "../plugins/immune-brain/runtime/loop_daemon/exit_recorder.ts";
+import { laneDeliveryEvidence } from "../plugins/immune-brain/runtime/unattended/batch_preflight.ts";
+import {
+	prepareBatchLaneRunState,
+	writeBatchLaneRunState,
+} from "../plugins/immune-brain/runtime/unattended/batch_state.ts";
 import { createFakeLoopGitHubPort } from "../plugins/immune-brain/runtime/loop_daemon/github_port.ts";
+import { escalationKey, escalationKeyMarker } from "../plugins/immune-brain/runtime/loop_daemon/escalation.ts";
 import { eventTarget } from "../plugins/immune-brain/runtime/loop_daemon/guards.ts";
 import { setCachedDaemonGithubLogin } from "../plugins/immune-brain/runtime/loop_daemon/identity.ts";
 import { readLoopJob } from "../plugins/immune-brain/runtime/loop_daemon/jobs.ts";
@@ -294,6 +300,14 @@ function makeHarness(
 	options: {
 		behavior?: Partial<Record<AgentSessionKind, SessionBehavior>>;
 		scopeHint?: string[];
+		/** How many leading drive calls report a blocked startup dialog before the drive settles. */
+		dialogHolds?: number;
+		/** How many leading drive calls report a Lane that is still running before the drive settles. */
+		runningTicks?: number;
+		/** The drive reports the child parked `needs_human` and never settles. */
+		parked?: boolean;
+		/** The drive refuses permanently (no Lane is running) and never settles. */
+		refused?: boolean;
 	} = {},
 ): Harness {
 	const sessions = createFakeSessions(options.behavior);
@@ -361,69 +375,45 @@ function makeHarness(
 		},
 		drive: async (input): Promise<AgentDriveResult> => {
 			drives.push(input);
-			// The real S5 composition root records the Executor exit it observed.
-			const { dispatchLoopDrive } = await import(
-				"../plugins/immune-brain/runtime/loop_daemon/drive_dispatcher.ts"
+			// A queued startup dialog holds the drive before it settles, as an
+			// Executor session reporting entry_submitted: false would.
+			if (options.parked) {
+				return { settled: false, exit: null, reason: "lane parked", parked: { task_id: input.task_id, reason: "lane_session_open_rejected: provider is busy (refused)" } };
+			}
+			if (options.refused) {
+				return { settled: false, exit: null, reason: "lane_session_unavailable: not running inside Herdr" };
+			}
+			if (options.dialogHolds && drives.length <= options.dialogHolds) {
+				return {
+					settled: false,
+					exit: null,
+					reason: "lane held on a startup dialog",
+					hold_for_dialog: {
+						task_id: input.task_id,
+						batch_id: `batch-${input.task_id}`,
+						detail: "lane_entry_not_submitted: the Executor session waits on a startup dialog",
+					},
+				};
+			}
+			if (options.runningTicks && drives.length <= options.runningTicks) {
+				return { settled: false, exit: null, reason: "lane running" };
+			}
+			// S8: the daemon reads settlement from the v3 Batch Record plus `.imm/audit/`.
+			const { laneDeliveryEvidence } = await import(
+				"../plugins/immune-brain/runtime/unattended/batch_preflight.ts"
 			);
-			const { createBatchAuthorityRegistry } = await import(
-				"../plugins/immune-brain/runtime/kernel/batch_authority.ts"
-			);
-			const exit = {
-				repository: input.root,
-				lane_path: join(input.root, ".imm-worktrees", "lane"),
-				generation: 4,
-				pid: 4242,
-				code: 0,
-				signal: null,
-			};
-			const result = await dispatchLoopDrive({
-				root: input.root,
-				batch_id: "batch-s9-fixture",
-				initiative_slug: input.task_id,
-				registry: createBatchAuthorityRegistry(),
-				capability: {},
-				children: [],
-				plan_digest: input.plan_digest,
-				base_head: input.base_head,
-				confirmation_time: input.now,
-				budget: { max_children: 1, qa_failure_limit: 1 },
-				now: input.now,
-				kernel: {} as never,
-				supervision: { parent_host: "pi", plugin_dir: "/plugin", wait_ms: 1000, stop: false },
-				run_id: "run-s9",
-				final_commit_sha: "d".repeat(40),
-				verification_evidence: JSON.stringify({ passed: true }),
-				state_dir: workspace.stateDir,
-				async start_batch(batchInput) {
-					return {
-						contract: "assurance_kernel/batch_run_report/v1",
-						batch_id: batchInput.batch_id,
-						initiative_slug: batchInput.initiative_slug,
-						batch_state: "completed",
-						max_parallel: 1,
-						children: [],
-						commits: [],
-						reason: null,
-						handoffs: [],
-						lane_supervision: { state: "exited", generation: 4, exit, not_applied: [] },
-						next_action: "",
-						created_at: input.now,
-					} as never;
-				},
-			});
-			const record = result.exit_record;
+			const delivery = laneDeliveryEvidence(input.root, input.task_id);
+			if (!delivery.ok) return { settled: false, exit: null, reason: delivery.reason };
 			return {
-				settled: result.report.batch_state === "completed",
-				exit: record === null
-					? null
-					: {
-							state: record.state,
-							exit_code: record.exit_code,
-							generation: record.generation,
-							final_commit_sha: record.final_commit_sha,
-							verification_evidence_digest: record.verification_evidence_digest,
-						},
-				reason: result.report.reason ?? "",
+				settled: true,
+				exit: {
+					state: "exited" as const,
+					exit_code: 0 as const,
+					generation: 1,
+					final_commit_sha: delivery.commit,
+					verification_evidence_digest: delivery.digest,
+				},
+				reason: "lane integrated with verification digest",
 			};
 		},
 		runVerification: async () => ({ exit_code: 0, stdout: "", stderr: "" }),
@@ -478,6 +468,43 @@ async function settleJob(stateDir: string, targetId: string): Promise<void> {
 		await new Promise((resolve) => setTimeout(resolve, 5));
 	}
 	throw new Error(`job ${targetId} never reached a terminal outcome`);
+}
+
+/* S8: seed a settled delivery the daemon PR gate reads — a completed v3 record
+ * plus the tracked audit pair at the integrated commit. */
+function seedWorkspaceDelivery(root: string, taskId: string): { commit: string; digest: string } {
+	const runId = "run-s9-seed";
+	const auditDir = join(root, ".imm", "audit", taskId, runId);
+	mkdirSync(auditDir, { recursive: true });
+	const recordJson = `${JSON.stringify({ contract: "assurance_kernel/task_record/v4", task_id: taskId })}\n`;
+	const proofJson = `${JSON.stringify({ contract: "assurance_kernel/task_tombstone/v2", task_id: taskId, terminal_lifecycle: "done" })}\n`;
+	writeFileSync(join(auditDir, "task-record.json"), recordJson);
+	writeFileSync(join(auditDir, "terminal-proof.json"), proofJson);
+	git(root, ["add", "-A"]);
+	git(root, ["commit", "--no-verify", "-qm", `deliver ${taskId}`]);
+	const commit = git(root, ["rev-parse", "HEAD"]).trim();
+	const prepared = prepareBatchLaneRunState({
+		batch_id: `batch-${taskId}`,
+		initiative_slug: taskId,
+		children: [{ task_id: taskId, slice_id: taskId, blocked_by: [], status: "enrollable", reason: null,
+			intent_path: `docs/plans/${taskId}.intent.json`, intent_revision: 1, intent_content_hash: "sha256:x" }],
+		plan_digest: "sha256:plan",
+		base_head: "0".repeat(40),
+		confirmation_time: TS,
+		budget: { max_children: 1, qa_failure_limit: 1 },
+		max_parallel: 1,
+		now: TS,
+	});
+	writeBatchLaneRunState(root, {
+		...prepared,
+		batch_state: "completed",
+		children: [{ task_id: taskId, slice_id: taskId, blocked_by: [], state: "integrated", reason: null, commit,
+			lane: { path: join(root, "lane"), branch: `imm-lane/${taskId}/${taskId}`, base_head: commit, lane_commit: commit },
+			qa_failures: 0, session: null }],
+		commits: [commit],
+	});
+	const digest = `sha256:${createHash("sha256").update(`${recordJson}\n${proofJson}`).digest("hex")}`;
+	return { commit, digest };
 }
 
 const s9IssueClassifier = async (point: string) => {
@@ -557,6 +584,9 @@ describe("Loop Daemon: Agent-Backed Handlers (S9)", () => {
 		expect(published).toHaveLength(1);
 		expect(published[0]!.body).toContain(plan!.digest);
 
+		// The settled delivery the drive will report and `open_pr` will gate on.
+		const seeded = seedWorkspaceDelivery(workspace.root, PLAN_TASK_ID);
+
 		// Tick 2: the verified owner approves exactly that digest.
 		const approvedAt = new Date(Date.parse(TS) + 60_000).toISOString();
 		harness.comments.byId.set(9001, {
@@ -574,7 +604,6 @@ describe("Loop Daemon: Agent-Backed Handlers (S9)", () => {
 			created_at: approvedAt,
 			updated_at: approvedAt,
 		};
-
 		const second = await runLoopDaemonCli(["tick", "--json"], workspace.root, {
 			gh: mockGh(),
 			gitHubPort: harness.gitHubPort,
@@ -648,11 +677,15 @@ describe("Loop Daemon: Agent-Backed Handlers (S9)", () => {
 		expect(thirdPayload.dispatches[0].detail).toContain("opened PR");
 		expect(harness.enrollments).toHaveLength(1);
 
-		const exitRecord = readExecutorExit(workspace.stateDir, PLAN_TASK_ID);
-		expect(exitRecord).not.toBeNull();
-		expect(exitRecord).toMatchObject({ state: "exited", exit_code: 0, run_id: "run-s9" });
-		expect(exitRecord!.verification_evidence_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
-		expect(exitRecord!.final_commit_sha).toBe("d".repeat(40));
+		const delivery = laneDeliveryEvidence(workspace.root, PLAN_TASK_ID);
+		expect(delivery.ok).toBe(true);
+		if (delivery.ok) {
+			expect(delivery.commit).toBe(seeded.commit);
+			expect(delivery.digest).toBe(seeded.digest);
+			expect(delivery.digest).toMatch(/^sha256:[0-9a-f]{64}$/);
+		}
+		// No exit-recorder files: completion lives on the Batch Record plus `.imm/audit/`.
+		expect(existsSync(join(workspace.stateDir, "executor-exits"))).toBe(false);
 
 		// The PR opened on `imm/<slug>`.
 		const opens = harness.gitHubPort.calls.filter((call) => call.method === "upsert");
@@ -661,10 +694,225 @@ describe("Loop Daemon: Agent-Backed Handlers (S9)", () => {
 		expect(opened.head).toBe(`imm/${PLAN_TASK_ID}`);
 		expect(opened.body).toContain(LOOP_PR_MARKER);
 		expect(opened.body).toContain("Closes #10");
+		expect(opened.body).toContain(seeded.commit);
+		expect(opened.body).toContain(seeded.digest);
 
 		// Every dispatch is on disk with its outcome.
 		const dispatched = loadLoopDispatches(workspace.stateDir).map((entry) => entry.outcome);
 		expect(dispatched).toEqual(["executed", "executed", "executed"]);
+	});
+
+	// LDP-A1: a blocked startup dialog posts one planEscalation on the Issue, keeps
+	// the drive job running, and re-drives it ("retry on a later tick") instead of
+	// failing the job into the E12-escalate abandon path.
+	it("escalates a blocked startup dialog via planEscalation and retries the drive after the dialog clears", async () => {
+		const oldRetry = process.env.IMM_LOOP_DIALOG_RETRY_MS;
+		process.env.IMM_LOOP_DIALOG_RETRY_MS = "10";
+		try {
+		const workspace = makeWorkspace({ loopConfig: { mode: "assist" } });
+		cleanups.push(workspace.cleanup);
+		const harness = makeHarness(workspace, { dialogHolds: 1 });
+
+		// Tick 1: draft and publish the plan.
+		await runLoopDaemonCli(["tick", "--json"], workspace.root, {
+			gh: mockGh(),
+			gitHubPort: harness.gitHubPort,
+			snapshotOverride: snapshotOf([issue(10, "Add the S9 fixture behaviour")]),
+			guardFacts: { daemon_identity: "daemon-bot" },
+			classify: s9IssueClassifier,
+			agentPort: harness.port,
+			standingDaemon: true,
+		});
+		const plan = readPlanPublication(workspace.stateDir, 10)!;
+		const seeded = seedWorkspaceDelivery(workspace.root, PLAN_TASK_ID);
+
+		// Tick 2: the verified owner approves; the first drive call reports a blocked
+		// startup dialog (entry_submitted: false).
+		const approvedAt = new Date(Date.parse(TS) + 60_000).toISOString();
+		const approval: RawComment = {
+			id: 9001,
+			body: `/approve ${plan!.digest}`,
+			user: { login: "human-owner" },
+			author_association: "OWNER",
+			created_at: approvedAt,
+			updated_at: approvedAt,
+		};
+		harness.comments.byId.set(9001, {
+			body: approval.body,
+			author: "human-owner",
+			author_association: "OWNER",
+			created_at: approvedAt,
+			updated_at: approvedAt,
+		});
+		const second = await runLoopDaemonCli(["tick", "--json"], workspace.root, {
+			gh: mockGh(),
+			gitHubPort: harness.gitHubPort,
+			snapshotOverride: snapshotOf([issue(10, "Add the S9 fixture behaviour", [approval])]),
+			guardFacts: { daemon_identity: "daemon-bot" },
+			classify: s9IssueClassifier,
+			agentPort: harness.port,
+			standingDaemon: true,
+		});
+		expect(second.returncode).toBe(0);
+		expect(JSON.parse(second.stdout).dispatches[0]).toMatchObject({ handler: "enroll_and_drive", outcome: "executed" });
+
+		// The drive runs as a background job: wait (bounded) for it to post the
+		// escalation and re-drive before asserting on the retry mechanism.
+		const dialogKey = escalationKeyMarker(escalationKey({ kind: "lane_entry_blocked", target: "issue-10", detail: PLAN_TASK_ID }));
+		const escalationBodies = (): string[] =>
+			[...harness.gitHubPort.comments.values()]
+				.filter((comment) => comment.issueNumber === 10)
+				.map((comment) => comment.body);
+		for (let attempt = 0; attempt < 400 && !escalationBodies().some((body) => body.includes(dialogKey)); attempt++)
+			await new Promise((resolve) => setTimeout(resolve, 5));
+
+		// One planEscalation is posted on the Issue: the lane_entry_blocked key
+		// marker with the dialog detail and the Herdr recovery, once and never
+		// duplicated by the retry.
+		const escalations = escalationBodies().filter((body) => body.includes(dialogKey));
+		expect(escalations).toHaveLength(1);
+		expect(escalations[0]).toContain("waits on a dialog the daemon cannot answer");
+		expect(escalations[0]).toContain("answer it in Herdr");
+		expect(escalations[0]).toContain("the drive resumes batch");
+
+		// The job held its lease instead of failing: the retry re-drove the Lane and
+		// the job reached the settled outcome, not the E12 failed-abandon path.
+		for (let attempt = 0; attempt < 400 && harness.drives.length < 2; attempt++)
+			await new Promise((resolve) => setTimeout(resolve, 5));
+		expect(harness.drives.length).toBe(2);
+		await settleJob(workspace.stateDir, "issue-10");
+		expect(readLoopJob(workspace.stateDir, "issue-10")?.outcome).toBe("settled");
+
+		// The published plan's intent is on the repository, where `open_pr` reads it.
+		writeFileSync(
+			join(workspace.root, "docs", "plans", `${PLAN_TASK_ID}.intent.json`),
+			JSON.stringify({
+				contract: "assurance_kernel/task_intent/v1",
+				task_id: PLAN_TASK_ID,
+				owner: "user",
+				goal: "Add the S9 fixture behaviour",
+				acceptance: [{ id: "AC1", assertion: "the fixture task delivers", verification: "{\"contract\":\"x\"}" }],
+				scope_hint: ["src/"],
+				risk: "routine",
+				revision: 1,
+			}),
+		);
+
+		// The next tick observes E12/E13 and opens the PR as in the settled flow.
+		const third = await runLoopDaemonCli(["tick", "--json"], workspace.root, {
+			gh: mockGh(),
+			gitHubPort: harness.gitHubPort,
+			snapshotOverride: snapshotOf([issue(10, "Add the S9 fixture behaviour", [approval])]),
+			guardFacts: { daemon_identity: "daemon-bot" },
+			classify: s9IssueClassifier,
+			agentPort: harness.port,
+			standingDaemon: true,
+		});
+		const thirdPayload = jsonPayload(third.stdout);
+		expect(thirdPayload.dispatches[0]).toMatchObject({ handler: "open_pr", outcome: "executed" });
+		const opened = harness.gitHubPort.calls.find((call) => call.method === "upsert")!.args[0] as { body: string };
+		expect(opened.body).toContain(seeded.digest);
+		} finally {
+			if (oldRetry === undefined) delete process.env.IMM_LOOP_DIALOG_RETRY_MS;
+			else process.env.IMM_LOOP_DIALOG_RETRY_MS = oldRetry;
+		}
+	});
+
+	it("keeps advancing a running Lane until it settles, without posting a lane-running escalation", async () => {
+		const oldRetry = process.env.IMM_LOOP_DIALOG_RETRY_MS;
+		process.env.IMM_LOOP_DIALOG_RETRY_MS = "10";
+		try {
+			const workspace = makeWorkspace({ loopConfig: { mode: "assist" } });
+			cleanups.push(workspace.cleanup);
+			const harness = makeHarness(workspace, { runningTicks: 2 });
+			await runLoopDaemonCli(["tick", "--json"], workspace.root, {
+				gh: mockGh(), gitHubPort: harness.gitHubPort,
+				snapshotOverride: snapshotOf([issue(10, "Add the S9 fixture behaviour")]),
+				guardFacts: { daemon_identity: "daemon-bot" }, classify: s9IssueClassifier,
+				agentPort: harness.port, standingDaemon: true,
+			});
+			const plan = readPlanPublication(workspace.stateDir, 10)!;
+			seedWorkspaceDelivery(workspace.root, PLAN_TASK_ID);
+			const approvedAt = new Date(Date.parse(TS) + 60_000).toISOString();
+			const approval: RawComment = { id: 9002, body: `/approve ${plan.digest}`, user: { login: "human-owner" }, author_association: "OWNER", created_at: approvedAt, updated_at: approvedAt };
+			harness.comments.byId.set(9002, { body: approval.body, author: "human-owner", author_association: "OWNER", created_at: approvedAt, updated_at: approvedAt });
+			const tick = await runLoopDaemonCli(["tick", "--json"], workspace.root, {
+				gh: mockGh(), gitHubPort: harness.gitHubPort,
+				snapshotOverride: snapshotOf([issue(10, "Add the S9 fixture behaviour", [approval])]),
+				guardFacts: { daemon_identity: "daemon-bot" }, classify: s9IssueClassifier,
+				agentPort: harness.port, standingDaemon: true,
+			});
+			expect(tick.returncode).toBe(0);
+			// The Lane reports running twice before it settles: the job re-drives
+			// instead of failing, and posts no lane-running escalation.
+			for (let attempt = 0; attempt < 400 && harness.drives.length < 3; attempt++)
+				await new Promise((resolve) => setTimeout(resolve, 5));
+			expect(harness.drives.length).toBe(3);
+			await settleJob(workspace.stateDir, "issue-10");
+			expect(readLoopJob(workspace.stateDir, "issue-10")?.outcome).toBe("settled");
+			const comments = [...harness.gitHubPort.comments.values()].map((comment) => comment.body).join("\n");
+			expect(comments).not.toContain("lane running");
+		} finally {
+			if (oldRetry === undefined) delete process.env.IMM_LOOP_DIALOG_RETRY_MS;
+			else process.env.IMM_LOOP_DIALOG_RETRY_MS = oldRetry;
+		}
+	});
+
+	it("escalates a child parked needs_human once and does not keep re-driving it", async () => {
+		const workspace = makeWorkspace({ loopConfig: { mode: "assist" } });
+		cleanups.push(workspace.cleanup);
+		const harness = makeHarness(workspace, { parked: true });
+		await runLoopDaemonCli(["tick", "--json"], workspace.root, {
+			gh: mockGh(), gitHubPort: harness.gitHubPort,
+			snapshotOverride: snapshotOf([issue(10, "Add the S9 fixture behaviour")]),
+			guardFacts: { daemon_identity: "daemon-bot" }, classify: s9IssueClassifier,
+			agentPort: harness.port, standingDaemon: true,
+		});
+		const plan = readPlanPublication(workspace.stateDir, 10)!;
+		const approvedAt = new Date(Date.parse(TS) + 60_000).toISOString();
+		const approval: RawComment = { id: 9003, body: `/approve ${plan.digest}`, user: { login: "human-owner" }, author_association: "OWNER", created_at: approvedAt, updated_at: approvedAt };
+		harness.comments.byId.set(9003, { body: approval.body, author: "human-owner", author_association: "OWNER", created_at: approvedAt, updated_at: approvedAt });
+		await runLoopDaemonCli(["tick", "--json"], workspace.root, {
+			gh: mockGh(), gitHubPort: harness.gitHubPort,
+			snapshotOverride: snapshotOf([issue(10, "Add the S9 fixture behaviour", [approval])]),
+			guardFacts: { daemon_identity: "daemon-bot" }, classify: s9IssueClassifier,
+			agentPort: harness.port, standingDaemon: true,
+		});
+		await settleJob(workspace.stateDir, "issue-10");
+		const job = readLoopJob(workspace.stateDir, "issue-10");
+		expect(job?.outcome).toBe("failed");
+		expect(job?.detail).toContain("needs_human");
+		// Escalated once, and the parked child was not re-driven.
+		expect(harness.drives.length).toBe(1);
+		const escalations = [...harness.gitHubPort.comments.values()].map((comment) => comment.body).filter((body) => body.includes("needs_human"));
+		expect(escalations).toHaveLength(1);
+	});
+
+	it("fails a permanent drive refusal at once instead of retrying it", async () => {
+		const workspace = makeWorkspace({ loopConfig: { mode: "assist" } });
+		cleanups.push(workspace.cleanup);
+		const harness = makeHarness(workspace, { refused: true });
+		await runLoopDaemonCli(["tick", "--json"], workspace.root, {
+			gh: mockGh(), gitHubPort: harness.gitHubPort,
+			snapshotOverride: snapshotOf([issue(10, "Add the S9 fixture behaviour")]),
+			guardFacts: { daemon_identity: "daemon-bot" }, classify: s9IssueClassifier,
+			agentPort: harness.port, standingDaemon: true,
+		});
+		const plan = readPlanPublication(workspace.stateDir, 10)!;
+		const approvedAt = new Date(Date.parse(TS) + 60_000).toISOString();
+		const approval: RawComment = { id: 9004, body: `/approve ${plan.digest}`, user: { login: "human-owner" }, author_association: "OWNER", created_at: approvedAt, updated_at: approvedAt };
+		harness.comments.byId.set(9004, { body: approval.body, author: "human-owner", author_association: "OWNER", created_at: approvedAt, updated_at: approvedAt });
+		await runLoopDaemonCli(["tick", "--json"], workspace.root, {
+			gh: mockGh(), gitHubPort: harness.gitHubPort,
+			snapshotOverride: snapshotOf([issue(10, "Add the S9 fixture behaviour", [approval])]),
+			guardFacts: { daemon_identity: "daemon-bot" }, classify: s9IssueClassifier,
+			agentPort: harness.port, standingDaemon: true,
+		});
+		await settleJob(workspace.stateDir, "issue-10");
+		const job = readLoopJob(workspace.stateDir, "issue-10");
+		expect(job?.outcome).toBe("failed");
+		expect(job?.detail).toContain("lane_session_unavailable");
+		expect(harness.drives.length).toBe(1);
 	});
 
 	it("does not enroll an approval whose digest is not the published one", async () => {
@@ -718,7 +966,7 @@ describe("Loop Daemon: Agent-Backed Handlers (S9)", () => {
 		expect(result.returncode).toBe(0);
 		expect(harness.enrollments).toHaveLength(0);
 		expect(harness.drives).toHaveLength(0);
-		expect(readExecutorExit(workspace.stateDir, PLAN_TASK_ID)).toBeNull();
+		expect(laneDeliveryEvidence(workspace.root, PLAN_TASK_ID).ok).toBe(false);
 		expect(jsonPayload(result.stdout).dispatches).toHaveLength(0);
 	});
 

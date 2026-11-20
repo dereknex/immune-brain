@@ -4,11 +4,12 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSy
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { copyGitTemplate } from "./helpers/git-template";
+import { herdrSubject } from "./helpers/fake-herdr";
+import { memoryLanePort, memoryLanePortEnv } from "./helpers/memory-lane-port";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { GithubInitiativeObservation } from "../plugins/immune-brain/runtime/github_issue_tracker";
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
-import { LaneSupervisor } from "../plugins/immune-brain/runtime/unattended/lane_supervisor";
 import { selectedPiParent, registerPiRunContinuation } from "../plugins/immune-brain/.pi-extension/pi-run-continuation";
 import { PI_PROFILE, bindPiSelectedParent } from "../plugins/immune-brain/.pi-extension/pi-host-runtime";
 import { recognizePhaseEntry, NO_LOCAL_NAMES } from "../plugins/immune-brain/runtime/assurance/phase_entry";
@@ -64,7 +65,7 @@ try { await import("@earendil-works/pi-tui"); } catch {
 afterAll(() => mock.restore());
 const { PI_LANE_WAIT_MS, executePiUnattendedBatch, default: registerBatchExtension, mapDialogSelection } = await import("../plugins/immune-brain/.pi-extension/imm-unattended-batch");
 const { default: registerPiWork, recordPiPhaseInput } = await import("../plugins/immune-brain/.pi-extension/imm-canary-work");
-const runBatch = (options: Parameters<typeof executePiUnattendedBatch>[0]) => executePiUnattendedBatch({ final_verification: ["bun test", "bun run typecheck"], ...options });
+const runBatch = (options: Parameters<typeof executePiUnattendedBatch>[0]) => executePiUnattendedBatch({ env: { ...memoryLanePortEnv }, sessionPortFactory: memoryLanePort, final_verification: ["bun test", "bun run typecheck"], ...options });
 const SESSION = { getSessionId: () => "pi-batch-authority-tests" };
 const roots: string[] = [];
 afterAll(() => { for (const root of roots) rmSync(root, { recursive: true, force: true }); });
@@ -144,54 +145,103 @@ describe("acc-pi-batch-gate", () => {
 		process.env.PATH = `${bins}:${oldPath}`; process.env.LANE_TEST_OUTPUT = join(bins, "args");
 		try {
 		const gates: any[] = [];
-		const result = await executePiUnattendedBatch({ root: f.root, taskId, executor: { executor_host: "claude-code" }, confirmBatch: async details => { gates.push(details); return "accept"; } });
-		expect(gates).toHaveLength(1);
-		expect(gates[0].summary).toContain("Preparation digest: sha256:");
-		expect(result.state).toBe("started");
-		if (result.state !== "started") throw new Error(result.reason);
+		const subject = herdr ? herdrSubject() : null;
+		const oldHerdrWs = process.env.HERDR_WORKSPACE_ID;
+		const oldFakeState = process.env.FAKE_HERDR_STATE;
+		const oldPath2 = process.env.PATH;
+			if (subject) {
+				process.env.HERDR_ENV = "1";
+				process.env.HERDR_WORKSPACE_ID = subject.env.HERDR_WORKSPACE_ID;
+				process.env.FAKE_HERDR_STATE = subject.env.FAKE_HERDR_STATE;
+				process.env.PATH = subject.env.PATH;
+			} else {
+				delete process.env.HERDR_ENV;
+				delete process.env.HERDR_WORKSPACE_ID;
+				delete process.env.FAKE_HERDR_STATE;
+			}
+			const result = await executePiUnattendedBatch({ root: f.root, taskId, executor: { host: "claude-code" }, confirmBatch: async details => { gates.push(details); return "accept"; } });
+			expect(gates).toHaveLength(1);
+			expect(gates[0].summary).toContain("Preparation digest: sha256:");
+			if (!herdr) {
+				expect(result.state).toBe("rejected");
+				expect((result as { reason?: string }).reason ?? "").toContain("lane_session_unavailable");
+				expect((result as { reason?: string }).reason ?? "").not.toContain("lane_executor_requires_tui");
+				return;
+			}
+			expect(result.state).toBe("started");
+			if (result.state !== "started") throw new Error((result as { reason?: string }).reason);
 		if (herdr) {
-			expect((result.report as any).lane_supervision).toBeUndefined();
-			expect((result.report as any).handoffs).toContainEqual(expect.objectContaining({ role: "executor", task_id: taskId }));
+			// S5: inside Herdr the runtime opens a Herdr session; zero handoffs.
 			const { readAnyBatchRunState } = await import("../plugins/immune-brain/runtime/unattended/batch_state");
-			expect(readAnyBatchRunState(f.root, result.batch_id)).toMatchObject({ executor_mode: "interactive", plan_source: "single_task" });
-			delete process.env.HERDR_ENV;
-			const resumed = await executePiUnattendedBatch({ root: f.root, taskId, confirmBatch: async () => { throw new Error("must reuse authorization"); } });
-			expect((resumed as any).report.handoffs).toContainEqual(expect.objectContaining({ role: "executor", task_id: taskId }));
-			expect((resumed as any).report.lane_supervision).toBeUndefined();
+			const rec = readAnyBatchRunState(f.root, result.batch_id) as unknown as { session_provider?: string; children?: Array<{ session?: { handle?: string | null } | null }> };
+			expect(rec.session_provider).toBe("herdr");
+			expect((result.report as any).handoffs ?? []).toEqual([]);
+			expect((result.report as any).lane_supervision).toBeUndefined();
+			expect(rec.children?.[0]?.session?.handle).toBeTruthy();
 			expect(existsSync(join(bins, "args"))).toBe(false);
+			subject?.cleanup();
+			if (oldHerdrWs === undefined) delete process.env.HERDR_WORKSPACE_ID; else process.env.HERDR_WORKSPACE_ID = oldHerdrWs;
+			if (oldFakeState === undefined) delete process.env.FAKE_HERDR_STATE; else process.env.FAKE_HERDR_STATE = oldFakeState;
+			if (oldPath2 !== undefined) process.env.PATH = oldPath2;
 			return;
 		}
-		expect((result.report as any).lane_supervision).toMatchObject({ state: "running", generation: 1, exit: null });
-		const { readAnyBatchRunState } = await import("../plugins/immune-brain/runtime/unattended/batch_state");
-		const record = readAnyBatchRunState(f.root, result.batch_id)!;
-		expect(record).toMatchObject({ plan_source: "single_task", initiative_slug: taskId, max_parallel: 1, children: [{ task_id: taskId, state: "enrolled" }] });
-		const lane = (record.children[0] as any).lane;
-		for (let attempt = 0; attempt < 300 && !existsSync(join(bins, "args")); attempt++) await new Promise(resolve => setTimeout(resolve, 10));
-		const argv = readFileSync(join(bins, "args"), "utf8").trim().split("\n");
-		expect(realpathSync(argv[0]!)).toBe(realpathSync(lane.path)); expect(argv.at(-1)).toBe(`/immune-brain:drive ${taskId}`);
-		expect((result.report as any).handoffs.filter((h: { role: string }) => h.role === "executor")).toEqual([]);
-		const lost = await executePiUnattendedBatch({ root: f.root, taskId, executor: { executor_host: "claude-code" },
-			supervisor: new LaneSupervisor(), confirmBatch: async () => "accept" });
-		expect((lost as any).report.lane_supervision).toMatchObject({ state: "unobservable", generation: 1, exit: null });
-		const stopped = await executePiUnattendedBatch({ root: f.root, taskId, stop: true });
-		expect((stopped as any).report.lane_supervision).toMatchObject({ state: "stopped", generation: 1 });
-		const resumed = await executePiUnattendedBatch({ root: f.root, taskId, executor: { executor_host: "claude-code" }, confirmBatch: async () => "accept" });
-		expect((resumed as any).report.lane_supervision).toMatchObject({ state: "running", generation: 2 });
-		expect(lane.branch).toBe(`imm-lane/${taskId}/${taskId}`);
-		const tools: any[] = [];
-		registerPiWork({ registerTool: (tool: unknown) => tools.push(tool), registerCommand() {}, on() {}, events: { on() {}, emit() {} } } as never);
-		const work = tools.find(tool => tool.name === "imm_kernel_canary");
-		const status = textOf(await work.execute("status", { task_id: taskId, action: { op: "status" } }, undefined, undefined, context(f.root, "cancel")));
-		expect(status.batch.record).toMatchObject({ plan_source: "single_task", batch_state: "running", children: [{ task_id: taskId, state: "enrolled", lane: { path: lane.path } }] });
-		expect(readFileSync(join(lane.path, `docs/plans/${taskId}.intent.json`), "utf8")).toBe(JSON.stringify(intent));
 		} finally {
-			await executePiUnattendedBatch({ root: f.root, taskId, stop: true });
+			try { await executePiUnattendedBatch({ root: f.root, taskId, stop: true }); } catch { /* session batches have no supervisor to stop */ }
 			process.env.PATH = oldPath; if (oldOutput === undefined) delete process.env.LANE_TEST_OUTPUT; else process.env.LANE_TEST_OUTPUT = oldOutput;
 			if (oldHerdr === undefined) delete process.env.HERDR_ENV; else process.env.HERDR_ENV = oldHerdr;
+			try { (typeof subject !== "undefined" && (subject as { cleanup?: () => void } | null)?.cleanup?.()); } catch { /* ignore */ }
+			if (typeof oldHerdrWs !== "undefined") { if (oldHerdrWs === undefined) delete process.env.HERDR_WORKSPACE_ID; else process.env.HERDR_WORKSPACE_ID = oldHerdrWs; }
+			if (typeof oldFakeState !== "undefined") { if (oldFakeState === undefined) delete process.env.FAKE_HERDR_STATE; else process.env.FAKE_HERDR_STATE = oldFakeState; }
+			if (typeof oldPath2 !== "undefined" && oldPath2 !== undefined) { try { process.env.PATH = oldPath2; } catch { /* ignore */ } }
 			rmSync(bins, { recursive: true, force: true });
 		}
 	}, 30000);
 	// Issue #426 F9: `pi --print` can never write the Kernel, so the Parent hands the Lane to the user.
+	it.each(["absent", "retired-false"] as const)("returns an interactive Herdr-tab handoff inside Herdr with %s herdr key", async key => {
+		const f = fixture("herdr-handoff-pi"), taskId = `${f.slug}-c1`;
+		const path = join(f.root, `docs/plans/${taskId}.intent.json`);
+		const intent = JSON.parse(readFileSync(path, "utf8"));
+		intent.scope_hint = ["delivery.txt"];
+		intent.acceptance[0].verification = JSON.stringify({ contract: "assurance_kernel/verification_descriptor/v2", command: { executable: "bun", argv: ["-e", ""], cwd: ".", timeout_ms: 60000, max_output_bytes: 4096 }, environment: { prepare: null, writable_paths: [] } });
+		writeFileSync(path, JSON.stringify(intent)); git(f.root, "add", `docs/plans/${taskId}.intent.json`);
+		const bins = mkdtempSync(join(tmpdir(), "lane-fake-executor-"));
+		for (const name of ["claude", "pi"]) { writeFileSync(join(bins, name), "#!/bin/sh\nprintf '%s\\n' \"$PWD\" \"$@\" > \"$LANE_TEST_OUTPUT\"\nexec /bin/sleep 30\n"); chmodSync(join(bins, name), 0o755); }
+		const oldPath = process.env.PATH, oldOutput = process.env.LANE_TEST_OUTPUT, oldHerdr = process.env.HERDR_ENV;
+		process.env.HERDR_ENV = "1";
+		if (key === "retired-false") writeFileSync(join(f.root, ".imm/config.json"), JSON.stringify({ contract: "immune_brain/project_config/v2", herdr: false }));
+		process.env.PATH = `${bins}:${oldPath}`; process.env.LANE_TEST_OUTPUT = join(bins, "args");
+		const subject = herdrSubject();
+			const oldWs = process.env.HERDR_WORKSPACE_ID;
+			const oldFake = process.env.FAKE_HERDR_STATE;
+			const oldP = process.env.PATH;
+			process.env.HERDR_ENV = "1";
+			process.env.HERDR_WORKSPACE_ID = subject.env.HERDR_WORKSPACE_ID;
+			process.env.FAKE_HERDR_STATE = subject.env.FAKE_HERDR_STATE;
+			process.env.PATH = subject.env.PATH;
+			try {
+			const result = await executePiUnattendedBatch({ root: f.root, taskId, executor: { host: "pi" }, confirmBatch: async () => "accept" });
+			expect(result.state).toBe("started");
+			if (result.state !== "started") throw new Error((result as { reason?: string }).reason);
+			const report = result.report as any;
+			expect(report.lane_supervision).toBeUndefined();
+			expect(report.reason ?? "").not.toContain("lane_session_unavailable");
+			expect(JSON.stringify(report)).not.toContain("lane_executor_requires_tui");
+			expect(report.handoffs ?? []).toEqual([]);
+			const { readAnyBatchRunState } = await import("../plugins/immune-brain/runtime/unattended/batch_state");
+			const rec = readAnyBatchRunState(f.root, result.batch_id) as unknown as { session_provider?: string };
+			expect(rec.session_provider).toBe("herdr");
+			expect(existsSync(join(bins, "args"))).toBe(false);
+		} finally {
+			try { await executePiUnattendedBatch({ root: f.root, taskId, stop: true }); } catch { /* session batches have no supervisor to stop */ }
+			process.env.PATH = oldPath; if (oldOutput === undefined) delete process.env.LANE_TEST_OUTPUT; else process.env.LANE_TEST_OUTPUT = oldOutput;
+			if (oldHerdr === undefined) delete process.env.HERDR_ENV; else process.env.HERDR_ENV = oldHerdr;
+			try { (typeof subject !== "undefined" && (subject as { cleanup?: () => void } | null)?.cleanup?.()); } catch { /* ignore */ }
+			if (typeof oldHerdrWs !== "undefined") { if (oldHerdrWs === undefined) delete process.env.HERDR_WORKSPACE_ID; else process.env.HERDR_WORKSPACE_ID = oldHerdrWs; }
+			if (typeof oldFakeState !== "undefined") { if (oldFakeState === undefined) delete process.env.FAKE_HERDR_STATE; else process.env.FAKE_HERDR_STATE = oldFakeState; }
+			if (typeof oldPath2 !== "undefined" && oldPath2 !== undefined) { try { process.env.PATH = oldPath2; } catch { /* ignore */ } }
+			rmSync(bins, { recursive: true, force: true });
+		}
+	}, 30000);
 	it("hands a Pi Executor outside Herdr to the user instead of spawning it", async () => {
 		const f = fixture("single-pi"), taskId = `${f.slug}-c1`;
 		const path = join(f.root, `docs/plans/${taskId}.intent.json`);
@@ -205,22 +255,20 @@ describe("acc-pi-batch-gate", () => {
 		delete process.env.HERDR_ENV;
 		process.env.PATH = `${bins}:${oldPath}`; process.env.LANE_TEST_OUTPUT = join(bins, "args");
 		try {
-			const result = await executePiUnattendedBatch({ root: f.root, taskId, executor: { executor_host: "pi" }, confirmBatch: async () => "accept" });
-			expect(result.state).toBe("started");
-			if (result.state !== "started") throw new Error(result.reason);
-			const report = result.report as any;
-			expect(report.reason).toBe("lane_executor_requires_tui");
-			expect(report.lane_supervision).toMatchObject({ state: "unavailable", generation: null, reason: "lane_executor_requires_tui" });
-			expect(report.handoffs).toContainEqual(expect.objectContaining({ role: "executor", task_id: taskId, lane_path: expect.any(String) }));
-			expect(report.lane_refusals).toBeUndefined();
-			expect(report.next_action).toContain(`/skill:drive ${taskId}`);
-			const { readAnyBatchRunState } = await import("../plugins/immune-brain/runtime/unattended/batch_state");
-			expect(readAnyBatchRunState(f.root, result.batch_id)).toMatchObject({ batch_state: "running", children: [{ task_id: taskId, state: "enrolled" }] });
-			expect(existsSync(join(bins, "args"))).toBe(false);
+			const result = await executePiUnattendedBatch({ root: f.root, taskId, executor: { host: "pi" }, confirmBatch: async () => "accept" });
+			expect(result.state).toBe("rejected");
+			if (result.state !== "rejected") throw new Error("expected lane_session_unavailable");
+			expect(result.reason).toContain("lane_session_unavailable");
+			expect(result.reason).not.toContain("lane_executor_requires_tui");
+			expect(result.recovery_action.length).toBeGreaterThan(0);
 		} finally {
-			await executePiUnattendedBatch({ root: f.root, taskId, stop: true });
+			try { await executePiUnattendedBatch({ root: f.root, taskId, stop: true }); } catch { /* session batches have no supervisor to stop */ }
 			process.env.PATH = oldPath; if (oldOutput === undefined) delete process.env.LANE_TEST_OUTPUT; else process.env.LANE_TEST_OUTPUT = oldOutput;
 			if (oldHerdr === undefined) delete process.env.HERDR_ENV; else process.env.HERDR_ENV = oldHerdr;
+			try { (typeof subject !== "undefined" && (subject as { cleanup?: () => void } | null)?.cleanup?.()); } catch { /* ignore */ }
+			if (typeof oldHerdrWs !== "undefined") { if (oldHerdrWs === undefined) delete process.env.HERDR_WORKSPACE_ID; else process.env.HERDR_WORKSPACE_ID = oldHerdrWs; }
+			if (typeof oldFakeState !== "undefined") { if (oldFakeState === undefined) delete process.env.FAKE_HERDR_STATE; else process.env.FAKE_HERDR_STATE = oldFakeState; }
+			if (typeof oldPath2 !== "undefined" && oldPath2 !== undefined) { try { process.env.PATH = oldPath2; } catch { /* ignore */ } }
 			rmSync(bins, { recursive: true, force: true });
 		}
 	}, 30000);
@@ -436,9 +484,22 @@ describe("acc-pi-batch-gate", () => {
 	});
 	it("registered Tool content exposes the Lane report, Executor handoffs and every child manifest", async () => {
 		const f = fixture("tool-content-manifest"); const tool = register(async () => f.observation);
-		const response = await tool.execute("manifest", { initiative_slug: f.slug, final_verification: ["bun test", "bun run typecheck"] }, undefined, undefined, context(f.root, "confirm")); const content = textOf(response);
-		expect(content.state).toBe("started"); expect(content.report.batch_state).toBe("running"); expect(content.report.max_parallel).toBe(1);
-		expect(content.report.handoffs[0]).toMatchObject({ role: "executor", task_id: `${f.slug}-c1`, next_obligation: "submit_assurance" });
+		const subject = herdrSubject();
+		const oldWs = process.env.HERDR_WORKSPACE_ID; const oldFake = process.env.FAKE_HERDR_STATE; const oldP = process.env.PATH;
+		process.env.HERDR_ENV = "1"; process.env.HERDR_WORKSPACE_ID = subject.env.HERDR_WORKSPACE_ID; process.env.FAKE_HERDR_STATE = subject.env.FAKE_HERDR_STATE; process.env.PATH = subject.env.PATH;
+		let response: ReturnType<typeof textOf> extends never ? never : Awaited<ReturnType<typeof tool.execute>>;
+		let content: { state?: string; report?: { batch_state?: string; max_parallel?: number; handoffs?: Array<{ role?: string }>; next_action?: string }; manifest?: { children?: unknown[] } };
+		try {
+			response = await tool.execute("manifest", { initiative_slug: f.slug, final_verification: ["bun test", "bun run typecheck"] }, undefined, undefined, context(f.root, "confirm")); content = textOf(response);
+		} finally {
+			subject.cleanup();
+			if (oldWs === undefined) delete process.env.HERDR_WORKSPACE_ID; else process.env.HERDR_WORKSPACE_ID = oldWs;
+			if (oldFake === undefined) delete process.env.FAKE_HERDR_STATE; else process.env.FAKE_HERDR_STATE = oldFake;
+			if (oldP !== undefined) process.env.PATH = oldP;
+			delete process.env.HERDR_ENV;
+		}
+		expect(content.state).toBe("started"); expect(content.report!.batch_state).toBe("running"); expect(content.report!.max_parallel).toBe(1);
+		expect(content.report!.handoffs ?? []).toEqual([]);
 		expect(content.report).not.toHaveProperty("handoff"); expect(content.report.next_action.length).toBeGreaterThan(0);
 		expect(content.manifest.children).toHaveLength(3);
 		for (const [n, risk] of [[1, "routine"], [2, "material"], [3, "critical"]]) expect(content.manifest.children).toContainEqual({
@@ -464,19 +525,53 @@ describe("lane mode parameters and authorization reuse", () => {
 	});
 	for (const max_parallel of [1, 2]) it(`reuses max_parallel=${max_parallel} Lane authorization without a second native gate`, async () => {
 		const f = fixture(`lane-reuse-${max_parallel}`); let gates = 0;
+		const subject = herdrSubject();
+		const oldWs = process.env.HERDR_WORKSPACE_ID; const oldFake = process.env.FAKE_HERDR_STATE; const oldP = process.env.PATH; const oldEnv = process.env.HERDR_ENV;
+		process.env.HERDR_ENV = "1"; process.env.HERDR_WORKSPACE_ID = subject.env.HERDR_WORKSPACE_ID; process.env.FAKE_HERDR_STATE = subject.env.FAKE_HERDR_STATE; process.env.PATH = subject.env.PATH;
 		const options = { root: f.root, initiativeSlug: f.slug, readInitiative: async () => f.observation, confirmBatch: async () => { gates++; return "accept" as const; } };
-		const first = await runBatch({ ...options, max_parallel }); const second = await runBatch({ ...options, final_verification: undefined });
+		let first: Awaited<ReturnType<typeof runBatch>>; let second: Awaited<ReturnType<typeof runBatch>>; let mismatch: unknown;
+		try {
+			first = await runBatch({ ...options, max_parallel }); second = await runBatch({ ...options, final_verification: undefined });
+		} finally {
+			subject.cleanup();
+			if (oldWs === undefined) delete process.env.HERDR_WORKSPACE_ID; else process.env.HERDR_WORKSPACE_ID = oldWs;
+			if (oldFake === undefined) delete process.env.FAKE_HERDR_STATE; else process.env.FAKE_HERDR_STATE = oldFake;
+			if (oldP !== undefined) process.env.PATH = oldP;
+			if (oldEnv === undefined) delete process.env.HERDR_ENV; else process.env.HERDR_ENV = oldEnv;
+		}
 		expect(first.state).toBe("started"); expect(second.state).toBe("started"); expect(gates).toBe(1);
 		if (first.state !== "started" || second.state !== "started") throw new Error("Lane did not start");
-		expect(second.batch_id).toBe(first.batch_id); expect(second.report.max_parallel).toBe(max_parallel);
-		const path = join(f.root, `.imm/state/batches/${first.batch_id}.json`); const bytes = readFileSync(path);
-		const mismatch = await runBatch({ ...options, max_parallel: max_parallel + 1 });
+		expect(second!.batch_id).toBe(first!.batch_id); expect(second!.report.max_parallel).toBe(max_parallel);
+		const path = join(f.root, `.imm/state/batches/${first!.batch_id}.json`); const bytes = readFileSync(path);
+		const subject2 = herdrSubject();
+			const oWs2 = process.env.HERDR_WORKSPACE_ID; const oFk2 = process.env.FAKE_HERDR_STATE; const oP2 = process.env.PATH; const oE2 = process.env.HERDR_ENV;
+			process.env.HERDR_ENV = "1"; process.env.HERDR_WORKSPACE_ID = subject2.env.HERDR_WORKSPACE_ID; process.env.FAKE_HERDR_STATE = subject2.env.FAKE_HERDR_STATE; process.env.PATH = subject2.env.PATH;
+			try {
+				mismatch = await runBatch({ ...options, max_parallel: max_parallel + 1 });
+			} finally {
+				subject2.cleanup();
+				if (oWs2 === undefined) delete process.env.HERDR_WORKSPACE_ID; else process.env.HERDR_WORKSPACE_ID = oWs2;
+				if (oFk2 === undefined) delete process.env.FAKE_HERDR_STATE; else process.env.FAKE_HERDR_STATE = oFk2;
+				if (oP2 !== undefined) process.env.PATH = oP2;
+				if (oE2 === undefined) delete process.env.HERDR_ENV; else process.env.HERDR_ENV = oE2;
+			}
 		expect(JSON.stringify(mismatch)).toContain("batch_parallel_mismatch"); expect(gates).toBe(1); expect(readFileSync(path)).toEqual(bytes);
 	});
 	it("accepts max_parallel above 1 through one gate", async () => {
 		const f = fixture("lane-wide"); let gates = 0;
-		const result = await runBatch({ root: f.root, initiativeSlug: f.slug, max_parallel: 2, readInitiative: async () => f.observation, confirmBatch: async () => { gates++; return "accept"; } });
-		expect(gates).toBe(1); expect(result.state).toBe("started");
+		const subject = herdrSubject();
+		const oldWs = process.env.HERDR_WORKSPACE_ID; const oldFake = process.env.FAKE_HERDR_STATE; const oldP = process.env.PATH; const oldEnv = process.env.HERDR_ENV;
+		process.env.HERDR_ENV = "1"; process.env.HERDR_WORKSPACE_ID = subject.env.HERDR_WORKSPACE_ID; process.env.FAKE_HERDR_STATE = subject.env.FAKE_HERDR_STATE; process.env.PATH = subject.env.PATH;
+		try {
+			const result = await runBatch({ root: f.root, initiativeSlug: f.slug, max_parallel: 2, readInitiative: async () => f.observation, confirmBatch: async () => { gates++; return "accept"; } });
+			expect(gates).toBe(1); expect(result.state).toBe("started");
+		} finally {
+			subject.cleanup();
+			if (oldWs === undefined) delete process.env.HERDR_WORKSPACE_ID; else process.env.HERDR_WORKSPACE_ID = oldWs;
+			if (oldFake === undefined) delete process.env.FAKE_HERDR_STATE; else process.env.FAKE_HERDR_STATE = oldFake;
+			if (oldP !== undefined) process.env.PATH = oldP;
+			if (oldEnv === undefined) delete process.env.HERDR_ENV; else process.env.HERDR_ENV = oldEnv;
+		}
 	});
 });
 

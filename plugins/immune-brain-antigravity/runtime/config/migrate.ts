@@ -125,7 +125,9 @@ export function migrateConfig(root: string, options: { userConfigPath?: string; 
 			return [name, rest];
 		})) };
 	}
-	if (herdrRequested(v1Profiles, [lanes, ...Object.values(laneProfiles), p.lanes ?? {}])) { userAfter.herdr = true; notes.push("a v1 transport chose herdr: herdr is now one switch, set true in the user file"); }
+	// The retired `herdr` switch is never written: a v1 transport that chose Herdr tabs simply migrates
+	// to the `session_providers` default, and `--write` deletes a stored `herdr` key (handled below).
+	if (herdrRequested(v1Profiles, [lanes, ...Object.values(laneProfiles), p.lanes ?? {}])) notes.push("a v1 transport chose herdr: the herdr switch is retired, session_providers defaults to [herdr]");
 	const rolesFor = (active: string | undefined, laneActive: string | undefined, flatLane: Obj): Partial<Record<AgentRole, unknown>> => {
 		if (Object.keys(agents).length) return presetRoles(agents, active ?? "default", notes);
 		const lane = laneActive && object(laneProfiles[laneActive]) ? laneProfiles[laneActive] : flatLane;
@@ -180,11 +182,26 @@ export function migrateConfig(root: string, options: { userConfigPath?: string; 
 	if (gitLegacy && u.git_integration === undefined && p.git_integration === undefined) projectAfter.git_integration = gitLegacy;
 	if (carrierLegacy && projectAfter.initiative_carrier === undefined && u.initiative_carrier === undefined) projectAfter.initiative_carrier = carrierLegacy;
 
+	// The retired `herdr` key is never carried into the migrated files: `--write` deletes it,
+	// preserving every other key verbatim.
+	for (const [label, after, before] of [["user", userAfter, userBefore], ["project", projectAfter, projectBefore]] as const) {
+		if (before && Object.hasOwn(before, "herdr") && Object.hasOwn(after, "herdr")) {
+			delete after.herdr;
+			notes.push(`${label} file: removed the retired herdr key; all other keys are preserved`);
+		}
+	}
 	// An already migrated user file is never rewritten from the archived v1 file; only the project side uses it.
 	const userResult: Obj = userMigrated ? userBefore! : userAfter;
+	// An already-migrated v2 user file reports (and `--write` writes) a copy without the retired key.
+	let userReported: Obj = userResult;
+	if (userMigrated && userResult && Object.hasOwn(userResult, "herdr")) {
+		userReported = { ...userResult };
+		delete userReported.herdr;
+		notes.push("user file: removed the retired herdr key; all other keys are preserved");
+	}
 	const changed = (before: Obj | null, after: Obj) => JSON.stringify(before) !== JSON.stringify(after) && (before !== null || Object.keys(after).length > 1);
 	const report: MigrationReport = {
-		user: { path: userPath, before: userBefore, after: userResult, changed: changed(userBefore, userResult) },
+		user: { path: userPath, before: userBefore, after: userReported, changed: changed(userBefore, userReported) },
 		project: { path: projectPath, before: projectBefore, after: projectAfter, changed: changed(projectBefore, projectAfter) },
 		notes,
 		written: false,

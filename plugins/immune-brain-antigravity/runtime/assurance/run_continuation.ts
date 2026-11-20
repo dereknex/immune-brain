@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import type { StatusProjectionResult } from "./coordinator";
 import { captureGitWorkspaceSnapshot, pathMatchesScope } from "../workspace_scope";
 import { startableChildren } from "../unattended/batch_schedule";
-import { readAnyBatchRunState, isLaneBatchRecord, type AnyBatchRunStateRecord } from "../unattended/batch_state";
+import { readAnyBatchRunState, isLaneBatchRecord, isSingleTaskRecord, type AnyBatchRunStateRecord } from "../unattended/batch_state";
 import { observeInitiative, observeSingleTask } from "../unattended/batch_plan";
 import { observeParentCompletion, observeNativeParent } from "../unattended/batch_git";
 import { projectTaskStatus } from "./coordinator";
@@ -97,10 +97,12 @@ function digest(value: unknown): string {
  * that changed without that chain is not the same Parent identity.
  */
 export function hasContiguousLaneRebind(record: AnyBatchRunStateRecord, fromDigest: string): boolean {
-	if (!isLaneBatchRecord(record) || record.plan_source !== "single_task") return false;
+	if (!isLaneBatchRecord(record)) return false;
 	const rebinds = record.lane_rebinds;
 	if (!Array.isArray(rebinds) || rebinds.length === 0) return false;
 	if (rebinds.at(-1)!.to_digest !== record.plan_digest) return false;
+	const childIds = new Set(record.children.map(child => child.task_id));
+	if (rebinds.some(entry => !childIds.has(entry.task_id))) return false;
 	return rebinds.some((entry, start) => entry.from_digest === fromDigest &&
 		rebinds.slice(start + 1).every((next, offset) => next.from_digest === rebinds[start + offset]!.to_digest));
 }
@@ -157,8 +159,8 @@ export async function observeParentRun(binding: RunBinding & { kind: "parent" },
 		(record.plan_digest !== binding.plan_digest && !rebound))
 		throw new Error("Parent continuation has no matching persisted batch identity");
 	if (!isLaneBatchRecord(record)) throw new Error("batch_record_shape_retired: inspect the record, then use retire_stale_batch in the current Host");
-	// A remote-less single_task Lane has no Initiative carrier to observe (D1).
-	const plan = await (record.plan_source === "single_task" ? observeSingleTask : observeInitiative)(root, binding.initiative_slug);
+	// A remote-less single-child Lane has no Initiative carrier to observe.
+	const plan = await (isSingleTaskRecord(record) ? observeSingleTask : observeInitiative)(root, binding.initiative_slug);
 	const completion = await observeParentCompletion(root, binding.initiative_slug, plan.tasks.map(child => child.task_id));
 	let runnable = false;
 	let running = false;

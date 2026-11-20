@@ -305,4 +305,51 @@ describe("runtime layering boundary", () => {
 		expect(resolveTarget("plugins/immune-brain/runtime/x/a.ts", "../claude/y.ts")).toBe("plugins/immune-brain/runtime/claude/y");
 		expect(resolveTarget("a/b.ts", "node:fs")).toBeNull();
 	});
+
+	describe("batch-agreement-v3 record boundary", () => {
+		const UNATTRIBUTED = [
+			"plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+			"plugins/immune-brain/runtime/unattended/batch_git.ts",
+			"plugins/immune-brain/runtime/unattended/lane_cleanup.ts",
+			"plugins/immune-brain/runtime/assurance/run_continuation.ts",
+			"plugins/immune-brain/runtime/unattended/batch_session_port.ts",
+			"plugins/immune-brain/runtime/unattended/child_session_reconciler.ts",
+			"plugins/immune-brain/runtime/lane_sessions/index.ts",
+			"plugins/immune-brain/runtime/lane_sessions/session_port_adapter.ts",
+		];
+		test("AGR-A6: execution modules never mention plan_source", () => {
+			const offenders: string[] = [];
+			for (const file of real) {
+				if (!UNATTRIBUTED.includes(file.path)) continue;
+				if (file.source.includes("plan_source")) offenders.push(file.path);
+			}
+			expect(offenders).toEqual([]);
+		});
+		test("HLS: only lane_sessions imports both runtime/session and runtime/unattended", () => {
+			const offenders: string[] = [];
+			for (const file of real) {
+				if (!file.path.startsWith("plugins/immune-brain/runtime/lane_sessions/")) continue;
+				let seesSession = false;
+				let seesUnattended = false;
+				for (const target of importedTargets(file)) {
+					if (target.startsWith("plugins/immune-brain/runtime/session/")) seesSession = true;
+					if (target.startsWith("plugins/immune-brain/runtime/unattended/")) seesUnattended = true;
+				}
+				if (!(seesSession && seesUnattended)) offenders.push(file.path);
+			}
+			expect(offenders).toEqual([]);
+		});
+		test("AGR-A6: runtime/unattended imports neither runtime/session nor runtime/lane_sessions", () => {
+			const offenders: string[] = [];
+			for (const file of real) {
+				if (!file.path.startsWith("plugins/immune-brain/runtime/unattended/")) continue;
+				for (const target of importedTargets(file)) {
+					if (target.startsWith("plugins/immune-brain/runtime/session/") || target === "plugins/immune-brain/runtime/session" ||
+						target.startsWith("plugins/immune-brain/runtime/lane_sessions/") || target === "plugins/immune-brain/runtime/lane_sessions")
+						offenders.push(`${file.path} -> ${target}`);
+				}
+			}
+			expect(offenders).toEqual([]);
+		});
+	});
 });

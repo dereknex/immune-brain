@@ -1,16 +1,15 @@
-// Spec drive-always-lanes D11, D8 (S5): a single-task Lane Executor stops on a
-// literal-user decision, the Parent's own Host answers it through its native gate,
-// and the runtime applies the answer to the Lane store and starts the next
-// Executor generation. This module never opens a gate: the Host passes the
+// Spec drive-always-lanes D11, D8 (S5) plus unified-lane-sessions D12 (S7):
+// a Lane Executor stops on a literal-user decision, the Parent's own Host
+// answers it through its native gate, and the runtime applies the answer to the
+// Lane store and resumes. This module never opens a gate: the Host passes the
 // operation that does, and the literal user remains the only decider.
 
 import type { AssuranceProjectionResult } from "../kernel/assurance_projection";
 import { readTaskRecordRaw } from "../kernel/storage";
-import { findExistingActiveBatch } from "./batch_preflight";
+import { findActiveLaneBatchForTask } from "./batch_preflight";
 import { batchReason } from "./batch_reasons";
-import { isLaneBatchRecord, laneGenerationStore, parkLaneForExecutor, rebindSingleTaskIdentity } from "./batch_state";
-import { LaneSupervisor, superviseLane, type ExecutorHost } from "./lane_supervisor";
-import { laneExecutorChoice, stopSingleTaskSupervisor } from "./batch_runner";
+import { parkLaneForExecutor, rebindBatchChildIdentity } from "./batch_state";
+import type { BatchSessionPort } from "./batch_session_port";
 import { clearLaneDecisionRequest, readLaneDecisionRequest } from "./lane_decision_request";
 
 type Projection = AssuranceProjectionResult["projection"];
@@ -65,13 +64,13 @@ export interface LaneRelayTarget {
 }
 
 /**
- * The Lane a decision for `taskId` is relayed to: the child of an active
- * single-task batch whose slug is the task. A task that is a child of an
- * Initiative batch never matches, so its behavior stays as it was (E6).
+ * The Lane a decision for `taskId` is relayed to: the matching child of the
+ * active batch claiming that child. Unknown tasks return null; corrupt or
+ * ambiguous matches throw instead of guessing.
  */
 export function findLaneRelayTarget(root: string, taskId: string): LaneRelayTarget | null {
-	const found = findExistingActiveBatch(root, taskId);
-	if (!found || found.corrupt || !isLaneBatchRecord(found.record) || found.record.plan_source !== "single_task") return null;
+	const found = findActiveLaneBatchForTask(root, taskId);
+	if (!found) return null;
 	const child = found.record.children.find(value => value.task_id === taskId);
 	if (!child?.lane || (child.state !== "enrolled" && child.state !== "needs_human")) return null;
 	return { batch_id: found.record.batch_id, task_id: taskId, lane_path: child.lane.path };
@@ -93,11 +92,10 @@ export interface LaneRelayInput<R> {
 	apply: (target: LaneRelayTarget, facts: LaneDecisionFacts | null) => Promise<R>;
 	/** Whether `apply` committed the operation. A Host that reports a cancelled or blocked gate by value returns false; default true. */
 	applied?: (result: R) => boolean;
-	supervisor: LaneSupervisor;
-	parentHost: ExecutorHost;
-	pluginDir: string;
-	waitMs: number;
-	signal?: AbortSignal;
+	/** Per-child session port for native-gated stop. When present with a bound handle, stop closes only that child and retains its Lane. */
+	sessions?: BatchSessionPort;
+	/** Per-child resume after an answered decision. The relay delegates the next generation to it; absent, the caller re-enters the batch itself. */
+	advance?: (batchId: string) => Promise<unknown>;
 }
 
 export type LaneRelayOutcome<R> =
@@ -110,7 +108,7 @@ async function readFacts(input: Pick<LaneRelayInput<unknown>, "project">, target
 	return laneDecisionFacts(target.task_id, read.projection, target.lane_path);
 }
 
-/** Relay one literal-user decision to the single-task Lane of `taskId`; `relayed: false` when no such Lane exists. */
+/** Relay one literal-user decision to the Lane of `taskId`; `relayed: false` when no such Lane exists. */
 export async function relayLaneDecision<R>(input: LaneRelayInput<R>): Promise<LaneRelayOutcome<R>> {
 	const target = findLaneRelayTarget(input.root, input.taskId);
 	if (!target) return { relayed: false };
@@ -135,20 +133,21 @@ export async function relayLaneDecision<R>(input: LaneRelayInput<R>): Promise<La
 		return { relayed: true, result, lane_relay: { batch_id: target.batch_id, operation: input.operation, applied: false, rebound: false, lane_supervision: null } };
 	// The request was answered: the committed decision (or stop) moved the Lane record past it.
 	clearLaneDecisionRequest(target.lane_path);
-	const batch = findExistingActiveBatch(input.root, input.taskId);
-	const interactive = batch && !batch.corrupt && isLaneBatchRecord(batch.record) && batch.record.executor_mode === "interactive";
+	const active = findActiveLaneBatchForTask(input.root, input.taskId);
 	if (input.operation === "stop") {
-		if (interactive) {
-			parkLaneForExecutor(input.root, target.batch_id, input.taskId, "lane_executor_stopped");
-			return { relayed: true, result, lane_relay: { batch_id: target.batch_id, operation: input.operation, applied: true, rebound: false,
-				lane_supervision: null, next_action: "The Lane task is stopped. Close its Herdr Executor tab yourself; the Lane and branches are retained." } };
+		const handle = active?.record.children.find(child => child.task_id === input.taskId)?.session?.handle ?? null;
+		if (input.sessions && handle) {
+			// A refused stop is not an exit: the child stays enrolled, its Lane retained.
+			const stopped = await input.sessions.stop(handle);
+			if (!stopped.ok)
+				return { relayed: true, result, lane_relay: { batch_id: target.batch_id, operation: input.operation, applied: true, rebound: false,
+					lane_supervision: null,
+					next_action: `lane_stop_rejected: ${stopped.reason} (${stopped.code}); the child stays enrolled and is reconciled on the next advance.` } };
 		}
-		// The Kernel stop of the Lane record was just applied under the user's gate; the
-		// generation is then terminated and the Lane kept (parked by the supervisor stop).
-		const stopped = await stopSingleTaskSupervisor(input.supervisor, input.root, input.taskId, input.signal);
-		const report = stopped.state === "started" ? stopped.report as unknown as { lane_supervision?: unknown; lane_refusals?: unknown } : {};
+		parkLaneForExecutor(input.root, target.batch_id, input.taskId, "lane_executor_stopped");
 		return { relayed: true, result, lane_relay: { batch_id: target.batch_id, operation: input.operation, applied: true, rebound: false,
-			lane_supervision: report.lane_supervision ?? null, ...(report.lane_refusals ? { lane_refusals: report.lane_refusals } : {}) } };
+			lane_supervision: null,
+			...(input.sessions && handle ? {} : { next_action: "The Lane task is stopped and retained. Close its Executor tab yourself when it is no longer needed." }) } };
 	}
 	let rebound = false;
 	if (input.operation === "approve_breaking_intent_revision") {
@@ -156,26 +155,15 @@ export async function relayLaneDecision<R>(input: LaneRelayInput<R>): Promise<La
 			// The Kernel-committed revision in the Lane record is the only source of the new identity.
 			const committed = readTaskRecordRaw(target.lane_path, input.taskId).record;
 			if (!committed) throw new Error("the Lane TaskRecord is unreadable");
-			rebindSingleTaskIdentity(input.root, target.batch_id, { task_id: input.taskId, intent: committed.intent_snapshot, content_hash: committed.intent_ref.content_hash });
+			rebindBatchChildIdentity(input.root, target.batch_id, { task_id: input.taskId, intent: committed.intent_snapshot, content_hash: committed.intent_ref.content_hash });
 			rebound = true;
 		} catch (error) {
 			throw new Error(`${batchReason("lane_decision_rebind_failed").reason}: ${error instanceof Error ? error.message : String(error)}`);
 		}
 	}
-	if (interactive)
-		return { relayed: true, result, lane_relay: { batch_id: target.batch_id, operation: input.operation, applied: true, rebound, lane_supervision: null } };
-	const choice = laneExecutorChoice(input.root, batch && !batch.corrupt && isLaneBatchRecord(batch.record) ? batch.record.executor_preferences : undefined, input.parentHost);
-	if (!choice) return { relayed: true, result, lane_relay: { batch_id: target.batch_id, operation: input.operation, applied: true, rebound, lane_supervision: null } };
-	const observation = await superviseLane(input.supervisor, {
-		key: `${input.root}\0${target.batch_id}`, repository: input.root, lanePath: target.lane_path, taskId: input.taskId,
-		choice, pluginDir: input.pluginDir, store: laneGenerationStore(input.root, target.batch_id), baseline: "",
-		waitMs: input.waitMs, graceMs: 1000, signal: input.signal,
-		project: async () => {
-			const read = await input.project(target.lane_path, target.task_id);
-			if (read.error !== null) throw new Error(`batch_lane_unreadable: ${read.error}`);
-			return read.projection;
-		},
-	});
+	// Every answered decision resumes through the session port owner: the caller
+	// re-enters the batch (advanceLanes) on this batch id.
+	const observation = input.advance ? await input.advance(target.batch_id) : null;
 	return { relayed: true, result, lane_relay: { batch_id: target.batch_id, operation: input.operation, applied: true, rebound,
-		lane_supervision: observation } };
+		lane_supervision: observation ?? null } };
 }

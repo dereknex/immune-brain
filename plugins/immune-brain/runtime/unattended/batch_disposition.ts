@@ -28,6 +28,7 @@ import { batchReason, type BatchReason } from "./batch_reasons";
 import { findExistingActiveBatch, findSettledBatchRecord, readActiveClaimTaskId, type BatchGateDecision } from "./batch_preflight";
 import {
 	BatchRuntimeTooOldError,
+	isLaneBatchRecord,
 	isTerminalBatchState,
 	replaceAnyBatchRunState,
 	writeBatchRunReport,
@@ -129,7 +130,7 @@ function laneChildLifecycleOf(root: string, child: { task_id: string; lane?: Bat
 }
 
 function childEvidenceOf(root: string, record: AnyBatchRunStateRecord): StaleBatchChildEvidence[] {
-	if (record.contract === "assurance_kernel/batch_run_state/v2")
+	if (isLaneBatchRecord(record))
 		return record.children.map((child) => ({
 			task_id: child.task_id,
 			slice_id: child.slice_id,
@@ -149,7 +150,7 @@ function childEvidenceOf(root: string, record: AnyBatchRunStateRecord): StaleBat
 }
 
 function inFlightChildOf(root: string, record: AnyBatchRunStateRecord): { task_id: string } | null {
-	if (record.contract === "assurance_kernel/batch_run_state/v2")
+	if (isLaneBatchRecord(record))
 		return record.children.find((child) => LANE_IN_FLIGHT.has(child.state) && laneChildLifecycleOf(root, child) === null) ?? null;
 	return record.children.find((child) => SERIAL_IN_FLIGHT.has(child.state) && kernelLifecycleOf(root, child.task_id) === null) ?? null;
 }
@@ -246,7 +247,7 @@ export async function retireStaleBatch<HostRejection>(options: {
 	// Children, commits and branch are carried over untouched: the disposition
 	// records what the batch did and did not do, and invents neither.
 	const retired: AnyBatchRunStateRecord = { ...record, batch_state: "superseded" };
-	const inFlightStates = record.contract === "assurance_kernel/batch_run_state/v2" ? LANE_IN_FLIGHT : SERIAL_IN_FLIGHT;
+	const inFlightStates = isLaneBatchRecord(record) ? LANE_IN_FLIGHT : SERIAL_IN_FLIGHT;
 	const reason = record.children.some((child) => inFlightStates.has(child.state))
 		? RETIRE_REASON + RETIRE_REASON_ENDED_OUTSIDE
 		: RETIRE_REASON;
@@ -267,7 +268,7 @@ export async function retireStaleBatch<HostRejection>(options: {
 			throw new Error("batch state changed before the disposition was applied");
 	});
 	const report =
-		stored.contract === "assurance_kernel/batch_run_state/v2"
+		isLaneBatchRecord(stored)
 			? writeBatchRunReport(root, {
 					contract: "assurance_kernel/batch_run_report/v1",
 					batch_id: stored.batch_id,

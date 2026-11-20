@@ -37,23 +37,30 @@ command surface the Parent runs, not only an interface.
    the (role × provider) admission matrix live once, in
    [`docs/reference/supervised-session-port.md`](../reference/supervised-session-port.md),
    and move with the port protocol version.
-2. **The Parent calls it through `imm-session`.** `plugins/immune-brain/bin/imm-session`
+2. **Host entries drive through `BatchSessionPort` and `runtime/lane_sessions/`.** `plugins/immune-brain/bin/imm-session`
    is routed by `runtime/v4_runtime.ts` like `imm-kernel` and `imm-tracker`.
    Every call names its provider; nothing is auto-detected and no provider
-   stands in for another. `imm-session await` runs as the Host background
-   command that re-invokes the Parent, so supervision stays event-driven. The
-   runtime does not drive sessions on its own initiative: `start_unattended_batch`,
-   the batch runner and the `lane-steward` neither import the port nor launch
-   anything through it.
+   stands in for another. `imm-session await --batch <batch_id>` waits read-only
+   through `runtime/lane_sessions/` (`observeLanes`) and returns the D20 `next_action`;
+   ungated `send|stop --batch` are refused. The runtime drives sessions on its own
+   initiative via `BatchSessionPort` (`runtime/unattended/batch_session_port.ts`) bound by
+   `runtime/lane_sessions/` (`SessionPortAdapter`): `start_unattended_batch`
+   runs `authorizeBatch` plus `startLanes`/`advanceLanes`; the Parent never creates,
+   sends to, or closes a Lane session directly.
 3. **A new runtime location.** `runtime/session/` holds the port, a `fake`
    provider and the Herdr adapter. It depends only on itself and Node builtins;
    only the CLI router imports it. It is independent of the review machinery
    that #414 will extract, so it does not wait for that location decision.
-4. **Handles are opaque and not persisted.** A Herdr handle encodes the
+4. **Persisted orchestration handles bound by `BatchSessionPort`.** A Herdr handle encodes the
    Parent's workspace, tab and pane; ownership means the handle names the
-   Parent's own workspace. The runtime writes no handle or heartbeat to the
-   batch record, which keeps ADR 0013's rejection of persisted session identity.
-   The Parent keeps `task_id → handle` as it kept `task_id → tab_id, pane_id`.
+   Parent's own workspace. The runtime persists orchestration handles on the v3
+   batch record: batch-level `session_provider`, per-child `session { key, generation,
+   baseline, handle, entry_submitted, attention, no_progress, exit_proof }` with a
+   write-ahead `laneSessionKey`, plus `lane_removed`/`lane_retained`. The `BatchSessionPort`
+   reconciler (`child_session_reconciler.ts`) mutates only those handles through
+   `open`/`resume`/`find`/`observe`/`send`/`stop`/`closeWithProof`; the Parent keeps no
+   `task_id → handle` map of its own.
+
 5. **Herdr TUI is the first provider, pinned.** The adapter maps port verbs onto
    the same `herdr` commands the Loop contract used, admits only inside Herdr
    with the Parent's workspace, and refuses a Herdr protocol other than 22.
@@ -217,3 +224,25 @@ A session that ends without submitting its receipt keeps #565's report:
 receipt was submitted and that the session's tab must be inspected for a denied
 or failed tool call before another session is dispatched. Pi keeps its `write`
 tool and its file-only entry sentence.
+
+## Addendum: role-indexed provider registry and session keys (S2, 2026-11-18)
+
+Unified-lane-sessions S2 (#570, Spec D5/D10) adds `runtime/session/provider_registry.ts`: one descriptor per provider with a pure environment check, recovery text, adapter factory, and `roles.executor/authority/advisory`. `resolveSessionProvider` selects the first configured entry of top-level `session_providers` (`["herdr"]` by default, project replaces user) whose env check holds and whose executor role admits the host with `find_by_key: true` and `workspace: "local_path"`, else refuses `lane_session_unavailable`. `herdr` admits all three executor hosts with exit proof; `herdr-core` admits none until #495.
+
+`CreateSessionInput.session_key` (`[a-z0-9-]{1,64}`) binds caller identity into the session (`herdr` tab label suffix `[imm:<session_key>]`), with trailing-12-char agent names so sibling keys never collide. New port verbs `findSession(session_key)` and idempotent `closeWithProof(handle, session_key)` own lookup and proven exit without a `CloseRecord`; a mismatched key is `not_owned`. The conformance suite runs every registered descriptor under its fake CLI plus `fake` against this contract, and the boundary test pins `runtime/session/` to `node:*` imports with no provider-literal comparison outside.
+
+## Addendum: two-tier proof-based cleanup (S6, 2026-11-19)
+
+Unified-lane-sessions S6 (#570, Spec D11) puts `closeWithProof` at the center of
+Lane lifecycle. For every integrated child, `advanceBatch` calls
+`BatchSessionPort.closeWithProof(handle, key)` (backed by the provider's
+`closeWithProof(handle, session_key)`); only a proven `exited` bound to
+`(handle, key)` plus clean-Lane Git checks removes the child's worktree and
+`imm-lane/<slug>/<task_id>`, recording `lane_removed` with the `SessionExitProof`
+while siblings and `refs/heads/imm/<slug>` stay. The batch branch is deleted
+only after whole-batch `checkout_delivery` success, kept under `retain_branch`.
+Any failed proof or Git condition reports `batch_lane_retained` naming it;
+parked, stopped and redo Lanes are never removed. `session_closes`,
+`closeRecordUnproven` and the `imm-session close --batch/--task/--recorded-at`
+rule retire: `imm-session close` now takes `--session-key` and proves exit
+directly, and the Parent never closes from a batch record.

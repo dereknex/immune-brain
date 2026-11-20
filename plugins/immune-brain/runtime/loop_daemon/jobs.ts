@@ -49,11 +49,11 @@ export type LoopJobKind = "drive" | "repair";
 
 export type LoopJobOutcome = "settled" | "failed" | "lost";
 
-/** The Executor exit a settled job observed, as the exit record recorded it. */
+/** The delivery a settled job observed, as the v3 Batch Record plus `.imm/audit/` prove it. */
 export interface LoopJobExit {
 	state: string;
 	exit_code: number | null;
-	generation: number;
+	generation: number | null;
 	final_commit_sha: string | null;
 	verification_evidence_digest: string | null;
 }

@@ -3,20 +3,15 @@
 // Every verb names its provider explicitly; nothing is auto-detected and no
 // provider stands in for another. Each call admits the provider, probes it,
 // then runs one verb and prints one JSON object. Exit 0 on success, 1 on a
-// port refusal (the JSON names it), 2 on a usage error. `close` closes only a
-// session whose close the batch runner recorded under the Executor close rule:
-// it reads that record from the batch's run state file (issue #426 F2).
+// port refusal (the JSON names it), 2 on a usage error. `close` proves exit
+// through `closeWithProof(handle, session_key)`; the retired batch-record
+// `session_closes` close rule is gone (Spec unified-lane-sessions D11).
 
-import { lstatSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-
-import { createHerdrCoreSessionProvider } from "./herdr_core_provider";
 import { extractMarkedResult } from "./marked_result";
-import { createHerdrSessionProvider, createHerdrViewer } from "./herdr_provider";
+import { SESSION_PROVIDER_REGISTRY } from "./provider_registry";
 import {
 	admitSessionProvider,
 	EXECUTOR_HOSTS,
-	closeRecordRefusal,
 	refuse,
 	type ExecutorHostKind,
 	type OutputSource,
@@ -43,14 +38,13 @@ const USAGE = [
 	"  read <handle> [--source visible|scrollback] [--lines <n>] [--extract advisory]",
 	"  attach <handle>   (herdr-core inside Herdr: opens another unfocused tab watching the session)",
 	"  stop <handle>",
-	"  close <handle> --batch <batch_id> --task <task_id> --recorded-at <session_closes[].at> [--root <coordinator checkout>]",
+	"  close <handle> --session-key <session_key>   (proves exit with closeWithProof; no batch record)",
 	"  reconcile <handle>...",
 ].join("\n");
 
 export function resolveSessionProvider(name: string | undefined, env: Record<string, string | undefined>): SupervisedSessionPort | Refusal {
-	if (name === "herdr") return createHerdrSessionProvider({ env });
-	// Inside Herdr, a core session gets an unfocused viewer tab; `hc attach` would take over the caller's terminal.
-	if (name === "herdr-core") return createHerdrCoreSessionProvider({ env, viewer: createHerdrViewer({ env }) ?? undefined });
+	const descriptor = SESSION_PROVIDER_REGISTRY.find(d => d.name === name);
+	if (descriptor) return descriptor.factory(env);
 	return refuse("invalid_input", `unknown session provider ${JSON.stringify(name ?? "")}; name one explicitly (herdr, herdr-core); there is no fallback`);
 }
 
@@ -64,7 +58,7 @@ function emit<T extends { ok: boolean }>(result: T): CliOutcome {
 
 interface Parsed { positional: string[]; flags: Map<string, string>; env: Record<string, string>; rest: string[] }
 
-const VALUE_FLAGS = new Set(["--provider", "--cwd", "--label", "--host", "--entry", "--resume", "--text", "--timeout-ms", "--source", "--task", "--recorded-at", "--lines", "--extract", "--batch", "--root"]);
+const VALUE_FLAGS = new Set(["--provider", "--cwd", "--label", "--host", "--entry", "--resume", "--text", "--timeout-ms", "--source", "--lines", "--extract", "--session-key"]);
 
 function parse(args: string[]): Parsed | string {
 	const positional: string[] = [];
@@ -95,28 +89,6 @@ function parse(args: string[]): Parsed | string {
 		positional.push(arg);
 	}
 	return { positional, flags, env, rest: [] };
-}
-
-/**
- * The close rule's proof is the batch record, not the Parent's say-so: the
- * runner's run state for `batchId` must list `{ task_id, at: recordedAt }` in
- * `session_closes`. Read as a file, so this module still imports nothing from
- * the batch runtime.
- */
-export function closeRecordUnproven(root: string, batchId: string, taskId: string, recordedAt: string): Refusal | null {
-	if (!/^[a-z0-9][a-z0-9._-]*$/i.test(batchId)) return refuse("invalid_input", `batch id ${JSON.stringify(batchId)} is not a valid batch id`);
-	const path = join(root, ".imm", "state", "batches", `${batchId}.json`);
-	let record: { batch_id?: unknown; session_closes?: unknown } | undefined;
-	try {
-		if (!lstatSync(path).isFile()) throw new Error("not a regular file");
-		record = JSON.parse(readFileSync(path, "utf8"));
-	} catch {
-		return refuse("close_unproven", `no readable batch record ${batchId} under ${root}; run imm-session from the coordinator checkout or pass --root`);
-	}
-	const closes = Array.isArray(record?.session_closes) ? record.session_closes as Array<{ task_id?: unknown; at?: unknown }> : [];
-	if (record?.batch_id !== batchId || !closes.some((c) => c?.task_id === taskId && c?.at === recordedAt))
-		return refuse("close_unproven", `batch ${batchId} records no session close for ${taskId} at ${recordedAt}; only a close start_unattended_batch recorded may close a session`);
-	return null;
 }
 
 export async function runSessionCli(
@@ -227,14 +199,10 @@ export async function runSessionCli(
 		case "close": {
 			const bad = needHandle();
 			if (bad) return bad;
-			const task = flags.get("--task");
-			const recordedAt = flags.get("--recorded-at");
-			const batch = flags.get("--batch");
-			if (!task || !recordedAt || !batch) return usage("close needs --batch, --task and --recorded-at from the batch report's session_closes");
-			const record = { task_id: task, recorded_at: recordedAt };
-			const unproven = closeRecordRefusal(handle, record) ?? closeRecordUnproven(flags.get("--root") ?? cwd, batch, task, recordedAt);
-			if (unproven) return emit({ ...unproven, handle });
-			return emit(await provider.closeSession(handle, record));
+			const sessionKey = flags.get("--session-key");
+			if (!sessionKey) return usage("close needs --session-key");
+			if (!provider.closeWithProof) return emit(refuse("provider_unavailable", `provider ${provider.provider} has no close proof`, handle));
+			return emit(await provider.closeWithProof(handle, sessionKey));
 		}
 		case "reconcile":
 			if (positional.length === 0) return usage("reconcile needs at least one handle");

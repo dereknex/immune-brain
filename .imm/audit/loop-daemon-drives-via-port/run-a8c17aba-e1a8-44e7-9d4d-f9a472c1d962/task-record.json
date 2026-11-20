@@ -1,0 +1,409 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "loop-daemon-drives-via-port",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "loop-daemon-drives-via-port",
+    "goal": "unified-lane-sessions S8 (#570; Spec docs/specs/unified-lane-sessions.spec.md D2, D13, D15, D18, D19, BR-DEC-1, BR-DEC-2, BR-DEC-4, BR-REQ-1, BR-SCN-7). Switch Loop daemon drive to authorizeBatch (LOOP_DAEMON_ACTOR_ID, tracker_approval or policy_auto, return_policy retain_branch, interaction_mode parent_relayed) + startLanes on creation and advanceLanes(root, batch_id) on every tick and post-decision relay, escalating startup blocked/entry_submitted=false dialogs via planEscalation. Replace exit_recorder.ts in loop_daemon/dispatch.ts PR creation with reading the integrated child commit from the v3 Batch Record and verification_evidence_digest from settled .imm/audit/<task_id>/ on retained refs/heads/imm/<task_id>. Require sessions port on advanceBatch and delete startBatch, batch_runner.ts, lane_supervisor.ts, exit_recorder.ts, tests/lane-supervisor.test.ts, and .imm/state/lane-supervisors/. Accepted regression (D18, OD-6, confirmed 2026-11-18): daemon drive outside Herdr refuses lane_session_unavailable until #495 instead of running --print Executors.",
+    "acceptance": [
+      {
+        "id": "LDP-A1",
+        "assertion": "In tests/loop-daemon-drive-pr.test.ts: with HERDR_ENV=1, HERDR_WORKSPACE_ID=ws1, and an injected herdr adapter behind runtime/lane_sessions/, daemon drive builds its agreement via authorizeBatch (LOOP_DAEMON_ACTOR_ID, policy_auto, retain_branch, parent_relayed) and calls startLanes (passing LANE_EXECUTOR_ENV=headless), calls advanceLanes(root, batch_id) on subsequent ticks (rotating a stalled g1 to g2 without waiting for Kernel settlement, and posting planEscalation when open returns entry_submitted false), removes the Lane worktree and imm-lane/ upon settlement while retaining refs/heads/imm/<task_id>, and opens the PR citing the v3 Batch Record commit and .imm/audit/<task_id>/ verification digest.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-daemon-drive-pr.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "LDP-A2",
+        "assertion": "In tests/loop-daemon-drive-pr.test.ts: with HERDR_ENV unset under default config, daemon drive reports lane_session_unavailable and creates zero Lane worktrees, zero sessions, and zero child processes; PR creation in dispatch.ts fails closed when the batch record has no integrated commit or .imm/audit/<task_id>/ evidence is absent (negative controls).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-daemon-drive-pr.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "LDP-A3",
+        "assertion": "In tests/loop-daemon-decisions.test.ts and tests/loop-daemon-dispatch.test.ts: verified GitHub decision and stop replies apply via relayLaneDecision + advanceLanes on the active batch_id; a restarted daemon reconstructs completion and PR eligibility from the v3 Batch Record and .imm/audit/ with zero exit-recorder files; non-drive daemon agents still use agent_runner.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-daemon-decisions.test.ts\",\n      \"tests/loop-daemon-dispatch.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "LDP-A4",
+        "assertion": "No lane_supervisor.ts, batch_runner.ts, or exit_recorder.ts remains under plugins/immune-brain/runtime and tests/lane-supervisor.test.ts is deleted; zero runtime files mention LaneSupervisor, startBatch, executor_mode, or lane_executor_requires_tui; tests/loop-daemon-boundary.test.ts proves loop_daemon/ imports neither runtime/session/ nor unattended/batch_lanes.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"test -z \\\"$(find plugins/immune-brain/runtime -name lane_supervisor.ts -o -name batch_runner.ts -o -name exit_recorder.ts)\\\" && test ! -e tests/lane-supervisor.test.ts && ! grep -rnE 'LaneSupervisor|startBatch|executor_mode|lane_executor_requires_tui' plugins/immune-brain/runtime && bun test tests/loop-daemon-boundary.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "LDP-A5",
+        "assertion": "docs/adr/0039-loop-daemon.md Decisions 2 and 14 and docs/adr/0041-simplified-configuration.md Decision 4 describe driving via runtime/lane_sessions/ and gating PRs on Batch Record commits plus .imm/audit/ digests, with zero LaneSupervisor references.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"! grep -q LaneSupervisor docs/adr/0039-loop-daemon.md && grep -q 'runtime/lane_sessions/' docs/adr/0039-loop-daemon.md && grep -qi 'audit' docs/adr/0039-loop-daemon.md && ! grep -q LaneSupervisor docs/adr/0041-simplified-configuration.md\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "LDP-A6",
+        "assertion": "After the retirement: single-task, lane-sessions, cleanup, batch-session-port, agent-roles, daemon, and layering suites pass; Claude bundle, Antigravity artifact, dist mirrors, and typecheck are current.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/single-task-lane-batch.test.ts tests/single-task-lane-cleanup.test.ts tests/lane-sessions.test.ts tests/session-lane-cleanup.test.ts tests/batch-session-port.test.ts tests/agent-roles-config.test.ts tests/loop-daemon-agent-handlers.test.ts tests/runtime-layering-boundary.test.ts && bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun scripts/sync-dist-docs.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/loop-daemon-drives-via-port.md",
+      "docs/adr/0039-loop-daemon.md",
+      "docs/adr/0041-simplified-configuration.md",
+      "docs/plans/loop-daemon-drives-via-port.intent.json",
+      "docs/specs/unified-lane-sessions.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/host-core/mcp_runtime.ts",
+      "plugins/immune-brain/runtime/lane_sessions/index.ts",
+      "plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts",
+      "plugins/immune-brain/runtime/loop_daemon/dispatch.ts",
+      "plugins/immune-brain/runtime/loop_daemon/drive_dispatcher.ts",
+      "plugins/immune-brain/runtime/loop_daemon/exit_recorder.ts",
+      "plugins/immune-brain/runtime/unattended/agent_profiles.ts",
+      "plugins/immune-brain/runtime/unattended/batch_final_report.ts",
+      "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+      "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+      "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+      "plugins/immune-brain/runtime/unattended/batch_state.ts",
+      "plugins/immune-brain/runtime/unattended/lane_decision.ts",
+      "plugins/immune-brain/runtime/unattended/lane_supervisor.ts",
+      "tests/agent-roles-config.test.ts",
+      "tests/lane-supervisor.test.ts",
+      "tests/loop-daemon-agent-handlers.test.ts",
+      "tests/loop-daemon-boundary.test.ts",
+      "tests/loop-daemon-decisions.test.ts",
+      "tests/loop-daemon-dispatch.test.ts",
+      "tests/loop-daemon-drive-pr.test.ts",
+      "tests/single-task-lane-batch.test.ts",
+      "tests/single-task-lane-cleanup.test.ts"
+    ],
+    "scope_size_reason": "Deleting startBatch, batch_runner.ts, lane_supervisor.ts, and exit_recorder.ts requires updating every daemon consumer, moving completedParentReport/batchQaFailureFacts, and removing retired supervisor tests in one atomic compilation unit.",
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/loop-daemon-drives-via-port.intent.json",
+    "content_hash": "sha256:4651bb13a5c0b684b2bc32ac5331dc298b3109694002ad5981880df1604e2ba1"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:4651bb13a5c0b684b2bc32ac5331dc298b3109694002ad5981880df1604e2ba1",
+  "git_base_head": "201aa1fe26334dca9dd054ed27800183280c546d",
+  "attestations": [
+    {
+      "id": "approval-qa-6b00cc03",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:4651bb13a5c0b684b2bc32ac5331dc298b3109694002ad5981880df1604e2ba1",
+      "diff_hash": "sha256:3781f9a98d321044a958fb928de229deee69fb529f99efdde4260e4b6d701710",
+      "actor_id": "deterministic-qa",
+      "summary": "all 7 project verification check(s) passed; execution=sha256:581a3ef942080ba858c535b3e043977e45ff1c1bd901f72529b2c5b55ffacee0",
+      "acceptance_results": [
+        {
+          "acceptance_id": "LDP-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:581a3ef942080ba858c535b3e043977e45ff1c1bd901f72529b2c5b55ffacee0"
+        },
+        {
+          "acceptance_id": "LDP-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:581a3ef942080ba858c535b3e043977e45ff1c1bd901f72529b2c5b55ffacee0"
+        },
+        {
+          "acceptance_id": "LDP-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:581a3ef942080ba858c535b3e043977e45ff1c1bd901f72529b2c5b55ffacee0"
+        },
+        {
+          "acceptance_id": "LDP-A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:581a3ef942080ba858c535b3e043977e45ff1c1bd901f72529b2c5b55ffacee0"
+        },
+        {
+          "acceptance_id": "LDP-A5",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:581a3ef942080ba858c535b3e043977e45ff1c1bd901f72529b2c5b55ffacee0"
+        },
+        {
+          "acceptance_id": "LDP-A6",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:581a3ef942080ba858c535b3e043977e45ff1c1bd901f72529b2c5b55ffacee0"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-ae8db310",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:4651bb13a5c0b684b2bc32ac5331dc298b3109694002ad5981880df1604e2ba1",
+      "diff_hash": "sha256:49e870811181fee8bb338611d12d8d0a28910f89ab11b6d9c1d34404295dff9c",
+      "actor_id": "deterministic-qa",
+      "summary": "all 7 project verification check(s) passed; execution=sha256:50a62eb8ab5bec99408ffe0b83cd96308cec11ea3bcea76ecba157a05da1a1c7",
+      "acceptance_results": [
+        {
+          "acceptance_id": "LDP-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:50a62eb8ab5bec99408ffe0b83cd96308cec11ea3bcea76ecba157a05da1a1c7"
+        },
+        {
+          "acceptance_id": "LDP-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:50a62eb8ab5bec99408ffe0b83cd96308cec11ea3bcea76ecba157a05da1a1c7"
+        },
+        {
+          "acceptance_id": "LDP-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:50a62eb8ab5bec99408ffe0b83cd96308cec11ea3bcea76ecba157a05da1a1c7"
+        },
+        {
+          "acceptance_id": "LDP-A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:50a62eb8ab5bec99408ffe0b83cd96308cec11ea3bcea76ecba157a05da1a1c7"
+        },
+        {
+          "acceptance_id": "LDP-A5",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:50a62eb8ab5bec99408ffe0b83cd96308cec11ea3bcea76ecba157a05da1a1c7"
+        },
+        {
+          "acceptance_id": "LDP-A6",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:50a62eb8ab5bec99408ffe0b83cd96308cec11ea3bcea76ecba157a05da1a1c7"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-a7df0668",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:4651bb13a5c0b684b2bc32ac5331dc298b3109694002ad5981880df1604e2ba1",
+      "diff_hash": "sha256:1993e313eb28c11579402ce32753e705207b9e94c19fa0fc9469a17ee5b7e506",
+      "actor_id": "deterministic-qa",
+      "summary": "all 7 project verification check(s) passed; execution=sha256:f053174b61e9046f1ff4b74b78fba4a264502eee1250fee0474f4fdff8491a25",
+      "acceptance_results": [
+        {
+          "acceptance_id": "LDP-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:f053174b61e9046f1ff4b74b78fba4a264502eee1250fee0474f4fdff8491a25"
+        },
+        {
+          "acceptance_id": "LDP-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:f053174b61e9046f1ff4b74b78fba4a264502eee1250fee0474f4fdff8491a25"
+        },
+        {
+          "acceptance_id": "LDP-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:f053174b61e9046f1ff4b74b78fba4a264502eee1250fee0474f4fdff8491a25"
+        },
+        {
+          "acceptance_id": "LDP-A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:f053174b61e9046f1ff4b74b78fba4a264502eee1250fee0474f4fdff8491a25"
+        },
+        {
+          "acceptance_id": "LDP-A5",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:f053174b61e9046f1ff4b74b78fba4a264502eee1250fee0474f4fdff8491a25"
+        },
+        {
+          "acceptance_id": "LDP-A6",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:f053174b61e9046f1ff4b74b78fba4a264502eee1250fee0474f4fdff8491a25"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-26ef37d6",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:4651bb13a5c0b684b2bc32ac5331dc298b3109694002ad5981880df1604e2ba1",
+      "diff_hash": "sha256:1993e313eb28c11579402ce32753e705207b9e94c19fa0fc9469a17ee5b7e506",
+      "actor_id": "cli:claude-code:ec5bef33-0673-41fe-bc21-a1617c5ac732",
+      "summary": "Daemon drive now routes through lane_sessions authorizeBatch/startLanes/advanceLanes, LaneSupervisor/batch_runner/exit_recorder retired, PR gated on v3 integrated commit plus .imm/audit digest, executor preference keys renamed; blast radius high: batch_lanes.ts, batch_state.ts persisted executor_preferences, lane_decision.ts, drive_dispatcher.ts, dispatch.ts.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "201aa1fe26334dca9dd054ed27800183280c546d",
+        "review_commit": "fa5c9dec606ecdfb8c4b02ff7f69eef91e6c2942"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-ad563d978a33-1-review-1",
+          "acceptance_id": "LDP-A4",
+          "summary": "Legacy executor_model in a stored S5-S7 v3 record's executor_preferences is silently dropped on resume, and mcp_runtime no longer rejects a flat executor_model argument while still rejecting executor_host/executor_effort.",
+          "anchor": "sha256:59b31b7285ea8f5f3475a7e427af761cc877b39ff1324ee62437a58bd41a84e4",
+          "evidence": {
+            "trigger": "v3 batch record persisted before this change with executor_preferences {executor_host, executor_model} → parseBatchExecutorPreferences skips executor_* keys, resumed Lane executor runs without the frozen model; flat executor_model argument to start_unattended_batch → accepted silently instead of 'unknown parameter (use agents)'",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/unattended/batch_state.ts:parseBatchExecutorPreferences",
+              "plugins/immune-brain/runtime/unattended/agent_profiles.ts:laneExecutorChoice",
+              "plugins/immune-brain/runtime/host-core/mcp_runtime.ts:start_unattended_batch"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "LDP-A4"
+            }
+          }
+        },
+        {
+          "id": "review-ad563d978a33-2-review-2",
+          "acceptance_id": "LDP-A1",
+          "summary": "auditEvidenceDigest digests the first run directory under .imm/audit/<task_id>/ in ls-tree order, which can be a stale earlier run when several runs exist, so the PR body may cite a digest not tied to the settled run.",
+          "anchor": "sha256:12d0681941b5b4fe2e31c8b501d1bbf651d67f7dceb9ae7af0f806262748cb9a",
+          "evidence": {
+            "trigger": ".imm/audit/<task_id>/ holding two run directories (earlier stopped run plus the settled one) whose names sort the stale one first → PR body cites the stale run's task-record/terminal-proof digest",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/unattended/batch_git.ts:auditEvidenceDigest",
+              "plugins/immune-brain/runtime/unattended/batch_preflight.ts:laneDeliveryEvidence",
+              "plugins/immune-brain/runtime/loop_daemon/dispatch.ts:open_pr"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "LDP-A1"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:213bd69f61f50bfdfad030671b12c65a243277fa8b016fd11b382ee86ca2743e"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-042416c36af0-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "LDP-A1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "LDP-A1 'posting planEscalation when open returns entry_submitted false' is asserted by no delivered test, and the implemented hold path returns a failed job (escalate, never retried) contrary to its own 'retry on a later tick' comment.",
+      "anchor": "sha256:66cfa6e8999ce62877cee2447324b31644c4c1cbf8d82cf467eb140606c748ab",
+      "evidence": {
+        "trigger": "FakeHerdr open returns entry_submitted:false → dispatchLoopDrive returns hold_for_dialog → enroll_and_drive drive job calls escalateOnce(context,'lane_entry_blocked',...) and returns outcome 'failed' → E12_JOB_FINISHED failed is classified escalate (judgement.ts:344) so the drive is abandoned instead of retried; tests/loop-daemon-drive-pr.test.ts stops at the hold_for_dialog assertion and tests/loop-daemon-agent-handlers.test.ts stubs deps.drive, so neither the planEscalation comment post/edit nor the resulting job outcome is pinned",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/drive_dispatcher.ts:dispatchLoopDrive",
+          "plugins/immune-brain/runtime/loop_daemon/drive_dispatcher.ts:holdOf",
+          "plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts:enroll_and_drive drive job",
+          "plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts:escalateOnce",
+          "plugins/immune-brain/runtime/loop_daemon/judgement.ts:E12_JOB_FINISHED"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "LDP-A1"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:loop-daemon-drives-via-port:2026-11-19T11:04:44.304Z",
+      "at": "2026-11-19T11:04:44.304Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-daemon-drives-via-port.intent.json"
+    },
+    {
+      "id": "record_approval:loop-daemon-drives-via-port:2026-11-19T11:06:06.415Z",
+      "at": "2026-11-19T11:06:06.415Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-6b00cc03\naction_v2_sha256:e613c9852493db4c01bd04535d3f23cd8e224600321919165a6142abf6bb88a3",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-19T11:06:06.415Z"
+      }
+    },
+    {
+      "id": "request_rework:loop-daemon-drives-via-port:2026-11-19T12:53:40.803Z",
+      "at": "2026-11-19T12:53:40.803Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:0a6af0010ed9230134bf521523351bbed3d4243a9bb2741c818a327efed2d755",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:fd68404d-4d99-4851-a143-3d78168f1547",
+        "confirmation_ref": "pi:cli:claude-code:fd68404d-4d99-4851-a143-3d78168f1547",
+        "issued_at": "2026-11-19T12:53:40.803Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "201aa1fe26334dca9dd054ed27800183280c546d",
+        "review_commit": "df5661ae25bd5d958ab0ca8bc5144bbe19c2d941"
+      },
+      "review_started_at": "2026-11-19T11:10:34.395Z",
+      "review_submitted_at": "2026-11-19T12:53:38.171Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "resolve_finding:loop-daemon-drives-via-port:2026-11-19T13:01:07.766Z",
+      "at": "2026-11-19T13:01:07.766Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-042416c36af0-1-review-1\naction_v2_sha256:5a883ca93fba22b56d8de326820bb5cfec86b303cc9e1c5016dffe3ee1f825f3"
+    },
+    {
+      "id": "freeze_artifacts:loop-daemon-drives-via-port:2026-11-19T13:01:29.065Z",
+      "at": "2026-11-19T13:01:29.065Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-daemon-drives-via-port.intent.json"
+    },
+    {
+      "id": "record_approval:loop-daemon-drives-via-port:2026-11-19T13:02:44.747Z",
+      "at": "2026-11-19T13:02:44.747Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-ae8db310\naction_v2_sha256:78b78397ee1a9a87c913570404fb803fb2e17a8c182ecd590ce60dc3a62354ce",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-19T13:02:44.747Z"
+      }
+    },
+    {
+      "id": "record_approval:loop-daemon-drives-via-port:2026-11-19T13:18:49.754Z",
+      "at": "2026-11-19T13:18:49.754Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-a7df0668\naction_v2_sha256:f0b21dbfb861e3f283e43859545c2be6aaeef5e702b266e9a49457fedf0655e7",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-19T13:18:49.754Z"
+      }
+    },
+    {
+      "id": "record_approval:loop-daemon-drives-via-port:2026-11-19T13:36:37.970Z",
+      "at": "2026-11-19T13:36:37.970Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-26ef37d6\naction_v2_sha256:6ba8230e8d7d88af9ba6d468ab2db74b6f45eac35db4bc3da8d7894b310a7f02",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:ec5bef33-0673-41fe-bc21-a1617c5ac732",
+        "confirmation_ref": "pi:cli:claude-code:ec5bef33-0673-41fe-bc21-a1617c5ac732",
+        "issued_at": "2026-11-19T13:36:37.971Z"
+      },
+      "review_started_at": "2026-11-19T13:19:00.537Z",
+      "review_submitted_at": "2026-11-19T13:36:35.309Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:loop-daemon-drives-via-port:2026-11-19T13:36:45.650Z",
+      "at": "2026-11-19T13:36:45.650Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:4a1b73cf0b1a9603f40da118b94df96c6cc8ecce0ebec413b2f34c78c60c3a8d"
+    }
+  ]
+}

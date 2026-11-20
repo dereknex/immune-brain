@@ -14,19 +14,14 @@ import { HostRuntime, type HostRuntimeOptions, type HostRuntimeProfile, type Too
 import { hostConfirmationRef } from "../runtime/host-core/interaction";
 import type { ForegroundToolUpdate, HostContext } from "../runtime/assurance/coordinator";
 import type { VerifierEvent } from "../runtime/host-core/verifier_observation";
-import { LaneSupervisor } from "../runtime/unattended/lane_supervisor";
 import { PiReviewHost } from "./pi-canary-assurance-progression";
 import { probeHost } from "./pi-capability";
 import { selectedPiParent as selectedPiParentFromContinuation } from "./pi-run-continuation";
 
 export const PI_LANE_WAIT_MS = 5_000;
-/** One supervisor per Pi process: the start/stop entry and the decision relay must see the same running generation. */
-export const piLaneSupervisor = new LaneSupervisor();
 
 export type { ToolMeta } from "../runtime/host-core/runtime";
-export type PiRuntimeOptions = HostRuntimeOptions & {
-	supervisor?: LaneSupervisor;
-};
+export type PiRuntimeOptions = HostRuntimeOptions;
 
 let currentSelectedPiParent: ((toolCallId: string, root: string, slug: string) => boolean) | null = null;
 
@@ -47,11 +42,7 @@ export const PI_PROFILE: HostRuntimeProfile = {
 	observe: (host, event) => host.observe(event as VerifierEvent),
 	probeHost,
 	confirmationRef: (input) => hostConfirmationRef("pi", input),
-	laneRuntime: (options) => {
-		const lane = new HostRuntime(PI_PROFILE, options);
-		(lane as any).laneSupervisor = piLaneSupervisor;
-		return lane;
-	},
+	laneRuntime: (options) => new HostRuntime(PI_PROFILE, options),
 	selectedParent: selectedPiParent,
 };
 
@@ -62,7 +53,6 @@ export class PiRuntime {
 	constructor(options: PiRuntimeOptions) {
 		this.options = options;
 		this.runtime = new HostRuntime(PI_PROFILE, options);
-		(this.runtime as any).laneSupervisor = options.supervisor ?? piLaneSupervisor;
 	}
 
 	get host(): HostRuntime["host"] {

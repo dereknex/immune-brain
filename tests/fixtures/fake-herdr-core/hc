@@ -53,6 +53,7 @@ if (verb === "run") {
 	ok({ address: `t${n}`, name: t.name, state: "live", ...(t.status ? { status: t.status } : {}), agent: t.argv[0] });
 }
 if (verb === "get") ok(info(args[0]));
+if (verb === "list") ok({ terminals: Object.entries(state.terminals).map(([address, t]) => ({ address, name: t.name, state: t.state, labels: t.labels, cwd: t.cwd, status: t.status === null ? null : { state: t.status } })) });
 if (verb === "send") {
 	const t = terminal(args[0]);
 	if (t.state === "finished") fail("finished");

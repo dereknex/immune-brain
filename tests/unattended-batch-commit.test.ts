@@ -15,7 +15,7 @@ import { batchRefName } from "../plugins/immune-brain/runtime/unattended/batch_r
 import { integrateLaneCommit } from "../plugins/immune-brain/runtime/unattended/batch_integration";
 import { runFinalVerification } from "../plugins/immune-brain/runtime/unattended/batch_final_verification";
 import { expectedBatchHead } from "../plugins/immune-brain/runtime/unattended/batch_preflight";
-import { completedParentReport } from "../plugins/immune-brain/runtime/unattended/batch_runner";
+import { completedParentReport } from "../plugins/immune-brain/runtime/unattended/batch_lanes";
 import { isLaneBatchRecord, prepareBatchLaneRunState, writeBatchLaneRunState, readBatchRunState, prepareBatchRunState, writeBatchRunState, writeBatchRunReport } from "../plugins/immune-brain/runtime/unattended/batch_state";
 import { readAuditTaskPair, recoverKernelStoreFollowUps, readSettledTaskEvidence, revisionForContent } from "../plugins/immune-brain/runtime/kernel/storage";
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";

@@ -10,8 +10,11 @@ import { createMcpRuntime, handleJsonRpc } from "../plugins/immune-brain/runtime
 import { readActiveClaimTaskId } from "../plugins/immune-brain/runtime/unattended/batch_preflight";
 import { watchBundleIdentity } from "../plugins/immune-brain/runtime/plugin_source_skew";
 import type { GithubInitiativeObservation } from "../plugins/immune-brain/runtime/unattended/types";
+import { memoryLanePort, memoryLanePortEnv } from "./helpers/memory-lane-port";
 
-const ENV = { CLAUDE_CODE_VERSION: "2.1.236", CLAUDE_CODE_PERMISSION_MODE: "manual" };
+// A Lane batch opens its Executor session through the port, so the Host needs a
+// Herdr-bearing env and a port factory: no `herdr` process is ever spawned.
+const ENV = { CLAUDE_CODE_VERSION: "2.1.236", CLAUDE_CODE_PERMISSION_MODE: "manual", ...memoryLanePortEnv };
 const BATCH = "mcp__plugin_immune-brain_immune-brain__start_unattended_batch";
 const RETIRE = "mcp__plugin_immune-brain_immune-brain__retire_stale_batch";
 const RECOVERY = "ask the user to enter /drive (or /immune-brain:drive on Claude Code) in the current Host";
@@ -66,7 +69,7 @@ async function session(taskIds: string[], extra: Parameters<typeof createMcpRunt
 	let consumed = 0;
 	let rpcId = 1;
 	const mcp = createMcpRuntime({
-		cwd, env: ENV,
+		cwd, env: ENV, sessionPortFactory: memoryLanePort,
 		requestConfirmation: async ({ operation }) => { gateCalls++; confirmations.push(operation); return { decision, requestId: `gate-${operation}-${gateCalls}` }; },
 		consumePhaseAdmission: (toolCallId: string, operation: GatedTool) => {
 			const admitted = consumePhaseAdmission(toolCallId, operation, store);

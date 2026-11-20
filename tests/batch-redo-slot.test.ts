@@ -8,7 +8,7 @@ import { readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
 import { rehydrateConsumption, type BatchLaneRedoChildRun } from "../plugins/immune-brain/runtime/unattended/batch_lanes";
 import { prepareBatchLaneRunState, readBatchLaneRunState, writeBatchLaneRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
 import { createLaneWorktree } from "../plugins/immune-brain/runtime/unattended/batch_worktrees";
-import type { StartBatchInput } from "../plugins/immune-brain/runtime/unattended/batch_runner";
+import type { StartBatchInput } from "../plugins/immune-brain/runtime/unattended/batch_lanes";
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
 
 const NOW = "2026-09-05T00:00:00.000Z";

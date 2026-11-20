@@ -6623,7 +6623,6 @@ var init_batch_reasons = __esm(() => {
     lane_executor_unavailable: { state: "blocked", reason: "lane_executor_unavailable", recovery_action: "Install the selected Executor on PATH and retry in the current Host." },
     lane_executor_unobservable: { state: "blocked", reason: "lane_executor_unobservable", recovery_action: "Inspect the retained Lane and Executor process in the current Host." },
     lane_executor_no_progress: { state: "blocked", reason: "lane_executor_no_progress", recovery_action: "Inspect the Lane and resume with a fresh drive entry." },
-    lane_executor_requires_tui: { state: "blocked", reason: "lane_executor_requires_tui", recovery_action: "Open interactive pi in the Lane and run `/skill:drive <task_id>` there; when it finishes, call `start_unattended_batch` again with that task_id in the current Host." },
     lane_decision_stale: { state: "rejected", reason: "lane_decision_stale", recovery_action: "Read the Lane decision facts again with status and relay the decision for the current record revision." },
     lane_decision_rebind_failed: { state: "blocked", reason: "lane_decision_rebind_failed", recovery_action: "The decision was applied in the Lane; inspect the batch record with status before any further entry." },
     batch_entry_ambiguous: {
@@ -6639,6 +6638,16 @@ var init_batch_reasons = __esm(() => {
     batch_record_shape_retired: {
       state: "rejected",
       reason: "batch_record_shape_retired: v1 serial batch records are read-and-retire only",
+      recovery_action: "Inspect the recorded batch, then use retire_stale_batch for this Initiative in the current Host."
+    },
+    batch_agreement_invalid: {
+      state: "rejected",
+      reason: (detail) => detail || "batch_agreement_invalid",
+      recovery_action: "Correct the agreement fields and retry in the current Host."
+    },
+    batch_record_retired: {
+      state: "rejected",
+      reason: (detail) => detail || "batch_record_retired: v2 Lane records are read-and-retire only",
       recovery_action: "Inspect the recorded batch, then use retire_stale_batch for this Initiative in the current Host."
     },
     batch_parent_branch_exists: {
@@ -6822,26 +6831,70 @@ function parseBatchExecutorPreferences(value) {
     return;
   const prefs = value;
   const text = (v) => v === undefined || typeof v === "string" && v.trim() !== "";
-  if (typeof value !== "object" || value === null || Array.isArray(value) || Object.keys(prefs).some((key) => key !== "executor_host" && key !== "executor_model" && key !== "executor_effort") || prefs.executor_host !== undefined && !EXECUTOR_HOSTS.has(String(prefs.executor_host)) || !text(prefs.executor_model) || !text(prefs.executor_effort))
-    throw new Error("invalid executor_preferences: expected { executor_host?: pi | claude-code | antigravity, executor_model?, executor_effort? }");
-  return {
-    ...prefs.executor_host ? { executor_host: prefs.executor_host } : {},
-    ...prefs.executor_model ? { executor_model: prefs.executor_model } : {},
-    ...prefs.executor_effort ? { executor_effort: prefs.executor_effort } : {}
-  };
+  const out = {};
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    throw new Error("invalid executor_preferences: expected { host?: pi | claude-code | antigravity, model?, effort? }");
+  for (const [key, entry] of Object.entries(prefs)) {
+    if (key === "host" || key === "executor_host") {
+      if (entry !== undefined && !EXECUTOR_HOSTS.has(String(entry)))
+        throw new Error("invalid executor_preferences: expected { host?: pi | claude-code | antigravity, model?, effort? }");
+      if (entry)
+        out.host = entry;
+    } else if (key === "model" || key === "effort" || key === "executor_effort") {
+      if (!text(entry))
+        throw new Error("invalid executor_preferences: expected { host?: pi | claude-code | antigravity, model?, effort? }");
+      if (entry)
+        out[key === "model" ? "model" : "effort"] = entry;
+    } else if (key.startsWith("executor_")) {
+      continue;
+    } else {
+      throw new Error("invalid executor_preferences: expected { host?: pi | claude-code | antigravity, model?, effort? }");
+    }
+  }
+  return out;
 }
 function classifyBatchRunStateContract(contract) {
   if (contract === "assurance_kernel/batch_run_state/v1")
     return "v1";
   if (contract === "assurance_kernel/batch_run_state/v2")
     return "v2";
+  if (contract === "assurance_kernel/batch_run_state/v3")
+    return "v3";
   if (typeof contract !== "string" || !contract.startsWith("assurance_kernel/batch_run_state/"))
     return "foreign";
   const version = /^assurance_kernel\/batch_run_state\/v([0-9]+)$/.exec(contract);
-  return version && BigInt(version[1]) > 2n ? "newer" : "unreadable";
+  return version && BigInt(version[1]) > 3n ? "newer" : "unreadable";
 }
 function isLaneBatchRecord(record) {
+  return record.contract === "assurance_kernel/batch_run_state/v3" || record.contract === "assurance_kernel/batch_run_state/v2";
+}
+function isRetiredLaneRecord(record) {
   return record.contract === "assurance_kernel/batch_run_state/v2";
+}
+function isSingleTaskRecord(record) {
+  return isLaneBatchRecord(record) && record.plan_source === "single_task";
+}
+function entryKindMatches(persisted, input) {
+  const persistedKind = isLaneBatchRecord(persisted) ? persisted.plan_source : undefined;
+  return persistedKind === (input.plan_source ?? input.entry_kind);
+}
+function planSourceIdentity(input) {
+  const kind = input.plan_source ?? input.entry_kind;
+  return kind ? { plan_source: kind } : {};
+}
+function defaultAgreementPolicies(input) {
+  const single = input.plan_source === "single_task";
+  return {
+    confirmation: input.confirmation ?? { source: "native_gate", ref: `native_gate:${input.confirmation_time}` },
+    return_policy: input.return_policy ?? (single ? "checkout_delivery" : "retain_branch"),
+    interaction_mode: input.interaction_mode ?? "interactive_host",
+    ...typeof input.final_verification_required === "boolean" ? { final_verification_required: input.final_verification_required } : { final_verification_required: true }
+  };
+}
+function effectiveReturnPolicy(record) {
+  if (record.return_policy)
+    return record.return_policy;
+  return record.plan_source === "single_task" ? "checkout_delivery" : "retain_branch";
 }
 function isCanonicalTimestamp(value) {
   if (typeof value !== "string" || !ISO_TIMESTAMP_PATTERN.test(value))
@@ -6894,8 +6947,6 @@ function validateIntentIdentities(record, batchId) {
 function validateLaneRebinds(record, batchId) {
   if (record.lane_rebinds === undefined)
     return;
-  if (record.plan_source !== "single_task")
-    throw new Error(`batch run state ${batchId} carries lane_rebinds without plan_source single_task`);
   if (!Array.isArray(record.lane_rebinds) || record.lane_rebinds.some((r) => !isObject(r) || !isCanonicalTimestamp(r.at) || typeof r.task_id !== "string" || !r.task_id || !isRevision(r.from_revision) || !isRevision(r.to_revision) || r.to_revision <= r.from_revision || !isHash(r.from_digest) || !isHash(r.to_digest) || !isHash(r.intent_content_hash) || r.intent_authority_hash !== undefined && !isHash(r.intent_authority_hash) || typeof r.risk !== "string" || !TASK_RISKS.includes(r.risk)))
     throw new Error(`batch run state ${batchId} has an invalid lane_rebinds list`);
   const rebinds = record.lane_rebinds;
@@ -7064,12 +7115,20 @@ function validateLaneRecordShape(value, batchId) {
   if (typeof value !== "object" || value === null)
     throw new Error(`batch run state ${batchId} is not an object`);
   const record = value;
-  if (record.contract !== "assurance_kernel/batch_run_state/v2")
+  if (record.contract !== "assurance_kernel/batch_run_state/v3" && record.contract !== "assurance_kernel/batch_run_state/v2")
     throw new Error(`batch run state ${batchId} has an unknown contract`);
+  if (record.confirmation !== undefined && (!isObject(record.confirmation) || !(record.confirmation.source === "native_gate" || record.confirmation.source === "tracker_approval" || record.confirmation.source === "policy_auto") || typeof record.confirmation.ref !== "string" || !record.confirmation.ref))
+    throw new Error(`batch run state ${batchId} has an invalid confirmation`);
+  if (record.return_policy !== undefined && record.return_policy !== "checkout_delivery" && record.return_policy !== "retain_branch")
+    throw new Error(`batch run state ${batchId} has an invalid return_policy`);
+  if (record.interaction_mode !== undefined && record.interaction_mode !== "interactive_host" && record.interaction_mode !== "parent_relayed")
+    throw new Error(`batch run state ${batchId} has an invalid interaction_mode`);
+  if (record.session_provider !== undefined && record.session_provider !== null && typeof record.session_provider !== "string")
+    throw new Error(`batch run state ${batchId} has an invalid session_provider`);
+  if (record.final_verification_required !== undefined && typeof record.final_verification_required !== "boolean")
+    throw new Error(`batch run state ${batchId} has an invalid final_verification_required`);
   if (record.plan_source !== undefined && record.plan_source !== "single_task")
     throw new Error(`batch run state ${batchId} has an invalid plan_source`);
-  if (record.executor_mode !== undefined && (record.executor_mode !== "interactive" || record.plan_source !== "single_task"))
-    throw new Error(`batch run state ${batchId} has an invalid executor_mode`);
   if (record.plan_source === "single_task" && (record.max_parallel !== 1 || !Array.isArray(record.children) || record.children.length !== 1 || record.children[0]?.task_id !== record.initiative_slug))
     throw new Error(`batch run state ${batchId} has an invalid single_task plan`);
   if (record.topology_digest !== undefined && (typeof record.topology_digest !== "string" || !/^sha256:[0-9a-f]{64}$/.test(record.topology_digest)))
@@ -7123,8 +7182,6 @@ function validateLaneRecordShape(value, batchId) {
   }
   if (record.interventions !== undefined && (!Array.isArray(record.interventions) || record.interventions.some((i) => typeof i !== "object" || i === null || typeof i.task_id !== "string" || i.kind !== "instruction" && i.kind !== "correction" || typeof i.text !== "string" || typeof i.text_digest !== "string")))
     throw new Error(`batch run state ${batchId} has an invalid interventions list`);
-  if (record.session_closes !== undefined && (!Array.isArray(record.session_closes) || record.session_closes.some((c) => !isObject(c) || typeof c.task_id !== "string" || !isCanonicalTimestamp(c.at))))
-    throw new Error(`batch run state ${batchId} has an invalid session_closes list`);
   if (record.revision_delegation !== undefined && (!isObject(record.revision_delegation) || Object.keys(record.revision_delegation).join() !== "confirmation_time" || !isCanonicalTimestamp(record.revision_delegation.confirmation_time)))
     throw new Error(`batch run state ${batchId} has an invalid revision_delegation`);
   if (record.delegated_revisions !== undefined && (!Array.isArray(record.delegated_revisions) || record.delegated_revisions.some((r) => !isObject(r) || typeof r.task_id !== "string" || !isRevision(r.from_revision) || !isRevision(r.to_revision) || r.to_revision <= r.from_revision || !isHash(r.intent_content_hash) || typeof r.confirmation_ref !== "string" || !r.confirmation_ref.startsWith(`delegated-batch:${batchId}@`) || !isCanonicalTimestamp(r.at))))
@@ -7134,8 +7191,12 @@ function validateLaneRecordShape(value, batchId) {
   validateIntentIdentities(record, batchId);
   if (record.reseals !== undefined && (!Array.isArray(record.reseals) || record.reseals.some((r) => !isObject(r) || typeof r.task_id !== "string" || typeof r.from_digest !== "string" || typeof r.to_digest !== "string" || !isRevision(r.intent_revision) || !isHash(r.intent_content_hash) || !record.delegated_revisions?.some((d) => d.task_id === r.task_id && d.intent_content_hash === r.intent_content_hash))))
     throw new Error(`batch run state ${batchId} has an invalid reseals list`);
-  if (record.reseals?.length && record.reseals[record.reseals.length - 1].to_digest !== record.plan_digest)
-    throw new Error(`batch run state ${batchId} plan_digest does not match its last reseal`);
+  if (record.reseals?.length) {
+    const rebinds = Array.isArray(record.lane_rebinds) ? record.lane_rebinds : [];
+    const handoff = rebinds.length > 0 ? rebinds[0].from_digest : record.plan_digest;
+    if (record.reseals[record.reseals.length - 1].to_digest !== handoff)
+      throw new Error(`batch run state ${batchId} plan_digest does not match its last reseal`);
+  }
   validateLaneRebinds(record, batchId);
   const seenTaskIds = new Set;
   for (const child of record.children) {
@@ -7163,13 +7224,36 @@ function validateLaneRecordShape(value, batchId) {
       throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid tracker_closed`);
     const report = record.final_report;
     const delivery = isObject(report) && isObject(report.return_to_coordinator) ? report.return_to_coordinator : null;
-    const deliveryParked = record.plan_source === "single_task" && child.state === "needs_human" && child.commit !== null && delivery?.status === "blocked" && delivery.reason === child.reason;
+    const effectivePolicy = record.return_policy ?? (record.plan_source === "single_task" ? "checkout_delivery" : "retain_branch");
+    const deliveryParked = effectivePolicy === "checkout_delivery" && child.state === "needs_human" && child.commit !== null && delivery?.status === "blocked" && delivery.reason === child.reason;
+    const session = child.session;
+    if (session !== undefined && session !== null) {
+      if (!isObject(session))
+        throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid session`);
+      const s = session;
+      const keyOk = s.key === null || typeof s.key === "string" && /^imm-[a-z0-9-]+-g[0-9]+-[0-9a-f]{12}$/.test(s.key) && s.key.length <= 36;
+      const generationOk = typeof s.generation === "number" && Number.isSafeInteger(s.generation) && s.generation >= 1;
+      const baselineOk = s.baseline === null || typeof s.baseline === "string";
+      const handleOk = s.handle === null || typeof s.handle === "string";
+      const entryOk = typeof s.entry_submitted === "boolean";
+      const attentionOk = s.attention === null || typeof s.attention === "string";
+      const progressOk = typeof s.no_progress === "number" && Number.isSafeInteger(s.no_progress) && s.no_progress >= 0;
+      const proof = s.exit_proof;
+      const proofOk = proof === null || isObject(proof) && proof.ok === true && proof.exited === true && typeof proof.handle === "string" && typeof proof.key === "string";
+      const handled = s.handled_interventions;
+      const handledOk = handled === undefined || Array.isArray(handled) && handled.every((d) => typeof d === "string" && d.length > 0);
+      const refusals = s.open_refusals;
+      const refusalsOk = refusals === undefined || typeof refusals === "number" && Number.isSafeInteger(refusals) && refusals >= 0;
+      if (!keyOk || !generationOk || !baselineOk || !handleOk || !entryOk || !attentionOk || !progressOk || !proofOk || !handledOk || !refusalsOk)
+        throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid session`);
+    }
     if (child.tracker_closed === true && child.state !== "integrated" && child.state !== "released" && !deliveryParked)
       throw new Error(`batch run state ${batchId} child ${child.task_id} closed its tracker Issue before integration`);
     if (child.lane_removed !== undefined || child.lane_retained !== undefined) {
       const { lane_removed: removed, lane_retained: retained } = child;
       const exit = isObject(removed) && isObject(removed.exit) ? removed.exit : null;
-      if (record.plan_source !== "single_task" || child.state !== "integrated" && child.state !== "released" || removed !== undefined === (retained !== undefined) || removed !== undefined && (!exit || !Number.isSafeInteger(exit.generation) || exit.code !== 0 || exit.signal !== null || typeof removed.worktree !== "string" || !Array.isArray(removed.branches)) || retained !== undefined && (!isObject(retained) || typeof retained.condition !== "string" || !retained.condition))
+      const proofOk = !!exit && exit.ok === true && exit.exited === true && typeof exit.handle === "string" && !!exit.handle && (typeof exit.key === "string" || typeof exit.session_key === "string");
+      if (child.state !== "integrated" && child.state !== "released" || removed !== undefined === (retained !== undefined) || removed !== undefined && (!proofOk || typeof removed.worktree !== "string" || !Array.isArray(removed.branches)) || retained !== undefined && (!isObject(retained) || typeof retained.condition !== "string" || !retained.condition))
         throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid lane cleanup record`);
     }
     const skew = child.runtime_skew_acknowledged;
@@ -7227,10 +7311,10 @@ function batchTopologyDigest(tasks) {
 }
 function prepareBatchLaneRunState(input) {
   validateBatchId(input.batch_id);
+  const entryKind = input.plan_source ?? input.entry_kind;
   return {
-    contract: "assurance_kernel/batch_run_state/v2",
-    ...input.plan_source ? { plan_source: input.plan_source } : {},
-    ...input.executor_mode ? { executor_mode: input.executor_mode } : {},
+    contract: "assurance_kernel/batch_run_state/v3",
+    ...entryKind ? { plan_source: entryKind } : {},
     topology_digest: input.topology_digest ?? batchTopologyDigest(input.children),
     batch_id: input.batch_id,
     initiative_slug: input.initiative_slug,
@@ -7250,9 +7334,15 @@ function prepareBatchLaneRunState(input) {
       reason: null,
       commit: null,
       lane: null,
-      qa_failures: 0
+      qa_failures: 0,
+      session: null
     })),
     commits: [],
+    ...input.confirmation ? { confirmation: { ...input.confirmation } } : {},
+    ...input.return_policy ? { return_policy: input.return_policy } : {},
+    ...input.interaction_mode ? { interaction_mode: input.interaction_mode } : {},
+    ...input.session_provider !== undefined ? { session_provider: input.session_provider } : { session_provider: null },
+    ...typeof input.final_verification_required === "boolean" ? { final_verification_required: input.final_verification_required } : {},
     ...input.final_verification?.length ? { final_verification: [...input.final_verification] } : {},
     ...input.review_profile ? { review_profile: { ...input.review_profile } } : {},
     ...input.executor_preferences && Object.keys(input.executor_preferences).length ? { executor_preferences: { ...input.executor_preferences } } : {},
@@ -7274,7 +7364,7 @@ function parseAnyBatchRunState(raw, batchId, path = statePath(batchId)) {
   const kind = classifyBatchRunStateContract(contract);
   if (kind === "newer")
     throw new BatchRuntimeTooOldError(path, contract);
-  if (kind === "v2")
+  if (kind === "v2" || kind === "v3")
     return parseBatchLaneRunState(raw, batchId);
   return parseBatchRunState(raw, batchId);
 }
@@ -7332,15 +7422,17 @@ function parkLaneForExecutor(root, batchId, taskId, reason) {
   return withKernelStoreLock(root, () => {
     const record = parseBatchLaneRunState(readSecureProjectFile(root, path), batchId);
     const child = record.children.find((value) => value.task_id === taskId);
-    if (record.plan_source === "single_task" && record.batch_state === "needs_human" && child?.state === "needs_human" && child.reason === reason)
+    if (child?.state === "needs_human" && child.reason === reason)
       return record;
-    if (record.plan_source !== "single_task" || !child || child.state !== "enrolled" && !(reason === "lane_executor_stopped" && child.state === "needs_human"))
+    if (!child || child.state !== "enrolled" && !(reason === "lane_executor_stopped" && child.state === "needs_human"))
       throw new Error("lane_executor_generation_changed");
+    const children = record.children.map((value) => value.task_id === taskId ? { ...value, state: "needs_human", reason } : value);
+    const siblingRunning = children.some((value) => value.task_id !== taskId && (value.state === "enrolled" || value.state === "lane_admitted" || value.state === "settled" || value.state === "lane_committed" || value.state === "pending"));
     const stored = {
       ...record,
-      batch_state: "needs_human",
+      batch_state: siblingRunning ? record.batch_state : "needs_human",
       updated_at: new Date().toISOString(),
-      children: record.children.map((value) => value.task_id === taskId ? { ...value, state: "needs_human", reason } : value)
+      children
     };
     validateLaneRecordShape(stored, batchId);
     writeFileAtomically(root, path, canonicalBytes(stored));
@@ -7366,14 +7458,16 @@ function planChildrenWithIdentities(children, identities) {
   }
   return result;
 }
-function rebindSingleTaskIdentity(root, batchId, input) {
+function rebindBatchChildIdentity(root, batchId, input) {
   const path = statePath(batchId);
   return withKernelStoreLock(root, () => {
     const record = parseBatchLaneRunState(readSecureProjectFile(root, path), batchId);
     const recorded = record.intent_identities?.[input.task_id];
     const currentChildren = planChildrenWithIdentities(record.children, record.intent_identities);
-    if (record.plan_source !== "single_task" || record.initiative_slug !== input.task_id || !recorded || !currentChildren || input.intent.task_id !== input.task_id || !record.children.some((child) => child.task_id === input.task_id && child.lane) || computeBatchPlanDigest(currentChildren) !== record.plan_digest)
+    if (!recorded || !currentChildren || input.intent.task_id !== input.task_id || !record.children.some((child) => child.task_id === input.task_id) || computeBatchPlanDigest(currentChildren) !== record.plan_digest)
       throw new Error(batchReason("lane_decision_rebind_failed").reason);
+    if (input.from_digest !== undefined && input.from_digest !== record.plan_digest)
+      throw new Error(batchReason("lane_decision_stale").reason);
     if (recorded.intent_revision === input.intent.revision && recorded.intent_content_hash === input.content_hash)
       return record;
     if (input.intent.revision <= recorded.intent_revision)
@@ -7409,27 +7503,6 @@ function rebindSingleTaskIdentity(root, batchId, input) {
     writeFileAtomically(root, path, canonicalBytes(stored));
     return stored;
   });
-}
-function laneGenerationStore(root, batchId) {
-  validateBatchId(batchId);
-  const directory = join10(".imm", "state", "lane-supervisors");
-  const path = join10(directory, `${batchId}.json`);
-  const read = () => {
-    if (!existsSync6(join10(root, path)))
-      return null;
-    const value = JSON.parse(readSecureProjectFile(root, path));
-    if (!isObject(value) || typeof value.repository !== "string" || !value.repository || typeof value.lane_path !== "string" || !value.lane_path || !Number.isSafeInteger(value.generation) || value.generation < 1 || value.pid !== null && (!Number.isSafeInteger(value.pid) || value.pid < 1) || !Number.isSafeInteger(value.owner_pid) || value.owner_pid < 1 || !["starting", "running", "exited", "stopped_by_parent", "interrupted", "unobservable", "unavailable"].includes(String(value.state)) || typeof value.baseline !== "string" || !Number.isSafeInteger(value.no_progress) || value.no_progress < 0 || value.handled_generation !== undefined && (!Number.isSafeInteger(value.handled_generation) || value.handled_generation < 1 || value.handled_generation > value.generation) || (value.state === "starting" || value.state === "unavailable") && (value.pid !== null || value.exit !== null) || value.state === "running" && (value.pid === null || value.exit !== null) || value.state === "unobservable" && value.exit !== null || ["exited", "stopped_by_parent", "interrupted"].includes(String(value.state)) && (value.pid === null || value.exit === null) || value.exit !== null && (!isObject(value.exit) || value.exit.repository !== value.repository || value.exit.lane_path !== value.lane_path || value.exit.generation !== value.generation || value.exit.pid !== value.pid || value.exit.code !== null && !Number.isInteger(value.exit.code) || value.exit.signal !== null && typeof value.exit.signal !== "string" || value.exit.code === null === (value.exit.signal === null)))
-      throw new Error(`invalid lane supervisor state for ${batchId}`);
-    return value;
-  };
-  return { read, update(fn) {
-    return withKernelStoreLock(root, () => {
-      const next = fn(read());
-      ensureSecureDirectory2(root, directory);
-      writeFileAtomically(root, path, JSON.stringify(next));
-      return next;
-    });
-  } };
 }
 function writeBatchLaneRunState(root, record) {
   const path = statePath(record.batch_id);
@@ -7521,7 +7594,7 @@ var init_batch_state = __esm(() => {
     detail;
     constructor(path, contract) {
       const loadedFrom = runningRuntimeSource();
-      const detail = `${path} uses ${contract}, newer than this runtime supports (batch_run_state/v2); runtime loaded from ${loadedFrom}`;
+      const detail = `${path} uses ${contract}, newer than this runtime supports (batch_run_state/v3); runtime loaded from ${loadedFrom}`;
       super(batchReason("batch_runtime_too_old", detail).reason);
       this.path = path;
       this.contract = contract;
@@ -10190,7 +10263,10 @@ function resolveConfig(root, options = {}) {
   for (const error of agentLayers.errors)
     diag(error.code, "error", error.file, error.key_path, error.message);
   const agents = agentLayers.agents;
-  const herdr = pick((o) => o.herdr, "herdr", (v) => typeof v === "boolean", "expected true or false", false);
+  for (const [, o, file] of layers)
+    if (o && Object.hasOwn(o, "herdr"))
+      diag("retired_key", "warning", file, "herdr", "herdr is retired and ignored; remove it (imm-kernel config migrate --write deletes it)");
+  const sessionProviders = pick((o) => o.session_providers, "session_providers", (v) => Array.isArray(v) && v.length > 0 && v.every((name) => REGISTERED_SESSION_PROVIDERS.includes(name)) && new Set(v).size === v.length, `expected a non-empty list of distinct registered providers (${REGISTERED_SESSION_PROVIDERS.join(", ")})`, ["herdr"]);
   for (const [, o, file] of layers)
     knownKeys(part(o, file, "batch"), ["max_parallel", "final_verification"], file, "batch");
   const maxParallel = pick((o) => o.batch?.max_parallel, "batch.max_parallel", (v) => integerWithin(v, BATCH_MAX_PARALLEL.min, BATCH_MAX_PARALLEL.max), `expected an integer between ${BATCH_MAX_PARALLEL.min} and ${BATCH_MAX_PARALLEL.max}`, BATCH_MAX_PARALLEL.default);
@@ -10296,7 +10372,7 @@ function resolveConfig(root, options = {}) {
     contract: "immune_brain/effective_config/v2",
     files: { user: userPath, project: projectPath },
     agents,
-    herdr,
+    session_providers: sessionProviders,
     batch: { valid: !errorsUnder("batch"), max_parallel: maxParallel, final_verification: finalVerification },
     decision_models: decisionModels,
     git_integration: leaf(gitIntegration.value, gitIntegration.source),
@@ -10307,9 +10383,9 @@ function resolveConfig(root, options = {}) {
   };
 }
 function batchConfigErrors(config) {
-  return config.diagnostics.filter((d) => d.severity === "error" && (/^(agents|batch|herdr)(\.|$)/.test(d.key_path) || d.key_path === "$" || d.key_path === "contract"));
+  return config.diagnostics.filter((d) => d.severity === "error" && (/^(agents|batch|session_providers)(\.|$)/.test(d.key_path) || d.key_path === "$" || d.key_path === "contract"));
 }
-var object3 = (v) => v !== null && typeof v === "object" && !Array.isArray(v), leaf = (value, source) => ({ value, source }), has = (o, k) => !!o && Object.hasOwn(o, k), envName, USER_CONFIG_CONTRACT = "immune_brain/user_config/v2", PROJECT_CONFIG_CONTRACT = "immune_brain/project_config/v2", BATCH_MAX_PARALLEL, LOOP_MODES, LOOP_AUTO_ENROLL_MAX_RISKS, LOOP_ASSOCIATIONS, LOOP_INTERACTION_CHANNELS, DEFAULT_LOOP_CONFIG, FILE_KEYS;
+var object3 = (v) => v !== null && typeof v === "object" && !Array.isArray(v), leaf = (value, source) => ({ value, source }), has = (o, k) => !!o && Object.hasOwn(o, k), envName, USER_CONFIG_CONTRACT = "immune_brain/user_config/v2", PROJECT_CONFIG_CONTRACT = "immune_brain/project_config/v2", BATCH_MAX_PARALLEL, LOOP_MODES, LOOP_AUTO_ENROLL_MAX_RISKS, LOOP_ASSOCIATIONS, LOOP_INTERACTION_CHANNELS, DEFAULT_LOOP_CONFIG, FILE_KEYS, REGISTERED_SESSION_PROVIDERS;
 var init_layered_config = __esm(() => {
   init_agent_roles();
   init_config();
@@ -10333,7 +10409,8 @@ var init_layered_config = __esm(() => {
     interaction: { channel: "github" },
     budget: { max_ticks_per_day: null, max_dispatches_per_day: null }
   };
-  FILE_KEYS = ["contract", "agents", "herdr", "decision_models", "git_integration", "initiative_carrier", "batch", "loop", "review_verifier"];
+  FILE_KEYS = ["contract", "agents", "herdr", "session_providers", "decision_models", "git_integration", "initiative_carrier", "batch", "loop", "review_verifier"];
+  REGISTERED_SESSION_PROVIDERS = ["herdr", "herdr-core"];
 });
 
 // plugins/immune-brain/runtime/git_integration_preference.ts
@@ -16498,7 +16575,7 @@ function parentDeliveryTasks(root, initiativeSlug, requiredTaskIds) {
   return { records, native, allTaskIds };
 }
 function cleanedSingleTaskDeliveryHead(root, parent) {
-  if (!isLaneBatchRecord(parent) || parent.plan_source !== "single_task" || parent.batch_state !== "completed")
+  if (!isLaneBatchRecord(parent) || effectiveReturnPolicy(parent) !== "checkout_delivery" || parent.batch_state !== "completed")
     return null;
   const child = parent.children[0];
   if (!child || child.lane_removed === undefined || parent.final_report?.return_to_coordinator.status === "blocked")
@@ -16529,8 +16606,13 @@ async function observeParentCompletion(root, initiativeSlug, requiredTaskIds) {
       const final = record.final_verification_result;
       if (parent && (record.branch !== parent.branch || expectedBatchHead(record) !== deliveryHead))
         return false;
-      if (isLaneBatchRecord(record) && record.plan_source === "single_task" && !record.final_verification?.length && !final)
-        return record.batch_state === "completed" && record.final_report?.head === deliveryHead && record.final_report.return_to_coordinator.status !== "blocked";
+      if (isLaneBatchRecord(record)) {
+        const required = record.final_verification_required;
+        if (required === false)
+          return record.batch_state === "completed" && record.final_report?.head === deliveryHead && record.final_report.return_to_coordinator.status !== "blocked";
+        if (!record.final_verification?.length && !final)
+          return record.batch_state === "completed" && record.final_report?.head === deliveryHead && record.final_report.return_to_coordinator.status !== "blocked";
+      }
       return record.batch_state === "completed" && final?.passed === true && holds(final);
     });
     return {
@@ -16972,6 +17054,50 @@ function findExistingActiveBatch(root, initiativeSlug) {
   }
   return found;
 }
+function findActiveLaneBatchForTask(root, taskId) {
+  const batchesDir = join27(root, ".imm/state/batches");
+  if (!existsSync15(batchesDir))
+    return null;
+  const matches = [];
+  for (const file of readdirSync10(batchesDir).sort()) {
+    if (!file.endsWith(".json") || file.endsWith(".report.json"))
+      continue;
+    let raw;
+    try {
+      raw = JSON.parse(readFileSync19(join27(batchesDir, file), "utf8"));
+    } catch {
+      throw new Error(`batch_lane_unreadable: ${file}`);
+    }
+    const candidate = raw;
+    const kind = classifyBatchRunStateContract(candidate?.contract);
+    if (kind === "foreign")
+      continue;
+    if (kind === "newer")
+      throw new BatchRuntimeTooOldError(join27(batchesDir, file), candidate.contract);
+    if (kind !== "v3")
+      continue;
+    if (typeof candidate.batch_id !== "string" || typeof candidate.base_head !== "string" || !Array.isArray(candidate.children)) {
+      throw new Error(`batch_lane_unreadable: ${file}`);
+    }
+    if (isTerminalBatchState(candidate.batch_state))
+      continue;
+    let record;
+    try {
+      record = readAnyBatchRunState(root, file.slice(0, -5));
+    } catch {
+      throw new Error(`batch_lane_unreadable: ${file}`);
+    }
+    if (!record || !isLaneBatchRecord(record))
+      continue;
+    const laneRecord = record;
+    const child = laneRecord.children.find((value) => value.task_id === taskId);
+    if (child)
+      matches.push({ record: laneRecord, child });
+  }
+  if (matches.length > 1)
+    throw new Error(`batch_lane_ambiguous: ${taskId} is claimed by ${matches.map((m) => m.record.batch_id).sort().join(", ")}`);
+  return matches[0] ?? null;
+}
 function findSettledBatchRecord(root, initiativeSlug) {
   const batchesDir = join27(root, ".imm", "state", "batches");
   if (!existsSync15(batchesDir))
@@ -17328,6 +17454,8 @@ async function projectPreflight(options, preparing) {
   if (found?.corrupt)
     return found.newer_contract ? reject("batch_runtime_too_old", new BatchRuntimeTooOldError(found.path, found.newer_contract).detail) : reject("batch_state_unreadable", found.path);
   const activeRecord = found ? found.record : null;
+  if (activeRecord && isRetiredLaneRecord(activeRecord))
+    return reject("batch_record_retired", `${activeRecord.batch_id} uses v2; v2 Lane records are read-and-retire only`);
   if (activeRecord && !isLaneBatchRecord(activeRecord))
     return reject("batch_record_shape_retired");
   const existingBatch = activeRecord ?? findSettledBatchRecord(root, initiativeSlug);
@@ -17715,9 +17843,9 @@ init_batch_preflight();
 init_batch_state();
 import { existsSync as existsSync23, readdirSync as readdirSync13 } from "node:fs";
 import { createInterface } from "node:readline";
-import { join as join42 } from "node:path";
+import { join as join41 } from "node:path";
 import { stdin as stdin2 } from "node:process";
-import { fileURLToPath as fileURLToPath6 } from "node:url";
+import { fileURLToPath as fileURLToPath5 } from "node:url";
 
 // plugins/immune-brain/runtime/host-core/mcp_runtime.ts
 import { randomUUID as randomUUID11 } from "node:crypto";
@@ -17950,44 +18078,41 @@ init_batch_final_verification();
 init_batch_final_report();
 init_checkout_delivery();
 import { spawnSync as spawnSync19 } from "node:child_process";
-import { createHash as createHash24 } from "node:crypto";
+import { createHash as createHash25 } from "node:crypto";
 import { existsSync as existsSync17, realpathSync as realpathSync17 } from "node:fs";
-import { isAbsolute as isAbsolute11, join as join30 } from "node:path";
+import { isAbsolute as isAbsolute11, join as join29 } from "node:path";
 import { readFileSync as readFileSync21 } from "node:fs";
 
 // plugins/immune-brain/runtime/unattended/lane_cleanup.ts
 import { spawnSync as spawnSync18 } from "node:child_process";
 var LANE_RETAINED_REASON = "batch_lane_retained";
-function exitProofCondition(generation, observation) {
-  if (!generation)
-    return "no Executor generation was supervised by the runtime, so no exit was observed";
-  if (generation.state === "interrupted")
-    return `Executor generation ${generation.generation} was interrupted`;
-  if (generation.state === "stopped_by_parent")
-    return `Executor generation ${generation.generation} was stopped by the Parent`;
-  if (generation.state !== "exited" || !generation.exit)
-    return `Executor generation ${generation.generation} exit was never observed (unobservable)`;
-  const exit = observation ?? generation.exit;
-  if (exit.generation !== generation.generation)
-    return `the exit observation belongs to superseded generation ${exit.generation}; the current generation is ${generation.generation}`;
-  if (exit.pid !== generation.pid || exit.repository !== generation.repository || exit.lane_path !== generation.lane_path)
-    return `the exit observation of generation ${generation.generation} is not bound to this Executor process`;
-  if (exit.code !== 0 || exit.signal !== null)
-    return `Executor generation ${generation.generation} did not exit normally (${exit.signal ? `signal ${exit.signal}` : `code ${exit.code}`})`;
-  return null;
-}
 function git8(cwd, ...args) {
   return spawnSync18("git", ["--no-optional-locks", "-C", cwd, ...args], { encoding: "utf8" });
 }
 function retainedLaneReason(condition) {
-  return `${LANE_RETAINED_REASON}: ${condition}; the Lane worktree and both branches are kept`;
+  return `${LANE_RETAINED_REASON}: ${condition}; the Lane worktree and branch are kept`;
 }
-function cleanupSingleTaskLane(input) {
+function proofCondition(proof) {
+  if (!proof || typeof proof !== "object")
+    return "no exit proof was returned for this Lane session";
+  const p = proof;
+  if (p.ok !== true || p.exited !== true) {
+    const code = typeof p.code === "string" ? String(p.code) : "unproven";
+    const reason = typeof p.reason === "string" ? String(p.reason) : "closeWithProof did not prove exit";
+    return `${reason} (${code})`;
+  }
+  if (typeof p.handle !== "string" || !p.handle)
+    return "the exit proof carries no handle";
+  if (typeof p.key !== "string" && typeof p.session_key !== "string")
+    return "the exit proof carries no session key";
+  return null;
+}
+function cleanupIntegratedChildLane(input) {
   const retain = (condition) => ({ status: "retained", condition });
-  const proof = exitProofCondition(input.generation, input.observation);
-  if (proof)
-    return retain(proof);
-  const exit = input.observation ?? input.generation.exit;
+  const unproven = proofCondition(input.proof);
+  if (unproven)
+    return retain(unproven);
+  const exit = input.proof;
   const status = git8(input.lanePath, "status", "--porcelain", "--untracked-files=all");
   if (status.status !== 0)
     return retain("the Lane status is unreadable");
@@ -18012,17 +18137,25 @@ function cleanupSingleTaskLane(input) {
   const removed = git8(input.root, "worktree", "remove", input.lanePath);
   if (removed.status !== 0)
     return retain(`the Lane worktree could not be removed: ${removed.stderr.trim()}`);
-  for (const [ref, tip] of [[laneRef, laneTip.stdout.trim()], [input.parentRef, parentTip.stdout.trim()]]) {
-    const deleted = git8(input.root, "update-ref", "-d", ref, tip);
-    if (deleted.status !== 0)
-      return retain(`${ref.replace("refs/heads/", "")} could not be removed: ${deleted.stderr.trim()}`);
-  }
-  return {
-    status: "removed",
-    exit,
-    worktree: input.lanePath,
-    branches: [input.laneBranch, input.parentRef.replace("refs/heads/", "")]
-  };
+  const deleted = git8(input.root, "update-ref", "-d", laneRef, laneTip.stdout.trim());
+  if (deleted.status !== 0)
+    return retain(`${laneRef.replace("refs/heads/", "")} could not be removed: ${deleted.stderr.trim()}`);
+  return { status: "removed", exit, worktree: input.lanePath, branches: [input.laneBranch] };
+}
+function cleanupParentBranch(input) {
+  const listed = git8(input.root, "worktree", "list", "--porcelain");
+  if (listed.status !== 0)
+    return { removed: false, condition: "the worktree list is unreadable" };
+  if (listed.stdout.split(`
+`).includes(`branch ${input.parentRef}`))
+    return { removed: false, condition: `${input.parentRef.replace("refs/heads/", "")} is checked out in a worktree` };
+  const tip = git8(input.root, "rev-parse", "--verify", "--quiet", `${input.parentRef}^{commit}`);
+  if (tip.status !== 0)
+    return { removed: false, condition: "the batch branch is unreadable" };
+  const deleted = git8(input.root, "update-ref", "-d", input.parentRef, tip.stdout.trim());
+  if (deleted.status !== 0)
+    return { removed: false, condition: `${input.parentRef.replace("refs/heads/", "")} could not be removed: ${deleted.stderr.trim()}` };
+  return { removed: true };
 }
 
 // plugins/immune-brain/runtime/unattended/lane_decision.ts
@@ -18030,11 +18163,6 @@ init_storage();
 init_batch_preflight();
 init_batch_reasons();
 init_batch_state();
-
-// plugins/immune-brain/runtime/unattended/lane_supervisor.ts
-import { spawn as spawn4 } from "node:child_process";
-import { accessSync as accessSync3, constants as constants7 } from "node:fs";
-import { delimiter as delimiter4, join as join29 } from "node:path";
 
 // plugins/immune-brain/runtime/unattended/lane_decision_request.ts
 import { existsSync as existsSync16, mkdirSync as mkdirSync12, readFileSync as readFileSync20, rmSync as rmSync11, writeFileSync as writeFileSync12 } from "node:fs";
@@ -18069,575 +18197,6 @@ function clearLaneDecisionRequest(lanePath) {
   rmSync11(laneDecisionRequestPath(lanePath), { force: true });
 }
 
-// plugins/immune-brain/runtime/unattended/lane_supervisor.ts
-function chooseExecutor(layers, fallback) {
-  const selected = layers.find((layer) => layer.executor_host !== undefined);
-  if (!selected)
-    return { host: fallback };
-  return {
-    host: selected.executor_host,
-    ...selected.executor_model ? { model: selected.executor_model } : {},
-    ...selected.executor_effort ? { effort: selected.executor_effort } : {}
-  };
-}
-function executorArguments(choice, pluginDir, taskId) {
-  if (choice.host === "antigravity") {
-    return [
-      "--dangerously-skip-permissions",
-      ...choice.model ? ["--model", choice.model] : [],
-      ...choice.effort ? ["--effort", choice.effort] : [],
-      "--print",
-      `/drive ${taskId}`
-    ];
-  }
-  return [
-    "--print",
-    ...choice.host === "claude-code" ? ["--plugin-dir", pluginDir] : [],
-    ...choice.model ? ["--model", choice.model] : [],
-    ...choice.effort ? [choice.host === "claude-code" ? "--effort" : "--thinking", choice.effort] : [],
-    `${choice.host === "claude-code" ? "/immune-brain:drive" : "/skill:drive"} ${taskId}`
-  ];
-}
-
-class LaneSupervisor {
-  handles = new Map;
-  async run(input) {
-    let current = input.store.read();
-    let handle = this.handles.get(input.key);
-    if (current && (current.repository !== input.repository || current.lane_path !== input.lanePath))
-      throw new Error("lane_executor_identity_mismatch");
-    if (!handle && current && (current.state === "starting" || current.state === "running" || current.state === "unobservable")) {
-      if (current.state !== "starting")
-        current = input.store.update((value) => {
-          if (!value || value.generation !== current.generation)
-            throw new Error("lane_executor_generation_changed");
-          return { ...value, state: "unobservable", exit: null };
-        });
-      return { state: "unobservable", generation: current.generation, exit: null };
-    }
-    if (input.stop && !handle)
-      return { state: "stopped", generation: current?.generation ?? null, exit: null };
-    if (!handle && current && ["stopped_by_parent", "interrupted"].includes(current.state) && !input.restart)
-      return { state: "stopped", generation: current.generation, exit: current.exit };
-    if (!handle && (input.signal?.aborted || current?.state === "exited" && !input.restart))
-      return { state: current?.state === "exited" ? "exited" : "stopped", generation: current?.generation ?? null, exit: current?.exit ?? null };
-    if (!handle && !input.stop) {
-      const binaryName = input.choice.host === "claude-code" ? "claude" : input.choice.host === "antigravity" ? "agy" : "pi";
-      const executable = (process.env.PATH ?? "").split(delimiter4).map((dir) => join29(dir || ".", binaryName)).find((path) => {
-        try {
-          accessSync3(path, constants7.X_OK);
-          return true;
-        } catch {
-          return false;
-        }
-      });
-      if (!executable)
-        return { state: "unavailable", generation: current?.generation ?? null, exit: null };
-      const previous = current;
-      current = input.store.update((value) => {
-        if ((value?.generation ?? 0) !== (previous?.generation ?? 0) || value && value.state !== "unavailable" && (!input.restart || !["exited", "stopped_by_parent", "interrupted"].includes(value.state)))
-          throw new Error("lane_executor_generation_changed");
-        return {
-          repository: input.repository,
-          lane_path: input.lanePath,
-          generation: value?.state === "unavailable" ? value.generation : (value?.generation ?? 0) + 1,
-          pid: null,
-          owner_pid: process.pid,
-          state: "starting",
-          exit: null,
-          baseline: input.baseline,
-          no_progress: value?.no_progress ?? 0,
-          ...value?.handled_generation ? { handled_generation: value.handled_generation } : {}
-        };
-      });
-      const generation = current.generation;
-      const child = spawn4(executable, executorArguments(input.choice, input.pluginDir, input.taskId), { cwd: input.lanePath, stdio: "ignore", env: { ...process.env, [LANE_EXECUTOR_ENV]: LANE_EXECUTOR_HEADLESS } });
-      const started = new Promise((resolve) => {
-        child.once("spawn", () => resolve(true));
-        child.once("error", () => resolve(false));
-      });
-      if (!child.pid) {
-        await started;
-        input.store.update((value) => {
-          if (!value || value.generation !== generation)
-            throw new Error("lane_executor_generation_changed");
-          return { ...value, state: "unavailable" };
-        });
-        return { state: "unavailable", generation, exit: null };
-      }
-      const pid = child.pid;
-      const newHandle = { child, termination: null, done: null };
-      newHandle.done = new Promise((resolve, reject) => child.once("exit", (code, signal) => {
-        try {
-          const stored = input.store.update((value) => {
-            if (!value || value.generation !== generation || value.pid !== pid)
-              throw new Error("lane_executor_generation_changed");
-            const exit = { repository: input.repository, lane_path: input.lanePath, generation, pid, code, signal };
-            return { ...value, state: newHandle.termination ?? "exited", exit };
-          });
-          resolve(stored);
-        } catch (error) {
-          reject(error);
-        } finally {
-          this.handles.delete(input.key);
-        }
-      }));
-      newHandle.done.catch(() => {});
-      try {
-        current = input.store.update((value) => {
-          if (!value || value.generation !== generation || value.state !== "starting")
-            throw new Error("lane_executor_generation_changed");
-          return { ...value, pid, state: "running" };
-        });
-      } catch (error) {
-        child.kill("SIGTERM");
-        const killTimer = setTimeout(() => child.kill("SIGKILL"), input.graceMs);
-        newHandle.done.finally(() => clearTimeout(killTimer)).catch(() => {});
-        throw error;
-      }
-      this.handles.set(input.key, newHandle);
-      handle = newHandle;
-      if (!await started) {
-        this.handles.delete(input.key);
-        input.store.update((value) => {
-          if (!value || value.generation !== generation)
-            throw new Error("lane_executor_generation_changed");
-          return { ...value, pid: null, state: "unavailable", exit: null };
-        });
-        return { state: "unavailable", generation, exit: null };
-      }
-    }
-    if (!handle)
-      return { state: "exited", generation: current?.generation ?? null, exit: current?.exit ?? null };
-    const active = handle;
-    let timer;
-    let abort;
-    let interrupted;
-    const interruption = new Promise((resolve) => {
-      interrupted = () => resolve("interrupted");
-    });
-    const terminate = (reason) => {
-      if (active.termination)
-        return;
-      active.termination = reason;
-      active.child.kill("SIGTERM");
-      const killTimer = setTimeout(() => active.child.kill("SIGKILL"), input.graceMs);
-      active.done.finally(() => clearTimeout(killTimer));
-      interrupted?.();
-    };
-    if (input.stop)
-      terminate("stopped_by_parent");
-    if (input.signal?.aborted)
-      terminate("interrupted");
-    const timeout = new Promise((resolve) => {
-      timer = setTimeout(() => resolve(null), input.waitMs);
-    });
-    if (input.signal && !input.signal.aborted) {
-      abort = () => terminate("interrupted");
-      input.signal.addEventListener("abort", abort, { once: true });
-    }
-    try {
-      let result = await Promise.race([active.done, timeout, interruption]);
-      if (result === "interrupted")
-        result = await active.done;
-      if (!result)
-        return { state: "running", generation: current.generation, exit: null };
-      return { state: result.state === "exited" ? "exited" : "stopped", generation: result.generation, exit: result.exit };
-    } finally {
-      if (timer)
-        clearTimeout(timer);
-      if (abort)
-        input.signal?.removeEventListener("abort", abort);
-    }
-  }
-}
-async function projectStable(project, attempts = 6, delayMs = 25) {
-  for (let attempt = 1;; attempt++) {
-    try {
-      return await project();
-    } catch (error) {
-      if (attempt >= attempts || !/recovery projection changed/.test(error instanceof Error ? error.message : String(error)))
-        throw error;
-      await new Promise((resolve) => setTimeout(resolve, delayMs * attempt));
-    }
-  }
-}
-async function superviseLane(supervisor, input) {
-  const project = () => projectStable(input.project);
-  const markHandled = (generation, advanced) => input.store.update((value) => {
-    if (!value || value.generation !== generation.generation || value.state !== "exited")
-      throw new Error("lane_executor_generation_changed");
-    if (value.handled_generation === value.generation)
-      return value;
-    return { ...value, handled_generation: value.generation, no_progress: advanced ? 0 : value.no_progress + 1 };
-  });
-  let projection = await project();
-  const requested = (p) => readLaneDecisionRequest(input.lanePath, input.taskId, p.record_revision) !== null;
-  const waitsOnUser = (p) => p.lifecycle !== "active" || p.next_obligation === "awaiting_user" || p.open_user_decision_count > 0 || requested(p);
-  const progressed = (p, baseline) => p.record_revision !== baseline || requested(p);
-  const deadline = Date.now() + input.waitMs;
-  for (;; ) {
-    const before = input.store.read();
-    if (before?.no_progress && before.no_progress >= 2 && before.handled_generation === before.generation)
-      return { state: "exited", generation: before.generation, exit: before.exit, reason: "lane_executor_no_progress" };
-    const mayBeLive = before && ["starting", "running", "unobservable"].includes(before.state);
-    if (!input.stop && !mayBeLive && waitsOnUser(projection)) {
-      if (before?.state === "exited")
-        markHandled(before, progressed(projection, before.baseline));
-      return { state: "exited", generation: before?.generation ?? null, exit: before?.exit ?? null };
-    }
-    if (!mayBeLive && input.choice.host === "pi")
-      return { state: "unavailable", generation: null, exit: null, reason: "lane_executor_requires_tui" };
-    const restart = !!before && ["exited", "stopped_by_parent", "interrupted"].includes(before.state) && before.handled_generation === before.generation;
-    const observation = await supervisor.run({ ...input, baseline: projection.record_revision, restart, waitMs: Math.max(0, deadline - Date.now()) });
-    if (observation.state !== "exited" || observation.generation === null)
-      return observation;
-    const generation = input.store.read();
-    if (!generation || generation.generation !== observation.generation || generation.state !== "exited")
-      throw new Error("lane_executor_generation_changed");
-    projection = await project();
-    const advanced = progressed(projection, generation.baseline);
-    const observed = markHandled(generation, advanced);
-    if (waitsOnUser(projection) || advanced)
-      return observation;
-    if (observed.no_progress >= 2)
-      return { ...observation, reason: "lane_executor_no_progress" };
-  }
-}
-
-// plugins/immune-brain/runtime/unattended/batch_runner.ts
-init_batch_preflight();
-init_batch_state();
-init_layered_config();
-
-// plugins/immune-brain/runtime/unattended/agent_profiles.ts
-init_agent_roles();
-init_layered_config();
-var executorPreferences = (profile) => ({
-  executor_host: profile.host,
-  ...profile.model ? { executor_model: profile.model } : {},
-  ...profile.effort ? { executor_effort: profile.effort } : {}
-});
-function parseRequestedAgents(root, value) {
-  if (value === undefined)
-    return {};
-  if (value === null || typeof value !== "object" || Array.isArray(value))
-    throw new Error("invalid agents: expected { executor?, reviewer? }");
-  const unknown = Object.keys(value).filter((key) => key !== "executor" && key !== "reviewer");
-  if (unknown.length)
-    throw new Error(`invalid agents: unknown role ${unknown.join(", ")}`);
-  const profiles = resolveConfig(root).agents.profiles.value;
-  const out = {};
-  for (const role of ["executor", "reviewer"]) {
-    const raw = value[role];
-    if (raw === undefined)
-      continue;
-    const parsed = parseAgentValue(raw, profiles);
-    if (!parsed.ok)
-      throw new Error(`invalid agents.${role}: ${parsed.message}`);
-    if (role === "executor")
-      out.executor = executorPreferences(parsed.profile);
-    else
-      out.reviewer = { host: parsed.profile.host, ...parsed.profile.model ? { model: parsed.profile.model } : {}, ...parsed.profile.effort ? { effort: parsed.profile.effort } : {} };
-  }
-  return out;
-}
-function laneExecutorChoice(root, preferences, parentHost) {
-  if (preferences?.executor_host)
-    return chooseExecutor([preferences], parentHost);
-  const config = resolveConfig(root);
-  if (batchConfigErrors(config).length)
-    return null;
-  const role = agentRole(config.agents, "executor");
-  return chooseExecutor(role ? [executorPreferences(role)] : [], parentHost);
-}
-function frozenExecutorPreferences(root, request, parentHost) {
-  if (request?.executor_host)
-    return request;
-  const config = resolveConfig(root);
-  if (batchConfigErrors(config).length)
-    return;
-  const role = agentRole(config.agents, "executor");
-  if (role)
-    return executorPreferences(role);
-  return parentHost ? { executor_host: parentHost } : undefined;
-}
-function frozenReviewProfile(root, request) {
-  if (request)
-    return request;
-  const role = agentRole(resolveConfig(root).agents, "reviewer");
-  return role ? { host: role.host, ...role.model ? { model: role.model } : {}, ...role.effort ? { effort: role.effort } : {} } : undefined;
-}
-// plugins/immune-brain/runtime/unattended/batch_runner.ts
-init_layered_config();
-init_backend_claim();
-init_batch_plan();
-init_batch_git();
-init_batch_reasons();
-function batchQaFailureFacts(record) {
-  const failed = record.history.filter((event) => event.type === "request_rework" && event.authority?.authority_kind === "qa");
-  return {
-    qa_failure_count: failed.length,
-    last_qa_failure_at: failed.at(-1)?.at ?? null,
-    recovery_findings: record.findings.filter((f) => f.status === "open").map((f) => ({ id: f.id, kind: f.kind, status: f.status, acceptance_id: f.acceptance_id }))
-  };
-}
-async function completedParentReport(root, initiativeSlug, readInitiative, tracker = createBatchTrackerPort(root, initiativeSlug)) {
-  const candidate = findSettledBatchRecord(root, initiativeSlug);
-  if (!candidate || !isLaneBatchRecord(candidate) || candidate.batch_state !== "completed")
-    return null;
-  const batch = readAnyBatchRunState(root, candidate.batch_id);
-  if (!batch || batch.final_verification_result?.passed !== true)
-    return null;
-  const parent = await (readInitiative ?? observeInitiative)(root, initiativeSlug);
-  const proof = await observeParentCompletion(root, initiativeSlug, parent.tasks.map((child) => child.task_id));
-  if (!proof.complete)
-    return null;
-  const last = parent.tasks.at(-1);
-  const tombstone = last ? await withBatchEvidence(root, batch.branch, expectedBatchHead(batch), (path) => readTaskTombstone(path, last.task_id)) : null;
-  let sync = null;
-  if (last && tracker) {
-    if (!tombstone || tombstone.terminal_lifecycle !== "done")
-      throw new Error("Parent tracker synchronization requires exact terminal evidence");
-    try {
-      sync = await tracker.markTerminal(root, { task_id: last.task_id, phase: "done", terminal_event_id: tombstone.terminal_event_id });
-    } catch {
-      sync = { status: "failed", message: "Local Parent completion proved; retry tracker synchronization on this Host" };
-    }
-  }
-  const retained = isLaneBatchRecord(batch) ? retainedLaneNotices(root, batch) : [];
-  const report = {
-    contract: "assurance_kernel/batch_run_report/v1",
-    batch_id: batch.batch_id,
-    initiative_slug: initiativeSlug,
-    batch_state: batch.batch_state,
-    children: batch.children,
-    commits: batch.commits,
-    final_verification: batch.final_verification_result,
-    ...sync ? { tracker: sync } : {},
-    ...retained.length ? { lane_refusals: retained } : {},
-    ...isLaneBatchRecord(batch) && batch.session_closes?.length ? { session_closes: batch.session_closes } : {},
-    reason: sync?.status === "failed" ? "Local Parent completion proved; tracker synchronization failed" : null,
-    next_action: (sync?.status === "failed" ? sync.message : "Parent delivery and final verification passed") + (retained.length ? "." : "") + retainedLaneAction(retained),
-    created_at: new Date().toISOString(),
-    ...isLaneBatchRecord(batch) ? { max_parallel: batch.max_parallel, handoffs: [] } : {}
-  };
-  writeBatchRunReport(root, report);
-  return report;
-}
-async function stopSingleTaskSupervisor(supervisor, root, taskId, signal) {
-  const existing = findExistingActiveBatch(root, taskId);
-  if (!existing || existing.corrupt || !isLaneBatchRecord(existing.record) || existing.record.plan_source !== "single_task")
-    return { state: "blocked", reason: "lane_executor_not_running", recovery_action: "Inspect the task status in the current Host." };
-  const record = existing.record;
-  if (record.executor_mode === "interactive")
-    return { state: "blocked", reason: "lane_executor_interactive", recovery_action: "Close the Lane's Executor tab yourself; the Lane is retained." };
-  const lane = record.children.find((child) => child.task_id === taskId)?.lane;
-  if (!lane)
-    return { state: "blocked", reason: "lane_executor_not_running", recovery_action: "Inspect the task status in the current Host." };
-  const observation = await supervisor.run({
-    key: `${root}\x00${record.batch_id}`,
-    repository: root,
-    lanePath: lane.path,
-    taskId,
-    choice: { host: "pi" },
-    pluginDir: "",
-    store: laneGenerationStore(root, record.batch_id),
-    baseline: "",
-    waitMs: 5000,
-    graceMs: 1000,
-    signal,
-    stop: true
-  });
-  const reason = laneGenerationStore(root, record.batch_id).read()?.state === "interrupted" ? "lane_executor_interrupted" : "lane_executor_stopped";
-  const parked = observation.state === "stopped" && observation.exit && record.batch_state === "running" ? parkLaneForExecutor(root, record.batch_id, taskId, reason) : record;
-  const condition = observation.state === "stopped" ? exitProofCondition(laneGenerationStore(root, record.batch_id).read()) : null;
-  return { state: "started", batch_id: record.batch_id, report: {
-    ...reportFromLane(parked),
-    ...condition ? { lane_refusals: [{ task_id: taskId, path: lane.path, reason: retainedLaneReason(condition) }] } : {},
-    lane_supervision: observation
-  } };
-}
-function reportFromLane(record) {
-  return {
-    contract: "assurance_kernel/batch_run_report/v1",
-    batch_id: record.batch_id,
-    initiative_slug: record.initiative_slug,
-    batch_state: record.batch_state,
-    max_parallel: record.max_parallel,
-    children: record.children,
-    commits: record.commits,
-    reason: null,
-    handoffs: [],
-    next_action: "Continue supervising the Lane.",
-    created_at: record.updated_at
-  };
-}
-function afterExecutorExit(advanced, observed) {
-  const decision = observed.lane_decision_required;
-  return {
-    ...advanced,
-    handoffs: advanced.handoffs.filter((h) => h.role !== "executor"),
-    ...decision ? { lane_decision_required: decision } : {},
-    next_action: decision ? observed.next_action : advanced.handoffs.some((h) => h.role === "executor") ? "Call start_unattended_batch again to continue the Lane." : advanced.next_action,
-    lane_supervision: observed.lane_supervision
-  };
-}
-async function superviseSingle(input, report) {
-  const options = input.supervision;
-  const child = report.children.find((c) => c.task_id === input.initiative_slug && c.lane);
-  if (!child?.lane)
-    return report;
-  const recorded = readAnyBatchRunState(input.root, input.batch_id);
-  const choice = laneExecutorChoice(input.root, (recorded && isLaneBatchRecord(recorded) ? recorded.executor_preferences : undefined) ?? options.request, options.parentHost);
-  if (!choice)
-    return { ...report, batch_state: "rejected", reason: "lane_config_invalid", next_action: "Correct the Lane configuration and retry." };
-  const store = laneGenerationStore(input.root, input.batch_id);
-  const observation = await superviseLane(options.supervisor, {
-    key: `${input.root}\x00${input.batch_id}`,
-    repository: input.root,
-    lanePath: child.lane.path,
-    taskId: child.task_id,
-    choice,
-    pluginDir: options.pluginDir,
-    store,
-    baseline: "",
-    waitMs: options.waitMs,
-    graceMs: 1000,
-    signal: options.signal,
-    stop: options.stop,
-    project: async () => {
-      const result = await input.kernel.projectTask(child.lane.path, child.task_id);
-      if (result.error !== null)
-        throw new Error(`batch_lane_unreadable: ${result.error}`);
-      return result.projection;
-    }
-  });
-  if (observation.reason === "lane_executor_no_progress") {
-    const parked = parkLaneForExecutor(input.root, input.batch_id, child.task_id, "lane_executor_no_progress");
-    report = { ...reportFromLane(parked), reason: batchReason("lane_executor_no_progress").reason, next_action: batchReason("lane_executor_no_progress").recovery_action };
-  } else if (observation.state === "stopped" && observation.exit) {
-    const reason = store.read()?.state === "interrupted" ? "lane_executor_interrupted" : "lane_executor_stopped";
-    const parked = parkLaneForExecutor(input.root, input.batch_id, child.task_id, reason);
-    report = { ...reportFromLane(parked), reason, next_action: "Inspect the Lane and resume with a fresh drive entry." };
-  } else if (observation.state === "unavailable" || observation.state === "unobservable") {
-    report = { ...report, reason: batchReason(observation.state === "unavailable" ? "lane_executor_unavailable" : "lane_executor_unobservable").reason };
-  }
-  if (observation.reason === "lane_executor_requires_tui") {
-    const tui = batchReason("lane_executor_requires_tui");
-    return {
-      ...report,
-      reason: tui.reason,
-      next_action: tui.recovery_action.replaceAll("<task_id>", child.task_id),
-      lane_supervision: observation
-    };
-  }
-  let decision = null;
-  if (observation.state === "exited" && !observation.reason) {
-    const read = await input.kernel.projectTask(child.lane.path, child.task_id);
-    if (read.error === null)
-      decision = laneDecisionFacts(child.task_id, read.projection, child.lane.path);
-  }
-  const kept = observation.state === "stopped" || observation.state === "unobservable" || observation.state === "unavailable" || !!observation.reason;
-  const condition = observation.reason === "lane_executor_no_progress" ? "the Executor exited twice without Kernel progress" : exitProofCondition(store.read());
-  return {
-    ...report,
-    handoffs: report.handoffs.filter((handoff) => handoff.role !== "executor"),
-    ...kept && condition ? { lane_refusals: [{ task_id: child.task_id, path: child.lane.path, reason: retainedLaneReason(condition) }] } : {},
-    ...decision ? { lane_decision_required: decision } : {},
-    next_action: decision?.requested ? `The Lane Executor asks for a breaking intent revision (record ${decision.record_revision}). Call approve_breaking_intent_revision for ${decision.task_id} in the current Host with record_revision ${decision.record_revision} and lane_decision_required.requested.next_intent as next_intent; it opens the native gate and continues the Lane.` : decision ? `The Lane waits on a user decision (record ${decision.record_revision}). Call request_authorization for ${decision.task_id} in the current Host with record_revision ${decision.record_revision}; it opens the native gate and continues the Lane.` : observation.state === "running" ? "Call start_unattended_batch again to continue supervising this generation." : observation.state === "unobservable" ? batchReason("lane_executor_unobservable").recovery_action : observation.state === "unavailable" ? batchReason("lane_executor_unavailable").recovery_action : report.next_action,
-    lane_supervision: observation
-  };
-}
-async function startBatch(input) {
-  const recorded = readAnyBatchRunState(input.root, input.batch_id);
-  const interactive = recorded ? isLaneBatchRecord(recorded) && recorded.executor_mode === "interactive" : input.executor_mode === "interactive";
-  if (interactive)
-    input = {
-      ...input,
-      executor_mode: "interactive",
-      supervision: undefined,
-      lane_exit_observation: null,
-      executor_freeze: input.executor_freeze ?? (input.supervision ? { request: input.supervision.request, parentHost: input.supervision.parentHost } : undefined)
-    };
-  if (input.plan_source === "single_task" && input.supervision && !input.supervision.stop && batchConfigErrors(resolveConfig(input.root)).length > 0) {
-    const report = recorded && isLaneBatchRecord(recorded) ? reportFromLane(recorded) : null;
-    if (!report)
-      throw new Error("lane_config_invalid");
-    return { ...report, batch_state: "rejected", reason: "lane_config_invalid" };
-  }
-  if (recorded && !isLaneBatchRecord(recorded)) {
-    const reason = batchReason("batch_record_shape_retired");
-    return {
-      contract: "assurance_kernel/batch_run_report/v1",
-      batch_id: recorded.batch_id,
-      initiative_slug: recorded.initiative_slug,
-      batch_state: "rejected",
-      children: recorded.children,
-      commits: recorded.commits,
-      reason: reason.reason,
-      next_action: reason.recovery_action,
-      created_at: input.now
-    };
-  }
-  try {
-    if (input.plan_source === "single_task" && input.supervision && recorded && isLaneBatchRecord(recorded) && recorded.batch_state === "running") {
-      const generation = laneGenerationStore(input.root, input.batch_id).read();
-      if (generation && ["starting", "running", "unobservable", "exited"].includes(generation.state)) {
-        const observed = await superviseSingle(input, reportFromLane(recorded));
-        if (observed.reason || observed.lane_supervision?.state !== "exited" || input.supervision.stop)
-          return observed;
-        const advanced = await runLaneBatch({ ...input, lane_exit_observation: observed.lane_supervision?.exit ?? null }, readAnyBatchRunState(input.root, input.batch_id));
-        return afterExecutorExit(advanced, observed);
-      }
-    }
-    const report = await runLaneBatch(input, recorded);
-    if (interactive) {
-      const child = report.children.find((c) => (c.state === "enrolled" || c.state === "needs_human") && c.lane);
-      if (child?.lane) {
-        const read = await input.kernel.projectTask(child.lane.path, child.task_id);
-        if (read.error !== null)
-          throw new Error(`batch_lane_unreadable: ${read.error}`);
-        const decision = laneDecisionFacts(child.task_id, read.projection, child.lane.path);
-        if (decision)
-          return {
-            ...report,
-            lane_decision_required: decision,
-            handoffs: report.handoffs.filter((h) => h.role !== "executor"),
-            next_action: `The Lane waits on a user decision (record ${decision.record_revision}). Use the current Host's native decision gate for ${decision.task_id}; then resume the existing interactive Lane session.`
-          };
-      }
-      return { ...report, next_action: report.batch_state === "running" && report.reason === null && report.handoffs.some((h) => h.role === "executor") ? `Run ${input.initiative_slug} in its existing Herdr tab, creating one only when no live tab exists. Resume inside Herdr; re-enter start_unattended_batch with task_id ${input.initiative_slug} and no initiative_slug.` : report.next_action };
-    }
-    if (input.plan_source === "single_task" && input.supervision && recorded?.batch_state === "needs_human" && report.batch_state === "running") {
-      const store = laneGenerationStore(input.root, input.batch_id);
-      const generation = store.read();
-      if (generation && ["exited", "stopped_by_parent", "interrupted"].includes(generation.state))
-        store.update((value) => {
-          if (!value || value.generation !== generation.generation || value.state !== generation.state)
-            throw new Error("lane_executor_generation_changed");
-          return { ...value, no_progress: 0, handled_generation: value.generation };
-        });
-    }
-    if (input.plan_source === "single_task" && input.supervision && report.handoffs.some((h) => h.role === "executor")) {
-      const observed = await superviseSingle(input, report);
-      if (!observed.reason && observed.lane_supervision?.state === "exited" && !input.supervision.stop) {
-        const advanced = await runLaneBatch({ ...input, lane_exit_observation: observed.lane_supervision?.exit ?? null }, readAnyBatchRunState(input.root, input.batch_id));
-        return afterExecutorExit(advanced, observed);
-      }
-      return observed;
-    }
-    return report;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (!/retired file-store|kernel store|CAS mismatch|store is busy|locked/i.test(message))
-      throw error;
-    if (!recorded)
-      throw error;
-    return laneRejectionReport(input, recorded, message, "settle the reported kernel store condition and retry in the current Host");
-  }
-}
-
 // plugins/immune-brain/runtime/unattended/lane_decision.ts
 function laneDecisionFacts(taskId, projection, lanePath) {
   if (projection.lifecycle !== "active")
@@ -18657,8 +18216,8 @@ function laneDecisionFacts(taskId, projection, lanePath) {
   };
 }
 function findLaneRelayTarget(root, taskId) {
-  const found = findExistingActiveBatch(root, taskId);
-  if (!found || found.corrupt || !isLaneBatchRecord(found.record) || found.record.plan_source !== "single_task")
+  const found = findActiveLaneBatchForTask(root, taskId);
+  if (!found)
     return null;
   const child = found.record.children.find((value) => value.task_id === taskId);
   if (!child?.lane || child.state !== "enrolled" && child.state !== "needs_human")
@@ -18703,29 +18262,29 @@ async function relayLaneDecision(input) {
   if (input.applied && !input.applied(result))
     return { relayed: true, result, lane_relay: { batch_id: target.batch_id, operation: input.operation, applied: false, rebound: false, lane_supervision: null } };
   clearLaneDecisionRequest(target.lane_path);
-  const batch = findExistingActiveBatch(input.root, input.taskId);
-  const interactive = batch && !batch.corrupt && isLaneBatchRecord(batch.record) && batch.record.executor_mode === "interactive";
+  const active = findActiveLaneBatchForTask(input.root, input.taskId);
   if (input.operation === "stop") {
-    if (interactive) {
-      parkLaneForExecutor(input.root, target.batch_id, input.taskId, "lane_executor_stopped");
-      return { relayed: true, result, lane_relay: {
-        batch_id: target.batch_id,
-        operation: input.operation,
-        applied: true,
-        rebound: false,
-        lane_supervision: null,
-        next_action: "The Lane task is stopped. Close its Herdr Executor tab yourself; the Lane and branches are retained."
-      } };
+    const handle = active?.record.children.find((child) => child.task_id === input.taskId)?.session?.handle ?? null;
+    if (input.sessions && handle) {
+      const stopped = await input.sessions.stop(handle);
+      if (!stopped.ok)
+        return { relayed: true, result, lane_relay: {
+          batch_id: target.batch_id,
+          operation: input.operation,
+          applied: true,
+          rebound: false,
+          lane_supervision: null,
+          next_action: `lane_stop_rejected: ${stopped.reason} (${stopped.code}); the child stays enrolled and is reconciled on the next advance.`
+        } };
     }
-    const stopped = await stopSingleTaskSupervisor(input.supervisor, input.root, input.taskId, input.signal);
-    const report = stopped.state === "started" ? stopped.report : {};
+    parkLaneForExecutor(input.root, target.batch_id, input.taskId, "lane_executor_stopped");
     return { relayed: true, result, lane_relay: {
       batch_id: target.batch_id,
       operation: input.operation,
       applied: true,
       rebound: false,
-      lane_supervision: report.lane_supervision ?? null,
-      ...report.lane_refusals ? { lane_refusals: report.lane_refusals } : {}
+      lane_supervision: null,
+      ...input.sessions && handle ? {} : { next_action: "The Lane task is stopped and retained. Close its Executor tab yourself when it is no longer needed." }
     } };
   }
   let rebound = false;
@@ -18734,43 +18293,89 @@ async function relayLaneDecision(input) {
       const committed = readTaskRecordRaw(target.lane_path, input.taskId).record;
       if (!committed)
         throw new Error("the Lane TaskRecord is unreadable");
-      rebindSingleTaskIdentity(input.root, target.batch_id, { task_id: input.taskId, intent: committed.intent_snapshot, content_hash: committed.intent_ref.content_hash });
+      rebindBatchChildIdentity(input.root, target.batch_id, { task_id: input.taskId, intent: committed.intent_snapshot, content_hash: committed.intent_ref.content_hash });
       rebound = true;
     } catch (error) {
       throw new Error(`${batchReason("lane_decision_rebind_failed").reason}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
-  if (interactive)
-    return { relayed: true, result, lane_relay: { batch_id: target.batch_id, operation: input.operation, applied: true, rebound, lane_supervision: null } };
-  const choice = laneExecutorChoice(input.root, batch && !batch.corrupt && isLaneBatchRecord(batch.record) ? batch.record.executor_preferences : undefined, input.parentHost);
-  if (!choice)
-    return { relayed: true, result, lane_relay: { batch_id: target.batch_id, operation: input.operation, applied: true, rebound, lane_supervision: null } };
-  const observation = await superviseLane(input.supervisor, {
-    key: `${input.root}\x00${target.batch_id}`,
-    repository: input.root,
-    lanePath: target.lane_path,
-    taskId: input.taskId,
-    choice,
-    pluginDir: input.pluginDir,
-    store: laneGenerationStore(input.root, target.batch_id),
-    baseline: "",
-    waitMs: input.waitMs,
-    graceMs: 1000,
-    signal: input.signal,
-    project: async () => {
-      const read = await input.project(target.lane_path, target.task_id);
-      if (read.error !== null)
-        throw new Error(`batch_lane_unreadable: ${read.error}`);
-      return read.projection;
-    }
-  });
+  const observation = input.advance ? await input.advance(target.batch_id) : null;
   return { relayed: true, result, lane_relay: {
     batch_id: target.batch_id,
     operation: input.operation,
     applied: true,
     rebound,
-    lane_supervision: observation
+    lane_supervision: observation ?? null
   } };
+}
+
+// plugins/immune-brain/runtime/unattended/agent_profiles.ts
+init_agent_roles();
+init_layered_config();
+function chooseExecutor(layers, fallback) {
+  const selected = layers.find((layer) => layer.host !== undefined);
+  if (!selected)
+    return { host: fallback };
+  return {
+    host: selected.host,
+    ...selected.model ? { model: selected.model } : {},
+    ...selected.effort ? { effort: selected.effort } : {}
+  };
+}
+var executorPreferences = (profile) => ({
+  host: profile.host,
+  ...profile.model ? { model: profile.model } : {},
+  ...profile.effort ? { effort: profile.effort } : {}
+});
+function parseRequestedAgents(root, value) {
+  if (value === undefined)
+    return {};
+  if (value === null || typeof value !== "object" || Array.isArray(value))
+    throw new Error("invalid agents: expected { executor?, reviewer? }");
+  const unknown = Object.keys(value).filter((key) => key !== "executor" && key !== "reviewer");
+  if (unknown.length)
+    throw new Error(`invalid agents: unknown role ${unknown.join(", ")}`);
+  const profiles = resolveConfig(root).agents.profiles.value;
+  const out = {};
+  for (const role of ["executor", "reviewer"]) {
+    const raw = value[role];
+    if (raw === undefined)
+      continue;
+    const parsed = parseAgentValue(raw, profiles);
+    if (!parsed.ok)
+      throw new Error(`invalid agents.${role}: ${parsed.message}`);
+    if (role === "executor")
+      out.executor = executorPreferences(parsed.profile);
+    else
+      out.reviewer = { host: parsed.profile.host, ...parsed.profile.model ? { model: parsed.profile.model } : {}, ...parsed.profile.effort ? { effort: parsed.profile.effort } : {} };
+  }
+  return out;
+}
+function laneExecutorChoice(root, preferences, parentHost) {
+  if (preferences?.host)
+    return chooseExecutor([preferences], parentHost);
+  const config = resolveConfig(root);
+  if (batchConfigErrors(config).length)
+    return null;
+  const role = agentRole(config.agents, "executor");
+  return chooseExecutor(role ? [executorPreferences(role)] : [], parentHost);
+}
+function frozenExecutorPreferences(root, request, parentHost) {
+  if (request?.host)
+    return request;
+  const config = resolveConfig(root);
+  if (batchConfigErrors(config).length)
+    return;
+  const role = agentRole(config.agents, "executor");
+  if (role)
+    return executorPreferences(role);
+  return parentHost ? { host: parentHost } : undefined;
+}
+function frozenReviewProfile(root, request) {
+  if (request)
+    return request;
+  const role = agentRole(resolveConfig(root).agents, "reviewer");
+  return role ? { host: role.host, ...role.model ? { model: role.model } : {}, ...role.effort ? { effort: role.effort } : {} } : undefined;
 }
 
 // plugins/immune-brain/runtime/unattended/batch_lanes.ts
@@ -18780,6 +18385,7 @@ init_local_initiative();
 init_batch_integration();
 init_batch_ref();
 init_batch_worktrees();
+init_batch_plan();
 init_batch_preflight();
 init_batch_leak_restore();
 init_batch_git();
@@ -18788,6 +18394,331 @@ init_batch_state();
 init_batch_git();
 init_role_prompt_bridge();
 init_plugin_source_skew();
+
+// plugins/immune-brain/runtime/unattended/batch_session_port.ts
+import { createHash as createHash24 } from "node:crypto";
+function isPortRefusal(result) {
+  return typeof result === "object" && result !== null && result.ok === false;
+}
+var LANE_EXECUTOR_ENV2 = "LANE_EXECUTOR_ENV";
+function foldTask(taskId, maxLen) {
+  let folded = taskId.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  if (!folded)
+    folded = "t";
+  if (folded.length > maxLen) {
+    folded = folded.slice(0, maxLen).replace(/-+$/g, "");
+    if (!folded)
+      folded = "t";
+  }
+  return folded;
+}
+function laneSessionLabel(taskId) {
+  if (taskId.length > 0 && taskId.length <= 32)
+    return taskId;
+  const digest = createHash24("sha256").update(taskId).digest("hex").slice(0, 12);
+  return `${foldTask(taskId, 32 - 1 - 12)}-${digest}`;
+}
+function laneSessionKey(batchId, taskId, generation) {
+  if (!Number.isSafeInteger(generation) || generation <= 0)
+    throw new Error("laneSessionKey: generation must be a positive integer");
+  const digest = createHash24("sha256").update(`${batchId}\x00${taskId}\x00${String(generation)}`).digest("hex").slice(0, 12);
+  const digits = String(generation).length;
+  const maxFold = 36 - (4 + 2 + digits + 1 + 12);
+  const folded = foldTask(taskId, Math.max(1, maxFold));
+  return `imm-${folded}-g${generation}-${digest}`;
+}
+
+// plugins/immune-brain/runtime/unattended/child_session_reconciler.ts
+function baseSession(generation) {
+  return {
+    key: null,
+    generation,
+    baseline: null,
+    handle: null,
+    entry_submitted: false,
+    attention: null,
+    no_progress: 0,
+    exit_proof: null
+  };
+}
+function openEnv(interactionMode) {
+  return interactionMode === "parent_relayed" ? { [LANE_EXECUTOR_ENV2]: "headless" } : undefined;
+}
+function normalizePending(value) {
+  if (!value)
+    return null;
+  return typeof value === "string" ? { text: value, digest: `text:${value}` } : value;
+}
+function isHandled(session, digest) {
+  return (session.handled_interventions ?? []).includes(digest);
+}
+function markHandled(session, digest) {
+  if (isHandled(session, digest))
+    return session;
+  return { ...session, handled_interventions: [...session.handled_interventions ?? [], digest] };
+}
+function openRefusalReason(refusal) {
+  const code = typeof refusal.code === "string" ? refusal.code : "refused";
+  const reason = typeof refusal.reason === "string" ? refusal.reason : "the provider refused the session";
+  return `lane_session_open_rejected: ${reason} (${code})`;
+}
+function refusedOpen(session, refusal) {
+  const openRefusals = (session.open_refusals ?? 0) + 1;
+  const next = { ...session, handle: null, open_refusals: openRefusals };
+  const parkedReason = openRefusalReason(refusal);
+  return openRefusals >= 2 ? { session: next, action: "parked_open_rejected", parkedReason } : { session: next, action: "open_refused", parkedReason };
+}
+function resetOpenRefusals(session) {
+  return session.open_refusals ? { ...session, open_refusals: 0 } : session;
+}
+async function reconcileChildSession(input) {
+  const { port, batchId, taskId, kernel, interactionMode, entry, laneCwd, onWriteAhead } = input;
+  const pendingInstruction = normalizePending(input.pendingInstruction);
+  const pendingCorrection = normalizePending(input.pendingCorrection);
+  let session = input.session ? { ...input.session } : { ...baseSession(1), baseline: kernel.recordRevision };
+  if (!session.key) {
+    session.key = laneSessionKey(batchId, taskId, session.generation || 1);
+    session.baseline = kernel.recordRevision;
+    session.handle = null;
+    session.entry_submitted = false;
+    session.attention = null;
+    if (!session.no_progress)
+      session.no_progress = 0;
+    session.exit_proof = null;
+    onWriteAhead?.({ ...session });
+  }
+  const key = session.key;
+  let adopted = false;
+  if (!session.handle) {
+    const found = await port.find(key);
+    if (isPortRefusal(found))
+      return { session, action: "held" };
+    if ("handle" in found) {
+      session = { ...session, handle: found.handle };
+      adopted = true;
+    } else {
+      const entryForOpen = pendingCorrection && isHandled(session, pendingCorrection.digest) ? pendingCorrection.text : entry;
+      const opened = await port.open({
+        key,
+        cwd: laneCwd,
+        label: laneSessionLabel(taskId),
+        entry: entryForOpen,
+        ...openEnv(interactionMode) ? { env: openEnv(interactionMode) } : {}
+      });
+      if (isPortRefusal(opened))
+        return refusedOpen(session, opened);
+      session = resetOpenRefusals({
+        ...session,
+        handle: opened.handle,
+        entry_submitted: opened.entry_submitted,
+        attention: opened.attention ?? null
+      });
+      return { session, action: "opened" };
+    }
+  }
+  const holdAction = adopted ? "adopted" : "held";
+  const handle = session.handle;
+  const observed = await port.observe(handle);
+  if (isPortRefusal(observed))
+    return { session, action: holdAction };
+  const state = observed.state;
+  if (state === "blocked")
+    return { session: { ...session, attention: "blocked" }, action: holdAction };
+  session = session.attention === null ? session : { ...session, attention: null };
+  if (state === "working" || state === "unknown")
+    return { session, action: holdAction };
+  if (!session.entry_submitted) {
+    if (state === "idle" || state === "done") {
+      const resumed = await port.resume(handle, entry);
+      if (isPortRefusal(resumed))
+        return { session, action: holdAction };
+      session = { ...session, entry_submitted: resumed.entry_submitted, attention: null };
+      return { session, action: "resumed" };
+    }
+    if (state === "exited") {
+      return await stallOrProgress(port, session, { batchId, taskId, kernel, interactionMode, entry, laneCwd, state, onWriteAhead });
+    }
+    return { session, action: holdAction };
+  }
+  if (pendingCorrection && !isHandled(session, pendingCorrection.digest) && (state === "idle" || state === "done" || state === "exited")) {
+    const closed = await port.closeWithProof(handle, key);
+    if (isPortRefusal(closed))
+      return { session, action: holdAction };
+    const nextGeneration = session.generation + 1;
+    const nextKey = laneSessionKey(batchId, taskId, nextGeneration);
+    const writeAhead = {
+      ...markHandled(session, pendingCorrection.digest),
+      key: nextKey,
+      generation: nextGeneration,
+      baseline: kernel.recordRevision,
+      handle: null,
+      entry_submitted: false,
+      attention: null,
+      exit_proof: null
+    };
+    onWriteAhead?.({ ...writeAhead });
+    const opened = await port.open({
+      key: nextKey,
+      cwd: laneCwd,
+      label: laneSessionLabel(taskId),
+      entry: pendingCorrection.text,
+      ...openEnv(interactionMode) ? { env: openEnv(interactionMode) } : {}
+    });
+    if (isPortRefusal(opened))
+      return refusedOpen({ ...writeAhead, exit_proof: closed }, opened);
+    session = resetOpenRefusals({
+      ...writeAhead,
+      handle: opened.handle,
+      entry_submitted: opened.entry_submitted,
+      attention: opened.attention ?? null
+    });
+    return { session, action: "rotated" };
+  }
+  if (pendingInstruction && !isHandled(session, pendingInstruction.digest) && (state === "idle" || state === "done")) {
+    const sent = await port.send(handle, pendingInstruction.text);
+    if (isPortRefusal(sent))
+      return { session, action: holdAction };
+    return { session: markHandled(session, pendingInstruction.digest), action: "sent" };
+  }
+  if (pendingInstruction && isHandled(session, pendingInstruction.digest) || pendingCorrection && isHandled(session, pendingCorrection.digest)) {}
+  if (kernel.settled || kernel.hasOpenDecision || kernel.hasReplan)
+    return { session, action: "held" };
+  return await stallOrProgress(port, session, { batchId, taskId, kernel, interactionMode, entry, laneCwd, state, onWriteAhead, adopted });
+}
+async function stallOrProgress(port, session, opts) {
+  const { batchId, taskId, kernel, interactionMode, entry, laneCwd, state, onWriteAhead, adopted } = opts;
+  if (kernel.recordRevision !== session.baseline) {
+    if (state === "idle" || state === "done") {
+      const resumed = await port.resume(session.handle, entry);
+      if (isPortRefusal(resumed))
+        return { session, action: "held" };
+      session = { ...session, baseline: kernel.recordRevision, no_progress: 0 };
+      return { session, action: "resumed" };
+    }
+    const closed = await port.closeWithProof(session.handle, session.key);
+    if (isPortRefusal(closed))
+      return { session, action: "held" };
+    const nextGeneration = session.generation + 1;
+    const nextKey = laneSessionKey(batchId, taskId, nextGeneration);
+    const writeAhead = {
+      ...session,
+      key: nextKey,
+      generation: nextGeneration,
+      baseline: kernel.recordRevision,
+      handle: null,
+      entry_submitted: false,
+      attention: null,
+      no_progress: 0,
+      exit_proof: null
+    };
+    onWriteAhead?.({ ...writeAhead });
+    const opened = await port.open({
+      key: nextKey,
+      cwd: laneCwd,
+      label: laneSessionLabel(taskId),
+      entry,
+      ...openEnv(interactionMode) ? { env: openEnv(interactionMode) } : {}
+    });
+    if (isPortRefusal(opened))
+      return refusedOpen({ ...writeAhead, exit_proof: closed }, opened);
+    session = resetOpenRefusals({
+      ...writeAhead,
+      handle: opened.handle,
+      entry_submitted: opened.entry_submitted,
+      attention: opened.attention ?? null
+    });
+    return { session, action: "rotated" };
+  }
+  if (state === "exited" || interactionMode === "parent_relayed" && !adopted) {
+    const closed = await port.closeWithProof(session.handle, session.key);
+    if (isPortRefusal(closed))
+      return { session, action: "held" };
+    const noProgress = (session.no_progress ?? 0) + 1;
+    if (noProgress >= 2) {
+      session = { ...session, no_progress: noProgress, exit_proof: closed };
+      return { session, action: "parked_no_progress", parkedReason: "lane_executor_no_progress" };
+    }
+    const nextGeneration = session.generation + 1;
+    const nextKey = laneSessionKey(batchId, taskId, nextGeneration);
+    const writeAhead = {
+      ...session,
+      key: nextKey,
+      generation: nextGeneration,
+      baseline: kernel.recordRevision,
+      handle: null,
+      entry_submitted: false,
+      attention: null,
+      no_progress: noProgress,
+      exit_proof: null
+    };
+    onWriteAhead?.({ ...writeAhead });
+    const opened = await port.open({
+      key: nextKey,
+      cwd: laneCwd,
+      label: laneSessionLabel(taskId),
+      entry,
+      ...openEnv(interactionMode) ? { env: openEnv(interactionMode) } : {}
+    });
+    if (isPortRefusal(opened))
+      return refusedOpen({ ...writeAhead, exit_proof: closed }, opened);
+    session = resetOpenRefusals({
+      ...writeAhead,
+      handle: opened.handle,
+      entry_submitted: opened.entry_submitted,
+      attention: opened.attention ?? null
+    });
+    return { session, action: "rotated" };
+  }
+  if ((state === "idle" || state === "done") && interactionMode === "interactive_host") {
+    session = { ...session, attention: "stalled_idle" };
+    return { session, action: "stalled_idle" };
+  }
+  return { session, action: "held" };
+}
+
+// plugins/immune-brain/runtime/unattended/batch_lanes.ts
+async function completedParentReport(root, initiativeSlug, readInitiative, tracker = createBatchTrackerPort(root, initiativeSlug)) {
+  const candidate = findSettledBatchRecord(root, initiativeSlug);
+  if (!candidate || !isLaneBatchRecord(candidate) || candidate.batch_state !== "completed")
+    return null;
+  const batch = readAnyBatchRunState(root, candidate.batch_id);
+  if (!batch || batch.final_verification_result?.passed !== true)
+    return null;
+  const parent = await (readInitiative ?? observeInitiative)(root, initiativeSlug);
+  const proof = await observeParentCompletion(root, initiativeSlug, parent.tasks.map((child) => child.task_id));
+  if (!proof.complete)
+    return null;
+  const last = parent.tasks.at(-1);
+  const tombstone = last ? await withBatchEvidence(root, batch.branch, expectedBatchHead(batch), (path) => readTaskTombstone(path, last.task_id)) : null;
+  let sync = null;
+  if (last && tracker) {
+    if (!tombstone || tombstone.terminal_lifecycle !== "done")
+      throw new Error("Parent tracker synchronization requires exact terminal evidence");
+    try {
+      sync = await tracker.markTerminal(root, { task_id: last.task_id, phase: "done", terminal_event_id: tombstone.terminal_event_id });
+    } catch {
+      sync = { status: "failed", message: "Local Parent completion proved; retry tracker synchronization on this Host" };
+    }
+  }
+  const retained = isLaneBatchRecord(batch) ? retainedLaneNotices(root, batch) : [];
+  const report = {
+    contract: "assurance_kernel/batch_run_report/v1",
+    batch_id: batch.batch_id,
+    initiative_slug: initiativeSlug,
+    batch_state: batch.batch_state,
+    children: batch.children,
+    commits: batch.commits,
+    final_verification: batch.final_verification_result,
+    ...sync ? { tracker: sync } : {},
+    ...retained.length ? { lane_refusals: retained } : {},
+    reason: sync?.status === "failed" ? "Local Parent completion proved; tracker synchronization failed" : null,
+    next_action: (sync?.status === "failed" ? sync.message : "Parent delivery and final verification passed") + (retained.length ? "." : "") + retainedLaneAction(retained),
+    created_at: new Date().toISOString(),
+    ...isLaneBatchRecord(batch) ? { max_parallel: batch.max_parallel, handoffs: [] } : {}
+  };
+  writeBatchRunReport(root, report);
+  return report;
+}
 var PARALLEL_MISMATCH = "batch_parallel_mismatch";
 var TASK_ID_PATTERN2 = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 var MAX_LANE_OFFERS = 64;
@@ -18885,39 +18816,6 @@ function parseLaneSessionClose(value) {
     throw new Error("invalid lane_session_close: task_id is not a valid task id");
   return { task_id: taskId };
 }
-function decideLaneSessionClose(record, request, auditReachable) {
-  const child = record.children.find((c) => c.task_id === request.task_id);
-  if (!child || !child.lane)
-    return `${request.task_id} has no Lane in this batch`;
-  if (child.state !== "integrated")
-    return `${request.task_id} is ${child.state}, not integrated; its session stays for the user`;
-  if (!auditReachable(request.task_id))
-    return `${request.task_id}'s audit pair is not reachable from the batch head`;
-  return null;
-}
-function applyLaneSessionClose(input, record, lanes, persist) {
-  const request = input.lane_session_close;
-  if (!request)
-    return;
-  const recorded = record.session_closes?.find((c) => c.task_id === request.task_id);
-  if (recorded)
-    return { task_id: request.task_id, accepted: true, reason: null, recorded_at: recorded.at };
-  const head = expectedBatchHead(record);
-  const refusal = decideLaneSessionClose(record, request, (taskId) => lanes.auditReachable({ root: input.root, head, task_id: taskId }));
-  if (refusal)
-    return { task_id: request.task_id, accepted: false, reason: `batch_lane_session_close_refused: ${refusal}`, recorded_at: null };
-  record.session_closes = [...record.session_closes ?? [], { at: input.now, task_id: request.task_id }];
-  persist();
-  return { task_id: request.task_id, accepted: true, reason: null, recorded_at: input.now };
-}
-function recordClosableSessions(input, record, lanes, persist) {
-  const head = expectedBatchHead(record);
-  const due = record.children.filter((c) => c.state === "integrated" && c.lane && !record.session_closes?.some((r) => r.task_id === c.task_id) && decideLaneSessionClose(record, { task_id: c.task_id }, (taskId) => lanes.auditReachable({ root: input.root, head, task_id: taskId })) === null);
-  if (!due.length)
-    return;
-  record.session_closes = [...record.session_closes ?? [], ...due.map((c) => ({ at: input.now, task_id: c.task_id }))];
-  persist();
-}
 var MAX_COORDINATOR_CORRECTIONS = 2;
 var CORRECTION_LIMIT_REACHED = "batch_correction_limit_reached";
 var LANE_CONTRACT_MISMATCH = "batch_lane_contract_mismatch";
@@ -18926,7 +18824,7 @@ function laneRuntimeDir(root, explicit) {
   if (explicit)
     return explicit;
   try {
-    const manifest = JSON.parse(readFileSync21(join30(root, "package.json"), "utf8"));
+    const manifest = JSON.parse(readFileSync21(join29(root, "package.json"), "utf8"));
     return manifest.name === "immune-brain" ? root : null;
   } catch {
     return null;
@@ -19147,30 +19045,55 @@ var TERMINAL_NEXT_ACTIONS = {
 };
 var LANE_RETAINED = "batch_lane_retained";
 var LANE_REDO_RETAINED = "batch_lane_redo_retained";
-var NO_EXIT_EVIDENCE = "no Host reports a trusted Executor exit";
+var NO_EXIT_EVIDENCE = "no exit proof was returned for this Lane session";
 function redoRetained(cause) {
   if (cause?.startsWith(`${LANE_REDO_RETAINED}:`))
     return cause;
-  return `${LANE_REDO_RETAINED}: ${NO_EXIT_EVIDENCE}, so the Lane, its branch and its files are kept and no redo Lane is created${cause ? ` (${cause})` : ""}`;
+  return `${LANE_REDO_RETAINED}: no redo Lane is created, so the Lane, its branch and its files are kept${cause ? ` (${cause})` : ""}`;
 }
 function retainedLaneNotices(root, record, lanes = createDefaultLaneGitPort()) {
   if (!isParentBranch(record.branch))
     return [];
-  if (record.plan_source === "single_task")
-    return record.children.filter((child) => child.lane && (child.lane_retained || child.state === "needs_human" && child.commit !== null) && lanes.inspectLane(root, child.lane.path).exists).map((child) => ({
-      task_id: child.task_id,
-      path: child.lane.path,
-      reason: retainedLaneReason(child.lane_retained?.condition ?? `the return step is parked (${child.reason})`)
-    }));
-  return record.children.filter((child) => child.state === "integrated" && child.lane && lanes.inspectLane(root, child.lane.path).exists).map((child) => ({
+  const checkout = effectiveReturnPolicy(record) === "checkout_delivery";
+  return record.children.filter((child) => child.lane && lanes.inspectLane(root, child.lane.path).exists && (child.lane_retained !== undefined || child.state === "integrated" || child.state === "needs_human" && (!checkout || child.commit !== null))).map((child) => ({
     task_id: child.task_id,
     path: child.lane.path,
-    reason: `${LANE_RETAINED}: ${NO_EXIT_EVIDENCE}; the delivered Lane and every file in it are kept`
+    reason: retainedLaneReason(child.lane_retained?.condition ?? (child.state === "integrated" ? NO_EXIT_EVIDENCE : `the return step is parked (${child.reason})`))
   }));
+}
+async function cleanupOneIntegratedChild(input) {
+  const { child, sessions } = input;
+  if (child.state !== "integrated" || !child.lane || child.lane_removed || child.lane_retained || child.redo_head)
+    return null;
+  const laneBranch = child.lane.branch;
+  const parentRef = input.branch ?? "";
+  if (!parentRef || !isParentBranch(parentRef))
+    return { lane_retained: { condition: "the batch branch is not a Parent branch" } };
+  const session = child.session;
+  if (!sessions || !session?.handle || !session?.key) {
+    return { lane_retained: { condition: "no session was supervised for this child, so no exit proof was observed" } };
+  }
+  let proof;
+  try {
+    proof = await sessions.closeWithProof(session.handle, session.key);
+  } catch (error) {
+    return { lane_retained: { condition: `closeWithProof threw: ${error instanceof Error ? error.message : String(error)}` } };
+  }
+  if (!proof || typeof proof !== "object" || proof.ok !== true) {
+    const refusal = proof;
+    const code = typeof refusal.code === "string" ? refusal.code : "unproven";
+    const reason = typeof refusal.reason === "string" ? refusal.reason : "closeWithProof did not prove exit";
+    return { lane_retained: { condition: `${reason} (${code})` } };
+  }
+  const outcome = cleanupIntegratedChildLane({ root: input.root, lanePath: child.lane.path, laneBranch, parentRef, proof });
+  if (outcome.status === "removed") {
+    return { lane_removed: { exit: outcome.exit, worktree: outcome.worktree, branches: outcome.branches } };
+  }
+  return { lane_retained: { condition: outcome.condition } };
 }
 function retainedLaneAction(refusals) {
   const count = refusals?.filter((r) => r.reason.startsWith(`${LANE_RETAINED}:`)).length ?? 0;
-  return count ? ` Cleanup was not performed: ${count} runtime-created Lane(s) are kept because ${NO_EXIT_EVIDENCE}. Stop each Lane's Executor, keep the files you need, then remove the Lane yourself; removing it does not enable an automatic redo.` : "";
+  return count ? ` Cleanup was not performed: ${count} runtime-created Lane(s) are kept with named proof or Git conditions. Stop each Lane's Executor, keep the files you need, then remove the Lane yourself; removing it does not enable an automatic redo.` : "";
 }
 function laneAuthorityChange(record, taskId, lanePath) {
   const recorded = record.intent_identities?.[taskId];
@@ -19236,8 +19159,7 @@ function laneReport(record, reason, nextAction, extra = {}) {
     ...record.final_report ? { final_report: record.final_report } : {},
     ...record.interventions?.length ? { interventions: record.interventions } : {},
     ...extra.instruction ? { lane_instruction: extra.instruction } : {},
-    ...record.session_closes?.length ? { session_closes: record.session_closes } : {},
-    ...extra.sessionClose ? { lane_session_close: extra.sessionClose } : {},
+    ...extra.decision ? { lane_decision_required: extra.decision } : {},
     ...record.delegated_revisions?.length ? { delegated_revisions: record.delegated_revisions } : {},
     ...record.reseals?.length ? { reseals: record.reseals } : {},
     ...record.lane_rebinds?.length ? { lane_rebinds: record.lane_rebinds } : {},
@@ -19348,9 +19270,23 @@ function isLineageBreak(message) {
   return message.includes("batch_head_lineage_broken");
 }
 async function runLaneBatch(input, persisted) {
+  try {
+    return await runLaneBatchEngine(input, persisted);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!/retired file-store|kernel store|CAS mismatch|store is busy|locked/i.test(message))
+      throw error;
+    if (!persisted || !isLaneBatchRecord(persisted))
+      throw error;
+    return laneRejectionReport(input, persisted, message, "settle the reported kernel store condition and retry in the current Host");
+  }
+}
+async function runLaneBatchEngine(input, persisted) {
   if (persisted && !isLaneBatchRecord(persisted))
     return { ...refuse2(input, persisted, "batch_record_shape_retired", "v1 serial batch records are read-and-retire only"), next_action: "Inspect the recorded batch, then use retire_stale_batch for this Initiative in the current Host." };
-  if (persisted && persisted.plan_source !== input.plan_source)
+  if (persisted && isRetiredLaneRecord(persisted))
+    return { ...refuse2(input, persisted, "batch_record_retired", "v2 Lane records are read-and-retire only"), next_action: "Inspect the recorded batch, then use retire_stale_batch for this Initiative in the current Host." };
+  if (persisted && !entryKindMatches(persisted, input))
     return refuse2(input, persisted, "batch_entry_kind_mismatch", "the recorded batch has a different plan source");
   if (persisted && input.max_parallel !== undefined && input.max_parallel !== persisted.max_parallel)
     return refuse2(input, persisted, PARALLEL_MISMATCH, `the recorded batch runs with max_parallel ${persisted.max_parallel}`);
@@ -19370,7 +19306,7 @@ async function runLaneBatch(input, persisted) {
       for (const child of record.children) {
         if (!child.lane || child.state === "released")
           continue;
-        const expectedPath = common ? join30(common, "imm", "worktrees", record.initiative_slug, child.task_id) : null;
+        const expectedPath = common ? join29(common, "imm", "worktrees", record.initiative_slug, child.task_id) : null;
         const facts = lanes.inspectLane(input.root, child.lane.path);
         const bindingMatches = child.lane.path === expectedPath && child.lane.branch === laneBranchName(record.initiative_slug, child.task_id);
         const headMatches = facts.head && (facts.head === child.redo_head || (child.lane.lane_commit ? facts.head === child.lane.lane_commit : gitRead(input.root, ["merge-base", "--is-ancestor", child.lane.base_head, facts.head]).status === 0));
@@ -19383,23 +19319,38 @@ async function runLaneBatch(input, persisted) {
       const tracker = record.batch_state === "completed" ? await closeIntegratedIssues(input, record, () => {
         record = writeBatchLaneRunState(input.root, record);
       }) : [];
-      const sessionClose = applyLaneSessionClose(input, record, lanes, () => {
-        record = writeBatchLaneRunState(input.root, record);
-      });
       return finalizeLane(input.root, record, `terminal state already reached: ${record.batch_state}`, "", {
         handoffs: record.batch_state === "completed" ? releaseHandoffs(input, record, lanes) : [],
         refusals: retainedLaneNotices(input.root, record, lanes),
-        tracker,
-        sessionClose
+        tracker
       });
     }
     if (record.batch_state === "needs_human") {
       const invalid = validateNewAuthorization(input);
-      if (invalid || Date.parse(input.confirmation_time) <= Date.parse(record.confirmation_time))
-        return laneReport(record, invalid ?? "the parked batch requires a fresh literal-user confirmation", LANE_NEEDS_HUMAN_NEXT_ACTION);
+      if (invalid || Date.parse(input.confirmation_time) <= Date.parse(record.confirmation_time)) {
+        let parkedDecision = null;
+        for (const child of record.children) {
+          if (child.state !== "enrolled" && child.state !== "needs_human" || !child.lane)
+            continue;
+          const fresh = await readLaneProjection(input, child.lane.path, child.task_id);
+          if (fresh.error !== null)
+            continue;
+          const waiting = laneDecisionFacts(child.task_id, fresh.projection, child.lane.path);
+          if (waiting) {
+            parkedDecision = waiting;
+            break;
+          }
+        }
+        return laneReport(record, invalid ?? "the parked batch requires a fresh literal-user confirmation", LANE_NEEDS_HUMAN_NEXT_ACTION, { ...parkedDecision ? { decision: parkedDecision } : {} });
+      }
       const resumed = [];
+      const literalUser = input.literal_user_confirmation === true;
       for (const child of record.children) {
         if (child.state !== "needs_human") {
+          resumed.push(child);
+          continue;
+        }
+        if (!literalUser && child.reason?.startsWith("lane_session_open_rejected")) {
           resumed.push(child);
           continue;
         }
@@ -19407,7 +19358,7 @@ async function runLaneBatch(input, persisted) {
           resumed.push(child);
           continue;
         }
-        if (record.plan_source === "single_task" && child.commit && record.final_report?.return_to_coordinator.status === "blocked" && record.final_report.return_to_coordinator.reason === child.reason) {
+        if (effectiveReturnPolicy(record) === "checkout_delivery" && child.commit && record.final_report?.return_to_coordinator.status === "blocked" && record.final_report.return_to_coordinator.reason === child.reason) {
           resumed.push({ ...child, state: "integrated", reason: null });
           continue;
         }
@@ -19478,11 +19429,11 @@ async function runLaneBatch(input, persisted) {
     if (!preflight.ok)
       return refuse2(input, null, preflight.reason, preflight.message || "Correct the preflight condition and re-confirm.");
     const frozenReview = frozenReviewProfile(input.root, input.review_profile);
-    const freeze = input.executor_freeze ?? input.supervision;
+    const freeze = input.executor_freeze;
     const frozenExecutor = frozenExecutorPreferences(input.root, freeze?.request, freeze?.parentHost);
     record = prepareBatchLaneRunState({
-      plan_source: input.plan_source,
-      executor_mode: input.executor_mode,
+      ...planSourceIdentity(input),
+      ...defaultAgreementPolicies(input),
       topology_digest: input.topology_digest,
       batch_id: input.batch_id,
       initiative_slug: input.initiative_slug,
@@ -19503,6 +19454,15 @@ async function runLaneBatch(input, persisted) {
   const persist = () => {
     record = writeBatchLaneRunState(input.root, record);
   };
+  const sessionPort = input.sessions;
+  if (sessionPort) {
+    if (record.session_provider == null) {
+      record = { ...record, session_provider: sessionPort.provider };
+      persist();
+    } else if (record.session_provider !== sessionPort.provider) {
+      return refuse2(input, record, "lane_session_unavailable", `recorded session provider ${record.session_provider} does not match ${sessionPort.provider}`);
+    }
+  }
   if (persisted && !isParentBranch(record.branch)) {
     const entries = porcelainEntries(input.root);
     if (entries && entries.length > 0) {
@@ -19552,7 +19512,7 @@ async function runLaneBatch(input, persisted) {
     record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "released" } : c);
     persist();
   }
-  const lineage = existsSync17(join30(input.root, ".git")) ? classifyBatchLineage({
+  const lineage = existsSync17(join29(input.root, ".git")) ? classifyBatchLineage({
     root: input.root,
     branch: record.branch ?? "",
     expectedHead: expectedBatchHead(record),
@@ -19595,13 +19555,12 @@ async function runLaneBatch(input, persisted) {
         task_id: request.task_id,
         kind: request.kind,
         text: request.text,
-        text_digest: `sha256:${createHash24("sha256").update(request.text).digest("hex")}`
+        text_digest: `sha256:${createHash25("sha256").update(request.text).digest("hex")}`
       }];
       persist();
       instruction = { task_id: request.task_id, kind: request.kind, accepted: true, reason: null };
     }
   }
-  const sessionClose = applyLaneSessionClose(input, record, lanes, persist);
   const refusals = [];
   let parkedMessage = null;
   const reviewOpen = [];
@@ -19712,7 +19671,7 @@ async function runLaneBatch(input, persisted) {
     }
     if (child.correction_due)
       continue;
-    if (record.executor_mode === "interactive" && laneDecisionFacts(child.task_id, fresh.projection))
+    if (laneDecisionFacts(child.task_id, fresh.projection))
       continue;
     if (fresh.projection.next_obligation === "run_qa" || fresh.projection.artifact_state !== "frozen")
       continue;
@@ -19827,7 +19786,15 @@ async function runLaneBatch(input, persisted) {
     }
   }
   const tracker = await closeIntegratedIssues(input, record, persist);
-  recordClosableSessions(input, record, lanes, persist);
+  if (effectiveReturnPolicy(record) === "retain_branch") {
+    for (const child of [...record.children]) {
+      const update = await cleanupOneIntegratedChild({ root: input.root, branch: record.branch, child, sessions: sessionPort });
+      if (!update)
+        continue;
+      record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, ...update } : c);
+      persist();
+    }
+  }
   refusals.push(...retainedLaneNotices(input.root, record, lanes));
   const offers = [...input.lane_offers ?? []];
   let skewAcknowledged;
@@ -19899,9 +19866,60 @@ async function runLaneBatch(input, persisted) {
     if (failed)
       return failed;
   }
+  if (sessionPort) {
+    for (const child of [...record.children]) {
+      if (!child.lane)
+        continue;
+      if (child.state !== "enrolled" && child.state !== "lane_admitted")
+        continue;
+      const fresh = await readLaneProjection(input, child.lane.path, child.task_id);
+      if (fresh.error !== null)
+        continue;
+      const projection = fresh.projection;
+      const kernelFacts = {
+        recordRevision: projection.record_revision,
+        settled: projection.lifecycle === "done" && projection.completion_ready,
+        hasOpenDecision: (projection.open_user_decision_count ?? 0) > 0,
+        hasReplan: (projection.replan_required_ids?.length ?? 0) > 0
+      };
+      const interventions = (record.interventions ?? []).filter((item) => item.task_id === child.task_id);
+      const lastInstruction = [...interventions].reverse().find((item) => item.kind === "instruction");
+      const lastCorrection = [...interventions].reverse().find((item) => item.kind === "correction");
+      const mode = record.interaction_mode ?? "interactive_host";
+      const onWriteAhead = (writeAhead) => {
+        record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, session: writeAhead } : c);
+        persist();
+      };
+      const result = await reconcileChildSession({
+        port: sessionPort,
+        batchId: record.batch_id,
+        taskId: child.task_id,
+        session: child.session ?? null,
+        kernel: kernelFacts,
+        interactionMode: mode,
+        entry: `drive ${child.task_id}`,
+        laneCwd: child.lane.path,
+        pendingInstruction: lastInstruction ? { text: lastInstruction.text, digest: lastInstruction.text_digest } : null,
+        pendingCorrection: lastCorrection ? { text: lastCorrection.text, digest: lastCorrection.text_digest } : null,
+        onWriteAhead
+      });
+      if (JSON.stringify(result.session) !== JSON.stringify(child.session ?? null)) {
+        record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, session: result.session } : c);
+        persist();
+      }
+      if (result.action === "parked_no_progress") {
+        parkChild(child.task_id, "lane_executor_no_progress: two consecutive stalls without Kernel progress");
+      }
+      if (result.action === "open_refused")
+        refusals.push({ task_id: child.task_id, path: child.lane.path, reason: result.parkedReason ?? "lane_session_open_refused" });
+      if (result.action === "parked_open_rejected")
+        parkChild(child.task_id, result.parkedReason ?? "lane_session_open_rejected");
+    }
+  }
   if (record.children.every((c) => c.state === "integrated" || c.state === "released")) {
     const declared = readDerivedFilesAt(input.root, record.base_head);
-    const singleTask = record.plan_source === "single_task" && isParentBranch(record.branch);
+    const isCheckout = effectiveReturnPolicy(record) === "checkout_delivery";
+    const singleTask = isCheckout && isParentBranch(record.branch);
     const reused = singleTask ? reusableFinalVerification(record.final_report?.final_verification, { head: expectedBatchHead(record), commands: record.final_verification ?? [], declared }) : null;
     const final = reused ?? (record.final_verification?.length || declared.length ? await runFinalVerification(input.root, record.final_verification ?? [], {
       declaration_head: record.base_head,
@@ -19911,28 +19929,73 @@ async function runLaneBatch(input, persisted) {
     if (isParentBranch(record.branch)) {
       record.final_report = await buildBatchFinalReport(input.root, { ...record, final_verification_result: final });
       persist();
-      if (record.plan_source === "single_task") {
-        const child = record.children[0];
+      if (isCheckout) {
+        const required = record.final_verification_required;
+        const mustPass = required !== false;
         const failedChecks = final ? [...final.results, ...(final.derived_checks ?? []).map((item) => ({ ...item, command: item.id }))].filter((item) => !item.passed).map((item) => item.command) : [];
-        const unverified = final && (!final.passed || final.head !== record.final_report.head) ? `final_verification_failed: ${failedChecks.join(", ") || (final.head !== record.final_report.head ? "head_mismatch" : "workspace_changed")}` : null;
-        const delivery = unverified ? { ...record.final_report.return_to_coordinator, status: "blocked", reason: unverified } : deliverSingleTask(input.root, child.lane.base_head, record.final_report.head);
-        record.final_report.return_to_coordinator = delivery;
-        if (delivery.status === "blocked") {
-          record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "needs_human", reason: delivery.reason } : c);
-          record.batch_state = "needs_human";
+        const unverified = mustPass && final && (!final.passed || final.head !== record.final_report.head) ? `final_verification_failed: ${failedChecks.join(", ") || (final.head !== record.final_report.head ? "head_mismatch" : "workspace_changed")}` : null;
+        if (record.children.length === 1) {
+          const child = record.children[0];
+          const delivery = unverified ? { ...record.final_report.return_to_coordinator, status: "blocked", reason: unverified } : deliverSingleTask(input.root, child.lane.base_head, record.final_report.head);
+          record.final_report.return_to_coordinator = delivery;
+          if (delivery.status === "blocked") {
+            record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "needs_human", reason: delivery.reason } : c);
+            record.batch_state = "needs_human";
+            persist();
+            return finalizeLane(input.root, record, delivery.reason, "", { refusals: [...refusals, ...retainedLaneNotices(input.root, record, lanes)], tracker, instruction, ...final ? { final } : {} });
+          }
           persist();
-          return finalizeLane(input.root, record, delivery.reason, "", { refusals: [...refusals, ...retainedLaneNotices(input.root, record, lanes)], tracker, instruction, sessionClose, ...final ? { final } : {} });
+          const fresh = record.children[0];
+          if (!fresh.lane_removed && !fresh.lane_retained) {
+            const update = await cleanupOneIntegratedChild({ root: input.root, branch: record.branch, child: fresh, sessions: sessionPort });
+            if (update) {
+              record.children = record.children.map((c) => c.task_id === fresh.task_id ? { ...c, ...update } : c);
+              persist();
+            }
+          }
+          const current = record.children[0];
+          if (current.lane_removed && record.branch && isParentBranch(record.branch)) {
+            const parent = cleanupParentBranch({ root: input.root, parentRef: record.branch });
+            if (parent.removed) {
+              record.children = record.children.map((c) => c.task_id === current.task_id ? { ...c, lane_removed: { ...current.lane_removed, branches: [...current.lane_removed.branches, record.branch.replace("refs/heads/", "")] } } : c);
+              persist();
+            } else if (parent.condition) {
+              refusals.push({
+                task_id: current.task_id,
+                path: current.lane_removed.worktree,
+                reason: retainedLaneReason(parent.condition)
+              });
+            }
+          }
+        } else {
+          const delivery = unverified ? { ...record.final_report.return_to_coordinator, status: "blocked", reason: unverified } : deliverSingleTask(input.root, record.base_head, record.final_report.head);
+          record.final_report.return_to_coordinator = delivery;
+          if (delivery.status === "blocked") {
+            record.batch_state = "needs_human";
+            persist();
+            return finalizeLane(input.root, record, delivery.reason, "", { refusals: [...refusals, ...retainedLaneNotices(input.root, record, lanes)], tracker, instruction, ...final ? { final } : {} });
+          }
+          persist();
+          for (const child of [...record.children]) {
+            if (child.lane_removed || child.lane_retained)
+              continue;
+            const update = await cleanupOneIntegratedChild({ root: input.root, branch: record.branch, child, sessions: sessionPort });
+            if (!update)
+              continue;
+            record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, ...update } : c);
+            persist();
+          }
+          if (record.branch && isParentBranch(record.branch) && record.children.length > 1 && record.children.every((c) => c.lane_removed)) {
+            const parent = cleanupParentBranch({ root: input.root, parentRef: record.branch });
+            if (!parent.removed && parent.condition) {
+              refusals.push({
+                task_id: record.children[0].task_id,
+                path: record.children[0].lane.path,
+                reason: retainedLaneReason(parent.condition)
+              });
+            }
+          }
         }
-        persist();
-        const outcome = cleanupSingleTaskLane({
-          root: input.root,
-          lanePath: child.lane.path,
-          laneBranch: child.lane.branch,
-          parentRef: record.branch,
-          generation: laneGenerationStore(input.root, record.batch_id).read(),
-          observation: input.lane_exit_observation
-        });
-        record.children = record.children.map((c) => c.task_id !== child.task_id ? c : outcome.status === "removed" ? { ...c, lane_removed: { exit: outcome.exit, worktree: outcome.worktree, branches: outcome.branches } } : { ...c, lane_retained: { condition: outcome.condition } });
       } else
         record.final_report.return_to_coordinator = returnBatchToCoordinator(input.root, record.final_report.head, final ?? null);
     }
@@ -19942,16 +20005,16 @@ async function runLaneBatch(input, persisted) {
     persist();
     return finalizeLane(input.root, record, final && !final.passed ? `all enrollable children integrated; final verification did not pass: ${[...final.results, ...final.derived_checks ?? []].filter((r) => !r.passed).map((r) => r.command).join(", ")}` : final ? "all enrollable children integrated" : "final verification not run", final && !final.passed ? "Every child is integrated but the batch did not pass its final verification; inspect the failing commands against the delivered content. Integrated commits were not rolled back." : "", {
       handoffs: releaseHandoffs(input, record, lanes),
-      refusals: record.plan_source === "single_task" ? [...refusals, ...retainedLaneNotices(input.root, record, lanes)] : refusals,
+      refusals: isCheckout ? [...refusals, ...retainedLaneNotices(input.root, record, lanes)] : refusals,
       tracker,
       instruction,
-      sessionClose,
       ...final ? { final } : {}
     });
   }
   const handoffs = [];
+  let pendingDecision = null;
   for (const child of record.children) {
-    if (child.state !== "enrolled" || !child.lane)
+    if (child.state !== "enrolled" && child.state !== "needs_human" || !child.lane)
       continue;
     if (child.correction_due) {
       handoffs.push({
@@ -19967,9 +20030,17 @@ async function runLaneBatch(input, persisted) {
     }
     const fresh = await readLaneProjection(input, child.lane.path, child.task_id);
     if (fresh.error !== null) {
-      parkChild(child.task_id, laneUnreadableReason(fresh.error, child.task_id, child.lane.run_id));
+      if (child.state === "enrolled")
+        parkChild(child.task_id, laneUnreadableReason(fresh.error, child.task_id, child.lane.run_id));
       continue;
     }
+    const waiting = laneDecisionFacts(child.task_id, fresh.projection, child.lane.path);
+    if (waiting)
+      pendingDecision ??= waiting;
+    if (child.state !== "enrolled")
+      continue;
+    if (waiting)
+      continue;
     handoffs.push({
       role: "executor",
       task_id: child.task_id,
@@ -19978,10 +20049,10 @@ async function runLaneBatch(input, persisted) {
       next_obligation: fresh.projection.next_obligation,
       lane_branch: child.lane.branch,
       lane_path: child.lane.path,
-      ...record.executor_preferences?.executor_host ? { executor: {
-        host: record.executor_preferences.executor_host,
-        ...record.executor_preferences.executor_model ? { model: record.executor_preferences.executor_model } : {},
-        ...record.executor_preferences.executor_effort ? { effort: record.executor_preferences.executor_effort } : {}
+      ...record.executor_preferences?.host ? { executor: {
+        host: record.executor_preferences.host,
+        ...record.executor_preferences.model ? { model: record.executor_preferences.model } : {},
+        ...record.executor_preferences.effort ? { effort: record.executor_preferences.effort } : {}
       } } : {}
     });
   }
@@ -19996,7 +20067,7 @@ async function runLaneBatch(input, persisted) {
     record.final_report = await buildBatchFinalReport(input.root, record);
     record.final_report.return_to_coordinator.reason = "children_not_integrated";
     persist();
-    return finalizeLane(input.root, record, reloadRequired, "Reload the Host so it loads the Parent tip's plugin build (Claude Code: /mcp reconnect; Pi: /reload), then resume the batch with a fresh literal-user confirmation. A resume without reload admits the child with runtime_skew_acknowledged recorded.", { handoffs, refusals, tracker, instruction, sessionClose });
+    return finalizeLane(input.root, record, reloadRequired, "Reload the Host so it loads the Parent tip's plugin build (Claude Code: /mcp reconnect; Pi: /reload), then resume the batch with a fresh literal-user confirmation. A resume without reload admits the child with runtime_skew_acknowledged recorded.", { handoffs, refusals, tracker, instruction });
   }
   if (!inFlight.length && (!startable.length || overBudget)) {
     const parked = record.children.some((c) => c.state === "needs_human" || c.state === "skipped_blocked");
@@ -20006,7 +20077,7 @@ async function runLaneBatch(input, persisted) {
       record.final_report.return_to_coordinator.reason = "children_not_integrated";
     }
     persist();
-    return finalizeLane(input.root, record, parkedMessage ?? (parked ? "a parked child needs a human decision" : overBudget ? `max_children budget exhausted (${record.budget.max_children})` : "no child can start"), "", { refusals, tracker, instruction, sessionClose });
+    return finalizeLane(input.root, record, parkedMessage ?? (parked ? "a parked child needs a human decision" : overBudget ? `max_children budget exhausted (${record.budget.max_children})` : "no child can start"), "", { refusals, tracker, instruction, ...pendingDecision ? { decision: pendingDecision } : {} });
   }
   if (!overBudget && !isParentBranch(record.branch)) {
     for (const taskId of startable) {
@@ -20021,9 +20092,9 @@ async function runLaneBatch(input, persisted) {
     }
   }
   if (reviewOpen.length > 0) {
-    return laneReport(record, reviewOpen.length === 1 ? `child ${reviewOpen[0]} holds an open Review reservation` : `children ${reviewOpen.join(", ")} hold open Review reservations`, "Submit each reserved foreground Review verdict in its own Lane, then call start_unattended_batch again to continue.", { handoffs, refusals, tracker, instruction, sessionClose });
+    return laneReport(record, reviewOpen.length === 1 ? `child ${reviewOpen[0]} holds an open Review reservation` : `children ${reviewOpen.join(", ")} hold open Review reservations`, "Submit each reserved foreground Review verdict in its own Lane, then call start_unattended_batch again to continue.", { handoffs, refusals, tracker, instruction, ...pendingDecision ? { decision: pendingDecision } : {} });
   }
-  return laneReport(record, null, handoffs.some((h) => h.role === "coordinator") ? "For each coordinator handoff, read every round's findings in that Lane, start a new Lane session and send one design-level correction as lane_instruction kind correction; run the other handoffs as usual." : handoffs.some((h) => h.role === "lane-steward" && h.action === "provision") ? "Provide a Lane for each provision handoff, then call start_unattended_batch again with lane_offers." : "Run each executor handoff in its Lane. When a Lane finishes, call start_unattended_batch again with the same Initiative.", { handoffs, refusals, tracker, instruction, sessionClose });
+  return laneReport(record, null, handoffs.some((h) => h.role === "coordinator") ? "For each coordinator handoff, read every round's findings in that Lane, start a new Lane session and send one design-level correction as lane_instruction kind correction; run the other handoffs as usual." : handoffs.some((h) => h.role === "lane-steward" && h.action === "provision") ? "Provide a Lane for each provision handoff, then call start_unattended_batch again with lane_offers." : "Run each executor handoff in its Lane. When a Lane finishes, call start_unattended_batch again with the same Initiative.", { handoffs, refusals, tracker, instruction, ...pendingDecision ? { decision: pendingDecision } : {} });
 }
 
 // plugins/immune-brain/runtime/host-core/mcp_runtime.ts
@@ -20154,7 +20225,9 @@ function createMcpRuntime(profile, options = {}) {
     requestConfirmation: options.requestConfirmation ?? profile.requestConfirmation,
     batchKernel: options.batchKernel,
     batchGit: options.batchGit,
-    readInitiative: options.readInitiative
+    ...options.batchTracker ? { batchTracker: options.batchTracker } : {},
+    readInitiative: options.readInitiative,
+    ...options.sessionPortFactory ? { sessionPortFactory: options.sessionPortFactory } : {}
   });
   let negotiatedVersion;
   let negotiatedInteractive = false;
@@ -20271,7 +20344,7 @@ function createMcpRuntime(profile, options = {}) {
         const task = typeof args.task_id === "string" ? args.task_id : "";
         if (args.stop !== undefined && typeof args.stop !== "boolean")
           throw new Error("stop must be a boolean");
-        for (const key of ["executor_host", "executor_model", "executor_effort", "review_host", "review_model", "review_effort"])
+        for (const key of ["executor_host", "executor_effort", "host", "model", "effort", "review_host", "review_model", "review_effort"])
           if (Object.hasOwn(args, key))
             throw new Error(`unknown parameter: ${key} (use agents)`);
         const requested = parseRequestedAgents(workspace, args.agents);
@@ -21178,18 +21251,18 @@ var CLAUDE_CAPABILITY = validateHostCapabilityDeclaration({
 
 // plugins/immune-brain/runtime/host-core/hook_event_log.ts
 import { lstatSync as lstatSync19, readdirSync as readdirSync11, rmSync as rmSync13 } from "node:fs";
-import { dirname as dirname17, join as join32 } from "node:path";
+import { dirname as dirname17, join as join31 } from "node:path";
 import { tmpdir as tmpdir6 } from "node:os";
 
 // plugins/immune-brain/runtime/host-core/private_file.ts
-import { createHash as createHash25 } from "node:crypto";
-import { constants as constants8, closeSync as closeSync7, fstatSync as fstatSync4, ftruncateSync, lstatSync as lstatSync18, mkdirSync as mkdirSync13, openSync as openSync7, readSync, rmSync as rmSync12, writeSync } from "node:fs";
-import { join as join31 } from "node:path";
+import { createHash as createHash26 } from "node:crypto";
+import { constants as constants7, closeSync as closeSync7, fstatSync as fstatSync4, ftruncateSync, lstatSync as lstatSync18, mkdirSync as mkdirSync13, openSync as openSync7, readSync, rmSync as rmSync12, writeSync } from "node:fs";
+import { join as join30 } from "node:path";
 function sessionHash(sessionId) {
-  return createHash25("sha256").update(sessionId).digest("hex");
+  return createHash26("sha256").update(sessionId).digest("hex");
 }
 function cacheDir(root, cacheName) {
-  return join31(root, cacheName);
+  return join30(root, cacheName);
 }
 function ownedByUs(stat) {
   if (stat.isSymbolicLink())
@@ -21220,7 +21293,7 @@ function ensurePrivateDir(dir) {
 function appendPrivate(path, dir, line) {
   if (!ensurePrivateDir(dir))
     return false;
-  const flags = constants8.O_WRONLY | constants8.O_CREAT | constants8.O_APPEND | constants8.O_NOFOLLOW | constants8.O_NONBLOCK;
+  const flags = constants7.O_WRONLY | constants7.O_CREAT | constants7.O_APPEND | constants7.O_NOFOLLOW | constants7.O_NONBLOCK;
   let fd;
   try {
     fd = openSync7(path, flags, 384);
@@ -21248,7 +21321,7 @@ function dropPrivate(path) {
 function readPrivate(path, maxBytes = Number.POSITIVE_INFINITY) {
   let fd;
   try {
-    fd = openSync7(path, constants8.O_RDONLY | constants8.O_NOFOLLOW | constants8.O_NONBLOCK);
+    fd = openSync7(path, constants7.O_RDONLY | constants7.O_NOFOLLOW | constants7.O_NONBLOCK);
   } catch {
     return;
   }
@@ -21291,7 +21364,7 @@ class MemoryHookEventLog {
   }
 }
 function hookEventPath(cacheName, sessionId, root = tmpdir6()) {
-  return join32(cacheDir(root, cacheName), `${sessionHash(sessionId)}.jsonl`);
+  return join31(cacheDir(root, cacheName), `${sessionHash(sessionId)}.jsonl`);
 }
 
 class FileHookEventLog {
@@ -21313,7 +21386,7 @@ class FileHookEventLog {
     if (!ensurePrivateDir(dir))
       return [];
     try {
-      return readdirSync11(dir).filter((name) => name.endsWith(".jsonl") && !name.endsWith(".events.jsonl")).flatMap((name) => this.readFile(join32(dir, name)));
+      return readdirSync11(dir).filter((name) => name.endsWith(".jsonl") && !name.endsWith(".events.jsonl")).flatMap((name) => this.readFile(join31(dir, name)));
     } catch {
       return [];
     }
@@ -21557,7 +21630,7 @@ class VerifierObservation {
 
 // plugins/immune-brain/runtime/claude/review_host.ts
 import { realpathSync as realpathSync19 } from "node:fs";
-import { basename as basename5, dirname as dirname18, isAbsolute as isAbsolute13, join as join33 } from "node:path";
+import { basename as basename5, dirname as dirname18, isAbsolute as isAbsolute13, join as join32 } from "node:path";
 import { tmpdir as tmpdir7 } from "node:os";
 var AGENT_TOOL = "Agent";
 var VERIFIER_AGENTS = ["immune-brain-review-verifier", "immune-brain:immune-brain-review-verifier"];
@@ -21642,7 +21715,7 @@ function readSyncAgentTranscript(post, stop) {
   const session = post.transcriptPath;
   if (!session || !isAbsolute13(session) || !AGENT_ID_PATTERN.test(post.agentId))
     return;
-  const derived = join33(dirname18(session), basename5(session, ".jsonl"), "subagents", `agent-${post.agentId}.jsonl`);
+  const derived = join32(dirname18(session), basename5(session, ".jsonl"), "subagents", `agent-${post.agentId}.jsonl`);
   return readAgentTranscript(derived);
 }
 function parseReviewMarker(prompt) {
@@ -21866,7 +21939,7 @@ init_lane_workspace();
 import { lstatSync as lstatSync20, realpathSync as realpathSync20 } from "node:fs";
 import { randomUUID as randomUUID12 } from "node:crypto";
 import { homedir as homedir2, tmpdir as tmpdir8 } from "node:os";
-import { join as join35 } from "node:path";
+import { join as join34 } from "node:path";
 
 // plugins/immune-brain/runtime/assurance/active_task_notice.ts
 init_storage();
@@ -21913,7 +21986,7 @@ init_coordinator();
 init_batch_preflight();
 init_intent();
 init_storage();
-import { createHash as createHash26 } from "node:crypto";
+import { createHash as createHash27 } from "node:crypto";
 var UNCHANGED_CONTINUATION_LIMIT = 1;
 var USER_WAIT_GUIDANCE = "If the remaining step is an action only the user can perform, waiting for it is a valid stop: stop without repeating the request you already made.";
 function bindRun(binding) {
@@ -21927,15 +22000,18 @@ function releasesRunBinding(prompt, phase) {
   return phase === "planner" || phase === "brainstorm" || /^(?:stop|cancel|pause)(?:\s+(?:execution|the task|this run))?[.!\s]*$/i.test(prompt.trim()) || /^(?:请)?(?:停止|取消|暂停)(?:执行|任务|本次运行|这个任务)?[。！!\s]*$/.test(prompt.trim());
 }
 function digest(value) {
-  return createHash26("sha256").update(JSON.stringify(value)).digest("hex");
+  return createHash27("sha256").update(JSON.stringify(value)).digest("hex");
 }
 function hasContiguousLaneRebind(record, fromDigest) {
-  if (!isLaneBatchRecord(record) || record.plan_source !== "single_task")
+  if (!isLaneBatchRecord(record))
     return false;
   const rebinds = record.lane_rebinds;
   if (!Array.isArray(rebinds) || rebinds.length === 0)
     return false;
   if (rebinds.at(-1).to_digest !== record.plan_digest)
+    return false;
+  const childIds = new Set(record.children.map((child) => child.task_id));
+  if (rebinds.some((entry) => !childIds.has(entry.task_id)))
     return false;
   return rebinds.some((entry, start) => entry.from_digest === fromDigest && rebinds.slice(start + 1).every((next, offset) => next.from_digest === rebinds[start + offset].to_digest));
 }
@@ -22023,7 +22099,7 @@ async function observeParentRun(binding, boundaryId, review = "unobserved", reco
     throw new Error("Parent continuation has no matching persisted batch identity");
   if (!isLaneBatchRecord(record))
     throw new Error("batch_record_shape_retired: inspect the record, then use retire_stale_batch in the current Host");
-  const plan = await (record.plan_source === "single_task" ? observeSingleTask : observeInitiative)(root, binding.initiative_slug);
+  const plan = await (isSingleTaskRecord(record) ? observeSingleTask : observeInitiative)(root, binding.initiative_slug);
   const completion = await observeParentCompletion(root, binding.initiative_slug, plan.tasks.map((child) => child.task_id));
   let runnable = false;
   let running = false;
@@ -22233,13 +22309,13 @@ function decideRunContinuation(previous, observation) {
 }
 
 // plugins/immune-brain/runtime/assurance/alias_file.ts
-import { closeSync as closeSync8, constants as constants9, fstatSync as fstatSync5, openSync as openSync8, readSync as readSync2, statSync as statSync5 } from "node:fs";
-import { join as join34 } from "node:path";
+import { closeSync as closeSync8, constants as constants8, fstatSync as fstatSync5, openSync as openSync8, readSync as readSync2, statSync as statSync5 } from "node:fs";
+import { join as join33 } from "node:path";
 var MAX_ALIAS_BYTES = 64 * 1024;
 function readAliasFile(path, maxBytes = MAX_ALIAS_BYTES) {
   let fd;
   try {
-    fd = openSync8(path, constants9.O_RDONLY | constants9.O_NONBLOCK);
+    fd = openSync8(path, constants8.O_RDONLY | constants8.O_NONBLOCK);
   } catch (error) {
     if (isAbsent(error))
       return null;
@@ -22262,7 +22338,7 @@ function readAliasFile(path, maxBytes = MAX_ALIAS_BYTES) {
 }
 function localSkillExists(dir, name) {
   try {
-    statSync5(join34(dir, name, "SKILL.md"));
+    statSync5(join33(dir, name, "SKILL.md"));
     return true;
   } catch (error) {
     return !isAbsent(error);
@@ -22301,10 +22377,10 @@ async function activeTaskHookOutput(payload) {
   return JSON.stringify({ hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: notice } });
 }
 function entryLogPath(sessionId, root) {
-  return join35(cacheDir(root, CLAUDE_CACHE_DIR), `${sessionHash(sessionId)}.entry`);
+  return join34(cacheDir(root, CLAUDE_CACHE_DIR), `${sessionHash(sessionId)}.entry`);
 }
 function admissionPath(toolUseId, root) {
-  return join35(cacheDir(root, CLAUDE_CACHE_DIR), `${sessionHash(toolUseId)}.admit`);
+  return join34(cacheDir(root, CLAUDE_CACHE_DIR), `${sessionHash(toolUseId)}.admit`);
 }
 function sessionIdOf(payload) {
   return typeof payload.session_id === "string" ? payload.session_id : "";
@@ -22313,17 +22389,17 @@ function cwdOf(payload) {
   return typeof payload.cwd === "string" && payload.cwd ? payload.cwd : process.cwd();
 }
 function claudeLocalNames(cwd, home) {
-  const roots = [join35(cwd, ".claude"), join35(home, ".claude")];
+  const roots = [join34(cwd, ".claude"), join34(home, ".claude")];
   return {
     alias: (name) => {
       for (const root of roots) {
-        const body = readAliasFile(join35(root, "commands", `${name}.md`));
+        const body = readAliasFile(join34(root, "commands", `${name}.md`));
         if (body !== null)
           return body;
       }
       return null;
     },
-    skill: (name) => roots.some((root) => localSkillExists(join35(root, "skills"), name))
+    skill: (name) => roots.some((root) => localSkillExists(join34(root, "skills"), name))
   };
 }
 function readPhaseEntryState(sessionId, root = tmpdir8(), read = readPrivate) {
@@ -22474,7 +22550,7 @@ import { realpathSync as realpathSync22, openSync as openSync9, fstatSync as fst
 import { tmpdir as tmpdir9, homedir as homedir3 } from "node:os";
 
 // plugins/immune-brain/runtime/assurance/review_mediation.ts
-import { createHash as createHash27 } from "node:crypto";
+import { createHash as createHash28 } from "node:crypto";
 function extractVerdictJson(input) {
   if (typeof input === "string") {
     const first = input.indexOf("{");
@@ -22506,7 +22582,7 @@ function verdictFingerprint(raw) {
   });
 }
 function digestOfReviewerBytes(bytes) {
-  return `sha256:${createHash27("sha256").update(bytes).digest("hex")}`;
+  return `sha256:${createHash28("sha256").update(bytes).digest("hex")}`;
 }
 var RELEASED_REVIEW_RECOVERY = "Call advance_assurance to obtain a new Review reservation, then dispatch one fresh reviewer with the returned envelope unchanged";
 var RETAINED_REVIEW_RECOVERY = "Await the dispatched reviewer once (a Port session's await_command when the reservation carries one), then call submit_review once; do not poll submit_review and do not dispatch another reviewer";
@@ -22568,7 +22644,7 @@ init_storage();
 init_batch_state();
 import { existsSync as existsSync18, lstatSync as lstatSync21, realpathSync as realpathSync21, renameSync as renameSync6, rmSync as rmSync14 } from "node:fs";
 import { randomUUID as randomUUID13 } from "node:crypto";
-import { join as join36 } from "node:path";
+import { join as join35 } from "node:path";
 var NATIVE_OPERATIONS = new Set(["start_unattended_batch", "retire_stale_batch", "request_authorization", "approve_breaking_intent_revision", "request_stop", "stop"]);
 var MAX_METADATA_BYTES = 256 * 1024;
 var NATIVE_FAILURE_LIMIT = 3;
@@ -22584,8 +22660,8 @@ var blank = () => ({
   stop_blocks: 0,
   native_failures: 0
 });
-var statePath2 = (host, sessionId, root) => join36(cacheDir(root, host.cache_name), `${sessionHash(sessionId)}.continuation`);
-var callPath = (host, toolId, root) => join36(cacheDir(root, host.cache_name), `${sessionHash(toolId)}.continuation-call`);
+var statePath2 = (host, sessionId, root) => join35(cacheDir(root, host.cache_name), `${sessionHash(sessionId)}.continuation`);
+var callPath = (host, toolId, root) => join35(cacheDir(root, host.cache_name), `${sessionHash(toolId)}.continuation-call`);
 function drop(host, path, root) {
   if (!existsSync18(path))
     return;
@@ -23035,10 +23111,6 @@ async function runContinuationHookOutput(payload, root = tmpdir9()) {
 // plugins/immune-brain/runtime/host-core/runtime.ts
 init_verdict_authority();
 init_layered_config();
-import { existsSync as existsSync22, readFileSync as readFileSync25, writeFileSync as writeFileSync15 } from "node:fs";
-import { execFileSync as execFileSync16 } from "node:child_process";
-import { dirname as dirname20, join as join41, resolve as resolve16 } from "node:path";
-import { fileURLToPath as fileURLToPath5 } from "node:url";
 init_coordinator();
 init_verification();
 init_assurance_projection();
@@ -23047,6 +23119,9 @@ init_storage();
 init_intent();
 init_canary_application();
 init_authority_port();
+import { existsSync as existsSync22, readFileSync as readFileSync25, writeFileSync as writeFileSync15 } from "node:fs";
+import { execFileSync as execFileSync16 } from "node:child_process";
+import { join as join40 } from "node:path";
 // plugins/immune-brain/runtime/kernel/enrollment_confirmation.ts
 init_no_touch();
 init_risk_floor();
@@ -23199,11 +23274,11 @@ init_actor_identity();
 // plugins/immune-brain/runtime/staged_intent.ts
 import { execFileSync as execFileSync14 } from "node:child_process";
 import { readFileSync as readFileSync22, writeFileSync as writeFileSync13 } from "node:fs";
-import { join as join37 } from "node:path";
+import { join as join36 } from "node:path";
 function captureStagedIntent(root, relativePath) {
   return {
     path: relativePath,
-    bytes: readFileSync22(join37(root, relativePath)),
+    bytes: readFileSync22(join36(root, relativePath)),
     index_state: execFileSync14("git", ["ls-files", "--stage", "-z", "--", relativePath], {
       cwd: root,
       stdio: ["ignore", "pipe", "pipe"]
@@ -23211,7 +23286,7 @@ function captureStagedIntent(root, relativePath) {
   };
 }
 function restoreStagedIntent(root, snapshot) {
-  writeFileSync13(join37(root, snapshot.path), snapshot.bytes);
+  writeFileSync13(join36(root, snapshot.path), snapshot.bytes);
   execFileSync14("git", ["update-index", "--force-remove", "--", snapshot.path], {
     cwd: root,
     stdio: ["ignore", "pipe", "pipe"]
@@ -23223,7 +23298,7 @@ function restoreStagedIntent(root, snapshot) {
       stdio: ["pipe", "ignore", "pipe"]
     });
   }
-  const restoredBytes = readFileSync22(join37(root, snapshot.path));
+  const restoredBytes = readFileSync22(join36(root, snapshot.path));
   if (!restoredBytes.equals(snapshot.bytes)) {
     throw new Error("failed to restore prior intent bytes");
   }
@@ -23246,11 +23321,1633 @@ init_github_issue_tracker();
 init_backend_claim();
 init_batch_preflight();
 
+// plugins/immune-brain/runtime/unattended/batch_agreement.ts
+init_batch_authority();
+var CONFIRMATION_SOURCES = new Set(["native_gate", "tracker_approval", "policy_auto"]);
+var RETURN_POLICIES = new Set(["checkout_delivery", "retain_branch"]);
+var INTERACTION_MODES = new Set(["interactive_host", "parent_relayed"]);
+function invalid2(reason) {
+  return { ok: false, code: "batch_agreement_invalid", reason: `batch_agreement_invalid: ${reason}` };
+}
+function authorizeBatch2(input) {
+  if (!input || typeof input !== "object")
+    return invalid2("agreement must be an object");
+  if (typeof input.batch_id !== "string" || !input.batch_id)
+    return invalid2("batch_id must be a non-empty string");
+  if (typeof input.initiative_slug !== "string" || !input.initiative_slug)
+    return invalid2("initiative_slug must be a non-empty string");
+  if (!Array.isArray(input.children) || input.children.length === 0)
+    return invalid2("children must be a non-empty array");
+  if (typeof input.base_head !== "string" || !input.base_head)
+    return invalid2("base_head must be a non-empty string");
+  if (!input.budget || typeof input.budget !== "object" || !Number.isInteger(input.budget.max_children) || input.budget.max_children <= 0 || !Number.isInteger(input.budget.qa_failure_limit) || input.budget.qa_failure_limit <= 0)
+    return invalid2("budget must carry positive max_children and qa_failure_limit");
+  const confirmation = input.confirmation;
+  if (!confirmation || typeof confirmation !== "object")
+    return invalid2("confirmation must be an object");
+  if (typeof confirmation.source !== "string" || !CONFIRMATION_SOURCES.has(confirmation.source))
+    return invalid2(`unknown confirmation.source ${String(confirmation.source)}`);
+  if (typeof confirmation.ref !== "string" || !confirmation.ref)
+    return invalid2("confirmation.ref must be a non-empty string");
+  const fv = input.final_verification;
+  if (!fv || typeof fv !== "object")
+    return invalid2("final_verification must be an object");
+  if (typeof fv.required !== "boolean")
+    return invalid2("final_verification.required must be a boolean");
+  if (!Array.isArray(fv.commands))
+    return invalid2("final_verification.commands must be an array");
+  for (const command of fv.commands) {
+    if (typeof command !== "string" || !command.trim())
+      return invalid2("final_verification.commands must be non-empty strings");
+  }
+  if (typeof input.return_policy !== "string" || !RETURN_POLICIES.has(input.return_policy))
+    return invalid2(`unknown return_policy ${String(input.return_policy)}`);
+  if (typeof input.interaction_mode !== "string" || !INTERACTION_MODES.has(input.interaction_mode))
+    return invalid2(`unknown interaction_mode ${String(input.interaction_mode)}`);
+  let planDigest;
+  try {
+    planDigest = computeBatchPlanDigest(input.children);
+  } catch (error) {
+    return invalid2(error instanceof Error ? error.message : "invalid child plan");
+  }
+  if (input.plan_digest !== undefined && input.plan_digest !== planDigest)
+    return invalid2("plan_digest does not match the confirmed child plan");
+  if (input.plan_source !== undefined && input.plan_source !== "single_task")
+    return invalid2(`unknown plan_source ${String(input.plan_source)}`);
+  const agreement = {
+    batch_id: input.batch_id,
+    initiative_slug: input.initiative_slug,
+    children: input.children.map((child) => ({ ...child, blocked_by: [...child.blocked_by] })),
+    plan_digest: planDigest,
+    ...input.plan_source ? { plan_source: input.plan_source } : {},
+    ...input.branch ? { branch: input.branch } : {},
+    base_head: input.base_head,
+    budget: { ...input.budget },
+    confirmation: { source: confirmation.source, ref: confirmation.ref },
+    final_verification: { required: fv.required, commands: [...fv.commands] },
+    return_policy: input.return_policy,
+    interaction_mode: input.interaction_mode,
+    ...input.actor ? { actor: input.actor } : {}
+  };
+  return { ok: true, agreement };
+}
+
+// plugins/immune-brain/runtime/session/herdr_provider.ts
+import { randomBytes as randomBytes2 } from "node:crypto";
+
+// plugins/immune-brain/runtime/session/exec.ts
+import { spawn as spawn4 } from "node:child_process";
+function runCommand(env, command, args, signal) {
+  return new Promise((resolve) => {
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+    if (signal?.aborted) {
+      resolve({ code: null, stdout, stderr, aborted: true });
+      return;
+    }
+    const child = spawn4(command, args, { env, stdio: ["ignore", "pipe", "pipe"] });
+    const abort = () => {
+      child.kill("SIGTERM");
+      finish({ code: null, stdout, stderr, aborted: true });
+    };
+    const finish = (result) => {
+      if (settled)
+        return;
+      settled = true;
+      signal?.removeEventListener("abort", abort);
+      resolve(result);
+    };
+    signal?.addEventListener("abort", abort, { once: true });
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    child.once("error", (error) => finish({ code: null, stdout, stderr: stderr || error.message, missing: error.code === "ENOENT" }));
+    child.once("close", (code) => finish({ code, stdout, stderr }));
+  });
+}
+function parseJson(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return;
+  }
+}
+function pick(value, path) {
+  let current = value;
+  for (const key of path) {
+    if (current === null || typeof current !== "object")
+      return;
+    current = current[key];
+  }
+  return current;
+}
+function parseVersion(text) {
+  const match = /(\d+)\.(\d+)\.(\d+)/.exec(text);
+  return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : null;
+}
+function versionAtLeast(version, minimum) {
+  for (let index = 0;index < 3; index++) {
+    if (version[index] !== minimum[index])
+      return version[index] > minimum[index];
+  }
+  return true;
+}
+
+// plugins/immune-brain/runtime/session/supervised_session_port.ts
+var SUPERVISED_SESSION_PROTOCOL = 1;
+var SESSION_STATES = ["working", "blocked", "idle", "done", "unknown"];
+var EXECUTOR_HOSTS2 = ["claude-code", "pi", "antigravity"];
+var SESSION_KEY_PATTERN = /^[a-z0-9-]{1,64}$/;
+function refuse4(code, reason, handle) {
+  return handle === undefined ? { ok: false, code, reason } : { ok: false, code, reason, handle };
+}
+function instructionRefusal(handle, observed) {
+  if (observed.state === "idle" || observed.state === "done")
+    return null;
+  return refuse4("state_refused", `session is ${observed.state}; an instruction is sent only to an idle or done session and nothing was sent`, handle);
+}
+function resumeRefusal(handle, observed) {
+  if (observed.state === "idle" || observed.state === "done")
+    return null;
+  return refuse4("state_refused", `session is ${observed.state}; the entry is resubmitted only to an idle or done session and nothing was sent`, handle);
+}
+function closeRecordRefusal(handle, record) {
+  const unmet = [];
+  if (typeof record?.task_id !== "string" || !/^[a-z0-9][a-z0-9._-]*$/i.test(record.task_id))
+    unmet.push("task_id");
+  const at = record?.recorded_at;
+  if (typeof at !== "string" || !Number.isFinite(Date.parse(at)) || new Date(Date.parse(at)).toISOString() !== at)
+    unmet.push("recorded_at");
+  if (unmet.length === 0)
+    return null;
+  return refuse4("close_unproven", `no recorded session close: ${unmet.join(", ")}; take task_id and at from the batch report's session_closes`, handle);
+}
+function validateSessionKey(key) {
+  if (!SESSION_KEY_PATTERN.test(key))
+    return refuse4("invalid_input", `session_key must match [a-z0-9-]{1,64}: ${JSON.stringify(key)}`);
+  return null;
+}
+function validateCreateInput(input) {
+  if (!input.cwd)
+    return refuse4("invalid_input", "cwd is required");
+  if (!input.label || input.label.length > 32)
+    return refuse4("invalid_input", "label must be 1 to 32 characters");
+  if (input.session_key !== undefined) {
+    const bad = validateSessionKey(input.session_key);
+    if (bad)
+      return bad;
+  }
+  if (!EXECUTOR_HOSTS2.includes(input.host))
+    return refuse4("invalid_input", `host must be one of ${EXECUTOR_HOSTS2.join(", ")}`);
+  if (!input.entry || input.entry.trim() === "")
+    return refuse4("invalid_input", "entry is required");
+  for (const [key, value] of Object.entries(input.env ?? {})) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key))
+      return refuse4("invalid_input", `env name ${JSON.stringify(key)} is not a valid variable name`);
+    if (typeof value !== "string" || /[\0\n\r]/.test(value))
+      return refuse4("invalid_input", `env ${key} must be a single-line string`);
+  }
+  return null;
+}
+function isSessionState(value) {
+  return typeof value === "string" && SESSION_STATES.includes(value);
+}
+
+// plugins/immune-brain/runtime/session/herdr_provider.ts
+var SUPPORTED_HERDR_PROTOCOLS = [22];
+var HERDR_PROMPT_TIMEOUT_MS = 30000;
+var HOST_KIND = { "claude-code": "claude", pi: "pi", antigravity: "agy" };
+function herdrAgentName(label, token) {
+  const suffix = token.toLowerCase().replace(/[^a-z0-9_-]+/g, "").slice(-12);
+  const folded = label.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^[^a-z]+/, "").replace(/[-_]+$/g, "") || "lane";
+  if (!suffix)
+    return folded.slice(0, 32).replace(/[-_]+$/g, "") || "lane";
+  const prefixBudget = 32 - 1 - suffix.length;
+  const prefix = folded.slice(0, prefixBudget).replace(/[-_]+$/g, "") || "lane".slice(0, prefixBudget);
+  return `${prefix}-${suffix}`;
+}
+var HERDR_CLI = {
+  schema: () => ["api", "schema", "--json"],
+  tabList: (workspace) => ["tab", "list", "--workspace", workspace],
+  tabCreate: (workspace, cwd, label, env = {}) => [
+    "tab",
+    "create",
+    "--workspace",
+    workspace,
+    "--cwd",
+    cwd,
+    "--label",
+    label,
+    ...Object.entries(env).flatMap(([key, value]) => ["--env", `${key}=${value}`]),
+    "--no-focus"
+  ],
+  tabGet: (tab) => ["tab", "get", tab],
+  paneGet: (pane) => ["pane", "get", pane],
+  agentStart: (label, kind, pane, hostArgs) => ["agent", "start", label, "--kind", kind, "--pane", pane, "--", ...hostArgs],
+  prompt: (pane, text, timeoutMs) => ["agent", "prompt", pane, text, "--wait", "--until", "working", "--until", "blocked", "--timeout", String(timeoutMs)],
+  wait: (pane, timeoutMs) => [
+    "agent",
+    "wait",
+    pane,
+    "--until",
+    "idle",
+    "--until",
+    "done",
+    "--until",
+    "blocked",
+    "--until",
+    "unknown",
+    ...timeoutMs ? ["--timeout", String(timeoutMs)] : []
+  ],
+  get: (pane) => ["agent", "get", pane],
+  read: (pane, source, lines) => ["pane", "read", pane, "--source", source === "visible" ? "visible" : "recent-unwrapped", ...lines ? ["--lines", String(lines)] : []],
+  sendKeys: (pane, key) => ["agent", "send-keys", pane, key],
+  paneClose: (pane) => ["pane", "close", pane],
+  tabClose: (tab) => ["tab", "close", tab],
+  paneRun: (pane, command) => ["pane", "run", pane, command],
+  waitOutput: (pane, regex) => ["pane", "wait-output", pane, "--regex", regex, "--source", "recent", "--lines", "400"]
+};
+function defaultHerdrExec(env) {
+  return (args, signal) => runCommand(env, "herdr", args, signal);
+}
+function createHerdrViewer(options) {
+  const workspace = options.env.HERDR_WORKSPACE_ID;
+  if (options.env.HERDR_ENV !== "1" || !workspace)
+    return null;
+  const exec = options.exec ?? defaultHerdrExec(options.env);
+  return async ({ cwd, label, argv, env }) => {
+    if (argv.length === 0)
+      return refuse4("invalid_input", "argv is empty");
+    const created = await exec(HERDR_CLI.tabCreate(workspace, cwd, label, env));
+    if (created.missing)
+      return refuse4("provider_unavailable", "the herdr executable is not on PATH");
+    if (created.code !== 0)
+      return refuse4("start_failed", `herdr tab create failed: ${failure(created)}`);
+    const pane = pick(parseJson(created.stdout), ["result", "root_pane", "pane_id"]);
+    if (typeof pane !== "string" || !pane)
+      return refuse4("start_failed", "herdr tab create returned no result.root_pane.pane_id");
+    const ran = await exec(HERDR_CLI.paneRun(pane, `${argv.map(shellWord).join(" ")} && exit`));
+    if (ran.code !== 0)
+      return refuse4("start_failed", `herdr pane run failed: ${failure(ran)}`);
+    return { ok: true };
+  };
+}
+function encodeHerdrHandle(ids) {
+  return `herdr:${[ids.workspace, ids.tab, ids.pane, ids.token].map(encodeURIComponent).join("/")}`;
+}
+function decodeHerdrHandle(handle) {
+  if (!handle.startsWith("herdr:"))
+    return null;
+  const parts = handle.slice("herdr:".length).split("/");
+  if (parts.length !== 4 || parts.some((part) => part === ""))
+    return null;
+  try {
+    const [workspace, tab, pane, token] = parts.map(decodeURIComponent);
+    return { workspace, tab, pane, token };
+  } catch {
+    return null;
+  }
+}
+function herdrTokenMark(token) {
+  return `[imm:${token}]`;
+}
+function shellWord(value) {
+  return /^[A-Za-z0-9_./:=@%+-]+$/.test(value) ? value : `'${value.replace(/'/g, `'\\''`)}'`;
+}
+function sentinelCommand(argv, token) {
+  return {
+    line: `${argv.map(shellWord).join(" ")}; printf 'IMM_%s_%s_%s\\n' ${token} DONE "$?"`,
+    regex: `IMM_${token}_DONE_[0-9]+`
+  };
+}
+function parseHerdrState(stdout) {
+  const value = pick(parseJson(stdout.trim()), ["result", "agent", "agent_status"]);
+  return isSessionState(value) ? value : "unknown";
+}
+function herdrErrorCode(result) {
+  for (const text of [result.stderr, result.stdout]) {
+    const code = pick(parseJson(text.trim()), ["error", "code"]);
+    if (typeof code === "string")
+      return code;
+  }
+  return;
+}
+var EXITED_CODES = new Set(["pane_not_found", "agent_not_running", "agent_not_found"]);
+var STALLED = Symbol("entry stalled");
+var HOST_GONE_CODES = new Set(["agent_not_running", "agent_not_found"]);
+function detected(state) {
+  return { state, provenance: state === "unknown" ? "none" : "detected" };
+}
+function failure(result) {
+  return (result.stderr || result.stdout).trim().slice(0, 500) || `herdr exited ${result.code}`;
+}
+function protocolOf(schema) {
+  for (const path of [["protocol"], ["protocol_version"], ["version", "protocol"], ["info", "protocol"]]) {
+    const value = pick(schema, path);
+    if (typeof value === "number")
+      return value;
+    if (typeof value === "string" && /^\d+$/.test(value))
+      return Number(value);
+  }
+  return;
+}
+function createHerdrSessionProvider(options) {
+  const exec = options.exec ?? defaultHerdrExec(options.env);
+  const promptTimeoutMs = options.promptTimeoutMs ?? HERDR_PROMPT_TIMEOUT_MS;
+  const workspace = options.env.HERDR_WORKSPACE_ID ?? "";
+  const run = async (args, signal) => {
+    const result = await exec(args, signal);
+    if (result.missing)
+      return refuse4("provider_unavailable", "the herdr executable is not on PATH");
+    return result;
+  };
+  const isRefusal = (value) => typeof value === "object" && value !== null && value.ok === false;
+  const own = async (handle) => {
+    const ids = decodeHerdrHandle(handle);
+    if (!ids)
+      return refuse4("not_owned", "handle is not a Herdr session handle", handle);
+    if (!workspace || ids.workspace !== workspace)
+      return refuse4("not_owned", "session is not in the Parent's own Herdr workspace", handle);
+    const pane = await run(HERDR_CLI.paneGet(ids.pane));
+    if (isRefusal(pane))
+      return pane;
+    const tab = await run(HERDR_CLI.tabGet(ids.tab));
+    if (isRefusal(tab))
+      return tab;
+    const marked = tab.code === 0 && String(pick(parseJson(tab.stdout), ["result", "tab", "label"]) ?? "").endsWith(herdrTokenMark(ids.token));
+    if (pane.code !== 0) {
+      if (herdrErrorCode(pane) !== "pane_not_found")
+        return refuse4("provider_error", `herdr pane get failed: ${failure(pane)}`, handle);
+      if (tab.code === 0 && !marked)
+        return refuse4("not_owned", "tab was not created for this session", handle);
+      return { ids, gone: true };
+    }
+    const info = pick(parseJson(pane.stdout), ["result", "pane"]);
+    if (pick(info, ["workspace_id"]) !== ids.workspace || pick(info, ["tab_id"]) !== ids.tab) {
+      return refuse4("not_owned", "pane is not in this session's tab", handle);
+    }
+    if (tab.code !== 0)
+      return refuse4("provider_error", `herdr tab get failed: ${failure(tab)}`, handle);
+    if (!marked)
+      return refuse4("not_owned", "tab was not created for this session", handle);
+    return { ids, gone: false };
+  };
+  const goneRefusal = (handle) => refuse4("state_refused", "the session's pane is gone; nothing was sent; create a new session", handle);
+  const observe = async (handle, pane) => {
+    const result = await run(HERDR_CLI.get(pane));
+    if (isRefusal(result))
+      return result;
+    if (result.code !== 0)
+      return { state: "unknown", provenance: "none" };
+    return detected(parseHerdrState(result.stdout));
+  };
+  async function submit(handle, pane, text, entry = false) {
+    const result = await run(HERDR_CLI.prompt(pane, text, promptTimeoutMs));
+    if (isRefusal(result))
+      return result;
+    if (entry && herdrErrorCode(result) === "agent_prompt_stalled")
+      return STALLED;
+    if (herdrErrorCode(result) === "agent_blocked")
+      return refuse4("state_refused", "session is blocked; Herdr sent nothing", handle);
+    if (result.code !== 0)
+      return refuse4("provider_error", `herdr agent prompt failed; inspect the session state before repeating: ${failure(result)}`, handle);
+    return detected(parseHerdrState(result.stdout));
+  }
+  const submitEntry = async (handle, pane, text) => {
+    const after = await submit(handle, pane, text, true);
+    if (after === STALLED)
+      return {
+        ok: true,
+        handle,
+        entry_submitted: false,
+        state: "unknown",
+        provenance: "none",
+        attention: "The Executor Host never started working on its entry: a dialog (such as sign-in or a selection) may hold the terminal, and the entry text may now sit in it. Ask the user to look at this tab and answer the dialog, then resume this session; do not send the entry again before the user has seen it."
+      };
+    if (isRefusal(after))
+      return after;
+    return { ok: true, handle, entry_submitted: true, ...after };
+  };
+  const startHost = async (handle, pane, label, host, hostArgs, token) => {
+    const started = await run(HERDR_CLI.agentStart(herdrAgentName(label, token), HOST_KIND[host], pane, hostArgs));
+    if (isRefusal(started))
+      return { ...started, handle };
+    if (started.code === 0)
+      return null;
+    if (herdrErrorCode(started) === "agent_not_ready") {
+      return { ok: true, handle, entry_submitted: false, state: "blocked", provenance: "detected" };
+    }
+    return refuse4("start_failed", `herdr agent start failed: ${failure(started)}`, handle);
+  };
+  return {
+    provider: "herdr",
+    protocolVersion: SUPERVISED_SESSION_PROTOCOL,
+    async probe() {
+      if (options.env.HERDR_ENV !== "1")
+        return refuse4("provider_unavailable", "not running inside Herdr (HERDR_ENV is not 1)");
+      if (!workspace)
+        return refuse4("provider_unavailable", "HERDR_WORKSPACE_ID is not set");
+      const result = await run(HERDR_CLI.schema());
+      if (isRefusal(result))
+        return result;
+      if (result.code !== 0)
+        return refuse4("provider_unavailable", `herdr api schema failed: ${failure(result)}`);
+      const protocol = protocolOf(parseJson(result.stdout));
+      if (protocol === undefined)
+        return refuse4("protocol_mismatch", "herdr api schema did not state a protocol version");
+      if (!SUPPORTED_HERDR_PROTOCOLS.includes(protocol)) {
+        return refuse4("protocol_mismatch", `herdr protocol ${protocol} is not one of ${SUPPORTED_HERDR_PROTOCOLS.join(", ")}`);
+      }
+      return { ok: true };
+    },
+    async createSession(input) {
+      const invalid = validateCreateInput(input);
+      if (invalid)
+        return invalid;
+      if (input.resume !== undefined) {
+        const handle = input.resume;
+        const found = await own(handle);
+        if (isRefusal(found))
+          return found;
+        if (found.gone)
+          return goneRefusal(handle);
+        const pane = found.ids.pane;
+        const got = await run(HERDR_CLI.get(pane));
+        if (isRefusal(got))
+          return got;
+        const code = got.code === 0 ? undefined : herdrErrorCode(got);
+        if (code && HOST_GONE_CODES.has(code)) {
+          const restarted = await startHost(handle, pane, input.label, input.host, input.hostArgs, found.ids.token);
+          if (restarted)
+            return restarted;
+        } else {
+          const current = got.code === 0 ? detected(parseHerdrState(got.stdout)) : { state: "unknown", provenance: "none" };
+          const refused = resumeRefusal(handle, current);
+          if (refused)
+            return refused;
+        }
+        return submitEntry(handle, pane, input.entry);
+      }
+      if (!workspace)
+        return refuse4("provider_unavailable", "HERDR_WORKSPACE_ID is not set");
+      const token = input.session_key ?? randomBytes2(6).toString("hex");
+      const created = await run(HERDR_CLI.tabCreate(workspace, input.cwd, `${input.label} ${herdrTokenMark(token)}`, input.env));
+      if (isRefusal(created))
+        return created;
+      if (created.code !== 0)
+        return refuse4("start_failed", `herdr tab create failed: ${failure(created)}`);
+      const json = parseJson(created.stdout);
+      const tab = pick(json, ["result", "tab", "tab_id"]);
+      const pane = pick(json, ["result", "root_pane", "pane_id"]);
+      if (typeof tab !== "string" || typeof pane !== "string" || !tab || !pane) {
+        return refuse4("start_failed", "herdr tab create returned no result.tab.tab_id and result.root_pane.pane_id");
+      }
+      const handle = encodeHerdrHandle({ workspace, tab, pane, token });
+      const started = await startHost(handle, pane, input.label, input.host, input.hostArgs, token);
+      if (started)
+        return started;
+      return submitEntry(handle, pane, input.entry);
+    },
+    async sendInstruction(handle, text) {
+      if (!text.trim())
+        return refuse4("invalid_input", "instruction text is empty", handle);
+      const found = await own(handle);
+      if (isRefusal(found))
+        return found;
+      if (found.gone)
+        return goneRefusal(handle);
+      const ids = found.ids;
+      const current = await observe(handle, ids.pane);
+      if (isRefusal(current))
+        return current;
+      const refused = instructionRefusal(handle, current);
+      if (refused)
+        return refused;
+      const after = await submit(handle, ids.pane, text);
+      if (isRefusal(after))
+        return after;
+      return { ok: true, ...after };
+    },
+    async awaitTransition(handle, waitOptions) {
+      const found = await own(handle);
+      if (isRefusal(found))
+        return found;
+      if (found.gone)
+        return { ok: true, transition: "exited", state: "unknown", provenance: "none" };
+      const ids = found.ids;
+      const result = await run(HERDR_CLI.wait(ids.pane, waitOptions?.timeoutMs), waitOptions?.signal);
+      if (isRefusal(result))
+        return result;
+      if (result.aborted)
+        return { ok: true, transition: "timeout", state: "unknown", provenance: "none" };
+      if (result.code === 0) {
+        const state = parseHerdrState(result.stdout);
+        return { ok: true, transition: "changed", ...detected(state) };
+      }
+      const code = herdrErrorCode(result);
+      if (code === "timeout")
+        return { ok: true, transition: "timeout", state: "unknown", provenance: "none" };
+      if (code && EXITED_CODES.has(code))
+        return { ok: true, transition: "exited", state: "unknown", provenance: "none" };
+      return refuse4("provider_error", `herdr agent wait failed: ${failure(result)}`, handle);
+    },
+    async readOutput(handle, source, readOptions) {
+      const found = await own(handle);
+      if (isRefusal(found))
+        return found;
+      if (found.gone)
+        return refuse4("state_refused", "the session's pane is gone; there is no output to read", handle);
+      const ids = found.ids;
+      const result = await run(HERDR_CLI.read(ids.pane, source, readOptions?.lines));
+      if (isRefusal(result))
+        return result;
+      if (result.code !== 0)
+        return refuse4("provider_error", `herdr pane read failed: ${failure(result)}`, handle);
+      return { ok: true, text: result.stdout, source };
+    },
+    async observeState(handle) {
+      const found = await own(handle);
+      if (isRefusal(found))
+        return found;
+      if (found.gone)
+        return refuse4("provider_error", "herdr pane get failed: pane_not_found", handle);
+      const ids = found.ids;
+      const current = await observe(handle, ids.pane);
+      if (isRefusal(current))
+        return current;
+      return { ok: true, ...current };
+    },
+    async stopSession(handle) {
+      const found = await own(handle);
+      if (isRefusal(found))
+        return found;
+      if (found.gone)
+        return { ok: true };
+      const ids = found.ids;
+      await run(HERDR_CLI.sendKeys(ids.pane, "ctrl+c"));
+      const closed = await run(HERDR_CLI.paneClose(ids.pane));
+      if (isRefusal(closed))
+        return closed;
+      if (closed.code !== 0)
+        return refuse4("provider_error", `herdr pane close failed: ${failure(closed)}`, handle);
+      return { ok: true };
+    },
+    async closeSession(handle, record) {
+      const found = await own(handle);
+      if (isRefusal(found))
+        return found;
+      const unproven = closeRecordRefusal(handle, record);
+      if (unproven)
+        return unproven;
+      const closed = await run(HERDR_CLI.tabClose(found.ids.tab));
+      if (isRefusal(closed))
+        return closed;
+      if (closed.code !== 0 && found.gone)
+        return { ok: true };
+      if (closed.code !== 0)
+        return refuse4("provider_error", `herdr tab close failed: ${failure(closed)}`, handle);
+      return { ok: true };
+    },
+    async findSession(session_key) {
+      const bad = validateSessionKey(session_key);
+      if (bad)
+        return bad;
+      if (!workspace)
+        return refuse4("provider_unavailable", "HERDR_WORKSPACE_ID is not set");
+      const listed = await run(HERDR_CLI.tabList(workspace));
+      if (isRefusal(listed))
+        return listed;
+      if (listed.code !== 0)
+        return refuse4("provider_error", `herdr tab list failed: ${failure(listed)}`);
+      const parsed = parseJson(listed.stdout);
+      const tabs = pick(parsed, ["result", "tabs"]) ?? pick(parsed, ["tabs"]);
+      if (!Array.isArray(tabs))
+        return refuse4("provider_error", "herdr tab list returned no tabs");
+      for (const tab of tabs) {
+        if (!String(pick(tab, ["label"]) ?? "").endsWith(herdrTokenMark(session_key)))
+          continue;
+        const tabId = pick(tab, ["tab_id"]);
+        if (typeof tabId !== "string" || !tabId)
+          continue;
+        if (typeof pick(tab, ["workspace_id"]) === "string" && pick(tab, ["workspace_id"]) !== workspace)
+          continue;
+        const paneId = pick(tab, ["root_pane", "pane_id"]) ?? pick(tab, ["pane_id"]);
+        if (typeof paneId !== "string" || !paneId)
+          continue;
+        return { ok: true, handle: encodeHerdrHandle({ workspace, tab: tabId, pane: paneId, token: session_key }) };
+      }
+      return { ok: true, not_found: true };
+    },
+    async closeWithProof(handle, session_key) {
+      const bad = validateSessionKey(session_key);
+      if (bad)
+        return bad;
+      const ids = decodeHerdrHandle(handle);
+      if (!ids || !workspace || ids.workspace !== workspace || ids.token !== session_key) {
+        return refuse4("not_owned", "handle was not created for this session key", handle);
+      }
+      const found = await own(handle);
+      if (isRefusal(found))
+        return found;
+      if (found.gone) {
+        const listed = await run(HERDR_CLI.tabList(workspace));
+        if (isRefusal(listed))
+          return listed;
+        if (listed.code !== 0)
+          return refuse4("provider_error", `herdr tab list failed: ${failure(listed)}`, handle);
+        const parsed = parseJson(listed.stdout);
+        const tabs = pick(parsed, ["result", "tabs"]) ?? pick(parsed, ["tabs"]);
+        if (!Array.isArray(tabs))
+          return refuse4("provider_error", "herdr tab list returned no tabs", handle);
+        const survivor = tabs.find((tab) => String(pick(tab, ["label"]) ?? "").endsWith(herdrTokenMark(session_key)));
+        if (!survivor)
+          return { ok: true, exited: true, handle, session_key };
+        const survivorTab = pick(survivor, ["tab_id"]);
+        if (survivorTab !== ids.tab)
+          return refuse4("not_owned", "a live tab carries this session key for another session; nothing was closed", handle);
+        const closing = await run(HERDR_CLI.tabClose(ids.tab));
+        if (isRefusal(closing))
+          return closing;
+        if (closing.code !== 0)
+          return refuse4("provider_error", `herdr tab close failed: ${failure(closing)}`, handle);
+        return { ok: true, exited: true, handle, session_key };
+      }
+      const paneClosed = await run(HERDR_CLI.paneClose(found.ids.pane));
+      if (isRefusal(paneClosed))
+        return paneClosed;
+      if (paneClosed.code !== 0)
+        return refuse4("provider_error", `herdr pane close failed: ${failure(paneClosed)}`, handle);
+      const gone = await run(HERDR_CLI.paneGet(found.ids.pane));
+      if (!isRefusal(gone) && gone.code === 0)
+        return refuse4("provider_error", "herdr pane close did not end the pane", handle);
+      if (!isRefusal(gone) && herdrErrorCode(gone) !== "pane_not_found")
+        return refuse4("provider_error", `herdr pane get failed: ${failure(gone)}`, handle);
+      const tabClosed = await run(HERDR_CLI.tabClose(found.ids.tab));
+      if (isRefusal(tabClosed))
+        return tabClosed;
+      if (tabClosed.code !== 0)
+        return refuse4("provider_error", `herdr tab close failed: ${failure(tabClosed)}`, handle);
+      return { ok: true, exited: true, handle, session_key };
+    },
+    async reconcile(handles) {
+      const sessions = [];
+      for (const handle of handles) {
+        const found = await own(handle);
+        if (isRefusal(found)) {
+          if (found.code !== "not_owned")
+            return found;
+          sessions.push({ handle, state: "unknown", provenance: "none", refused: found.code });
+          continue;
+        }
+        if (found.gone) {
+          sessions.push({ handle, state: "unknown", provenance: "none" });
+          continue;
+        }
+        const current = await observe(handle, found.ids.pane);
+        if (isRefusal(current))
+          return current;
+        sessions.push({ handle, ...current });
+      }
+      return { ok: true, sessions };
+    },
+    async runCommand(input) {
+      if (!input.cwd)
+        return refuse4("invalid_input", "cwd is required");
+      if (!input.label || input.label.length > 32)
+        return refuse4("invalid_input", "label must be 1 to 32 characters");
+      if (input.argv.length === 0)
+        return refuse4("invalid_input", "argv is empty");
+      if (!workspace)
+        return refuse4("provider_unavailable", "HERDR_WORKSPACE_ID is not set");
+      const token = randomBytes2(6).toString("hex");
+      const created = await run(HERDR_CLI.tabCreate(workspace, input.cwd, `${input.label} ${herdrTokenMark(token)}`, input.env));
+      if (isRefusal(created))
+        return created;
+      if (created.code !== 0)
+        return refuse4("start_failed", `herdr tab create failed: ${failure(created)}`);
+      const json = parseJson(created.stdout);
+      const tab = pick(json, ["result", "tab", "tab_id"]);
+      const pane = pick(json, ["result", "root_pane", "pane_id"]);
+      if (typeof tab !== "string" || typeof pane !== "string" || !tab || !pane) {
+        return refuse4("start_failed", "herdr tab create returned no result.tab.tab_id and result.root_pane.pane_id");
+      }
+      const handle = encodeHerdrHandle({ workspace, tab, pane, token });
+      const { line, regex } = sentinelCommand(input.argv, token);
+      const ran = await run(HERDR_CLI.paneRun(pane, line));
+      if (isRefusal(ran))
+        return { ...ran, handle };
+      if (ran.code !== 0)
+        return refuse4("start_failed", `herdr pane run failed: ${failure(ran)}`, handle);
+      const waited = await run(HERDR_CLI.waitOutput(pane, regex));
+      if (isRefusal(waited))
+        return { ...waited, handle };
+      if (waited.code !== 0)
+        return refuse4("provider_error", `herdr pane wait-output failed; the command may still run in its tab: ${failure(waited)}`, handle);
+      const matched = String(pick(parseJson(waited.stdout), ["result", "matched_line"]) ?? waited.stdout);
+      const status = new RegExp(`IMM_${token}_DONE_([0-9]+)`).exec(matched);
+      if (!status)
+        return refuse4("provider_error", "herdr pane wait-output returned no exit status", handle);
+      return { ok: true, handle, exit_code: Number(status[1]) };
+    },
+    async sendKeys(handle, key) {
+      const found = await own(handle);
+      if (isRefusal(found))
+        return found;
+      if (found.gone)
+        return goneRefusal(handle);
+      const result = await run(HERDR_CLI.sendKeys(found.ids.pane, key));
+      if (isRefusal(result))
+        return result;
+      if (result.code !== 0)
+        return refuse4("provider_error", `herdr agent send-keys failed: ${failure(result)}`, handle);
+      return { ok: true };
+    }
+  };
+}
+
+// plugins/immune-brain/runtime/session/herdr_core_provider.ts
+import { randomBytes as randomBytes3 } from "node:crypto";
+var HERDR_CORE_MIN_VERSION = [0, 1, 19];
+var HERDR_CORE_GENERATION = 1;
+var HERDR_CORE_METHODS = [
+  "terminal.run",
+  "terminal.get",
+  "terminal.list",
+  "terminal.send",
+  "terminal.wait",
+  "terminal.read",
+  "terminal.keys",
+  "terminal.interrupt",
+  "terminal.kill",
+  "terminal.rm"
+];
+var HOST_STATUS_MINIMUM = {
+  "claude-code": { binary: "claude", version: [2, 1, 295] },
+  pi: { binary: "pi", version: [1, 1, 0] },
+  antigravity: { binary: "agy", version: [1, 4, 0] }
+};
+var OWNER_LABEL = "imm-session";
+var HERDR_CORE_READY_TIMEOUT_MS = 30000;
+var SCROLLBACK_LINES = 200;
+var SESSION_KEY_LABEL = "imm-session-key";
+var HC_CLI = {
+  schema: () => ["schema", "--json"],
+  status: () => ["server", "status", "--json"],
+  list: () => ["list", "--json"],
+  run: (name, cwd, token, argv, sessionKey) => ["run", "--bg", "--json", "--no-parent", "--name", name, "--cwd", cwd, "--label", `${OWNER_LABEL}=${token}`, ...sessionKey !== undefined ? ["--label", `${SESSION_KEY_LABEL}=${sessionKey}`] : [], "--", ...argv],
+  get: (address) => ["get", address, "--json"],
+  send: (address, text, ifState) => ["send", address, text, ...ifState ? ["--if", ifState] : [], "--json"],
+  wait: (address, timeoutSeconds) => ["wait", address, ...timeoutSeconds ? ["--timeout", String(timeoutSeconds)] : [], "--json"],
+  read: (address, lines) => ["read", address, "--lines", String(lines), "--json"],
+  keys: (address, key) => ["keys", address, key, "--json"],
+  interrupt: (address) => ["interrupt", address, "--json"],
+  kill: (address) => ["kill", address, "--json"],
+  rm: (address) => ["rm", address, "--json"]
+};
+var HC_SELECTION_ENV = ["HC_SESSION", "XDG_RUNTIME_DIR", "XDG_STATE_HOME", "XDG_CONFIG_HOME"];
+function encodeHerdrCoreHandle(ids) {
+  return `herdr-core:${encodeURIComponent(ids.address)}/${encodeURIComponent(ids.token)}`;
+}
+function decodeHerdrCoreHandle(handle) {
+  if (!handle.startsWith("herdr-core:"))
+    return null;
+  const parts = handle.slice("herdr-core:".length).split("/");
+  if (parts.length !== 2 || parts.some((part) => part === ""))
+    return null;
+  try {
+    const [address, token] = parts.map(decodeURIComponent);
+    return { address, token };
+  } catch {
+    return null;
+  }
+}
+function herdrCoreName(label, token) {
+  const suffix = token.toLowerCase().replace(/[^a-z0-9_-]+/g, "").slice(0, 12);
+  const folded = label.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "lane";
+  if (!suffix)
+    return folded.slice(0, 32).replace(/[-_]+$/g, "") || "lane";
+  const prefixBudget = 32 - 1 - suffix.length;
+  const prefix = folded.slice(0, prefixBudget).replace(/[-_]+$/g, "") || "lane".slice(0, prefixBudget);
+  return `${prefix}-${suffix}`;
+}
+function coreState(word) {
+  if (typeof word === "string" && word !== "error" && isSessionState(word) && word !== "unknown")
+    return { state: word, provenance: "reported" };
+  return { state: "unknown", provenance: "none" };
+}
+function hcErrorKind(result) {
+  for (const text of [result.stderr, result.stdout]) {
+    const kind = pick(parseJson(text.trim()), ["error", "kind"]);
+    if (typeof kind === "string")
+      return kind;
+  }
+  return;
+}
+function failure2(result) {
+  return (result.stderr || result.stdout).trim().slice(0, 500) || `hc exited ${result.code}`;
+}
+function newToken() {
+  return randomBytes3(12).toString("hex");
+}
+function createHerdrCoreSessionProvider(options) {
+  const exec = options.exec ?? ((command, args, signal) => runCommand(options.env, command, args, signal));
+  const readyTimeoutMs = options.readyTimeoutMs ?? HERDR_CORE_READY_TIMEOUT_MS;
+  const pollMs = options.pollMs ?? 250;
+  const sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+  const isRefusal = (value) => typeof value === "object" && value !== null && value.ok === false;
+  const hc = async (args, signal) => {
+    const result = await exec("hc", args, signal);
+    if (result.missing)
+      return refuse4("provider_unavailable", "the hc executable is not on PATH");
+    return result;
+  };
+  const owned = async (handle) => {
+    const ids = decodeHerdrCoreHandle(handle);
+    if (!ids)
+      return refuse4("not_owned", "handle is not a herdr-core session handle", handle);
+    const result = await hc(HC_CLI.get(ids.address));
+    if (isRefusal(result))
+      return result;
+    if (result.code !== 0) {
+      if (hcErrorKind(result) === "not_found")
+        return refuse4("not_owned", "no such terminal on this core", handle);
+      return refuse4("provider_error", `hc get failed: ${failure2(result)}`, handle);
+    }
+    const terminal = parseJson(result.stdout);
+    if (pick(terminal, ["labels", OWNER_LABEL]) !== ids.token)
+      return refuse4("not_owned", "terminal was not created for this session", handle);
+    return { ids, terminal };
+  };
+  const observed = (terminal) => pick(terminal, ["state"]) === "finished" ? { state: "unknown", provenance: "none" } : coreState(pick(terminal, ["status", "state"]));
+  const send = async (handle, address, text, ifState) => {
+    const result = await hc(HC_CLI.send(address, text, ifState));
+    if (isRefusal(result))
+      return result;
+    if (result.code !== 0) {
+      const kind = hcErrorKind(result);
+      if (kind === "status_mismatch")
+        return refuse4("state_refused", "session is not idle; core sent nothing", handle);
+      if (kind === "blocked")
+        return refuse4("state_refused", "session is blocked; core sent nothing", handle);
+      return refuse4("provider_error", `hc send failed; inspect the session state before repeating: ${failure2(result)}`, handle);
+    }
+    const json = parseJson(result.stdout);
+    if (pick(json, ["started"]) === true)
+      return { state: "working", provenance: "reported" };
+    return coreState(pick(json, ["status"]));
+  };
+  const selection = Object.fromEntries(HC_SELECTION_ENV.flatMap((key) => options.env[key] ? [[key, options.env[key]]] : []));
+  const openViewer = async (address, name, cwd) => {
+    if (!options.viewer)
+      return { opened: false, reason: `not inside Herdr; watch it with \`hc attach ${address}\` in another terminal` };
+    const opened = await options.viewer({ cwd, label: `${name} (hc ${address})`, argv: ["hc", "attach", address], env: selection });
+    return opened.ok ? { opened: true } : { opened: false, reason: opened.reason };
+  };
+  const hostVersionRefusal = async (host) => {
+    const { binary, version } = HOST_STATUS_MINIMUM[host];
+    const result = await exec(binary, ["--version"]);
+    if (result.missing)
+      return refuse4("provider_unavailable", `the ${binary} executable is not on PATH`);
+    const found = parseVersion(`${result.stdout}
+${result.stderr}`);
+    if (result.code !== 0 || !found)
+      return refuse4("provider_unavailable", `${binary} --version reported no version`);
+    if (!versionAtLeast(found, version)) {
+      return refuse4("provider_unavailable", `${binary} ${found.join(".")} does not report OSC 7501; ${version.join(".")} or newer is required on herdr-core`);
+    }
+    return null;
+  };
+  return {
+    provider: "herdr-core",
+    protocolVersion: SUPERVISED_SESSION_PROTOCOL,
+    async probe() {
+      const schema = await hc(HC_CLI.schema());
+      if (isRefusal(schema))
+        return schema;
+      if (schema.code !== 0)
+        return refuse4("provider_unavailable", `hc schema failed: ${failure2(schema)}`);
+      const json = parseJson(schema.stdout);
+      const version = parseVersion(String(pick(json, ["info", "version"]) ?? ""));
+      if (!version || !versionAtLeast(version, HERDR_CORE_MIN_VERSION)) {
+        return refuse4("protocol_mismatch", `herdr-core ${HERDR_CORE_MIN_VERSION.join(".")} or newer is required`);
+      }
+      const generation = /Protocol generation (\d+)/.exec(String(pick(json, ["info", "description"]) ?? ""));
+      if (!generation || Number(generation[1]) !== HERDR_CORE_GENERATION) {
+        return refuse4("protocol_mismatch", `herdr-core protocol generation ${HERDR_CORE_GENERATION} is required`);
+      }
+      const methods = new Set((Array.isArray(pick(json, ["methods"])) ? pick(json, ["methods"]) : []).map((method) => pick(method, ["name"])));
+      const missing = HERDR_CORE_METHODS.filter((method) => !methods.has(method));
+      if (missing.length > 0)
+        return refuse4("protocol_mismatch", `herdr-core lacks ${missing.join(", ")}`);
+      const status = await hc(HC_CLI.status());
+      if (isRefusal(status))
+        return status;
+      if (status.code !== 0)
+        return refuse4("provider_unavailable", `no herdr-core server answered: ${failure2(status)}`);
+      return { ok: true };
+    },
+    async createSession(input) {
+      const invalid = validateCreateInput(input);
+      if (invalid)
+        return invalid;
+      if (input.resume !== undefined) {
+        const found = await owned(input.resume);
+        if (isRefusal(found))
+          return found;
+        if (pick(found.terminal, ["state"]) === "finished") {
+          return refuse4("state_refused", "the session's terminal finished; core cannot restart it in place; nothing was sent; create a new session", input.resume);
+        }
+        const current = observed(found.terminal);
+        const refused = resumeRefusal(input.resume, current);
+        if (refused)
+          return refused;
+        const after = await send(input.resume, found.ids.address, input.entry, current.state === "idle" ? "idle" : undefined);
+        if (isRefusal(after))
+          return after;
+        return { ok: true, handle: input.resume, entry_submitted: true, ...after };
+      }
+      const tooOld = await hostVersionRefusal(input.host);
+      if (tooOld)
+        return tooOld;
+      const token = newToken();
+      const name = herdrCoreName(input.label, token);
+      const envPrefix = Object.entries(input.env ?? {}).map(([key, value]) => `${key}=${value}`);
+      const argv = [...envPrefix.length > 0 ? ["env", ...envPrefix] : [], HOST_STATUS_MINIMUM[input.host].binary, ...input.hostArgs];
+      const started = await hc(HC_CLI.run(name, input.cwd, token, argv, input.session_key));
+      if (isRefusal(started))
+        return started;
+      if (started.code !== 0)
+        return refuse4("start_failed", `hc run failed: ${failure2(started)}`);
+      const address = pick(parseJson(started.stdout), ["address"]);
+      if (typeof address !== "string" || !address)
+        return refuse4("start_failed", "hc run returned no address");
+      const handle = encodeHerdrCoreHandle({ address, token });
+      const viewer = options.viewer ? await openViewer(address, name, input.cwd) : undefined;
+      const shown = viewer ? { viewer } : {};
+      const deadline = Date.now() + readyTimeoutMs;
+      for (;; ) {
+        const found = await owned(handle);
+        if (isRefusal(found))
+          return { ...found, handle };
+        if (pick(found.terminal, ["state"]) === "finished")
+          return refuse4("start_failed", "the Executor Host exited before it reported a status", handle);
+        const current = observed(found.terminal);
+        if (current.state === "blocked")
+          return { ok: true, handle, entry_submitted: false, ...current, ...shown };
+        if (current.state === "idle") {
+          const after = await send(handle, address, input.entry, "idle");
+          if (isRefusal(after))
+            return after;
+          return { ok: true, handle, entry_submitted: true, ...after, ...shown };
+        }
+        if (Date.now() >= deadline) {
+          return {
+            ok: true,
+            handle,
+            entry_submitted: false,
+            state: "unknown",
+            provenance: "none",
+            attention: `The Executor Host reported no status within ${readyTimeoutMs} ms and the entry was not submitted. It may be waiting on a startup dialog (such as workspace trust) or report no status at all; look ${viewer?.opened ? "in its viewer tab" : `with \`hc attach ${address}\` in another terminal`}, answer it there, then resume this session.`,
+            ...shown
+          };
+        }
+        await sleep(pollMs);
+      }
+    },
+    async sendInstruction(handle, text) {
+      if (!text.trim())
+        return refuse4("invalid_input", "instruction text is empty", handle);
+      const found = await owned(handle);
+      if (isRefusal(found))
+        return found;
+      const current = observed(found.terminal);
+      const refused = instructionRefusal(handle, current);
+      if (refused)
+        return refused;
+      const after = await send(handle, found.ids.address, text, current.state === "idle" ? "idle" : undefined);
+      if (isRefusal(after))
+        return after;
+      return { ok: true, ...after };
+    },
+    async awaitTransition(handle, waitOptions) {
+      const found = await owned(handle);
+      if (isRefusal(found))
+        return found;
+      const bounded = waitOptions?.timeoutMs !== undefined && waitOptions.timeoutMs > 0;
+      for (;; ) {
+        const result = await hc(HC_CLI.wait(found.ids.address, bounded ? waitOptions.timeoutMs / 1000 : undefined), waitOptions?.signal);
+        if (isRefusal(result))
+          return result;
+        if (result.aborted)
+          return { ok: true, transition: "timeout", state: "unknown", provenance: "none" };
+        if (result.code !== 0) {
+          if (hcErrorKind(result) === "finished")
+            return { ok: true, transition: "exited", state: "unknown", provenance: "none" };
+          return refuse4("provider_error", `hc wait failed: ${failure2(result)}`, handle);
+        }
+        const json = parseJson(result.stdout);
+        const reason = pick(json, ["reason"]);
+        if (reason === "exit")
+          return { ok: true, transition: "exited", state: "unknown", provenance: "none" };
+        if (reason === "timeout") {
+          if (!bounded)
+            continue;
+          return { ok: true, transition: "timeout", state: "unknown", provenance: "none" };
+        }
+        if (reason === "message")
+          continue;
+        return { ok: true, transition: "changed", ...coreState(pick(json, ["status"])) };
+      }
+    },
+    async readOutput(handle, source, readOptions) {
+      const found = await owned(handle);
+      if (isRefusal(found))
+        return found;
+      const result = await hc(HC_CLI.read(found.ids.address, source === "visible" ? 0 : readOptions?.lines ?? SCROLLBACK_LINES));
+      if (isRefusal(result))
+        return result;
+      if (result.code !== 0)
+        return refuse4("provider_error", `hc read failed: ${failure2(result)}`, handle);
+      const text = pick(parseJson(result.stdout), ["text"]);
+      return { ok: true, text: typeof text === "string" ? text : "", source };
+    },
+    async observeState(handle) {
+      const found = await owned(handle);
+      if (isRefusal(found))
+        return found;
+      return { ok: true, ...observed(found.terminal) };
+    },
+    async attachSession(handle) {
+      const found = await owned(handle);
+      if (isRefusal(found))
+        return found;
+      if (pick(found.terminal, ["state"]) === "finished")
+        return refuse4("state_refused", "the session's terminal finished; there is nothing to watch", handle);
+      const name = String(pick(found.terminal, ["name"]) ?? "lane");
+      const cwd = String(pick(found.terminal, ["cwd"]) ?? options.env.PWD ?? process.cwd());
+      const viewer = await openViewer(found.ids.address, name, cwd);
+      return viewer.opened ? { ok: true } : refuse4("provider_unavailable", viewer.reason, handle);
+    },
+    async stopSession(handle) {
+      const found = await owned(handle);
+      if (isRefusal(found))
+        return found;
+      if (pick(found.terminal, ["state"]) === "finished")
+        return { ok: true };
+      await hc(HC_CLI.interrupt(found.ids.address));
+      const killed = await hc(HC_CLI.kill(found.ids.address));
+      if (isRefusal(killed))
+        return killed;
+      if (killed.code !== 0 && hcErrorKind(killed) !== "finished")
+        return refuse4("provider_error", `hc kill failed: ${failure2(killed)}`, handle);
+      return { ok: true };
+    },
+    async closeSession(handle, record) {
+      const found = await owned(handle);
+      if (isRefusal(found))
+        return found;
+      const unproven = closeRecordRefusal(handle, record);
+      if (unproven)
+        return unproven;
+      if (pick(found.terminal, ["state"]) !== "finished") {
+        const killed = await hc(HC_CLI.kill(found.ids.address));
+        if (isRefusal(killed))
+          return killed;
+        if (killed.code !== 0 && hcErrorKind(killed) !== "finished")
+          return refuse4("provider_error", `hc kill failed: ${failure2(killed)}`, handle);
+      }
+      const removed = await hc(HC_CLI.rm(found.ids.address));
+      if (isRefusal(removed))
+        return removed;
+      if (removed.code !== 0)
+        return refuse4("provider_error", `hc rm failed: ${failure2(removed)}`, handle);
+      return { ok: true };
+    },
+    async findSession(session_key) {
+      const bad = validateSessionKey(session_key);
+      if (bad)
+        return bad;
+      const listed = await hc(HC_CLI.list());
+      if (isRefusal(listed))
+        return listed;
+      if (listed.code !== 0)
+        return refuse4("provider_error", `hc list failed: ${failure2(listed)}`);
+      const parsed = parseJson(listed.stdout);
+      const terminals = pick(parsed, ["terminals"]) ?? pick(parsed, ["result", "terminals"]);
+      if (!Array.isArray(terminals))
+        return refuse4("provider_error", "hc list returned no terminals");
+      for (const terminal of terminals) {
+        if (pick(terminal, ["state"]) === "finished")
+          continue;
+        if (pick(terminal, ["labels", SESSION_KEY_LABEL]) !== session_key)
+          continue;
+        const address = pick(terminal, ["address"]);
+        const token = pick(terminal, ["labels", OWNER_LABEL]);
+        if (typeof address !== "string" || !address || typeof token !== "string" || !token)
+          continue;
+        return { ok: true, handle: encodeHerdrCoreHandle({ address, token }) };
+      }
+      return { ok: true, not_found: true };
+    },
+    async closeWithProof(handle, session_key) {
+      const bad = validateSessionKey(session_key);
+      if (bad)
+        return bad;
+      const ids = decodeHerdrCoreHandle(handle);
+      if (!ids)
+        return refuse4("not_owned", "handle is not a herdr-core session handle", handle);
+      const found = await owned(handle);
+      if (isRefusal(found)) {
+        if (found.code !== "not_owned")
+          return found;
+        const listed = await hc(HC_CLI.list());
+        if (isRefusal(listed))
+          return listed;
+        if (listed.code !== 0)
+          return refuse4("provider_error", `hc list failed: ${failure2(listed)}`, handle);
+        const parsed = parseJson(listed.stdout);
+        const terminals = pick(parsed, ["terminals"]) ?? pick(parsed, ["result", "terminals"]);
+        if (Array.isArray(terminals)) {
+          const survivor = terminals.some((t) => pick(t, ["state"]) !== "finished" && pick(t, ["labels", SESSION_KEY_LABEL]) === session_key);
+          if (!survivor)
+            return { ok: true, exited: true, handle, session_key };
+        }
+        return found;
+      }
+      if (pick(found.terminal, ["labels", SESSION_KEY_LABEL]) !== undefined && pick(found.terminal, ["labels", SESSION_KEY_LABEL]) !== session_key) {
+        return refuse4("not_owned", "terminal was not created for this session key", handle);
+      }
+      if (pick(found.terminal, ["labels", SESSION_KEY_LABEL]) === undefined && pick(found.terminal, ["labels", OWNER_LABEL]) !== session_key) {
+        return refuse4("not_owned", "terminal was not created for this session key", handle);
+      }
+      if (pick(found.terminal, ["state"]) !== "finished") {
+        const killed = await hc(HC_CLI.kill(found.ids.address));
+        if (isRefusal(killed))
+          return killed;
+        if (killed.code !== 0 && hcErrorKind(killed) !== "finished")
+          return refuse4("provider_error", `hc kill failed: ${failure2(killed)}`, handle);
+      }
+      const removed = await hc(HC_CLI.rm(found.ids.address));
+      if (isRefusal(removed))
+        return removed;
+      if (removed.code !== 0)
+        return refuse4("provider_error", `hc rm failed: ${failure2(removed)}`, handle);
+      return { ok: true, exited: true, handle, session_key };
+    },
+    async reconcile(handles) {
+      const sessions = [];
+      for (const handle of handles) {
+        const found = await owned(handle);
+        if (isRefusal(found)) {
+          if (found.code === "provider_unavailable")
+            return found;
+          sessions.push({ handle, state: "unknown", provenance: "none", ...found.code === "not_owned" ? { refused: found.code } : {} });
+          continue;
+        }
+        sessions.push({ handle, ...observed(found.terminal) });
+      }
+      return { ok: true, sessions };
+    },
+    async sendKeys(handle, key) {
+      const found = await owned(handle);
+      if (isRefusal(found))
+        return found;
+      const result = await hc(HC_CLI.keys(found.ids.address, key));
+      if (isRefusal(result))
+        return result;
+      if (result.code !== 0)
+        return refuse4("provider_error", `hc keys failed: ${failure2(result)}`, handle);
+      return { ok: true };
+    }
+  };
+}
+
+// plugins/immune-brain/runtime/session/provider_registry.ts
+var EXECUTOR_HOSTS3 = ["claude-code", "pi", "antigravity"];
+function herdrCheck(env) {
+  if (env.HERDR_ENV !== "1")
+    return { ok: false, reason: "not running inside Herdr (HERDR_ENV is not 1)" };
+  if (!env.HERDR_WORKSPACE_ID)
+    return { ok: false, reason: "HERDR_WORKSPACE_ID is not set" };
+  return { ok: true };
+}
+var HERDR_RECOVERY = "run inside Herdr with HERDR_ENV=1 and HERDR_WORKSPACE_ID set to the Parent workspace";
+var HERDR_CORE_RECOVERY = "ensure hc 0.1.19+ is installed and a core server answers (hc server status --json)";
+var HERDR_DESCRIPTOR = {
+  name: "herdr",
+  checkEnv: herdrCheck,
+  recovery: HERDR_RECOVERY,
+  factory: (env) => createHerdrSessionProvider({ env }),
+  roles: {
+    executor: { hosts: [...EXECUTOR_HOSTS3], workspace: "local_path", find_by_key: true, exit_proof: true },
+    authority: { hosts: [...EXECUTOR_HOSTS3] },
+    advisory: { hosts: [...EXECUTOR_HOSTS3] }
+  }
+};
+var HERDR_CORE_DESCRIPTOR = {
+  name: "herdr-core",
+  checkEnv: () => ({ ok: true }),
+  recovery: HERDR_CORE_RECOVERY,
+  factory: (env) => createHerdrCoreSessionProvider({ env, viewer: createHerdrViewer({ env }) ?? undefined }),
+  roles: {
+    executor: { hosts: [], workspace: "local_path", find_by_key: true, exit_proof: false }
+  }
+};
+var SESSION_PROVIDER_REGISTRY = [HERDR_DESCRIPTOR, HERDR_CORE_DESCRIPTOR];
+function resolveSessionProvider(options) {
+  const registry = options.registry ?? SESSION_PROVIDER_REGISTRY;
+  const reasons = [];
+  for (const name of options.providers) {
+    const descriptor = registry.find((d) => d.name === name);
+    if (!descriptor) {
+      reasons.push({ provider: name, reason: `unknown session provider ${JSON.stringify(name)}`, recovery: "choose one of herdr, herdr-core" });
+      continue;
+    }
+    const envCheck = descriptor.checkEnv(options.env);
+    if (!envCheck.ok) {
+      reasons.push({ provider: name, reason: envCheck.reason, recovery: descriptor.recovery });
+      continue;
+    }
+    if (options.role === "executor") {
+      const admission = descriptor.roles.executor;
+      if (!admission) {
+        reasons.push({ provider: name, reason: "no executor role", recovery: descriptor.recovery });
+        continue;
+      }
+      if (!admission.hosts.includes(options.host)) {
+        reasons.push({ provider: name, reason: `host ${options.host} not admitted`, recovery: `use one of ${admission.hosts.join(", ") || "none admitted"}` });
+        continue;
+      }
+      if (admission.workspace !== "local_path") {
+        reasons.push({ provider: name, reason: "no local_path workspace", recovery: descriptor.recovery });
+        continue;
+      }
+      if (!admission.find_by_key) {
+        reasons.push({ provider: name, reason: "no find_by_key", recovery: descriptor.recovery });
+        continue;
+      }
+      return { ok: true, provider: name, descriptor };
+    }
+    const admission = descriptor.roles[options.role];
+    if (!admission) {
+      reasons.push({ provider: name, reason: `no ${options.role} role`, recovery: descriptor.recovery });
+      continue;
+    }
+    if (!admission.hosts.includes(options.host)) {
+      reasons.push({ provider: name, reason: `host ${options.host} not admitted`, recovery: `use one of ${admission.hosts.join(", ") || "none admitted"}` });
+      continue;
+    }
+    return { ok: true, provider: name, descriptor };
+  }
+  return { ok: false, code: "lane_session_unavailable", reasons };
+}
+
+// plugins/immune-brain/runtime/lane_sessions/index.ts
+init_batch_state();
+
+// plugins/immune-brain/runtime/lane_sessions/session_port_adapter.ts
+function isRefusal(value) {
+  return typeof value === "object" && value !== null && value.ok === false;
+}
+function refusalReason(value) {
+  return typeof value.reason === "string" ? value.reason : "provider failure";
+}
+function isPaneNotFound(reason) {
+  return reason.includes("pane_not_found");
+}
+
+class SessionPortAdapter {
+  provider;
+  port;
+  host;
+  hostArgs;
+  constructor(port, host, hostArgs = []) {
+    this.port = port;
+    this.provider = port.provider;
+    this.host = host;
+    this.hostArgs = [...hostArgs];
+  }
+  async open(input) {
+    const result = await this.port.createSession({
+      cwd: input.cwd,
+      label: input.label,
+      host: this.host,
+      hostArgs: this.hostArgs,
+      entry: input.entry,
+      session_key: input.key,
+      ...input.env && Object.keys(input.env).length > 0 ? { env: input.env } : {}
+    });
+    if (isRefusal(result))
+      return { ok: false, code: result.code, reason: result.reason };
+    return { ok: true, handle: result.handle, entry_submitted: result.entry_submitted, ...result.attention !== undefined ? { attention: result.attention ?? null } : {} };
+  }
+  async resume(handle, entry) {
+    const result = await this.port.createSession({
+      cwd: ".",
+      label: "resume",
+      host: this.host,
+      hostArgs: this.hostArgs,
+      entry,
+      resume: handle
+    });
+    if (isRefusal(result)) {
+      return { ok: false, code: result.code, reason: result.reason };
+    }
+    return { ok: true, entry_submitted: result.entry_submitted };
+  }
+  async find(key) {
+    if (!this.port.findSession)
+      return { ok: true, not_found: true };
+    const result = await this.port.findSession(key);
+    if (isRefusal(result)) {
+      const reason = refusalReason(result);
+      if (isPaneNotFound(reason))
+        return { ok: true, not_found: true };
+      return { ok: false, code: result.code, reason: result.reason };
+    }
+    return result;
+  }
+  async observe(handle) {
+    const result = await this.port.observeState(handle);
+    if (isRefusal(result)) {
+      const reason = refusalReason(result);
+      if (isPaneNotFound(reason))
+        return { ok: true, state: "exited" };
+      return { ok: true, state: "unknown" };
+    }
+    if (result.state === "working" || result.state === "blocked" || result.state === "idle" || result.state === "done" || result.state === "unknown") {
+      return { ok: true, state: result.state };
+    }
+    return { ok: true, state: "unknown" };
+  }
+  async send(handle, text) {
+    const result = await this.port.sendInstruction(handle, text);
+    if (isRefusal(result))
+      return { ok: false, code: result.code, reason: result.reason };
+    return { ok: true, state: result.state };
+  }
+  async stop(handle) {
+    const result = await this.port.stopSession(handle);
+    if (isRefusal(result)) {
+      const reason = refusalReason(result);
+      if (isPaneNotFound(reason))
+        return { ok: true };
+      return { ok: false, code: result.code, reason: result.reason };
+    }
+    return { ok: true };
+  }
+  async closeWithProof(handle, key) {
+    if (!this.port.closeWithProof)
+      return { ok: false, code: "provider_unavailable", reason: `provider ${this.provider} has no close proof` };
+    const result = await this.port.closeWithProof(handle, key);
+    if (isRefusal(result)) {
+      const reason = refusalReason(result);
+      if (isPaneNotFound(reason))
+        return { ok: true, exited: true, handle, key };
+      return { ok: false, code: result.code, reason: result.reason };
+    }
+    return { ok: true, exited: true, handle, key };
+  }
+}
+
+// plugins/immune-brain/runtime/lane_sessions/index.ts
+function hostArgsFor(deps, taskId) {
+  if (!deps.hostArgs)
+    return [];
+  return typeof deps.hostArgs === "function" ? deps.hostArgs(taskId) : [...deps.hostArgs];
+}
+function resumeChildren(record) {
+  return record.children.map((child) => {
+    const identity = record.intent_identities?.[child.task_id];
+    return {
+      task_id: child.task_id,
+      slice_id: child.slice_id,
+      blocked_by: [...child.blocked_by],
+      status: "enrollable",
+      reason: null,
+      intent_path: identity?.intent_path ?? null,
+      intent_revision: identity?.intent_revision ?? null,
+      intent_content_hash: identity?.intent_content_hash ?? null,
+      ...identity?.intent_authority_hash ? { intent_authority_hash: identity.intent_authority_hash } : {}
+    };
+  });
+}
+function executorSessionTarget(input) {
+  const choice = laneExecutorChoice(input.root, input.executor, input.host) ?? { host: input.host };
+  const hostArgs = [];
+  if (choice.model)
+    hostArgs.push("--model", choice.model);
+  if (choice.effort)
+    hostArgs.push(choice.host === "pi" ? "--thinking" : "--effort", choice.effort);
+  return { host: choice.host, hostArgs };
+}
+function portFor(provider, env, registry, createPort) {
+  if (createPort) {
+    try {
+      return createPort(provider, env);
+    } catch {
+      return null;
+    }
+  }
+  const descriptor = registry.find((d) => d.name === provider);
+  if (!descriptor)
+    return null;
+  return descriptor.factory(env);
+}
+function openBatchSessionPort(input) {
+  const registry = input.providerRegistry ?? SESSION_PROVIDER_REGISTRY;
+  if (!input.provider)
+    return { ok: false, reason: "lane_session_unavailable: no session provider recorded for this batch", recovery: "retire the stale batch" };
+  const descriptor = registry.find((d) => d.name === input.provider);
+  if (!descriptor)
+    return { ok: false, reason: `lane_session_unavailable: recorded provider ${input.provider} is not registered`, recovery: "retire the stale batch" };
+  const check = descriptor.checkEnv(input.env);
+  if (!check.ok)
+    return { ok: false, reason: `lane_session_unavailable: ${check.reason}`, recovery: descriptor.recovery };
+  const raw = portFor(input.provider, input.env, registry, input.createPort);
+  if (!raw)
+    return { ok: false, reason: "lane_session_unavailable: provider factory failed", recovery: "retry inside Herdr" };
+  const target = executorSessionTarget({ root: input.root, executor: input.executor, host: input.host });
+  return { ok: true, port: new SessionPortAdapter(raw, target.host, input.hostArgs ?? target.hostArgs) };
+}
+function refusalFromReasons(reasons) {
+  const detail = reasons.map((r) => `${r.provider}: ${r.reason}`).join("; ");
+  return {
+    ok: false,
+    code: "lane_session_unavailable",
+    reason: `lane_session_unavailable: ${detail}`,
+    recovery: reasons[0]?.recovery ?? "run inside Herdr with HERDR_ENV=1 and HERDR_WORKSPACE_ID set",
+    reasons
+  };
+}
+function toBatchInput(agreement, deps, now, sessions) {
+  return {
+    root: deps.root,
+    batch_id: agreement.batch_id,
+    initiative_slug: agreement.initiative_slug,
+    ...deps.entry_kind ? { entry_kind: deps.entry_kind } : {},
+    registry: deps.registry,
+    capability: deps.capability,
+    children: agreement.children,
+    plan_digest: agreement.plan_digest,
+    base_head: agreement.base_head,
+    confirmation_time: deps.confirmation_time ?? now,
+    budget: agreement.budget,
+    now,
+    kernel: deps.kernel,
+    ...deps.git ? { git: deps.git } : {},
+    ...deps.tracker ? { tracker: deps.tracker } : {},
+    ...deps.max_parallel !== undefined ? { max_parallel: deps.max_parallel } : { max_parallel: agreement.children.length },
+    ...agreement.branch ? { branch: agreement.branch } : {},
+    confirmation: agreement.confirmation,
+    return_policy: agreement.return_policy,
+    interaction_mode: agreement.interaction_mode,
+    ...agreement.final_verification.commands.length > 0 ? { final_verification: [...agreement.final_verification.commands] } : {},
+    final_verification_required: agreement.final_verification.required,
+    executor_freeze: { ...deps.executor ? { request: deps.executor } : {}, parentHost: deps.host },
+    ...deps.executor_runtime ? { executor_runtime: deps.executor_runtime } : {},
+    ...deps.max_parallel !== undefined ? { max_parallel: deps.max_parallel } : {},
+    ...deps.lane_instruction !== undefined ? { lane_instruction: deps.lane_instruction } : {},
+    ...deps.lane_session_close !== undefined ? { lane_session_close: deps.lane_session_close } : {},
+    ...deps.lane_offers !== undefined ? { lane_offers: deps.lane_offers } : {},
+    ...deps.review_profile !== undefined ? { review_profile: deps.review_profile } : {},
+    ...deps.final_verification !== undefined ? { final_verification: deps.final_verification } : {},
+    ...deps.topology_digest !== undefined ? { topology_digest: deps.topology_digest } : {},
+    sessions
+  };
+}
+async function startLanes(agreement, deps) {
+  const registry = deps.providerRegistry ?? SESSION_PROVIDER_REGISTRY;
+  const target = executorSessionTarget({ root: deps.root, executor: deps.executor, host: deps.host });
+  const resolved = resolveSessionProvider({ role: "executor", providers: deps.providers, host: target.host, env: deps.env, registry });
+  if (!resolved.ok)
+    return refusalFromReasons(resolved.reasons);
+  const raw = portFor(resolved.provider, deps.env, registry, deps.createPort);
+  if (!raw)
+    return refusalFromReasons([{ provider: resolved.provider, reason: "provider factory failed", recovery: "retry inside Herdr" }]);
+  const adapter = new SessionPortAdapter(raw, target.host, deps.hostArgs?.length ? hostArgsFor(deps, agreement.children[0]?.task_id ?? "lane") : target.hostArgs);
+  const now = deps.now ?? new Date().toISOString();
+  const input = toBatchInput(agreement, deps, now, adapter);
+  const rawReport = await runLaneBatch(input, null);
+  const report = rawReport;
+  if (Array.isArray(report.handoffs))
+    report.handoffs = report.handoffs.filter((h) => h.role !== "executor");
+  return report;
+}
+async function advanceLanes(root, batchId, deps) {
+  let persisted = null;
+  try {
+    persisted = readAnyBatchRunState(root, batchId);
+  } catch {
+    return { ok: false, code: "lane_session_unavailable", reason: `lane_session_unavailable: unreadable batch ${batchId}`, recovery: "inspect the batch record" };
+  }
+  if (!persisted || !isLaneBatchRecord(persisted)) {
+    return { ok: false, code: "lane_session_unavailable", reason: `lane_session_unavailable: no active v3 batch ${batchId}`, recovery: "start a fresh batch" };
+  }
+  const recordedProvider = persisted.session_provider ?? null;
+  const registry = deps.providerRegistry ?? SESSION_PROVIDER_REGISTRY;
+  if (recordedProvider) {
+    const descriptor = registry.find((d) => d.name === recordedProvider);
+    if (!descriptor) {
+      return refusalFromReasons([{ provider: recordedProvider, reason: "recorded provider is not registered", recovery: "retire the stale batch" }]);
+    }
+    const check = descriptor.checkEnv(deps.env);
+    if (!check.ok) {
+      return refusalFromReasons([{ provider: recordedProvider, reason: check.reason, recovery: descriptor.recovery }]);
+    }
+    const raw = portFor(recordedProvider, deps.env, registry, deps.createPort);
+    if (!raw)
+      return refusalFromReasons([{ provider: recordedProvider, reason: "provider factory failed", recovery: "retry inside Herdr" }]);
+    const resumeTarget = executorSessionTarget({
+      root: deps.root,
+      executor: persisted.executor_preferences ?? deps.executor,
+      host: deps.host
+    });
+    const adapter = new SessionPortAdapter(raw, resumeTarget.host, deps.hostArgs?.length ? hostArgsFor(deps, batchId) : resumeTarget.hostArgs);
+    const now = deps.now ?? new Date().toISOString();
+    const input = {
+      root: deps.root,
+      batch_id: batchId,
+      initiative_slug: persisted.initiative_slug,
+      ...deps.entry_kind ? { entry_kind: deps.entry_kind } : {},
+      registry: deps.registry,
+      capability: deps.capability,
+      children: resumeChildren(persisted),
+      plan_digest: persisted.plan_digest,
+      base_head: persisted.base_head,
+      confirmation_time: deps.confirmation_time ?? now,
+      budget: persisted.budget,
+      now,
+      kernel: deps.kernel,
+      ...deps.git ? { git: deps.git } : {},
+      ...deps.tracker ? { tracker: deps.tracker } : {},
+      max_parallel: deps.max_parallel ?? persisted.max_parallel,
+      ...deps.literal_user_confirmation ? { literal_user_confirmation: true } : {},
+      confirmation: persisted.confirmation,
+      return_policy: persisted.return_policy,
+      interaction_mode: persisted.interaction_mode,
+      ...Array.isArray(persisted.final_verification) ? { final_verification: persisted.final_verification } : {},
+      ...deps.lane_instruction !== undefined ? { lane_instruction: deps.lane_instruction } : {},
+      ...deps.lane_session_close !== undefined ? { lane_session_close: deps.lane_session_close } : {},
+      ...deps.lane_offers !== undefined ? { lane_offers: deps.lane_offers } : {},
+      ...deps.review_profile !== undefined ? { review_profile: deps.review_profile } : {},
+      sessions: adapter
+    };
+    const rawAdv = await runLaneBatch(input, persisted);
+    const advReport = rawAdv;
+    if (Array.isArray(advReport.handoffs))
+      advReport.handoffs = advReport.handoffs.filter((h) => h.role !== "executor");
+    return advReport;
+  }
+  const target = executorSessionTarget({ root: deps.root, executor: deps.executor, host: deps.host });
+  const resolved = resolveSessionProvider({ role: "executor", providers: deps.providers, host: target.host, env: deps.env, registry });
+  if (!resolved.ok)
+    return refusalFromReasons(resolved.reasons);
+  const raw = portFor(resolved.provider, deps.env, registry, deps.createPort);
+  if (!raw)
+    return refusalFromReasons([{ provider: resolved.provider, reason: "provider factory failed", recovery: "retry inside Herdr" }]);
+  const adapter = new SessionPortAdapter(raw, target.host, deps.hostArgs?.length ? hostArgsFor(deps, batchId) : target.hostArgs);
+  const now = deps.now ?? new Date().toISOString();
+  const input = {
+    root: deps.root,
+    batch_id: batchId,
+    initiative_slug: persisted.initiative_slug,
+    ...deps.entry_kind ? { entry_kind: deps.entry_kind } : {},
+    registry: deps.registry,
+    capability: deps.capability,
+    children: resumeChildren(persisted),
+    plan_digest: persisted.plan_digest,
+    base_head: persisted.base_head,
+    confirmation_time: deps.confirmation_time ?? now,
+    budget: persisted.budget,
+    now,
+    kernel: deps.kernel,
+    ...deps.git ? { git: deps.git } : {},
+    ...deps.tracker ? { tracker: deps.tracker } : {},
+    max_parallel: deps.max_parallel ?? persisted.max_parallel,
+    ...deps.literal_user_confirmation ? { literal_user_confirmation: true } : {},
+    ...deps.lane_instruction !== undefined ? { lane_instruction: deps.lane_instruction } : {},
+    ...deps.lane_session_close !== undefined ? { lane_session_close: deps.lane_session_close } : {},
+    ...deps.lane_offers !== undefined ? { lane_offers: deps.lane_offers } : {},
+    ...deps.review_profile !== undefined ? { review_profile: deps.review_profile } : {},
+    sessions: adapter
+  };
+  const raw2 = await runLaneBatch(input, persisted);
+  const report2 = raw2;
+  if (Array.isArray(report2.handoffs))
+    report2.handoffs = report2.handoffs.filter((h) => h.role !== "executor");
+  return report2;
+}
+
 // plugins/immune-brain/runtime/loop_daemon/interaction/local_channel.ts
 init_actor_identity();
 init_storage();
 import { existsSync as existsSync19, mkdirSync as mkdirSync14, readFileSync as readFileSync23, readdirSync as readdirSync12, rmSync as rmSync15, writeFileSync as writeFileSync14 } from "node:fs";
-import { join as join38 } from "node:path";
+import { join as join37 } from "node:path";
 
 // plugins/immune-brain/runtime/loop_daemon/guards.ts
 init_no_touch();
@@ -23266,16 +24963,16 @@ var INTERACTION_REQUEST_CONTRACT = "immune_brain/interaction_request/v1";
 var LOCAL_ANSWER_CONTRACT = "immune_brain/interaction_answer/v1";
 var ANSWER_LOOP_INTERACTION_TOOL = "answer_loop_interaction";
 function loopInteractionStateDir(root) {
-  return join38(root, ".imm/state/loop");
+  return join37(root, ".imm/state/loop");
 }
 function localInteractionsDir(stateDir) {
-  return join38(stateDir, "interactions");
+  return join37(stateDir, "interactions");
 }
 function requestPath(stateDir, interactionId) {
-  return join38(localInteractionsDir(stateDir), `${fileName(interactionId)}.json`);
+  return join37(localInteractionsDir(stateDir), `${fileName(interactionId)}.json`);
 }
 function answerPath(stateDir, interactionId) {
-  return join38(localInteractionsDir(stateDir), `${fileName(interactionId)}.answer.json`);
+  return join37(localInteractionsDir(stateDir), `${fileName(interactionId)}.answer.json`);
 }
 function fileName(interactionId) {
   if (!interactionId || /[/\\]/.test(interactionId) || interactionId.startsWith("."))
@@ -23681,6 +25378,14 @@ function enrollCanaryTask(root, input, registry) {
 // plugins/immune-brain/runtime/unattended/batch_kernel_port.ts
 init_storage();
 init_batch_preflight();
+function batchQaFailureFacts(record) {
+  const failed = record.history.filter((event) => event.type === "request_rework" && event.authority?.authority_kind === "qa");
+  return {
+    qa_failure_count: failed.length,
+    last_qa_failure_at: failed.at(-1)?.at ?? null,
+    recovery_findings: record.findings.filter((f) => f.status === "open").map((f) => ({ id: f.id, kind: f.kind, status: f.status, acceptance_id: f.acceptance_id }))
+  };
+}
 function createBatchKernelPort(input) {
   const project = input.deps?.projectAssurance ?? projectAssurance;
   const readRecord = input.deps?.readTaskRecordRaw ?? readTaskRecordRaw;
@@ -23755,7 +25460,7 @@ init_batch_reasons();
 init_batch_preflight();
 init_batch_state();
 import { existsSync as existsSync20 } from "node:fs";
-import { join as join39 } from "node:path";
+import { join as join38 } from "node:path";
 var SERIAL_IN_FLIGHT = new Set(["enrolled", "settled"]);
 var LANE_IN_FLIGHT = new Set(["lane_admitted", "enrolled", "settled", "lane_committed"]);
 var RETIRE_REASON = "Retired by an explicit literal-user disposition: the batch plan moved past this record, so its authorization could neither reconfirm nor continue. " + "Recorded child commits, child states and the batch branch are preserved as evidence. " + "Children this batch never executed carry no commit, no batch trailer and no approval; nothing infers their delivery from this record.";
@@ -23775,7 +25480,7 @@ function laneChildLifecycleOf(root, child) {
   if (!lane)
     return kernelLifecycleOf(root, child.task_id);
   try {
-    if (!existsSync20(join39(lane.path, KERNEL_DB_RELATIVE)))
+    if (!existsSync20(join38(lane.path, KERNEL_DB_RELATIVE)))
       return null;
     if (readActiveClaimTaskId(lane.path) === child.task_id)
       return null;
@@ -23790,7 +25495,7 @@ function laneChildLifecycleOf(root, child) {
   }
 }
 function childEvidenceOf(root, record) {
-  if (record.contract === "assurance_kernel/batch_run_state/v2")
+  if (isLaneBatchRecord(record))
     return record.children.map((child) => ({
       task_id: child.task_id,
       slice_id: child.slice_id,
@@ -23809,7 +25514,7 @@ function childEvidenceOf(root, record) {
   }));
 }
 function inFlightChildOf(root, record) {
-  if (record.contract === "assurance_kernel/batch_run_state/v2")
+  if (isLaneBatchRecord(record))
     return record.children.find((child) => LANE_IN_FLIGHT.has(child.state) && laneChildLifecycleOf(root, child) === null) ?? null;
   return record.children.find((child) => SERIAL_IN_FLIGHT.has(child.state) && kernelLifecycleOf(root, child.task_id) === null) ?? null;
 }
@@ -23870,7 +25575,7 @@ async function retireStaleBatch(options) {
   if (!readSecureProjectBytes(root, batchStatePath(record.batch_id)).equals(expected))
     return { outcome: "rejected", rejection: batchReason("plan_changed", record.batch_id) };
   const retired = { ...record, batch_state: "superseded" };
-  const inFlightStates = record.contract === "assurance_kernel/batch_run_state/v2" ? LANE_IN_FLIGHT : SERIAL_IN_FLIGHT;
+  const inFlightStates = isLaneBatchRecord(record) ? LANE_IN_FLIGHT : SERIAL_IN_FLIGHT;
   const reason = record.children.some((child) => inFlightStates.has(child.state)) ? RETIRE_REASON + RETIRE_REASON_ENDED_OUTSIDE : RETIRE_REASON;
   const retirement = options.confirmationRef ? {
     retirement: {
@@ -23886,7 +25591,7 @@ async function retireStaleBatch(options) {
     if (!readSecureProjectBytes(root, batchStatePath(record.batch_id)).equals(expected))
       throw new Error("batch state changed before the disposition was applied");
   });
-  const report = stored.contract === "assurance_kernel/batch_run_state/v2" ? writeBatchRunReport(root, {
+  const report = isLaneBatchRecord(stored) ? writeBatchRunReport(root, {
     contract: "assurance_kernel/batch_run_report/v1",
     batch_id: stored.batch_id,
     initiative_slug: stored.initiative_slug,
@@ -23955,9 +25660,9 @@ init_batch_state();
 init_session_result_slot();
 init_host_port();
 import { execFileSync as execFileSync15 } from "node:child_process";
-import { accessSync as accessSync4, constants as constants10, existsSync as existsSync21, readFileSync as readFileSync24 } from "node:fs";
-import { createHash as createHash28 } from "node:crypto";
-import { delimiter as delimiter5, dirname as dirname19, join as join40 } from "node:path";
+import { accessSync as accessSync3, constants as constants9, existsSync as existsSync21, readFileSync as readFileSync24 } from "node:fs";
+import { createHash as createHash29 } from "node:crypto";
+import { delimiter as delimiter4, dirname as dirname19, join as join39 } from "node:path";
 import { fileURLToPath as fileURLToPath4 } from "node:url";
 var REVIEW_PROFILE_RECOVERY = "Set `agents.reviewer` (a user `agents.profiles` name, `host[:model][@effort]` or { host, model?, effort? }) in the user or project configuration, then call `advance_assurance`";
 var REVIEW_BINARY = {
@@ -23999,9 +25704,9 @@ var CLAUDE_REVIEW_SETTINGS = JSON.stringify({
 });
 function reviewBinary(host) {
   const name = REVIEW_BINARY[host];
-  return (process.env.PATH ?? "").split(delimiter5).map((dir) => join40(dir || ".", name)).find((path) => {
+  return (process.env.PATH ?? "").split(delimiter4).map((dir) => join39(dir || ".", name)).find((path) => {
     try {
-      accessSync4(path, constants10.X_OK);
+      accessSync3(path, constants9.X_OK);
       return true;
     } catch {
       return false;
@@ -24019,7 +25724,7 @@ function reviewSessionRunner(env = process.env) {
   }
   let dir = dirname19(fileURLToPath4(import.meta.url));
   for (let level = 0;level < 5; level++) {
-    const candidate = join40(dir, "bin", "imm-session");
+    const candidate = join39(dir, "bin", "imm-session");
     if (existsSync21(candidate))
       return candidate;
     dir = dirname19(dir);
@@ -24030,7 +25735,7 @@ function git9(root, argv) {
   return execFileSync15("git", argv, { cwd: root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] });
 }
 function digest2(bytes) {
-  return `sha256:${createHash28("sha256").update(bytes).digest("hex")}`;
+  return `sha256:${createHash29("sha256").update(bytes).digest("hex")}`;
 }
 function reviewTreeState(root) {
   return {
@@ -24165,7 +25870,7 @@ class CliReviewHost {
     requireReviewBinary(profile);
     const slotId = `verify-${request.operationId}`;
     const slot = allocateResultSlot(review.root, slotId, request.prompt, "verify-packet.md");
-    const awaitRecord = join40(slot.directory, "session-await.json");
+    const awaitRecord = join39(slot.directory, "session-await.json");
     const label = `verify ${request.taskId}`.slice(0, 32);
     const actorId = `cli-verifier:${profile.host}:${request.operationId}`;
     const session = withSlot(slot, () => sessionSpec(sessionRunner, label, {
@@ -24228,7 +25933,7 @@ ${receiptInstruction(profile.host, slotId, slot.result)}`,
     const tree = reviewTreeState(root);
     const slotId = `review-${request.operationId}`;
     const slot = allocateResultSlot(root, slotId, request.snapshotPrompt);
-    const awaitRecord = join40(slot.directory, "session-await.json");
+    const awaitRecord = join39(slot.directory, "session-await.json");
     const actorId = `cli:${profile.host}:${request.operationId}`;
     const session = withSlot(slot, () => sessionSpec(sessionRunner, `review ${request.taskId}`.slice(0, 32), {
       root,
@@ -24310,11 +26015,6 @@ ${receiptInstruction(profile.host, slotId, slot.result)}`,
 }
 
 // plugins/immune-brain/runtime/host-core/runtime.ts
-var LANE_WAIT_MS = 500;
-function laneWaitMs(env) {
-  const limit = Number(env.MCP_TOOL_TIMEOUT);
-  return Number.isFinite(limit) && limit > 0 ? Math.min(LANE_WAIT_MS, Math.floor(limit / 2)) : LANE_WAIT_MS;
-}
 function diffSnapshotOf(root, record) {
   return taskDeliveryIdentity(root, record);
 }
@@ -24331,7 +26031,7 @@ async function executeOrdinaryKernelOperation(input) {
   const operation = input.operation.op === "revise_intent" ? { ...input.operation, next_intent: parseProjectTaskIntent(root, input.operation.next_intent) } : input.operation;
   const priorIntent = (input.readIntent ?? readTaskIntentForRecord)(root, taskId);
   const nextScope = operation.op === "revise_intent" ? operation.next_intent.scope_hint : undefined;
-  const sidecar = join41(root, priorIntent.intent_ref.path);
+  const sidecar = join40(root, priorIntent.intent_ref.path);
   const priorBytes = operation.op === "revise_intent" ? readFileSync25(sidecar) : null;
   const priorStaged = priorBytes !== null ? captureStagedIntent(root, priorIntent.intent_ref.path) : null;
   try {
@@ -24427,7 +26127,6 @@ var ENTRY_TOKEN_OPERATIONS = new Set(["retire_stale_batch"]);
 
 class HostRuntime {
   profile;
-  laneSupervisor = new LaneSupervisor;
   parentHost;
   host;
   reviewHost;
@@ -24446,6 +26145,7 @@ class HostRuntime {
   batchGit;
   batchTracker;
   readInitiative;
+  sessionPortFactory;
   constructor(profile, options) {
     this.profile = profile;
     this.cwd = options.cwd;
@@ -24458,6 +26158,7 @@ class HostRuntime {
     this.batchGit = options.batchGit;
     this.batchTracker = options.batchTracker;
     this.readInitiative = options.readInitiative;
+    this.sessionPortFactory = options.sessionPortFactory;
     this.host = options.host ?? profile.createHost();
     this.reviewHost = new CliReviewHost(this.host, { env: this.env });
     this.coordinator = new AssuranceCoordinator({
@@ -24577,7 +26278,7 @@ class HostRuntime {
     try {
       if (!this.profile.selectedParent(meta.toolCallId, this.cwd, slug))
         return result;
-      if (existsSync22(join41(this.cwd, ".imm", "audit", taskId)))
+      if (existsSync22(join40(this.cwd, ".imm", "audit", taskId)))
         execFileSync16("git", ["-C", this.cwd, "add", "--", `.imm/audit/${taskId}`], { stdio: "ignore" });
       const batch = await this.startUnattendedBatch(slug, meta, { reuseOnly: true });
       return { ...result, batch, ...batch.state === "started" && batch.report?.tracker ? { tracker: batch.report.tracker } : {} };
@@ -24703,6 +26404,29 @@ class HostRuntime {
     });
     if (this.hostVersion)
       laneRuntime.bindHostVersion(this.hostVersion);
+    const active = findActiveLaneBatchForTask(this.cwd, taskId);
+    const childSession = active?.record.children.find((child) => child.task_id === taskId)?.session;
+    let sessions;
+    let advance;
+    if (active && childSession?.handle) {
+      if (operation !== "stop") {
+        const initiativeSlug = active.record.initiative_slug;
+        const advanceKind = active.record.plan_source ? { plan_source: active.record.plan_source } : {};
+        advance = async () => this.startPreparedBatch(initiativeSlug, meta, { reuseOnly: true, ...advanceKind });
+      } else {
+        const opened = openBatchSessionPort({
+          root: this.cwd,
+          provider: active.record.session_provider,
+          env: this.env,
+          host: this.parentHost,
+          executor: active.record.executor_preferences,
+          ...this.sessionPortFactory ? { createPort: this.sessionPortFactory } : {}
+        });
+        if (!opened.ok)
+          throw new Error(`${opened.reason}. ${opened.recovery}`);
+        sessions = opened.port;
+      }
+    }
     try {
       const outcome = await relayLaneDecision({
         root: this.cwd,
@@ -24712,11 +26436,8 @@ class HostRuntime {
         project: (lanePath, id) => projectAssurance(lanePath, id, diffSnapshotOf),
         apply: async () => laneRuntime.authorizeInRoot(taskId, operation, meta, extra),
         applied: (result) => !(result && typeof result === "object" && ("state" in result) && result.state === "replan_selected"),
-        supervisor: this.laneSupervisor,
-        parentHost: this.parentHost,
-        pluginDir: resolve16(dirname20(fileURLToPath5(import.meta.url)), "../.."),
-        waitMs: laneWaitMs(this.env),
-        signal: meta.signal
+        ...sessions ? { sessions } : {},
+        ...advance ? { advance } : {}
       });
       return outcome.relayed ? { ...outcome.result, lane_relay: outcome.lane_relay } : this.authorizeInRoot(taskId, operation, meta, extra);
     } finally {
@@ -24821,7 +26542,7 @@ class HostRuntime {
       throw new Error("approve_breaking_intent_revision requires next_intent");
     const nextIntentHash = nextIntent ? canonicalIntentHash(nextIntent) : undefined;
     const nextIntentRef = nextIntent ? { path: `docs/plans/${nextIntent.task_id}.intent.json`, content_hash: nextIntentHash } : undefined;
-    const sidecar = nextIntent ? join41(this.cwd, priorIntent.intent_ref.path) : undefined;
+    const sidecar = nextIntent ? join40(this.cwd, priorIntent.intent_ref.path) : undefined;
     const stagedSnapshot = sidecar ? captureStagedIntent(this.cwd, priorIntent.intent_ref.path) : undefined;
     const restoreStagedIntent2 = () => {
       if (!stagedSnapshot)
@@ -25009,7 +26730,31 @@ class HostRuntime {
     if (options.stop) {
       if (options.plan_source !== "single_task")
         return { state: "rejected", reason: "lane_stop_requires_task", recovery_action: "Specify a task_id in the current Host." };
-      return stopSingleTaskSupervisor(this.laneSupervisor, this.cwd, initiativeSlug, meta.signal);
+      const active = findActiveLaneBatchForTask(this.cwd, initiativeSlug);
+      if (!active)
+        return { state: "blocked", reason: "lane_executor_not_running", recovery_action: "Inspect the task status in the current Host." };
+      const handle = active.record.children.find((child) => child.task_id === initiativeSlug)?.session?.handle ?? null;
+      if (handle) {
+        const opened = openBatchSessionPort({
+          root: this.cwd,
+          provider: active.record.session_provider,
+          env: this.env,
+          host: this.parentHost,
+          executor: active.record.executor_preferences,
+          ...this.sessionPortFactory ? { createPort: this.sessionPortFactory } : {}
+        });
+        if (!opened.ok)
+          return { state: "blocked", reason: opened.reason, recovery_action: opened.recovery };
+        const stopped = await opened.port.stop(handle);
+        if (!stopped.ok)
+          return {
+            state: "blocked",
+            reason: `lane_stop_rejected: ${stopped.reason} (${stopped.code})`,
+            recovery_action: "The Executor session is still running and the child stays enrolled; retry the stop in the current Host."
+          };
+      }
+      parkLaneForExecutor(this.cwd, active.record.batch_id, initiativeSlug, "lane_executor_stopped");
+      return { state: "blocked", reason: "lane_executor_stopped", recovery_action: "The Lane task is stopped and its Lane retained; resume with a fresh drive entry." };
     }
     if ((options.plan_source || !reuseOnly) && batchConfigErrors(resolveConfig(this.cwd)).length > 0)
       return batchReason("lane_config_invalid");
@@ -25295,43 +27040,74 @@ class HostRuntime {
       resume: { isResuming, existingBatch, batchBranch },
       overrides: this.batchKernel
     });
-    let report = await startBatch({
-      plan_source: options.plan_source,
-      ...options.plan_source && this.env.HERDR_ENV === "1" && resolveConfig(this.cwd).herdr.value === true ? { executor_mode: "interactive" } : {},
-      ...options.plan_source ? { supervision: {
-        supervisor: this.laneSupervisor,
-        parentHost: this.parentHost,
-        pluginDir: resolve16(dirname20(fileURLToPath5(import.meta.url)), "../.."),
-        waitMs: laneWaitMs(this.env),
-        signal: meta.signal,
-        stop: options.stop,
-        request: options.executor
-      } } : {},
-      executor_freeze: { ...options.executor ? { request: options.executor } : {}, ...this.parentHost ? { parentHost: this.parentHost } : {} },
-      topology_digest: preflight.projection.topology_digest,
+    const sessionProviders = (() => {
+      try {
+        const resolved = resolveConfig(this.cwd).session_providers;
+        const value = resolved.value;
+        return Array.isArray(value) ? value : ["herdr"];
+      } catch {
+        return ["herdr"];
+      }
+    })();
+    const laneDeps = {
       root: this.cwd,
-      batch_id: batchId,
-      initiative_slug: initiativeSlug,
       registry: this.batchRegistry,
       capability,
-      children: recoveryChildren,
-      plan_digest: planDigest,
-      base_head: binding.base_head,
-      confirmation_time: now,
-      budget,
-      now,
       kernel: kernelPort,
-      git: this.batchGit,
-      ...options.final_verification ? { final_verification: options.final_verification } : {},
+      ...options.plan_source ? { entry_kind: options.plan_source } : {},
+      ...this.batchGit ? { git: this.batchGit } : {},
+      ...!options.plan_source ? { tracker: this.batchTracker ?? createBatchTrackerPort(this.cwd, initiativeSlug) } : {},
+      providers: sessionProviders,
+      host: this.parentHost,
+      env: this.env,
+      ...options.max_parallel !== undefined ? { max_parallel: options.max_parallel } : { max_parallel: options.plan_source ? 1 : resolveConfig(this.cwd).batch.max_parallel.value },
+      now,
+      confirmation_time: now,
+      ...!authorization.reuse_authorization ? { literal_user_confirmation: true } : {},
+      topology_digest: preflight.projection.topology_digest,
+      ...options.lane_instruction ? { lane_instruction: options.lane_instruction } : {},
+      ...options.lane_session_close ? { lane_session_close: options.lane_session_close } : {},
+      ...options.lane_offers !== undefined ? { lane_offers: options.lane_offers } : {},
       ...options.review_profile ? { review_profile: options.review_profile } : {},
-      ...options.max_parallel !== undefined ? {
-        max_parallel: options.max_parallel,
-        ...options.plan_source ? {} : { tracker: this.batchTracker ?? createBatchTrackerPort(this.cwd, initiativeSlug) },
-        ...options.lane_instruction ? { lane_instruction: options.lane_instruction } : {},
-        ...options.lane_session_close ? { lane_session_close: options.lane_session_close } : {}
-      } : {},
-      ...options.lane_offers !== undefined ? { lane_offers: options.lane_offers } : {}
-    });
+      ...options.final_verification ? { final_verification: options.final_verification } : {},
+      ...options.executor ? { executor: options.executor } : {},
+      ...this.sessionPortFactory ? { createPort: this.sessionPortFactory } : {}
+    };
+    let report;
+    if (isResuming && existingBatch && isLaneBatchRecord(existingBatch)) {
+      const resumed = await advanceLanes(this.cwd, existingBatch.batch_id, laneDeps);
+      if (resumed && typeof resumed === "object" && resumed.ok === false) {
+        const refusal = resumed;
+        return { state: "rejected", reason: refusal.reason, recovery_action: refusal.recovery };
+      }
+      report = resumed;
+    } else {
+      const singleTask = options.plan_source === "single_task";
+      const confirmationRef = binding.confirmation_ref ?? `native_gate:${batchId}`;
+      const agreementInput = {
+        batch_id: batchId,
+        initiative_slug: initiativeSlug,
+        children: recoveryChildren,
+        base_head: binding.base_head,
+        budget,
+        confirmation: { source: "native_gate", ref: confirmationRef },
+        final_verification: {
+          required: (options.final_verification?.length ?? 0) > 0 ? true : singleTask ? false : true,
+          commands: options.final_verification ? [...options.final_verification] : []
+        },
+        return_policy: singleTask ? "checkout_delivery" : "retain_branch",
+        interaction_mode: "interactive_host"
+      };
+      const agreement = authorizeBatch2(agreementInput);
+      if (!agreement.ok)
+        return batchReason("batch_run_rejected", agreement.reason);
+      const started = await startLanes(agreement.agreement, laneDeps);
+      if (started && typeof started === "object" && started.ok === false) {
+        const refusal = started;
+        return { state: "rejected", reason: refusal.reason, recovery_action: refusal.recovery };
+      }
+      report = started;
+    }
     if (report.batch_state === "rejected")
       return batchReason("batch_run_rejected", report.reason ?? "");
     if (!options.plan_source && report.batch_state === "completed" && report.final_verification?.passed)
@@ -25524,7 +27300,7 @@ var CLAUDE_MCP_PROFILE = {
   consumePhaseAdmission: (toolCallId, operation) => consumePhaseAdmission(toolCallId, operation),
   readRunToolSession: (toolCallId, operation, workspace) => readRunToolSession(toolCallId, operation, workspace),
   dispatchHook: runHook,
-  bundlePath: fileURLToPath6(import.meta.url)
+  bundlePath: fileURLToPath5(import.meta.url)
 };
 var createMcpRuntime2 = (options = {}) => createMcpRuntime(CLAUDE_MCP_PROFILE, options);
 var handleJsonRpc2 = (message, mcp = createMcpRuntime2()) => handleJsonRpc(message, mcp);
@@ -25569,7 +27345,7 @@ async function runHook() {
     return;
   const cwd = typeof payload?.cwd === "string" && payload.cwd ? payload.cwd : process.cwd();
   if (!readActiveClaimTaskId(cwd)) {
-    const batchesDir = join42(cwd, ".imm", "state", "batches");
+    const batchesDir = join41(cwd, ".imm", "state", "batches");
     const activeBatch = existsSync23(batchesDir) && readdirSync13(batchesDir).some((file) => {
       if (!file.endsWith(".json") || file.endsWith(".report.json"))
         return false;

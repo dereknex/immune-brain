@@ -50,8 +50,10 @@ the enrolled TaskIntent.
    remains a per-child TaskRecord owned by the Kernel.
 4. Batch state transitions live only in `runtime/unattended/` and
    `runtime/kernel/batch_authority.ts`. Host adapters derive the plan, render the
-   native confirmation, issue one Kernel capability, and call the shared
-   `startBatch`; they are callers, never owners (Invariant H-1).
+   native confirmation, issue one Kernel capability, and call `authorizeBatch` plus
+   `runtime/lane_sessions/` (`startLanes` on creation and `advanceLanes` on continuation);
+   they are callers, never owners (Invariant H-1). `runtime/lane_sessions/` is the
+   composition root binding the session provider and mapping provider states.
 5. The confirmation is bound to the `plan_digest` of the ordered child
    identities and to the repository `base_head`. A plan that drifts after
    confirmation is refused rather than reconciled. HEAD lineage is a guard,

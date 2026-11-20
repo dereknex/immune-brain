@@ -32,7 +32,6 @@ import {
 	type LaneRelayTarget,
 	LaneDecisionStaleError,
 } from "../plugins/immune-brain/runtime/unattended/lane_decision.ts";
-import { LaneSupervisor } from "../plugins/immune-brain/runtime/unattended/lane_supervisor.ts";
 import {
 	LANE_DECISION_MARKER,
 	REVISION_MISMATCH_NOTICE_MARKER,
@@ -695,10 +694,7 @@ describe("S6 Boundary / Fault Controls: stale record_revision rejection (Table l
 				expectedRecordRevision: REVISION,
 				project: async () => ({} as any),
 				apply: async () => ({}),
-				supervisor: new LaneSupervisor(),
-				parentHost: "claude-code",
-				pluginDir: "/plugin",
-				waitMs: 1000,
+				advance: async () => ({ advanced: true }),
 			}),
 		);
 
@@ -776,10 +772,7 @@ describe("S6 Positive Control: End-to-End verified owner reply relay (BR-SCN-4, 
 				expectedRecordRevision: rev,
 				project: async () => ({} as any),
 				apply: async () => ({ success: true }),
-				supervisor: new LaneSupervisor(),
-				parentHost: "claude-code",
-				pluginDir: "/plugin",
-				waitMs: 5000,
+				advance: async () => ({ advanced: true }),
 				extra: { chosen_option: choice.option_id },
 			} as any),
 		);

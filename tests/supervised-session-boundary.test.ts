@@ -50,6 +50,7 @@ describe("Supervised Session Port boundary", () => {
 			`${SESSION}/herdr_core_provider.ts`,
 			`${SESSION}/herdr_provider.ts`,
 			`${SESSION}/marked_result.ts`,
+			`${SESSION}/provider_registry.ts`,
 			`${SESSION}/supervised_session_port.ts`,
 		]);
 		const outside = session.flatMap(file => targets(file.path, file.source)
@@ -62,8 +63,25 @@ describe("Supervised Session Port boundary", () => {
 		const importers = runtime
 			.filter(file => !file.path.startsWith(`${SESSION}/`))
 			.filter(file => targets(file.path, file.source).some(target => target === SESSION || target.startsWith(`${SESSION}/`)))
-			.map(file => file.path);
-		expect(importers).toEqual([ROUTER]);
+			.map(file => file.path).sort();
+		expect(importers).toEqual(["plugins/immune-brain/runtime/lane_sessions/index.ts", "plugins/immune-brain/runtime/lane_sessions/session_port_adapter.ts", ROUTER].sort());
+	});
+
+	test("session imports stay inside allowed callers", () => {
+		const importers = runtime
+			.filter(file => !file.path.startsWith(`${SESSION}/`))
+			.filter(file => targets(file.path, file.source).some(target => target === SESSION || target.startsWith(`${SESSION}/`)))
+			.map(file => file.path).sort();
+		expect(importers).toEqual(["plugins/immune-brain/runtime/lane_sessions/index.ts", "plugins/immune-brain/runtime/lane_sessions/session_port_adapter.ts", ROUTER].sort());
+	});
+
+	test("no runtime file outside runtime/session compares a provider name literal", () => {
+		const config = `${RUNTIME}/config/layered_config.ts`;
+		const offenders = runtime
+			.filter(file => !file.path.startsWith(`${SESSION}/`) && file.path !== config)
+			.filter(file => /===?\s*["']herdr-core["']|["']herdr-core["']\s*===?/.test(file.source)
+				|| /provider\w*\s*===?\s*["']herdr["']|["']herdr["']\s*===?\s*\w*provider/i.test(file.source));
+		expect(offenders.map(file => file.path)).toEqual([]);
 	});
 
 	test("only the Herdr adapter spawns herdr, and no packaged contract spells a herdr command", () => {

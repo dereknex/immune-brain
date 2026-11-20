@@ -2,13 +2,10 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { Type } from "typebox";
 import { randomUUID } from "node:crypto";
 import { claimProcess, copySource } from "./single-copy";
-import { LaneSupervisor, type ExecutorPreferences } from "../runtime/unattended/lane_supervisor";
+import type { ExecutorPreferences } from "../runtime/unattended/agent_profiles";
 import { readSettledTaskEvidence } from "../runtime/kernel/storage";
-import {
-	type BatchRunnerKernelPort,
-	type BatchRunReport,
-	type BatchTrackerPort,
-} from "../runtime/unattended/batch_runner";
+import type { BatchRunnerKernelPort, BatchTrackerPort } from "../runtime/unattended/batch_kernel_port";
+import type { BatchRunReport } from "../runtime/unattended/batch_state";
 import { type BatchRunnerGitPort, advanceNativeParent } from "../runtime/unattended/batch_git";
 import type { InitiativeObservationReader } from "../runtime/unattended/types";
 import { piEntryToken, piRunEntryRefusal } from "./imm-canary-work";
@@ -42,10 +39,9 @@ import {
 	type NativeConfirmationInput,
 	NativeAuthorityError,
 } from "../runtime/host-core/interaction";
-import { PI_LANE_WAIT_MS, piLaneSupervisor, PiRuntime } from "./pi-host-runtime";
+import { PI_LANE_WAIT_MS, PiRuntime } from "./pi-host-runtime";
 
-export { PI_LANE_WAIT_MS, piLaneSupervisor };
-const defaultSupervisor = piLaneSupervisor;
+export { PI_LANE_WAIT_MS };
 
 export async function readSettledTaskRecord(
 	root: string,
@@ -78,7 +74,6 @@ export interface PiBatchExecutionOptions {
 	taskId?: string;
 	stop?: boolean;
 	executor?: ExecutorPreferences;
-	supervisor?: LaneSupervisor;
 	interactive?: boolean;
 	reuseOnly?: boolean;
 	signal?: AbortSignal;
@@ -95,6 +90,9 @@ export interface PiBatchExecutionOptions {
 	batchGit?: BatchRunnerGitPort;
 	batchTracker?: BatchTrackerPort;
 	readInitiative?: InitiativeObservationReader;
+	sessionPortFactory?: (provider: string, env: Record<string, string | undefined>) => unknown;
+	/** Explicit environment for Lane session provider selection. Defaults to the ambient process environment. Tests must pass an explicit env without Herdr credentials and/or a sessionPortFactory, so a run inside Herdr never opens a real tab. */
+	env?: Record<string, string | undefined>;
 	runtime?: PiRuntime;
 	sessionId?: string;
 	toolCallId?: string;
@@ -146,10 +144,11 @@ export async function executePiUnattendedBatch(
 	const runtime = options.runtime ?? new PiRuntime({
 		cwd: options.root,
 		interactive,
-		supervisor: options.supervisor ?? defaultSupervisor,
+		env: options.env ?? process.env,
 		batchKernel: options.batchKernel,
 		batchGit: options.batchGit,
 		batchTracker: options.batchTracker,
+		...(options.sessionPortFactory ? { sessionPortFactory: options.sessionPortFactory } : {}),
 		readInitiative: options.readInitiative,
 		requestConfirmation: options.confirmBatch ? async (input: NativeConfirmationInput) => {
 			let decision: "accept" | "decline" | "cancel" = "cancel";
@@ -310,6 +309,10 @@ export async function executePiRetireStaleBatch(options: {
 
 export interface PiBatchExtensionDependencies {
 	runtime?: PiRuntime;
+	/** Explicit env for Lane session provider selection; a test passes a Herdr-shaped one so no real tab opens. */
+	env?: Record<string, string | undefined>;
+	/** A test double for the Lane session provider; production resolves the real one. */
+	sessionPortFactory?: (provider: string, env: Record<string, string | undefined>) => unknown;
 	readInitiative?: InitiativeObservationReader;
 	batchKernel?: Partial<BatchRunnerKernelPort>;
 	batchGit?: BatchRunnerGitPort;
@@ -322,7 +325,6 @@ export default function (
 	// A second copy of the plugin in this process registers nothing (C-1); the
 	// notice comes from this copy's other factory.
 	if (!claimProcess(copySource(import.meta.url)).active) return;
-	const supervisor = piLaneSupervisor;
 	pi.registerTool({
 		name: "start_unattended_batch",
 		label: "Start unattended batch",
@@ -401,7 +403,6 @@ export default function (
 				...(params.task_id ? { taskId: params.task_id } : {}),
 				...(params.stop ? { stop: true } : {}),
 				...(requested.executor ? { executor: requested.executor } : {}),
-				supervisor,
 				...(maxParallel !== undefined ? { max_parallel: maxParallel } : {}),
 				...(laneOffers !== undefined ? { lane_offers: laneOffers } : {}),
 				...(finalVerification !== undefined ? { final_verification: finalVerification } : {}),
@@ -413,6 +414,8 @@ export default function (
 				toolCallId: _toolCallId,
 				sessionId: (ctx as any).sessionManager?.getSessionId?.() ?? "pi-batch",
 				runtime: dependencies.runtime,
+				...(dependencies.env ? { env: dependencies.env } : {}),
+				...(dependencies.sessionPortFactory ? { sessionPortFactory: dependencies.sessionPortFactory } : {}),
 				readInitiative: dependencies.readInitiative,
 				batchKernel: dependencies.batchKernel,
 				batchGit: dependencies.batchGit,

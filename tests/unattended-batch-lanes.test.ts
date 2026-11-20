@@ -23,7 +23,6 @@ import {
 	createDefaultLaneGitPort,
 	decideLaneAdmission,
 	decideLaneInstruction,
-	decideLaneSessionClose,
 	laneBranchName,
 	laneRuntimeContractRefusal,
 	parseLaneInstruction,
@@ -38,8 +37,12 @@ import {
 	type LaneFacts,
 	type LaneOffer,
 } from "../plugins/immune-brain/runtime/unattended/batch_lanes";
-import type { BatchRunnerKernelPort, StartBatchInput } from "../plugins/immune-brain/runtime/unattended/batch_runner";
-import { completedParentReport, startBatch } from "../plugins/immune-brain/runtime/unattended/batch_runner";
+import type { BatchRunnerKernelPort } from "../plugins/immune-brain/runtime/unattended/batch_kernel_port";
+import type { StartBatchInput } from "../plugins/immune-brain/runtime/unattended/batch_lanes";
+import { completedParentReport, runLaneBatch } from "../plugins/immune-brain/runtime/unattended/batch_lanes";
+
+/** S8: the shared transitional entry is gone; the engine entry reads the persisted record the same way. */
+const startBatch = (input: StartBatchInput) => runLaneBatch(input, readAnyBatchRunState(input.root, input.batch_id));
 import { planLaneLeakRestore } from "../plugins/immune-brain/runtime/unattended/batch_leak_restore";
 import { startableChildren } from "../plugins/immune-brain/runtime/unattended/batch_schedule";
 import { recoverKernelStoreFollowUps } from "../plugins/immune-brain/runtime/kernel/storage";
@@ -473,7 +476,7 @@ describe("runtime-owned Parent Lane lifecycle", () => {
 			expect(first.children[0]!.state).toBe("enrolled");
 			const lane = first.children[0]!.lane!.path;
 			const record = readAnyBatchRunState(fx.repo, BATCH_ID)!;
-			if (record.contract !== "assurance_kernel/batch_run_state/v2") throw new Error("expected Lane record");
+			if (record.contract !== "assurance_kernel/batch_run_state/v3") throw new Error("expected Lane record");
 			if (mismatch === "record-path") record.children[0]!.lane!.path = fx.repo;
 			if (mismatch === "record-branch") record.children[0]!.lane!.branch = "imm-lane/foreign/task-a";
 			if (mismatch.startsWith("record-")) writeBatchLaneRunState(fx.repo, record);
@@ -545,8 +548,10 @@ describe("runtime-owned Parent Lane lifecycle", () => {
 			expect(readFileSync(join(fx.repo, "a.txt"), "utf8")).toBe("coordinator dirt must not reach Lane\n");
 		} finally { fx.cleanup(); }
 	});
-	// Spec batch-resource-safety-s2 AC1/AC3: no Host reports a trusted Executor exit, so a
-	// delivered Lane stays whether its Executor looks idle, left files behind or still runs.
+	// Two-tier proof-based cleanup (Spec unified-lane-sessions D11): without a
+	// sessions port there is no exit proof, so a delivered Lane stays with a
+	// named batch_lane_retained condition whether its Executor looks idle,
+	// left files behind or still runs.
 	for (const mode of ["clean", "untracked", "ignored", "live"] as const) it(`retains a delivered runtime-owned Lane: ${mode}`, async () => {
 		const fx = fixture({},
 			{ "task-a": ["a.txt"], "task-b": ["b.txt"] });
@@ -652,9 +657,7 @@ describe("runtime-owned Parent Lane lifecycle", () => {
 				tasks: [{ task_id: "task-a", slice_id: "S1", blocked_by: [] }, { task_id: "task-b", slice_id: "S2", blocked_by: ["task-a"] }] });
 			const reopened = await completedParentReport(fx.repo, SLUG, reader, tracker) as unknown as BatchLaneRunReport;
 			expect(reopened).toMatchObject({ batch_state: "completed", lane_refusals: [retainedA, retainedB] });
-			// #426 F18: the rebuilt Parent report keeps the recorded closes, or the Parent never closes the tabs.
-			expect(done.session_closes?.map(c => c.task_id)).toEqual(["task-a", "task-b"]);
-			expect(reopened.session_closes).toEqual(done.session_closes);
+			// S6 retires session_closes: closeWithProof owns closure, no batch record.
 			expect(reopened.next_action).toStartWith("Parent delivery and final verification passed. Cleanup was not performed");
 			expect(resources()).toEqual(kept);
 			git(fx.repo, "update-ref", `refs/heads/${BATCH_BRANCH}`, fx.base);
@@ -925,7 +928,7 @@ describe("max_parallel 1 end to end through a real second worktree", () => {
 	// #564: the runtime alone resolves the Executor profile, freezes it, and hands it to the Parent
 	// with every Executor handoff so an interactive Lane tab starts on the frozen Host, model and effort.
 	const freezeCases: Array<[string, StartBatchInput["executor_freeze"], string | null, object]> = [
-		["the request", { request: { executor_host: "pi", executor_model: "req-model", executor_effort: "high" }, parentHost: "claude-code" },
+		["the request", { request: { host: "pi", model: "req-model", effort: "high" }, parentHost: "claude-code" },
 			"claude-code:project-model", { host: "pi", model: "req-model", effort: "high" }],
 		["the project executor role", { parentHost: "claude-code" }, "pi:project-model@low", { host: "pi", model: "project-model", effort: "low" }],
 		["the Parent Host", { parentHost: "antigravity" }, null, { host: "antigravity" }],
@@ -939,12 +942,12 @@ describe("max_parallel 1 end to end through a real second worktree", () => {
 			}
 			const args = { ...request(fx, [child("task-a", "S1")], laneKernel()), executor_freeze: freeze };
 			lanes(await startBatch(args));
-			const executorPreferences = { executor_host: (expected as { host: string }).host,
-				...((expected as { model?: string }).model ? { executor_model: (expected as { model: string }).model } : {}),
-				...((expected as { effort?: string }).effort ? { executor_effort: (expected as { effort: string }).effort } : {}) };
+			const executorPreferences = { host: (expected as { host: string }).host,
+				...((expected as { model?: string }).model ? { model: (expected as { model: string }).model } : {}),
+				...((expected as { effort?: string }).effort ? { effort: (expected as { effort: string }).effort } : {}) };
 			expect(readAnyBatchRunState(fx.repo, BATCH_ID)).toMatchObject({ executor_preferences: executorPreferences });
 			// A later tick reads the frozen record, not a changed request.
-			const second = lanes(await startBatch({ ...args, executor_freeze: { request: { executor_host: "claude-code" } }, lane_offers: [{ task_id: "task-a", path: fx.lane("task-a") }] }));
+			const second = lanes(await startBatch({ ...args, executor_freeze: { request: { host: "claude-code" } }, lane_offers: [{ task_id: "task-a", path: fx.lane("task-a") }] }));
 			expect(second.handoffs).toMatchObject([{ role: "executor", task_id: "task-a", executor: expected }]);
 		} finally {
 			fx.cleanup();
@@ -972,7 +975,7 @@ describe("max_parallel 1 end to end through a real second worktree", () => {
 				},
 			]);
 			expect(first).not.toHaveProperty("handoff");
-			expect(readAnyBatchRunState(fx.repo, BATCH_ID)?.contract).toBe("assurance_kernel/batch_run_state/v2");
+			expect(readAnyBatchRunState(fx.repo, BATCH_ID)?.contract).toBe("assurance_kernel/batch_run_state/v3");
 			expect(kernel.enrolled.size).toBe(0);
 
 			// Tick 2: the Lane is offered and the child is enrolled in it.
@@ -1245,7 +1248,7 @@ describe("max_parallel 1 end to end through a real second worktree", () => {
 			const { max_parallel: _omitted, ...serial } = request(fx, [child("task-a", "S1")], kernel);
 			const report = await startBatch({ ...serial, max_parallel: 1 });
 			expect(report).toMatchObject({ max_parallel: 1 });
-			expect(readAnyBatchRunState(fx.repo, BATCH_ID)?.contract).toBe("assurance_kernel/batch_run_state/v2");
+			expect(readAnyBatchRunState(fx.repo, BATCH_ID)?.contract).toBe("assurance_kernel/batch_run_state/v3");
 		} finally {
 			fx.cleanup();
 		}
@@ -1277,7 +1280,36 @@ describe("max_parallel 1 end to end through a real second worktree", () => {
 			const kernel = laneKernel();
 			const { max_parallel: _omitted, ...serial } = request(fx, [child("task-a", "S1")], kernel);
 			await startBatch(serial);
-			expect(readAnyBatchRunState(fx.repo, BATCH_ID)).toMatchObject({ contract: "assurance_kernel/batch_run_state/v2", max_parallel: 1 });
+			const record = readAnyBatchRunState(fx.repo, BATCH_ID) as BatchLaneRunStateRecord;
+			expect(record).toMatchObject({ contract: "assurance_kernel/batch_run_state/v3", max_parallel: 1 });
+			// AGR-A5: new Lane records carry v3 agreement policies, null provider and null child sessions.
+			expect(record.session_provider).toBeNull();
+			expect(record.children.every(c => (c as { session?: unknown }).session === null)).toBe(true);
+			expect(record.confirmation?.source).toBe("native_gate");
+			expect(["checkout_delivery", "retain_branch"]).toContain(record.return_policy);
+			expect(record.interaction_mode).toBe("interactive_host");
+			expect(typeof record.final_verification_required).toBe("boolean");
+		} finally {
+			fx.cleanup();
+		}
+	});
+
+	it("AGR-A5: stored v2 Lane records are refused with batch_record_retired", async () => {
+		const fx = fixture();
+		try {
+			const kernel = laneKernel();
+			const args = request(fx, [child("task-a", "S1")], kernel);
+			await startBatch(args);
+			const v3 = readAnyBatchRunState(fx.repo, BATCH_ID) as BatchLaneRunStateRecord;
+			const v2path = join(fx.repo, ".imm/state/batches/v2-retired.json");
+			writeFileSync(v2path, JSON.stringify({ ...v3, contract: "assurance_kernel/batch_run_state/v2", batch_id: "v2-retired" }, null, 2) + "\n");
+			const persisted = readAnyBatchRunState(fx.repo, "v2-retired");
+			expect(persisted).not.toBeNull();
+			const { isRetiredLaneRecord } = await import("../plugins/immune-brain/runtime/unattended/batch_state");
+			expect(isRetiredLaneRecord(persisted!)).toBe(true);
+			const report = await runLaneBatch({ ...args, batch_id: "v2-retired", initiative_slug: SLUG }, persisted);
+			expect(report.reason ?? "").toContain("batch_record_retired");
+			expect(report.next_action).toContain("retire_stale_batch");
 		} finally {
 			fx.cleanup();
 		}
@@ -1574,7 +1606,7 @@ describe("lane release", () => {
 				git_base_head: commit, attestations: [], findings: [], history: [],
 			} });
 			const persisted = readAnyBatchRunState(fx.repo, BATCH_ID)!;
-			if (persisted.contract !== "assurance_kernel/batch_run_state/v2") throw new Error("expected Lane record");
+			if (persisted.contract !== "assurance_kernel/batch_run_state/v3") throw new Error("expected Lane record");
 			expect(laneRejectionReport(args, persisted, "kernel store is busy", "retry").handoffs).toEqual([]);
 			expect(readFileSync(statePath, "utf8")).toBe(before);
 			expect(lanes(await reject()).handoffs).toEqual([]);
@@ -2650,11 +2682,14 @@ describe("coordinator instruction to a Lane session (#195)", () => {
 	});
 });
 
-describe("Executor close rule for Lane sessions (#426 S1)", () => {
-	it("records a session close at the tick that integrates the child with its audit pair on the batch head, once, and leaves the Lane in place", () => {
-		// L1: the close rule is the pure decision over a prepared record; the
-		// driver wiring (recording the close, the idempotent re-ask) stays in
-		// the close-rule tests that run the driver.
+describe("Executor close rule retired (unified-lane-sessions D11)", () => {
+	it("parses lane_session_close for compat but records no session_closes; closeWithProof owns closure", () => {
+		// S6 retires session_closes/closeRecordUnproven: the batch ignores
+		// lane_session_close input and never writes session_closes.
+		expect(parseLaneSessionClose({ task_id: "task-a" })).toEqual({ task_id: "task-a" });
+		expect(parseLaneSessionClose(undefined)).toBeUndefined();
+		expect(() => parseLaneSessionClose({ task_id: "task-a", handle: "x" })).toThrow(/unknown field/);
+		expect(() => parseLaneSessionClose({ task_id: "../x" })).toThrow(/task id/);
 		const kids = [child("task-a", "S1")];
 		const record = prepareBatchLaneRunState({
 			batch_id: BATCH_ID, initiative_slug: SLUG, children: kids,
@@ -2662,25 +2697,7 @@ describe("Executor close rule for Lane sessions (#426 S1)", () => {
 			base_head: FAKE_BASE, confirmation_time: CONFIRMED_AT,
 			budget: { max_children: 1, qa_failure_limit: 3 }, max_parallel: 1, now: FAR_FUTURE,
 		});
-		record.children[0]!.state = "enrolled";
-		record.children[0]!.lane = laneBinding("/lane-task-a", "task-a", FAKE_BASE);
-		const before = JSON.stringify(record);
-		const ask = (task_id: string, reachable: boolean) =>
-			decideLaneSessionClose(record, parseLaneSessionClose({ task_id })!, () => reachable);
-		// Still running: the session stays for the user.
-		expect(ask("task-a", true) ?? "").toContain("not integrated; its session stays for the user");
-		expect(ask("task-z", true) ?? "").toContain("task-z has no Lane");
 		expect((record as { session_closes?: unknown }).session_closes).toBeUndefined();
-		expect(JSON.stringify(record)).toBe(before);
-		// Integrated with the audit pair reachable: allowed.
-		record.children[0]!.state = "integrated";
-		const integrated = JSON.stringify(record);
-		expect(ask("task-a", true)).toBeNull();
-		// Without the audit pair on the batch head the rule refuses, whatever the child state says.
-		expect(ask("task-a", false)).toBe("task-a's audit pair is not reachable from the batch head");
-		expect(() => parseLaneSessionClose({ task_id: "task-a", handle: "x" })).toThrow(/unknown field/);
-		expect(() => parseLaneSessionClose({ task_id: "../x" })).toThrow(/task id/);
-		expect(JSON.stringify(record)).toBe(integrated);
 	});
 });
 

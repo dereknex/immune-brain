@@ -26,8 +26,16 @@ A provider missing any of these, or implementing another port protocol, is refus
 | `readOutput` | Owned handle | Text labelled `visible` or `scrollback` | For people only; never progress evidence |
 | `observeState` | Owned handle | State and provenance | No readable state is `unknown`, never an invented `idle` or `done` |
 | `stopSession` | Owned handle | Soft interrupt, then the provider's hard stop | Foreign handle: `not_owned` |
-| `closeSession` | Owned handle (the Parent created it) and the batch runner's accepted close record (`task_id`, `recorded_at`): the runner's `decideLaneSessionClose` admits only an integrated child whose audit pair is reachable from the batch head, once, and records the close in `session_closes` before answering | Session resources released, recorded; the Lane and its branch untouched | Missing or malformed record: `close_unproven`, nothing closed. The rule no longer waits for a Lane release handoff: Parent-branch batches never issue one, since Lanes are retained for the user (ADR 0027) |
+| `closeSession` | Owned handle (retired batch-record rule, Spec unified-lane-sessions D11: `closeWithProof` owns closure; `session_closes`/`closeRecordUnproven` retired) | Session resources released; the Lane and its branch untouched | Foreign handle: `not_owned` |
 | `reconcile` | The caller's own handles | The last known state of each | A foreign handle is listed `unknown` with `refused: not_owned`; there is no "all sessions" listing |
+| `findSession` | Caller-chosen `session_key` (`[a-z0-9-]{1,64}`) | Live handle bound to the key, or `not_found` | Unknown key: `not_found` |
+| `closeWithProof` | Owned handle bound to `session_key` | Idempotent proven exit (`exited` bound to `(handle, key)`); owns two-tier per-child Lane cleanup with `lane_removed`/`batch_lane_retained` | Mismatched key or superseded handle: `not_owned`, nothing closed |
+
+Two-tier proof-based cleanup (Spec unified-lane-sessions D11): for every
+integrated child, `advanceBatch` calls `closeWithProof(handle, key)`; only a
+proven `exited` plus clean-Lane Git checks removes the worktree and
+`imm-lane/<slug>/<task_id>` (`lane_removed`), otherwise `batch_lane_retained`.
+The batch branch is deleted only after whole-batch `checkout_delivery` success.
 
 ### Optional capabilities
 
@@ -63,7 +71,7 @@ imm-session <verb> --provider herdr|herdr-core [options]
   read <handle> [--source visible|scrollback] [--lines <n>] [--extract advisory]
   attach <handle>
   stop <handle>
-  close <handle> --batch <batch_id> --task <task_id> --recorded-at <session_closes[].at> [--root <coordinator checkout>]
+  close <handle> --session-key <session_key>   (proves exit with closeWithProof; no batch record)
   reconcile <handle>...
 ```
 
@@ -115,6 +123,12 @@ Admission requires `hc schema --json` to state version 0.1.19 or newer, protocol
 | `attachSession` | Inside Herdr: `hc attach <t>` in a new unfocused Herdr tab in the Parent's workspace, opened by the Herdr adapter (`herdr tab create ... --no-focus`, `herdr pane run <pane> "hc attach <t> && exit"`) | Core draws nothing, and `hc attach` takes over the terminal that runs it, so it never runs in the Parent's own. A new session gets one viewer before its first status poll, so a startup dialog shows there; the result carries `viewer: { opened }`, and a viewer that fails to open never fails the session. `HC_SESSION` and the `XDG_*` directories are passed to the tab so it reaches the same core. Outside Herdr nothing opens and the refusal names `hc attach <t>` for another terminal; the Herdr provider has no separate viewer, its sessions are already tabs |
 | `subscribeEvents`, `snapshot`, `manageWorktree`, `waitForState` | Not implemented | Degrade as above; core offers `events.subscribe`, and no snapshot |
 | `reportState` | Not applicable | The Host reports OSC 7501 itself |
+
+## Provider registry and session keys (S2)
+
+`runtime/session/provider_registry.ts` registers one descriptor per provider with a pure environment check, recovery text, adapter factory, and role admissions. `resolveSessionProvider({ role, providers, host, env, registry })` is pure (zero I/O): it selects the first configured provider whose env check holds and whose `roles.executor` admits `host` with `find_by_key: true` and `workspace: "local_path"`, or returns `lane_session_unavailable` listing per-provider reasons and recoveries. `herdr` requires `HERDR_ENV=1` and non-empty `HERDR_WORKSPACE_ID` and admits `claude-code`, `pi`, `antigravity` with `find_by_key: true` and `exit_proof: true`; `herdr-core` admits no executor host and `exit_proof: false` until #495; `fake` stays test-only and excluded from config registration.
+
+`CreateSessionInput` gains optional `session_key` (`[a-z0-9-]{1,64}`) bound into session identity (`herdr`: tab label suffix `[imm:<session_key>]`; omitting keeps random-token behavior). `herdrAgentName` uses the trailing 12 characters so sibling keys sharing a prefix never collide. The port gains `findSession(session_key)`, which returns the live handle or `not_found`, and idempotent `closeWithProof(handle, session_key)`, which verifies live `[imm:<session_key>]` ownership before closing and proves exit on crash re-entry when the pane is gone and `findSession` reports `not_found`; a mismatched key returns `not_owned` without closing.
 
 ## Admission matrix
 

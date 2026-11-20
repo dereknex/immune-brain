@@ -63,9 +63,43 @@ import {
 /** Installed/source plugin directory resolved independently of target repo root. */
 const EXPECTED_PLUGIN_DIR = resolve(import.meta.dir, "..", "plugins", "immune-brain");
 
+/** S8: seed a settled delivery — a completed v3 record plus the tracked audit pair at the integrated commit. */
+function seedDeliveryEvidence(root: string, taskId: string): { commit: string; digest: string } {
+	const runId = "run-seed-1";
+	const auditDir = join(root, ".imm", "audit", taskId, runId);
+	mkdirSync(auditDir, { recursive: true });
+	const recordJson = `${JSON.stringify({ contract: "assurance_kernel/task_record/v4", task_id: taskId })}\n`;
+	const proofJson = `${JSON.stringify({ contract: "assurance_kernel/task_tombstone/v2", task_id: taskId, terminal_lifecycle: "done" })}\n`;
+	writeFileSync(join(auditDir, "task-record.json"), recordJson);
+	writeFileSync(join(auditDir, "terminal-proof.json"), proofJson);
+	execFileSync("git", ["add", "-A"], { cwd: root });
+	execFileSync("git", ["commit", "-qm", `deliver ${taskId}`], { cwd: root });
+	const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+	const prepared = prepareBatchLaneRunState({
+		batch_id: `batch-${taskId}`,
+		initiative_slug: taskId,
+		children: [{ task_id: taskId, slice_id: taskId, blocked_by: [], status: "enrollable", reason: null,
+			intent_path: `docs/plans/${taskId}.intent.json`, intent_revision: 1, intent_content_hash: "sha256:x" }],
+		plan_digest: "sha256:plan",
+		base_head: "0".repeat(40),
+		confirmation_time: TS,
+		budget: { max_children: 1, qa_failure_limit: 1 },
+		max_parallel: 1,
+		now: TS,
+	});
+	writeBatchLaneRunState(root, {
+		...prepared,
+		batch_state: "completed",
+		children: [{ task_id: taskId, slice_id: taskId, blocked_by: [], state: "integrated", reason: null, commit,
+			lane: { path: join(root, "lane"), branch: `imm-lane/${taskId}/${taskId}`, base_head: commit, lane_commit: commit },
+			qa_failures: 0, session: null }],
+		commits: [commit],
+	});
+	return { commit, digest: "sha256:seed" };
+}
+
 /** A Host adapter's Lane-root runtime stand-in; the relays under test stub `relayDecision`. */
 const stubLaneRuntime: LaneRuntimeFactory = () => ({ authorize: async () => ({}), shutdown: async () => {} });
-import { LaneSupervisor } from "../plugins/immune-brain/runtime/unattended/lane_supervisor.ts";
 import {
 	createFakeLoopGitHubPort,
 } from "../plugins/immune-brain/runtime/loop_daemon/github_port.ts";
@@ -100,7 +134,10 @@ import {
 import { escalationKey, escalationKeyMarker } from "../plugins/immune-brain/runtime/loop_daemon/escalation.ts";
 import { LOOP_STATUS_MARKER } from "../plugins/immune-brain/runtime/loop_daemon/status_issue.ts";
 import { LOOP_PR_MARKER } from "../plugins/immune-brain/runtime/loop_daemon/repair_agent.ts";
-import { recordExecutorExit } from "../plugins/immune-brain/runtime/loop_daemon/exit_recorder.ts";
+import {
+	prepareBatchLaneRunState,
+	writeBatchLaneRunState,
+} from "../plugins/immune-brain/runtime/unattended/batch_state.ts";
 
 const TS = "2026-11-12T10:00:00.000Z";
 
@@ -577,10 +614,8 @@ describe("Loop Daemon: Tick Dispatch Core (S8)", () => {
 			expect(res.dispatches[0].handler).toBe("apply_lane_decision_reply");
 			expect(res.dispatches[0].outcome).toBe("executed");
 			expect(relayCalled).toBe(true);
-			expect(capturedInput.supervisor).toBeInstanceOf(LaneSupervisor);
-			expect(typeof capturedInput.parentHost).toBe("string");
-			expect(capturedInput.pluginDir).toBe(EXPECTED_PLUGIN_DIR);
-			expect(capturedInput.waitMs).toBe(10_000);
+			expect(typeof capturedInput.advance).toBe("function");
+			expect(await capturedInput.advance("batch-s8")).toBeDefined();
 			expect(capturedInput.extra?.chosen_option).toBe("opt-1");
 			const projectRes = await capturedInput.project(root, "issue-88");
 			expect(projectRes.contract).toBe("assurance_kernel/assurance_projection/v1");
@@ -613,16 +648,7 @@ describe("Loop Daemon: Tick Dispatch Core (S8)", () => {
 				}),
 			);
 
-			recordExecutorExit(stateDir, {
-				run_id: "run-99",
-				task_id: "task-99",
-				batch_id: "batch-99",
-				lane: { lane_path: "/tmp/lane-99", generation: 1, pid: 1234, code: 0, signal: null },
-				state: "exited",
-				final_commit_sha: "commit-sha-99",
-				verification_evidence: "evidence-bytes-99",
-				recorded_at: TS,
-			});
+			seedDeliveryEvidence(root, "task-99");
 
 			const event: NormalizedLoopEvent = {
 				contract: LOOP_DAEMON_EVENT_CONTRACT,
@@ -1366,16 +1392,7 @@ describe("Loop Daemon: Tick Dispatch Core (S8)", () => {
 				}),
 			);
 
-			recordExecutorExit(stateDir, {
-				run_id: "run-123",
-				task_id: "task-123",
-				batch_id: "batch-123",
-				lane: { lane_path: "/tmp/lane-123", generation: 1, pid: 1234, code: 0, signal: null },
-				state: "exited",
-				final_commit_sha: "commit-sha-123",
-				verification_evidence: "evidence-bytes-123",
-				recorded_at: TS,
-			});
+			seedDeliveryEvidence(root, "task-123");
 
 			const event: NormalizedLoopEvent = {
 				contract: LOOP_DAEMON_EVENT_CONTRACT,
@@ -2146,10 +2163,7 @@ describe("Loop Daemon: Tick Dispatch Core (S8)", () => {
 			expect(input.taskId).toBe("task-100");
 			expect(input.operation).toBe("request_authorization");
 			expect(input.expectedRecordRevision).toBe("sha256:rev-100");
-			expect(input.supervisor).toBeInstanceOf(LaneSupervisor);
-			expect(typeof input.parentHost).toBe("string");
-			expect(input.pluginDir).toBe(EXPECTED_PLUGIN_DIR);
-			expect(input.waitMs).toBe(10_000);
+			expect(typeof input.advance).toBe("function");
 			expect(typeof input.project).toBe("function");
 			expect(typeof input.apply).toBe("function");
 			expect(typeof input.applied).toBe("function");
@@ -2170,6 +2184,87 @@ describe("Loop Daemon: Tick Dispatch Core (S8)", () => {
 				expect.objectContaining({ taskId: "task-100" }),
 				{ record_revision: "sha256:rev-100", chosen_option: "proceed" },
 			]);
+		});
+
+		// S8 (LDP-A3): a relayed stop closes the child's live session through the
+		// batch's recorded provider; a record with no bound handle parks without one.
+		it("createDefaultRelayInputFactory passes the batch's session port for a child with a live handle", async () => {
+			const { root, cleanup } = makeWorkspace();
+			cleanupFns.push(cleanup);
+
+			const seed = (handle: string | null): void => {
+				const prepared = prepareBatchLaneRunState({
+					batch_id: `batch-relay-${handle === null ? "bare" : "held"}`,
+					initiative_slug: "task-relay",
+					children: [{ task_id: "task-relay", slice_id: "task-relay", blocked_by: [], status: "enrollable", reason: null,
+						intent_path: "docs/plans/task-relay.intent.json", intent_revision: 1, intent_content_hash: "sha256:x" }],
+					plan_digest: "sha256:plan",
+					base_head: "0".repeat(40),
+					confirmation_time: TS,
+					budget: { max_children: 1, qa_failure_limit: 1 },
+					max_parallel: 1,
+					now: TS,
+				});
+				writeBatchLaneRunState(root, {
+					...prepared,
+					batch_state: "running",
+					session_provider: handle === null ? null : "herdr",
+					children: prepared.children.map((child) => ({
+						...child,
+						state: "enrolled" as const,
+						reason: null,
+						lane: { path: join(root, "lane"), branch: "imm-lane/task-relay/task-relay", base_head: "0".repeat(40), lane_commit: null },
+							session: handle === null ? null : {
+							key: "imm-task-relay-g1-aaaaaaaaaaaa",
+							generation: 1,
+							baseline: "r1",
+							handle,
+							entry_submitted: true,
+							attention: null,
+							no_progress: 0,
+							exit_proof: null,
+						},
+					})),
+				});
+			};
+
+			const stops: string[] = [];
+			const createPort = (): never =>
+				({
+					provider: "herdr",
+					protocolVersion: 1,
+					stopSession: async (handle: string) => { stops.push(handle); return { ok: true as const }; },
+				}) as never;
+
+			// A record whose child holds a live session handle yields the recorded
+			// provider's port, and stopping it stops the recorded handle.
+			seed("herdr:ws/tab9");
+			const oldEnv = ["HERDR_ENV", "HERDR_WORKSPACE_ID"].map((key) => [key, process.env[key]] as const);
+			process.env.HERDR_ENV = "1";
+			process.env.HERDR_WORKSPACE_ID = "ws-dispatch";
+			try {
+				const held = createDefaultRelayInputFactory(root, "task-relay", {
+					laneRuntime: stubLaneRuntime,
+					createPort,
+				})("stop", "r1", { operation: "stop", option_id: "stop", selected_option: "stop", run_id: "run-r", record_revision: "r1" });
+				expect(held.sessions).toBeDefined();
+				await held.sessions!.stop("herdr:ws/tab9");
+				expect(stops).toEqual(["herdr:ws/tab9"]);
+
+				// A record with no bound session parks without one; the daemon never
+				// invents a session.
+				seed(null);
+				const bare = createDefaultRelayInputFactory(root, "task-relay", {
+					laneRuntime: stubLaneRuntime,
+					createPort,
+				})("stop", "r1", { operation: "stop", option_id: "stop", selected_option: "stop", run_id: "run-r", record_revision: "r1" });
+				expect(bare.sessions).toBeUndefined();
+			} finally {
+				for (const [key, value] of oldEnv) {
+					if (value === undefined) delete (process.env as Record<string, string | undefined>)[key];
+					else (process.env as Record<string, string | undefined>)[key] = value;
+				}
+			}
 		});
 
 		it("budget_exhausted cross-tick accumulation holds candidates when max_dispatches_per_day is reached", async () => {
@@ -2516,8 +2611,8 @@ describe("Loop Daemon: Tick Dispatch Core (S8)", () => {
 				}),
 			);
 
-			// Case 2: missing executor exit
-			const resMissingExit = await dispatchDecisions({
+			// Case 2: no settled batch record
+			const resMissingRecord = await dispatchDecisions({
 				root,
 				stateDir,
 				loopConfig,
@@ -2530,22 +2625,25 @@ describe("Loop Daemon: Tick Dispatch Core (S8)", () => {
 				dryRun: false,
 				now: TS,
 			});
-			expect(resMissingExit.dispatches[0].outcome).toBe("failed");
-			expect(resMissingExit.dispatches[0].detail).toContain("no executor exit record found");
+			expect(resMissingRecord.dispatches[0].outcome).toBe("failed");
+			expect(resMissingRecord.dispatches[0].detail).toContain("no delivery evidence");
+			expect(resMissingRecord.dispatches[0].detail).toContain("no settled batch record");
 
-			// Case 3: executor exit with failure exit code
-			recordExecutorExit(stateDir, {
-				run_id: "run-40",
-				task_id: "task-40",
-				batch_id: "batch-40",
-				lane: { lane_path: "/tmp/lane-40", generation: 1, pid: 1234, code: 1, signal: null },
-				state: "exited",
-				final_commit_sha: "sha-40",
-				verification_evidence: "evidence",
-				recorded_at: TS,
+			// Case 3: record without an integrated commit
+			const prepared = prepareBatchLaneRunState({
+				batch_id: "batch-task-40",
+				initiative_slug: "task-40",
+				children: [{ task_id: "task-40", slice_id: "task-40", blocked_by: [], status: "enrollable", reason: null,
+					intent_path: "docs/plans/task-40.intent.json", intent_revision: 1, intent_content_hash: "sha256:x" }],
+				plan_digest: "sha256:plan",
+				base_head: "0".repeat(40),
+				confirmation_time: TS,
+				budget: { max_children: 1, qa_failure_limit: 1 },
+				max_parallel: 1,
+				now: TS,
 			});
-
-			const resFailedExit = await dispatchDecisions({
+			writeBatchLaneRunState(root, { ...prepared, batch_state: "running" });
+			const resNoCommit = await dispatchDecisions({
 				root,
 				stateDir,
 				loopConfig,
@@ -2558,8 +2656,39 @@ describe("Loop Daemon: Tick Dispatch Core (S8)", () => {
 				dryRun: false,
 				now: TS,
 			});
-			expect(resFailedExit.dispatches[0].outcome).toBe("failed");
-			expect(resFailedExit.dispatches[0].detail).toContain("executor exit not clean");
+			expect(resNoCommit.dispatches[0].outcome).toBe("failed");
+			expect(resNoCommit.dispatches[0].detail).toContain("no delivery evidence");
+			expect(resNoCommit.dispatches[0].detail).toContain("no integrated delivery");
+
+			// Case 4: integrated commit without the tracked audit pair
+			execFileSync("git", ["add", "-A"], { cwd: root });
+			execFileSync("git", ["commit", "-qm", "base"], { cwd: root });
+			const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+			writeBatchLaneRunState(root, {
+				...prepared,
+				batch_id: "batch-task-40",
+				batch_state: "completed",
+				children: [{ task_id: "task-40", slice_id: "task-40", blocked_by: [], state: "integrated", reason: null, commit: head,
+					lane: { path: join(root, "lane"), branch: "imm-lane/task-40/task-40", base_head: head, lane_commit: head },
+					qa_failures: 0, session: null }],
+				commits: [head],
+			});
+			const resNoAudit = await dispatchDecisions({
+				root,
+				stateDir,
+				loopConfig,
+				events: [event],
+				decisions: [decision],
+				snapshot,
+				state,
+				gitHubPort: fakePort,
+				guardFacts,
+				dryRun: false,
+				now: TS,
+			});
+			expect(resNoAudit.dispatches[0].outcome).toBe("failed");
+			expect(resNoAudit.dispatches[0].detail).toContain("no delivery evidence");
+			expect(resNoAudit.dispatches[0].detail).toContain("no audit evidence");
 		});
 
 		it("review-1: shutdown_requested in run/tick suppresses candidate execution and status Issue writes", async () => {

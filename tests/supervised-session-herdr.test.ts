@@ -412,29 +412,19 @@ describe("imm-session CLI", () => {
 		expect((await runSessionCli(["await", first.handle, first.handle, "--provider", "herdr"], env)).returncode).toBe(2);
 	});
 
-	// S1 + F2: the proof is the batch's own run state, not a well-formed pair of flags.
-	it("closes only a session whose close the batch record lists (S1, F2)", async () => {
+	// D11: `close` proves exit with closeWithProof(handle, session_key); no batch record.
+	it("closes with proof bound to (handle, session_key)", async () => {
 		const { port, env, stateFile } = subject();
-		const created = await port.createSession(INPUT);
+		const created = await port.createSession({ ...INPUT, session_key: "proof-key-1" });
 		if (!created.ok) throw new Error(created.reason);
 		const root = mkdtempSync(join(tmpdir(), "imm-session-close-"));
-		const at = "2020-01-01T00:00:00.000Z";
-		const writeRecord = (closes: unknown[]) => {
-			mkdirSync(join(root, ".imm/state/batches"), { recursive: true });
-			writeFileSync(join(root, ".imm/state/batches/batch-one.json"), JSON.stringify({ batch_id: "batch-one", session_closes: closes }));
-		};
 		const close = (...extra: string[]) => runSessionCli(["close", created.handle, "--provider", "herdr", ...extra], env, undefined, root);
 		const refusal = async (...extra: string[]) => JSON.parse((await close(...extra)).stdout);
 		try {
-			expect((await close("--task", "slice-a", "--recorded-at", at)).returncode).toBe(2);
-			expect(await refusal("--batch", "batch-one", "--task", "slice-a", "--recorded-at", "now")).toMatchObject({ ok: false, code: "close_unproven" });
-			// Well-formed but unrecorded: no record file, then a record without this close.
-			expect(await refusal("--batch", "batch-one", "--task", "slice-a", "--recorded-at", at)).toMatchObject({ ok: false, code: "close_unproven" });
-			writeRecord([{ task_id: "slice-b", at }, { task_id: "slice-a", at: "2020-01-02T00:00:00.000Z" }]);
-			expect(await refusal("--batch", "batch-one", "--task", "slice-a", "--recorded-at", at)).toMatchObject({ ok: false, code: "close_unproven" });
+			expect((await close()).returncode).toBe(2);
+			expect(await refusal("--session-key", "other-key")).toMatchObject({ ok: false, code: "not_owned" });
 			expect(acting(herdrCalls(stateFile)).some((c) => c[1] === "close")).toBe(false);
-			writeRecord([{ task_id: "slice-a", at }]);
-			expect(await refusal("--batch", "batch-one", "--task", "slice-a", "--recorded-at", at)).toEqual({ ok: true });
+			expect(await refusal("--session-key", "proof-key-1")).toEqual({ ok: true, exited: true, handle: created.handle, session_key: "proof-key-1" });
 			expect(acting(herdrCalls(stateFile)).at(-1)).toEqual(["tab", "close", "t1"]);
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});
@@ -451,5 +441,77 @@ describe("imm-session CLI", () => {
 		expect(JSON.parse(observed.stdout)).toEqual({ ok: true, state: "working", provenance: "detected" });
 		const waited = run(["await", handle, "--provider", "herdr", "--timeout-ms", "100"]);
 		expect(JSON.parse(waited.stdout)).toEqual({ ok: true, transition: "timeout", state: "unknown", provenance: "none" });
+	});
+});
+
+describe("Herdr session_key, findSession and closeWithProof (S2)", () => {
+	it("config-visible registry lists herdr and herdr-core with herdr executor admission", async () => {
+		const { SESSION_PROVIDER_REGISTRY } = await import("../plugins/immune-brain/runtime/session/provider_registry");
+		expect(SESSION_PROVIDER_REGISTRY.map(d => d.name).sort()).toEqual(["herdr", "herdr-core"]);
+		const herdr = SESSION_PROVIDER_REGISTRY.find(d => d.name === "herdr")!;
+		expect(herdr.roles.executor).toMatchObject({ workspace: "local_path", find_by_key: true, exit_proof: true });
+		expect([...herdr.roles.executor!.hosts].sort()).toEqual(["antigravity", "claude-code", "pi"]);
+	});
+
+	it("creates a keyed tab carrying [imm:<session_key>]", async () => {
+		const { port, stateFile } = subject();
+		const result = await port.createSession({ ...INPUT, session_key: "lane-test-1" });
+		if (!result.ok) throw new Error(result.reason);
+		expect(result.handle).toBe("herdr:w-parent/t1/p1/lane-test-1");
+		expect(herdrCalls(stateFile)[0]).toEqual(["tab", "create", "--workspace", "w-parent", "--cwd", "/lanes/slice-a", "--label", "slice-a [imm:lane-test-1]", "--no-focus"]);
+	});
+
+	it("derives distinct agent names from trailing key characters for sibling keys", () => {
+		const first = herdrAgentName("slice-a", "abcdefghijklmnopqrst-aaaa");
+		const second = herdrAgentName("slice-a", "abcdefghijklmnopqrst-bbbb");
+		expect(first).not.toBe(second);
+		expect(first).toMatch(/-nopqrst-aaaa$/);
+		expect(second).toMatch(/-nopqrst-bbbb$/);
+	});
+
+	it("finds a keyed session through herdr tab list", async () => {
+		const { port, stateFile } = subject();
+		const created = await port.createSession({ ...INPUT, session_key: "find-key-1" });
+		if (!created.ok) throw new Error(created.reason);
+		expect(await port.findSession!("find-key-1")).toEqual({ ok: true, handle: created.handle });
+		expect(await port.findSession!("absent-key")).toEqual({ ok: true, not_found: true });
+		expect(herdrCalls(stateFile).some(call => call[0] === "tab" && call[1] === "list" && call.includes("w-parent"))).toBe(true);
+	});
+
+	it("proves exit across crash re-entry when pane and tab are gone", async () => {
+		const { port, stateFile } = subject();
+		const created = await port.createSession({ ...INPUT, session_key: "crash-key-1" });
+		if (!created.ok) throw new Error(created.reason);
+		const first = await port.closeWithProof!(created.handle, "crash-key-1");
+		expect(first).toEqual({ ok: true, exited: true, handle: created.handle, session_key: "crash-key-1" });
+		const before = acting(herdrCalls(stateFile)).length;
+		const second = await port.closeWithProof!(created.handle, "crash-key-1");
+		expect(second).toEqual(first);
+		// Crash re-entry observes pane_not_found and an empty tab list before proving exit.
+		expect(herdrCalls(stateFile).slice(before).some(call => call[0] === "pane" && call[1] === "get")).toBe(true);
+		expect(herdrCalls(stateFile).slice(before).some(call => call[0] === "tab" && call[1] === "list")).toBe(true);
+	});
+
+	it("refuses not_owned without closing when a live tab carries another key", async () => {
+		const { port, stateFile } = subject();
+		const created = await port.createSession({ ...INPUT, session_key: "live-key-a" });
+		if (!created.ok) throw new Error(created.reason);
+		const before = acting(herdrCalls(stateFile)).length;
+		expect(await port.closeWithProof!(created.handle, "live-key-b")).toMatchObject({ ok: false, code: "not_owned" });
+		expect(acting(herdrCalls(stateFile)).slice(before).some(call => call[1] === "close")).toBe(false);
+	});
+
+	it("leaves a re-created live session carrying the same key alone", async () => {
+		const { port, stateFile } = subject();
+		const first = await port.createSession({ ...INPUT, session_key: "rekey-1" });
+		if (!first.ok) throw new Error(first.reason);
+		expect(await port.closeSession(first.handle, PROOF)).toEqual({ ok: true });
+		const second = await port.createSession({ ...INPUT, session_key: "rekey-1" });
+		if (!second.ok) throw new Error(second.reason);
+		expect(second.handle).not.toBe(first.handle);
+		const before = acting(herdrCalls(stateFile)).length;
+		expect(await port.closeWithProof!(first.handle, "rekey-1")).toMatchObject({ ok: false, code: "not_owned" });
+		expect(acting(herdrCalls(stateFile)).slice(before).some(call => call[0] === "tab" && call[1] === "close")).toBe(false);
+		expect(await port.observeState(second.handle)).toMatchObject({ ok: true, state: "working" });
 	});
 });

@@ -52,9 +52,12 @@ what to start, and supplies a confirmation when no native dialog can open.
    across sessions. The daemon holds no Run binding; each dispatched session
    makes its own.
 2. **The daemon is a headless Parent.** It is a fourth composition root beside
-   Pi, Claude Code and Antigravity. It calls `startBatch` and `LaneSupervisor`
-   as the Host adapters do and owns no batch state transition (ADR 0005
-   Decision 4 stands). It dispatches five kinds of agent, each a bounded Host
+   Pi, Claude Code and Antigravity. It calls `authorizeBatch` and
+   `runtime/lane_sessions/` (`startLanes` on first entry, `advanceLanes` on
+   every tick) as the Host adapters do and owns no batch state transition (ADR 0005
+   Decision 4 stands). (Amended by unified-lane-sessions S8: `startBatch` and
+   the supervisor launcher are retired; completion is read from the settled v3
+   Batch Record, never from a child process.) It dispatches five kinds of agent, each a bounded Host
    session: judging, analysis, planning (`draw-up`), execution (`drive`) and
    repair (`fix-pr`). QA and Review stay inside `drive` under the Kernel. The
    daemon reads completion from checkable evidence (the Kernel projection, a
@@ -147,11 +150,16 @@ what to start, and supplies a confirmation when no native dialog can open.
     daemon's credentials. Running the daemon under the owner's operating-system
     user is allowed; the daemon then reports its state as degraded, because a
     session could read the owner's credentials and forge an approval.
-14. **Executor exits are recorded by a launcher.** The daemon starts each
-    Executor through a small exit recorder that writes the exit status to the
-    generation's durable record. A restarted daemon then reads a real exit, or
-    sees the recorder still running, instead of meeting an `unobservable`
-    generation that only a person can clear.
+14. **Delivery is proven by the Batch Record and audit evidence.** The daemon
+    drives through `runtime/lane_sessions/` with `return_policy:
+    "retain_branch"` and `interaction_mode: "parent_relayed"`. A restarted
+    daemon reconstructs completion and PR eligibility from the settled v3
+    Batch Record (the integrated child commit on retained
+    `refs/heads/imm/<task_id>`) plus the verification digest of the tracked
+    `.imm/audit/<task_id>/` pair at that commit, instead of meeting an
+    `unobservable` generation that only a person can clear. (Supersedes the S5
+    exit-recorder rule as of unified-lane-sessions S8, which deletes
+    `exit_recorder.ts`.)
 
 Unchanged: the Kernel is the only authority; an Issue's state is neither
 Enrollment nor completion; remote text is data, never instruction; QA, Review,

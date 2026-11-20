@@ -44,6 +44,10 @@ export interface Observation {
 	provenance: StateProvenance;
 }
 
+export const SESSION_KEY_PATTERN = /^[a-z0-9-]{1,64}$/;
+/** A caller-chosen key bound into session identity (`herdr`: tab label suffix `[imm:<session_key>]`). */
+export type SessionKey = string;
+
 export interface CreateSessionInput {
 	/** The Lane path; the session's working directory, so its Kernel root is the Lane's store. */
 	cwd: string;
@@ -54,6 +58,8 @@ export interface CreateSessionInput {
 	hostArgs: string[];
 	/** The single explicit `drive` entry for the Lane's task, and nothing else. */
 	entry: string;
+	/** Optional caller key bound into session identity; omitting keeps random-token behavior. */
+	session_key?: SessionKey;
 	/**
 	 * Submit the entry again in this existing session instead of creating
 	 * another. A provider that can restarts an exited Host in the same place
@@ -103,6 +109,10 @@ export type AwaitResult = ({ ok: true; transition: Transition } & Observation) |
 export type ReadResult = { ok: true; text: string; source: OutputSource } | Refusal;
 export type StopResult = { ok: true } | Refusal;
 export type CloseResult = { ok: true } | Refusal;
+/** Idempotent proof that no live session carries `(handle, session_key)`. */
+export interface SessionExitProof { ok: true; exited: true; handle: SessionHandle; session_key: SessionKey }
+export type FindSessionResult = ({ ok: true; handle: SessionHandle } | { ok: true; not_found: true }) | Refusal;
+export type CloseWithProofResult = SessionExitProof | Refusal;
 export type ReconcileEntry = { handle: SessionHandle } & Observation & { refused?: RefusalCode };
 export type ReconcileResult = { ok: true; sessions: ReconcileEntry[] } | Refusal;
 
@@ -159,6 +169,10 @@ export interface SupervisedSessionPort {
 	 * files are the result; the session's output is for people only.
 	 */
 	runCommand?(input: RunCommandInput): Promise<RunCommandResult>;
+	/** Returns the live handle bound to `session_key`, or `not_found`. */
+	findSession?(session_key: SessionKey): Promise<FindSessionResult>;
+	/** Verifies live `[imm:<session_key>]` ownership before closing; idempotent, needs no `CloseRecord`. */
+	closeWithProof?(handle: SessionHandle, session_key: SessionKey): Promise<CloseWithProofResult>;
 }
 
 export const REQUIRED_CAPABILITIES = [
@@ -181,6 +195,8 @@ export const OPTIONAL_CAPABILITIES = [
 	"reportState",
 	"attachSession",
 	"runCommand",
+	"findSession",
+	"closeWithProof",
 ] as const;
 
 export type OptionalCapability = (typeof OPTIONAL_CAPABILITIES)[number];
@@ -230,9 +246,18 @@ export function closeRecordRefusal(handle: SessionHandle, record: CloseRecord | 
 	return refuse("close_unproven", `no recorded session close: ${unmet.join(", ")}; take task_id and at from the batch report's session_closes`, handle);
 }
 
+export function validateSessionKey(key: string): Refusal | null {
+	if (!SESSION_KEY_PATTERN.test(key)) return refuse("invalid_input", `session_key must match [a-z0-9-]{1,64}: ${JSON.stringify(key)}`);
+	return null;
+}
+
 export function validateCreateInput(input: CreateSessionInput): Refusal | null {
 	if (!input.cwd) return refuse("invalid_input", "cwd is required");
 	if (!input.label || input.label.length > 32) return refuse("invalid_input", "label must be 1 to 32 characters");
+	if (input.session_key !== undefined) {
+		const bad = validateSessionKey(input.session_key);
+		if (bad) return bad;
+	}
 	if (!(EXECUTOR_HOSTS as readonly string[]).includes(input.host)) return refuse("invalid_input", `host must be one of ${EXECUTOR_HOSTS.join(", ")}`);
 	if (!input.entry || input.entry.trim() === "") return refuse("invalid_input", "entry is required");
 	for (const [key, value] of Object.entries(input.env ?? {})) {

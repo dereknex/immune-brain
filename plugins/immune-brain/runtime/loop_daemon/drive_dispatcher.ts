@@ -1,32 +1,39 @@
 /**
- * Loop Daemon: Drive Dispatcher — the 4th Composition Root (S5)
+ * Loop Daemon: Drive Dispatcher — the 4th Composition Root (S8)
  *
- * Implements D6 of docs/specs/loop-daemon.spec.md (BR-REQ-4, BR-SCN-2). ADR 0039
- * Decision 2 makes the daemon a headless Parent: it calls `startBatch` and
- * `LaneSupervisor` exactly as the three Host adapters do, and owns no batch
- * state transition of its own (ADR 0005 Decision 4 stands). Everything this
- * module decides is which `StartBatchInput` to hand the shared driver and where
- * to record the Executor exit it observed; the batch itself does the rest.
+ * Implements D15 of docs/specs/unified-lane-sessions.spec.md (BR-SCN-7). ADR 0039
+ * Decision 2 makes the daemon a headless Parent: it calls `authorizeBatch`
+ * (`LOOP_DAEMON_ACTOR_ID`, `tracker_approval` or `policy_auto`, `return_policy`
+ * `retain_branch`, `interaction_mode` `parent_relayed`) plus `startLanes` on
+ * first entry, and `advanceLanes(root, batch_id)` on every subsequent tick. A
+ * stalled generation rotates without waiting for Kernel settlement (the
+ * reconciler owns that); a child reporting `entry_submitted: false` or an
+ * attention dialog is surfaced as `hold_for_dialog` so the tick escalates via
+ * `planEscalation` instead of hanging in an unattended TUI prompt.
+ *
+ * Completion and PR eligibility are read from the settled v3 Batch Record (the
+ * integrated child commit on retained `refs/heads/imm/<task_id>`) plus the
+ * `verification_evidence_digest` computed from the tracked
+ * `.imm/audit/<task_id>/` pair at that commit (D13). No exit-recorder files.
  */
 
+import { authorizeBatch, type BatchConfirmationSource } from "../unattended/batch_agreement";
+import { auditEvidenceDigest } from "../unattended/batch_git";
 import type { BatchRunnerGitPort } from "../unattended/batch_git";
-import {
-	startBatch,
-	type BatchRunReport,
-	type BatchRunnerKernelPort,
-	type BatchTrackerPort,
-	type StartBatchInput,
-} from "../unattended/batch_runner";
-import type { BatchLaneRunReport } from "../unattended/batch_state";
-import { LaneSupervisor, type ExecutorHost, type ExecutorPreferences } from "../unattended/lane_supervisor";
-import type { BatchAuthorityRegistry } from "../kernel/batch_authority";
+import { createBatchKernelPort } from "../unattended/batch_kernel_port";
+import type { BatchRunnerKernelPort } from "../unattended/batch_kernel_port";
+import { observeSingleTask } from "../unattended/batch_plan";
+import { createBatchAuthorityRegistry } from "../kernel/batch_authority";
+import type { BatchPlanChild } from "../kernel/batch_authority";
+import { findActiveLaneBatchForTask } from "../unattended/batch_preflight";
+import { isLaneBatchRecord, readAnyBatchRunState } from "../unattended/batch_state";
+import { resolveConfig } from "../config/layered_config";
+import { advanceLanes, startLanes } from "../lane_sessions/index";
+import type { ExecutorPreferences } from "../unattended/agent_profiles";
+import { createEnrollmentAuthorityRegistry } from "../kernel/enrollment_authority";
+import { projectAssurance } from "../kernel/assurance_projection";
 import { LOOP_DAEMON_ACTOR_ID } from "../kernel/actor_identity";
-import {
-	loopStateDir,
-	recordExecutorExit,
-	type ExecutorExitRecord,
-	type ExecutorExitState,
-} from "./exit_recorder.ts";
+import type { BatchAuthorityRegistry } from "../kernel/batch_authority";
 
 /** The daemon's composition-root name, as ADR 0039 Decision 2 records it. */
 export const LOOP_DAEMON_COMPOSITION_ROOT = "loop_daemon";
@@ -36,11 +43,8 @@ export const LOOP_DAEMON_BATCH_ACTOR = LOOP_DAEMON_ACTOR_ID;
 
 export interface LoopDriveSupervision {
 	/** The Host the Lane's Executor runs in. */
-	parent_host: ExecutorHost;
-	/** The plugin directory that Executor Host loads. */
-	plugin_dir: string;
-	/** How long one `startBatch` call supervises the generation before returning. */
-	wait_ms: number;
+	parent_host: string;
+	/** The requested Executor profile; sessions open with the effective choice. */
 	request?: ExecutorPreferences;
 	signal?: AbortSignal;
 	stop?: boolean;
@@ -48,119 +52,246 @@ export interface LoopDriveSupervision {
 
 export interface LoopDriveInput {
 	root: string;
-	batch_id: string;
 	/** The single task this Lane drives; it is also the batch's initiative slug. */
-	initiative_slug: string;
+	task_id: string;
+	/** The batch to advance, or to create when no active v3 batch drives this task. */
+	batch_id: string;
 	registry: BatchAuthorityRegistry;
 	capability: object;
-	children: StartBatchInput["children"];
+	children: BatchPlanChild[];
 	plan_digest: string;
 	base_head: string;
-	confirmation_time: string;
 	budget: { max_children: number; qa_failure_limit: number };
+	/** The BatchAgreement confirmation: `tracker_approval` or `policy_auto`. */
+	confirmation: { source: Extract<BatchConfirmationSource, "tracker_approval" | "policy_auto">; ref: string };
+	confirmation_time: string;
 	now: string;
 	kernel: BatchRunnerKernelPort;
 	git?: BatchRunnerGitPort;
-	tracker?: BatchTrackerPort;
 	max_parallel?: number;
 	supervision: LoopDriveSupervision;
-	/** The Kernel run the Lane serves; bound into the exit record. */
-	run_id: string;
-	final_commit_sha?: string | null;
-	/** The Lane's raw verification evidence; its digest is bound into the exit record. */
-	verification_evidence?: string | null;
-	/**
-	 * Resolves what the settled Kernel projection reports, after the driver returns
-	 * and before the exit record is written. This is how D6 stops the exit record
-	 * from carrying `null` where the delivery's commit and verification belong.
-	 */
-	settled_facts?: (
-		report: BatchRunReport,
-		exit: LaneSupervision["exit"],
-	) => Promise<{ final_commit_sha: string | null; verification_evidence: string | null }>;
-	/** Defaults to `<root>/.imm/state/loop`. */
-	state_dir?: string;
-	/** Seam for tests; the daemon always uses the shared driver. */
-	start_batch?: typeof startBatch;
-	start?: LaneSupervisor;
+	/** Test seam for the session provider; production resolves the real one and fails closed outside Herdr. */
+	createPort?: (provider: string, env: Record<string, string | undefined>) => never;
+}
+
+export interface LoopDriveHold {
+	task_id: string;
+	batch_id: string;
+	detail: string;
+}
+
+export interface LoopDriveExit {
+	state: "exited";
+	exit_code: 0;
+	generation: number | null;
+	final_commit_sha: string | null;
+	verification_evidence_digest: string | null;
 }
 
 export interface LoopDriveResult {
-	report: BatchRunReport;
-	/** Present exactly when this call observed an Executor exit. */
-	exit_record: ExecutorExitRecord | null;
+	settled: boolean;
+	/** Present exactly when the child integrated a delivery on the batch branch. */
+	exit: LoopDriveExit | null;
+	/** Present when the active child waits on a startup or mid-run dialog the daemon cannot answer. */
+	hold_for_dialog: LoopDriveHold | null;
+	/** Present when the child is parked `needs_human`: only a literal-user confirmation resumes it. */
+	parked: { task_id: string; reason: string } | null;
+	batch_id: string;
+	reason: string;
 }
 
-/** What this call observed of the Lane's generation; only lane mode reports it. */
-type LaneSupervision = NonNullable<BatchLaneRunReport["lane_supervision"]>;
-
-/**
- * The daemon holds one supervisor for its lifetime: a `LaneSupervisor` keeps the
- * live child handles of its own process, and a fresh one per tick would report a
- * running generation as unobservable.
- */
-export const loopDaemonSupervisor = new LaneSupervisor();
-
-/** A killed generation is not a delivery, so its recorder state follows how it ended. */
-function exitStateOf(supervision: LaneSupervision | undefined): ExecutorExitState {
-	if (!supervision) return "exited";
-	if (supervision.state === "stopped") return "interrupted";
-	return supervision.exit?.signal ? "stopped_by_parent" : "exited";
+function sessionProviders(root: string): string[] {
+	try {
+		const resolved = resolveConfig(root).session_providers as unknown as { value?: unknown };
+		const value = (resolved as { value?: unknown }).value;
+		return Array.isArray(value) ? (value as string[]) : ["herdr"];
+	} catch {
+		return ["herdr"];
+	}
 }
 
 /**
- * Drive one enrolled task through its Lane. This is the whole composition root:
- * compose the single-task `StartBatchInput`, let the shared driver run and
- * supervise the Lane, then record the Executor exit it observed.
+ * Drive one enrolled task through its Lane. First entry authorizes the batch
+ * and starts Lanes; every later entry advances the active batch id. Reads
+ * completion from the v3 Batch Record plus `.imm/audit/` — never from a
+ * process exit.
  */
 export async function dispatchLoopDrive(input: LoopDriveInput): Promise<LoopDriveResult> {
-	const driver = input.start_batch ?? startBatch;
-	const supervision = input.supervision;
-	const report = await driver({
-		plan_source: "single_task",
-		supervision: {
-			supervisor: input.start ?? loopDaemonSupervisor,
-			parentHost: supervision.parent_host,
-			pluginDir: supervision.plugin_dir,
-			waitMs: supervision.wait_ms,
-			stop: supervision.stop,
-			...(supervision.request ? { request: supervision.request } : {}),
-			...(supervision.signal ? { signal: supervision.signal } : {}),
-		},
+	const providers = sessionProviders(input.root);
+	const active = findActiveLaneBatchForTask(input.root, input.task_id);
+	const batchId = input.batch_id;
+	const laneDeps = {
 		root: input.root,
-		batch_id: input.batch_id,
-		initiative_slug: input.initiative_slug,
 		registry: input.registry,
 		capability: input.capability,
-		children: input.children,
-		plan_digest: input.plan_digest,
-		base_head: input.base_head,
-		confirmation_time: input.confirmation_time,
-		budget: input.budget,
-		now: input.now,
 		kernel: input.kernel,
 		...(input.git ? { git: input.git } : {}),
-		...(input.tracker ? { tracker: input.tracker } : {}),
-		...(input.max_parallel !== undefined ? { max_parallel: input.max_parallel } : {}),
-	} satisfies StartBatchInput);
+		providers,
+		host: input.supervision.parent_host,
+		env: { ...process.env } as Record<string, string | undefined>,
+		...(input.supervision.request ? { executor: input.supervision.request } : {}),
+		max_parallel: 1,
+		now: input.now,
+		confirmation_time: input.confirmation_time,
+		entry_kind: "single_task" as const,
+		...(input.createPort ? { createPort: input.createPort as never } : {}),
+	};
+	if (!active || !isLaneBatchRecord(active.record)) {
+		const agreement = authorizeBatch({
+			batch_id: batchId,
+			initiative_slug: input.task_id,
+			children: input.children,
+			base_head: input.base_head,
+			budget: input.budget,
+			confirmation: input.confirmation,
+			final_verification: { required: false, commands: [] },
+			return_policy: "retain_branch",
+			interaction_mode: "parent_relayed",
+			actor: LOOP_DAEMON_ACTOR_ID,
+		});
+		if (!agreement.ok) {
+			return { settled: false, exit: null, hold_for_dialog: null, parked: null, batch_id: batchId, reason: agreement.reason };
+		}
+		const started = await startLanes(agreement.agreement, laneDeps as never);
+		if (started && typeof started === "object" && (started as { ok?: unknown }).ok === false) {
+			const refusal = started as { code: string; reason: string; recovery: string };
+			return { settled: false, exit: null, hold_for_dialog: null, parked: null, batch_id: batchId, reason: `${refusal.reason}. ${refusal.recovery}` };
+		}
+		return { settled: false, exit: null, hold_for_dialog: holdOf(input.root, batchId, input.task_id), parked: parkedOf(input.root, batchId, input.task_id), batch_id: batchId, reason: "lane started" };
+	}
+	const advanced = await advanceLanes(input.root, batchId, laneDeps as never);
+	if (advanced && typeof advanced === "object" && (advanced as { ok?: unknown }).ok === false) {
+		const refusal = advanced as { code: string; reason: string; recovery: string };
+		return { settled: false, exit: null, hold_for_dialog: holdOf(input.root, batchId, input.task_id), parked: parkedOf(input.root, batchId, input.task_id), batch_id: batchId, reason: `${refusal.reason}. ${refusal.recovery}` };
+	}
+	const record = readAnyBatchRunState(input.root, batchId);
+	const child = record && isLaneBatchRecord(record) ? record.children.find(entry => entry.task_id === input.task_id) : undefined;
+	const commit = child?.commit ?? null;
+	const integrated = child?.state === "integrated" || child?.state === "released";
+	const digest = commit ? auditEvidenceDigest(input.root, commit, input.task_id) : null;
+	const exit: LoopDriveExit | null = integrated && commit
+		? { state: "exited", exit_code: 0, generation: child?.session?.generation ?? null, final_commit_sha: commit, verification_evidence_digest: digest }
+		: null;
+	return {
+		settled: integrated && commit !== null,
+		exit,
+		hold_for_dialog: integrated ? null : holdOf(input.root, batchId, input.task_id),
+		parked: integrated ? null : parkedOf(input.root, batchId, input.task_id),
+		batch_id: batchId,
+		reason: integrated ? (digest ? "lane integrated with verification digest" : "lane integrated without audit evidence") : "lane running",
+	};
+}
 
-	const exit = (report as BatchRunReport & { lane_supervision?: LaneSupervision }).lane_supervision?.exit ?? null;
-	if (!exit) return { report, exit_record: null };
-	const settled = input.settled_facts
-		? await input.settled_facts(report, exit)
-		: {
-				final_commit_sha: input.final_commit_sha ?? null,
-				verification_evidence: input.verification_evidence ?? null,
-			};
-	const exit_record = recordExecutorExit(input.state_dir ?? loopStateDir(input.root), {
-		run_id: input.run_id,
-		task_id: input.initiative_slug,
-		batch_id: input.batch_id,
-		lane: exit,
-		state: exitStateOf((report as BatchRunReport & { lane_supervision?: LaneSupervision }).lane_supervision),
-		final_commit_sha: settled.final_commit_sha,
-		verification_evidence: settled.verification_evidence,
-		recorded_at: new Date().toISOString(),
+/**
+ * The daemon has no Host to run an Assurance attempt, so it reports the Lane's
+ * Kernel obligation instead of fabricating a verdict. Shared by the drive job
+ * and post-relay advances.
+ */
+export async function daemonAdvanceTask(laneRoot: string, taskId: string) {
+	const fresh = await projectAssurance(laneRoot, taskId, undefined);
+	if (fresh.projection.lifecycle === "done" && fresh.projection.completion_ready) return { state: "completed" as const };
+	return {
+		state: "blocked" as const,
+		reason: `kernel obligation ${fresh.projection.next_obligation ?? "unknown"} has no daemon Host`,
+	};
+}
+
+export interface DaemonAdvanceOptions {
+	parent_host?: string;
+	createPort?: (provider: string, env: Record<string, string | undefined>) => never;
+}
+
+/**
+ * Re-enter the active batch for one task: re-issues the daemon binding from
+ * the v3 record and advances its Lanes. Used after a relayed GitHub/local
+ * decision, and by a restarted daemon whose in-memory capability is gone.
+ */
+export async function advanceDaemonLanes(root: string, batchId: string, options: DaemonAdvanceOptions = {}): Promise<Record<string, unknown>> {
+	const record = readAnyBatchRunState(root, batchId);
+	if (!record || !isLaneBatchRecord(record)) {
+		return { ok: false, code: "lane_session_unavailable", reason: `lane_session_unavailable: no active v3 batch ${batchId}`, recovery: "start a fresh batch" };
+	}
+	const registry = createBatchAuthorityRegistry();
+	const binding = {
+		batch_id: record.batch_id,
+		initiative_slug: record.initiative_slug,
+		plan_digest: record.plan_digest,
+		branch: record.branch ?? `imm/${record.initiative_slug}`,
+		base_head: record.base_head,
+		budget: record.budget,
+		actor_id: LOOP_DAEMON_ACTOR_ID,
+		confirmation_ref: record.confirmation?.ref ?? `resume:${record.batch_id}`,
+		nonce: `resume-${Date.now()}`,
+	};
+	const identities = record.intent_identities ?? {};
+	const authorityChildren = record.children.map(child => {
+		const identity = identities[child.task_id];
+		return {
+			task_id: child.task_id,
+			intent_path: identity?.intent_path ?? "",
+			intent_revision: identity?.intent_revision ?? 0,
+			intent_content_hash: identity?.intent_content_hash ?? "",
+			...(identity?.intent_authority_hash ? { intent_authority_hash: identity.intent_authority_hash } : {}),
+			blocked_by: [...child.blocked_by],
+		};
 	});
-	return { report, exit_record };
+	const capability = registry.issue(binding, authorityChildren, new Date().toISOString());
+	const parent = await observeSingleTask(root, record.initiative_slug);
+	const kernel = createBatchKernelPort({
+		root,
+		parent,
+		enrollmentRegistry: createEnrollmentAuthorityRegistry(),
+		registry,
+		capability,
+		binding,
+		advanceTask: daemonAdvanceTask,
+		resume: { isResuming: true, existingBatch: record, batchBranch: record.branch ?? `imm/${record.initiative_slug}` },
+	});
+	const config = resolveConfig(root);
+	const laneDeps = {
+		root,
+		registry,
+		capability,
+		kernel,
+		entry_kind: "single_task" as const,
+		providers: sessionProviders(root),
+		host: options.parent_host ?? config.agents.roles.executor?.host ?? "claude-code",
+		env: { ...process.env } as Record<string, string | undefined>,
+		...(record.executor_preferences ? { executor: record.executor_preferences } : {}),
+		max_parallel: record.max_parallel,
+		now: new Date().toISOString(),
+		confirmation_time: record.confirmation_time,
+		...(options.createPort ? { createPort: options.createPort as never } : {}),
+	};
+	const advanced = await advanceLanes(root, batchId, laneDeps as never);
+	return advanced as unknown as Record<string, unknown>;
+}
+
+/** A child parked `needs_human` waits for a decision the daemon must escalate, never retry. */
+function parkedOf(root: string, batchId: string, taskId: string): { task_id: string; reason: string } | null {
+	try {
+		const record = readAnyBatchRunState(root, batchId);
+		const child = record && isLaneBatchRecord(record) ? record.children.find(entry => entry.task_id === taskId) : undefined;
+		return child?.state === "needs_human" ? { task_id: taskId, reason: child.reason ?? "needs_human" } : null;
+	} catch {
+		return null;
+	}
+}
+
+/** A child waiting on a dialog the unattended daemon cannot answer holds the Lane open. */
+function holdOf(root: string, batchId: string, taskId: string): LoopDriveHold | null {
+	try {
+		const record = readAnyBatchRunState(root, batchId);
+		const session = record && isLaneBatchRecord(record)
+			? record.children.find(entry => entry.task_id === taskId)?.session ?? null
+			: null;
+		if (!session) return null;
+		if (session.entry_submitted === false)
+			return { task_id: taskId, batch_id: batchId, detail: "lane_entry_not_submitted: the Executor session waits on a startup dialog" };
+		if (session.attention !== null)
+			return { task_id: taskId, batch_id: batchId, detail: `lane_attention: ${session.attention}` };
+		return null;
+	} catch {
+		return null;
+	}
 }

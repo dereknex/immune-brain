@@ -23,7 +23,7 @@ import { intentAuthorityHash, readTaskIntent, observeEnrollmentTaskIntent } from
 import type { TaskIntentV1 } from "../kernel/types";
 import { ignoredPaths, isBatchRef, isParentBranch, isProgressRef, parentBranchRef, readBatchRef } from "./batch_ref";
 import { auditRunRecordPath, auditRunTerminalProofPath } from "../kernel/storage_paths";
-import { isWorkflowAuthoringPath } from "./batch_git";
+import { auditEvidenceDigest, isWorkflowAuthoringPath } from "./batch_git";
 import { readTaskRecordRaw, readSettledTaskEvidence, readWorkspaceStateRaw, enrollmentEventIdFor, reconcileKernelAuthority } from "../kernel/storage";
 import type { TaskRecord } from "../kernel/types";
 import { pathMatchesScope } from "../workspace_scope";
@@ -32,7 +32,7 @@ import { dependencyWaves } from "./batch_schedule";
 import { parseVerificationDescriptor } from "../verification_descriptor";
 import { scopeEstimateFailure } from "../kernel/intent_readiness";
 import { batchReason, type BatchReasonKey } from "./batch_reasons";
-import { BatchRuntimeTooOldError, classifyBatchRunStateContract, BATCH_RUN_STATES, batchTopologyDigest, isLaneBatchRecord, isTerminalBatchState, readAnyBatchRunState, recordedAuthorityHashes, type AnyBatchRunStateRecord, type LaneRebind } from "./batch_state";
+import { BatchRuntimeTooOldError, classifyBatchRunStateContract, BATCH_RUN_STATES, batchTopologyDigest, isLaneBatchRecord, isRetiredLaneRecord, isTerminalBatchState, readAnyBatchRunState, recordedAuthorityHashes, type AnyBatchRunStateRecord, type BatchLaneChildRun, type BatchLaneRunStateRecord, type LaneRebind } from "./batch_state";
 import { assertLaneWorktreeAvailable } from "./batch_worktrees";
 import { planLaneLeakRestore } from "./batch_leak_restore";
 import type {
@@ -187,6 +187,47 @@ export function findExistingActiveBatch(root: string, initiativeSlug: string): B
 		return { corrupt: true, path: file };
 	}
 	return found;
+}
+
+/**
+ * The active v3 Lane batch claiming `taskId` as a child, or null when none does.
+ * Fails closed: a corrupt record or two active batches claiming the same child
+ * throws instead of guessing. Replaces slug-based lookup for per-child relay.
+ */
+export function findActiveLaneBatchForTask(root: string, taskId: string): { record: BatchLaneRunStateRecord; child: BatchLaneChildRun } | null {
+	const batchesDir = join(root, ".imm/state/batches");
+	if (!existsSync(batchesDir)) return null;
+	const matches: Array<{ record: BatchLaneRunStateRecord; child: BatchLaneChildRun }> = [];
+	for (const file of readdirSync(batchesDir).sort()) {
+		if (!file.endsWith(".json") || file.endsWith(".report.json")) continue;
+		let raw: unknown;
+		try {
+			raw = JSON.parse(readFileSync(join(batchesDir, file), "utf8"));
+		} catch {
+			throw new Error(`batch_lane_unreadable: ${file}`);
+		}
+		const candidate = raw as AnyBatchRunStateRecord;
+		const kind = classifyBatchRunStateContract(candidate?.contract);
+		if (kind === "foreign") continue;
+		if (kind === "newer") throw new BatchRuntimeTooOldError(join(batchesDir, file), candidate.contract);
+		if (kind !== "v3") continue;
+		if (typeof candidate.batch_id !== "string" || typeof candidate.base_head !== "string" || !Array.isArray(candidate.children)) {
+			throw new Error(`batch_lane_unreadable: ${file}`);
+		}
+		if (isTerminalBatchState(candidate.batch_state)) continue;
+		let record: AnyBatchRunStateRecord | null;
+		try {
+			record = readAnyBatchRunState(root, file.slice(0, -5));
+		} catch {
+			throw new Error(`batch_lane_unreadable: ${file}`);
+		}
+		if (!record || !isLaneBatchRecord(record)) continue;
+		const laneRecord = record as BatchLaneRunStateRecord;
+		const child = laneRecord.children.find(value => value.task_id === taskId);
+		if (child) matches.push({ record: laneRecord, child: child as BatchLaneChildRun });
+	}
+	if (matches.length > 1) throw new Error(`batch_lane_ambiguous: ${taskId} is claimed by ${matches.map(m => m.record.batch_id).sort().join(", ")}`);
+	return matches[0] ?? null;
 }
 
 /**
@@ -697,6 +738,7 @@ async function projectPreflight(
 			: reject("batch_state_unreadable", found.path);
 	// Settled records retain branch provenance; only active records are resumed.
 	const activeRecord: AnyBatchRunStateRecord | null = found ? found.record : null;
+	if (activeRecord && isRetiredLaneRecord(activeRecord)) return reject("batch_record_retired", `${activeRecord.batch_id} uses v2; v2 Lane records are read-and-retire only`);
 	if (activeRecord && !isLaneBatchRecord(activeRecord)) return reject("batch_record_shape_retired");
 	const existingBatch: AnyBatchRunStateRecord | null = activeRecord ?? findSettledBatchRecord(root, initiativeSlug);
 	if (existingBatch && (isLaneBatchRecord(existingBatch) ? existingBatch.plan_source : undefined) !== options.plan_source)
@@ -1167,6 +1209,30 @@ export async function authorizeBatch<HostRejection>(
 		reuse_blockers: reuseBlockers,
 		binding,
 	};
+}
+
+/**
+ * S8 daemon PR gate (D13): the settled delivery evidence for one task, read
+ * from the v3 Batch Record plus `.imm/audit/`. The active batch wins; a
+ * terminal settled record covers a restarted daemon. Corrupt or ambiguous
+ * matches throw instead of guessing, so the gate fails closed.
+ */
+export function laneDeliveryEvidence(root: string, taskId: string):
+	| { ok: true; batch_id: string; commit: string; digest: string }
+	| { ok: false; reason: string } {
+	const active = findActiveLaneBatchForTask(root, taskId);
+	const settled = active ? null : findSettledBatchRecord(root, taskId);
+	const record = active?.record ?? settled;
+	if (!record || !isLaneBatchRecord(record))
+		return { ok: false, reason: `no settled batch record for ${taskId}` };
+	const child = record.children.find(entry => entry.task_id === taskId);
+	const commit = child?.commit ?? null;
+	if (child?.state !== "integrated" && child?.state !== "released")
+		return { ok: false, reason: `no integrated delivery for ${taskId} (child state ${child?.state ?? "absent"})` };
+	if (!commit) return { ok: false, reason: `no integrated commit for ${taskId}` };
+	const digest = auditEvidenceDigest(root, commit, taskId);
+	if (!digest) return { ok: false, reason: `no audit evidence for ${taskId} at ${commit.slice(0, 12)}` };
+	return { ok: true, batch_id: record.batch_id, commit, digest };
 }
 
 /**

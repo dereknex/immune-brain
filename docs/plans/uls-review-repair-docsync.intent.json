@@ -1,0 +1,49 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "uls-review-repair-docsync",
+  "owner": "user",
+  "goal": "Restore the full suite at the uls-review-repair delivery HEAD 49fe1fcb (PR #581, imm/unified-lane-sessions; Spec docs/specs/unified-lane-sessions.spec.md). Batch final verification failed bun test with 5 failures in 5 files, all one root cause: rr-8 changed docs/reference/immune-brain-config.md (session_providers default back to [\"herdr\"]) but did not regenerate its packaged mirror plugins/immune-brain/dist/docs/reference/immune-brain-config.md, so `bun scripts/sync-dist-docs.ts --check` reports 1 out-of-sync doc. Regenerate the mirror with `bun scripts/sync-dist-docs.ts` (and any other derived output it reports) so it is byte-identical to the docs/ source; do not change the docs/ source text or the runtime default.",
+  "acceptance": [
+    {
+      "id": "ds-1",
+      "assertion": "bun run typecheck passes at the repaired tip.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"run\",\n      \"typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "ds-2",
+      "assertion": "`bun scripts/sync-dist-docs.ts --check` reports every packaged doc in sync.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"scripts/sync-dist-docs.ts\",\n      \"--check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "ds-3",
+      "assertion": "Every test in tests/git-integration-preference.test.ts, which failed at delivery HEAD 49fe1fcb only because the packaged immune-brain-config.md mirror is stale, passes without skipping, deleting or weakening a case.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/git-integration-preference.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "ds-4",
+      "assertion": "Every test in tests/pi-only-current-contracts.test.ts, which failed at delivery HEAD 49fe1fcb only because the packaged immune-brain-config.md mirror is stale, passes without skipping, deleting or weakening a case.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-only-current-contracts.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "ds-5",
+      "assertion": "Every test in tests/loop-daemon-contracts.test.ts, which failed at delivery HEAD 49fe1fcb only because the packaged immune-brain-config.md mirror is stale, passes without skipping, deleting or weakening a case.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-daemon-contracts.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "ds-6",
+      "assertion": "Every test in tests/dist-docs-sync-contract.test.ts, which failed at delivery HEAD 49fe1fcb only because the packaged immune-brain-config.md mirror is stale, passes without skipping, deleting or weakening a case.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/dist-docs-sync-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "ds-7",
+      "assertion": "Every test in tests/skill-dist-consistency.test.ts, which failed at delivery HEAD 49fe1fcb only because the packaged immune-brain-config.md mirror is stale, passes without skipping, deleting or weakening a case.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/skill-dist-consistency.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "plugins/immune-brain/dist/docs/reference/immune-brain-config.md",
+    "docs/plans/uls-review-repair-docsync.intent.json"
+  ],
+  "risk": "routine",
+  "revision": 1
+}

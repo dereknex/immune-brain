@@ -1,0 +1,648 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "batch-agreement-v3",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "batch-agreement-v3",
+    "goal": "unified-lane-sessions S3 (#570; Spec docs/specs/unified-lane-sessions.spec.md D2 transitional, D3, D4, D12 rebind proof, D17, OD-15, BR-DEC-2, BR-DEC-4, BR-DEC-5). First prove on a two-child Initiative fixture that record-level rebindBatchChildIdentity (generalized from rebindSingleTaskIdentity) appends a contiguous lane_rebinds entry for any child, and that hasContiguousLaneRebind and batch_git.ts final verification keep the pre-rebind Parent identity; if that cannot hold, stop for re-planning before any later Slice relies on the v3 shape. Then export BatchAgreement + authorizeBatch (confirmation, final_verification { required, commands }, return_policy checkout_delivery | retain_branch, interaction_mode interactive_host | parent_relayed) from runtime/unattended/batch_agreement.ts; write Lane records as batch_run_state/v3 carrying agreement policies, batch-level session_provider and per-child session (both null until S4), and per-child lane_removed / lane_retained / lane_rebinds; refuse v2 with batch_record_retired; decide completion by final_verification and coordinator return by return_policy, removing plan_source from batch_lanes.ts, batch_git.ts, lane_cleanup.ts, and assurance/run_continuation.ts; migrate the stored-record contract assertions of existing suites from v2 to v3; keep startBatch as a transitional adapter.",
+    "acceptance": [
+      {
+        "id": "AGR-A1",
+        "assertion": "In tests/batch-agreement.test.ts and tests/batch-completion-verifier.test.ts: on a two-child Initiative v3 record, rebindBatchChildIdentity for Child 2 appends exactly one contiguous lane_rebinds entry naming Child 2's task_id, from_digest, and to_digest and advances plan_digest while Child 1's record is byte-identical; a stale from_digest is refused with no write; after the rebind, Parent final verification in batch_git.ts passes under the Parent identity established before the rebind.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-agreement.test.ts\",\n      \"tests/batch-completion-verifier.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AGR-A2",
+        "assertion": "In tests/claude-run-continuation.test.ts: hasContiguousLaneRebind accepts a contiguous lane_rebinds chain for an Initiative child and for a single task, and refuses a chain with a gap, a foreign task_id, or a target digest off the chain (negative controls).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-run-continuation.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AGR-A3",
+        "assertion": "In tests/batch-agreement.test.ts: authorizeBatch produces valid agreements for Host (native_gate, checkout_delivery or retain_branch, interactive_host) and daemon (policy_auto or tracker_approval, LOOP_DAEMON_ACTOR_ID, retain_branch, parent_relayed) accepted by the batch authority registry; unknown confirmation.source, return_policy, interaction_mode, or non-array final_verification.commands each return batch_agreement_invalid and write zero files.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-agreement.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AGR-A4",
+        "assertion": "In tests/batch-agreement.test.ts and tests/batch-completion-verifier.test.ts: completion is decided by final_verification.required (false completes on delivery; true requires passing commands) and coordinator return follows return_policy (checkout_delivery stages delta; retain_branch keeps refs/heads/imm/<slug>) for both 1-child and 2-child agreements.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-agreement.test.ts\",\n      \"tests/batch-completion-verifier.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AGR-A5",
+        "assertion": "In tests/unattended-batch-lanes.test.ts and tests/single-task-lane-batch.test.ts: new Lane batch records carry assurance_kernel/batch_run_state/v3 with agreement policies, session_provider null, and every children[].session null; stored v2 Lane records are refused with batch_record_retired naming retire_stale_batch; v1 records still read.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-lanes.test.ts\",\n      \"tests/single-task-lane-batch.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AGR-A6",
+        "assertion": "batch_lanes.ts, batch_git.ts, lane_cleanup.ts, and assurance/run_continuation.ts never mention plan_source, and tests/runtime-layering-boundary.test.ts enforces that rule for those files and proves runtime/unattended/ imports neither runtime/session/ nor runtime/lane_sessions/.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"u=plugins/immune-brain/runtime/unattended; ! grep -n plan_source $u/batch_lanes.ts $u/batch_git.ts $u/lane_cleanup.ts plugins/immune-brain/runtime/assurance/run_continuation.ts && bun test tests/runtime-layering-boundary.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AGR-A7",
+        "assertion": "Transitional startBatch-based Host and daemon callers pass their existing focused suites; the only assertion changes are stored-record contract expectations moved from assurance_kernel/batch_run_state/v2 to v3 (tests/claude-batch-authority.test.ts:160,528; tests/batch-stale-disposition.test.ts:45,207,461; and any other stored v2 Lane fixture in these suites), with no assertion removed or weakened.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-lane-decision.test.ts\",\n      \"tests/single-task-lane-cleanup.test.ts\",\n      \"tests/claude-batch-authority.test.ts\",\n      \"tests/pi-batch-authority.test.ts\",\n      \"tests/loop-daemon-drive-pr.test.ts\",\n      \"tests/batch-final-report.test.ts\",\n      \"tests/batch-stale-disposition.test.ts\",\n      \"tests/batch-serial-retirement.test.ts\",\n      \"tests/pi-batch-acceptance-integration.test.ts\",\n      \"tests/unattended-contracts.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AGR-A8",
+        "assertion": "Claude bundle, Antigravity artifact, dist reference mirrors, and repository typecheck are current.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun scripts/sync-dist-docs.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/batch-agreement-v3.md",
+      "docs/plans/batch-agreement-v3.intent.json",
+      "docs/specs/unified-lane-sessions.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/assurance/run_continuation.ts",
+      "plugins/immune-brain/runtime/unattended/batch_agreement.ts",
+      "plugins/immune-brain/runtime/unattended/batch_git.ts",
+      "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+      "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+      "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+      "plugins/immune-brain/runtime/unattended/batch_state.ts",
+      "plugins/immune-brain/runtime/unattended/lane_cleanup.ts",
+      "tests/batch-agreement.test.ts",
+      "tests/batch-completion-verifier.test.ts",
+      "tests/batch-final-report.test.ts",
+      "tests/batch-serial-retirement.test.ts",
+      "tests/batch-stale-disposition.test.ts",
+      "tests/claude-batch-authority.test.ts",
+      "tests/claude-run-continuation.test.ts",
+      "tests/pi-batch-acceptance-integration.test.ts",
+      "tests/runtime-layering-boundary.test.ts",
+      "tests/single-task-lane-batch.test.ts",
+      "tests/unattended-batch-lanes.test.ts",
+      "tests/unattended-contracts.test.ts"
+    ],
+    "scope_size_reason": "The v3 record contract, the Initiative rebind it must carry, and the suites that persist Lane records change atomically: v2 records fail closed as soon as v3 is written, so every stored-record fixture moves in the same Slice. The session port and reconciler moved to S4 so this Slice holds only the agreement and record contract.",
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/batch-agreement-v3.intent.json",
+    "content_hash": "sha256:2e075b21768bb3089658f98475e8ef3d053fbe7d216248852fa14f64135adbbb"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:2e075b21768bb3089658f98475e8ef3d053fbe7d216248852fa14f64135adbbb",
+  "git_base_head": "e3320ba6ccbf979ede51c69f94684fc6334ef7c7",
+  "attestations": [
+    {
+      "id": "approval-qa-e269290a",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:2e075b21768bb3089658f98475e8ef3d053fbe7d216248852fa14f64135adbbb",
+      "diff_hash": "sha256:bbd7b0ff1a61039f518be75c2ae926a6e909d6cccd8665b679376784442e6b59",
+      "actor_id": "deterministic-qa",
+      "summary": "all 9 project verification check(s) passed; execution=sha256:cd479ef8b086c0f2984075d2192d1993f68ab10f25c19fde8607ed9be9ad0106",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AGR-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:cd479ef8b086c0f2984075d2192d1993f68ab10f25c19fde8607ed9be9ad0106"
+        },
+        {
+          "acceptance_id": "AGR-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:cd479ef8b086c0f2984075d2192d1993f68ab10f25c19fde8607ed9be9ad0106"
+        },
+        {
+          "acceptance_id": "AGR-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:cd479ef8b086c0f2984075d2192d1993f68ab10f25c19fde8607ed9be9ad0106"
+        },
+        {
+          "acceptance_id": "AGR-A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:cd479ef8b086c0f2984075d2192d1993f68ab10f25c19fde8607ed9be9ad0106"
+        },
+        {
+          "acceptance_id": "AGR-A5",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:cd479ef8b086c0f2984075d2192d1993f68ab10f25c19fde8607ed9be9ad0106"
+        },
+        {
+          "acceptance_id": "AGR-A6",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:cd479ef8b086c0f2984075d2192d1993f68ab10f25c19fde8607ed9be9ad0106"
+        },
+        {
+          "acceptance_id": "AGR-A7",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:cd479ef8b086c0f2984075d2192d1993f68ab10f25c19fde8607ed9be9ad0106"
+        },
+        {
+          "acceptance_id": "AGR-A8",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:cd479ef8b086c0f2984075d2192d1993f68ab10f25c19fde8607ed9be9ad0106"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-bfd53305",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:2e075b21768bb3089658f98475e8ef3d053fbe7d216248852fa14f64135adbbb",
+      "diff_hash": "sha256:0f146af176e1163438578a2148098dc02a6ee9d8e33f4c975891804fb604aafe",
+      "actor_id": "deterministic-qa",
+      "summary": "all 9 project verification check(s) passed; execution=sha256:5249150e655dceb663ec60d153059fb453fba8acaea1316c356ca374c50a5519",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AGR-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:5249150e655dceb663ec60d153059fb453fba8acaea1316c356ca374c50a5519"
+        },
+        {
+          "acceptance_id": "AGR-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:5249150e655dceb663ec60d153059fb453fba8acaea1316c356ca374c50a5519"
+        },
+        {
+          "acceptance_id": "AGR-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:5249150e655dceb663ec60d153059fb453fba8acaea1316c356ca374c50a5519"
+        },
+        {
+          "acceptance_id": "AGR-A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:5249150e655dceb663ec60d153059fb453fba8acaea1316c356ca374c50a5519"
+        },
+        {
+          "acceptance_id": "AGR-A5",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:5249150e655dceb663ec60d153059fb453fba8acaea1316c356ca374c50a5519"
+        },
+        {
+          "acceptance_id": "AGR-A6",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:5249150e655dceb663ec60d153059fb453fba8acaea1316c356ca374c50a5519"
+        },
+        {
+          "acceptance_id": "AGR-A7",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:5249150e655dceb663ec60d153059fb453fba8acaea1316c356ca374c50a5519"
+        },
+        {
+          "acceptance_id": "AGR-A8",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:5249150e655dceb663ec60d153059fb453fba8acaea1316c356ca374c50a5519"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-5d6d763d",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:2e075b21768bb3089658f98475e8ef3d053fbe7d216248852fa14f64135adbbb",
+      "diff_hash": "sha256:fb880c7b2fd4587de4303cdf10c27a9ec9c032b5962438d54464500deb3a3751",
+      "actor_id": "deterministic-qa",
+      "summary": "all 9 project verification check(s) passed; execution=sha256:b13f1f1d186abef3fe104711bb25670e937c493f6adb3cf2411e464d69212d63",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AGR-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:b13f1f1d186abef3fe104711bb25670e937c493f6adb3cf2411e464d69212d63"
+        },
+        {
+          "acceptance_id": "AGR-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:b13f1f1d186abef3fe104711bb25670e937c493f6adb3cf2411e464d69212d63"
+        },
+        {
+          "acceptance_id": "AGR-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:b13f1f1d186abef3fe104711bb25670e937c493f6adb3cf2411e464d69212d63"
+        },
+        {
+          "acceptance_id": "AGR-A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:b13f1f1d186abef3fe104711bb25670e937c493f6adb3cf2411e464d69212d63"
+        },
+        {
+          "acceptance_id": "AGR-A5",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:b13f1f1d186abef3fe104711bb25670e937c493f6adb3cf2411e464d69212d63"
+        },
+        {
+          "acceptance_id": "AGR-A6",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:b13f1f1d186abef3fe104711bb25670e937c493f6adb3cf2411e464d69212d63"
+        },
+        {
+          "acceptance_id": "AGR-A7",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:b13f1f1d186abef3fe104711bb25670e937c493f6adb3cf2411e464d69212d63"
+        },
+        {
+          "acceptance_id": "AGR-A8",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:b13f1f1d186abef3fe104711bb25670e937c493f6adb3cf2411e464d69212d63"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-61991da1",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:2e075b21768bb3089658f98475e8ef3d053fbe7d216248852fa14f64135adbbb",
+      "diff_hash": "sha256:2dad6245fac48fee8497aa919c9030ec81134899dbeae1384f6d6abe7d5621c4",
+      "actor_id": "deterministic-qa",
+      "summary": "all 9 project verification check(s) passed; execution=sha256:e4eca293c5d73931f8911488736413d8bd9755c35ec25c83d5a70b8bdbc49b06",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AGR-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:e4eca293c5d73931f8911488736413d8bd9755c35ec25c83d5a70b8bdbc49b06"
+        },
+        {
+          "acceptance_id": "AGR-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:e4eca293c5d73931f8911488736413d8bd9755c35ec25c83d5a70b8bdbc49b06"
+        },
+        {
+          "acceptance_id": "AGR-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:e4eca293c5d73931f8911488736413d8bd9755c35ec25c83d5a70b8bdbc49b06"
+        },
+        {
+          "acceptance_id": "AGR-A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:e4eca293c5d73931f8911488736413d8bd9755c35ec25c83d5a70b8bdbc49b06"
+        },
+        {
+          "acceptance_id": "AGR-A5",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:e4eca293c5d73931f8911488736413d8bd9755c35ec25c83d5a70b8bdbc49b06"
+        },
+        {
+          "acceptance_id": "AGR-A6",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:e4eca293c5d73931f8911488736413d8bd9755c35ec25c83d5a70b8bdbc49b06"
+        },
+        {
+          "acceptance_id": "AGR-A7",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:e4eca293c5d73931f8911488736413d8bd9755c35ec25c83d5a70b8bdbc49b06"
+        },
+        {
+          "acceptance_id": "AGR-A8",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:e4eca293c5d73931f8911488736413d8bd9755c35ec25c83d5a70b8bdbc49b06"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-198c30cc",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:2e075b21768bb3089658f98475e8ef3d053fbe7d216248852fa14f64135adbbb",
+      "diff_hash": "sha256:2dad6245fac48fee8497aa919c9030ec81134899dbeae1384f6d6abe7d5621c4",
+      "actor_id": "cli:claude-code:35565872-1b93-45e4-965b-b2f04f4ee0aa",
+      "summary": "Round-3 delta (tests/batch-agreement.test.ts) removes a debug console.log and adds runLaneBatch-routed AGR-A4 coverage for 2-child checkout_delivery (staged, branch kept) and 1/2-child retain_branch (branch kept; status manual|fast_forwarded matches returnBatchToCoordinator's git_integration routing); other paths carried forward from round 2. Blast radius: tier low for this delta (test-only); overall medium, centred on batch_lanes.ts/batch_state.ts persisted v3 record shape.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "e3320ba6ccbf979ede51c69f94684fc6334ef7c7",
+        "review_commit": "74ea76e91fd29830d240598f27b64ec599853533"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-bebdda6070fa-1-review-1",
+          "acceptance_id": "AGR-A4",
+          "summary": "1-child retain_branch runLaneBatch test asserts only batch_state and branch retention, not final_report.return_to_coordinator.status, unlike its 2-child sibling.",
+          "anchor": "sha256:c3ccfce400c76a2cab3440149964b3e0719dbb68eb6900631c9a95c702521a01",
+          "evidence": {
+            "trigger": "integratedFixture(1,{return_policy:'retain_branch'}) → a regression routing a 1-child retain_branch through checkout delivery (status 'staged') would still pass this test",
+            "caller_chain": [
+              "tests/batch-agreement.test.ts",
+              "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+              "plugins/immune-brain/runtime/unattended/batch_final_report.ts:returnBatchToCoordinator"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "AGR-A4"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:c8922a39b4b4fcb84803173ee5f5d279bcdeeaeebbc07ee641d09f018b865793"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-052ca904dee9-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AGR-A5",
+      "source": "review",
+      "review_round": 1,
+      "summary": "runLaneBatch never writes agreement policies into new Lane records, and the named suites assert none of the A5 record facts",
+      "anchor": "sha256:ad8ae0849208abe1661639cac722139e83a9fc3cfc9912bd9998e80f4f143605",
+      "evidence": {
+        "trigger": "Any Host/daemon startBatch → runLaneBatch creating a fresh record (batch_lanes.ts:1016-1034 calls prepareBatchLaneRunState without confirmation/return_policy/interaction_mode/final_verification_required) → persisted v3 record carries no agreement policies, contrary to 'new Lane batch records carry v3 with agreement policies'; tests/unattended-batch-lanes.test.ts and tests/single-task-lane-batch.test.ts only rename v2→v3 and never assert policies, session_provider null, children[].session null, or v2 refusal with batch_record_retired naming retire_stale_batch",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/unattended/batch_lanes.ts:runLaneBatch",
+          "plugins/immune-brain/runtime/unattended/batch_state.ts:prepareBatchLaneRunState",
+          "tests/unattended-batch-lanes.test.ts",
+          "tests/single-task-lane-batch.test.ts"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AGR-A5"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-052ca904dee9-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AGR-A4",
+      "source": "review",
+      "review_round": 1,
+      "summary": "Completion-by-required and return-by-policy runtime behavior is untested for 1- and 2-child agreements",
+      "anchor": "sha256:2066263c3074e20ac4fcab4cdf0e666d485890fb34adb60de365f1cee140f4e9",
+      "evidence": {
+        "trigger": "tests/batch-agreement.test.ts AGR-A4 only calls prepareBatchLaneRunState and effectiveReturnPolicy on in-memory records → no assertion that final_verification_required false completes on delivery in observeParentCompletion (batch_git.ts:1058-1062), that required true needs passing commands, that checkout_delivery stages the delta (new 2-child branch batch_lanes.ts:1499-1510 deliverSingleTask from record.base_head), or that retain_branch keeps refs/heads/imm/<slug>; tests/batch-completion-verifier.test.ts changes only contract strings",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/unattended/batch_lanes.ts:runLaneBatch",
+          "plugins/immune-brain/runtime/unattended/batch_git.ts:observeParentCompletion",
+          "tests/batch-agreement.test.ts",
+          "tests/batch-completion-verifier.test.ts"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AGR-A4"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-052ca904dee9-3-review-3",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AGR-A2",
+      "source": "review",
+      "review_round": 1,
+      "summary": "hasContiguousLaneRebind negative controls and Initiative-child case are absent from tests/claude-run-continuation.test.ts",
+      "anchor": "sha256:0a88f7166b5ffc4172dd54efebb2dd3bf32079be04b6f2100d3519ac10d8bdea",
+      "evidence": {
+        "trigger": "tests/claude-run-continuation.test.ts is unchanged in the revision → no test of a chain with a gap, a foreign task_id (the new childIds guard in run_continuation.ts:hasContiguousLaneRebind), or a target digest off the chain, and no Initiative-child (non-single_task) acceptance; a regression removing the foreign-task_id guard passes all delivered tests",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/assurance/run_continuation.ts:hasContiguousLaneRebind",
+          "plugins/immune-brain/runtime/assurance/run_continuation.ts:observeParentRun",
+          "tests/claude-run-continuation.test.ts"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AGR-A2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-052ca904dee9-4-review-4",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AGR-A1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "Post-rebind Parent final verification under the pre-rebind identity is never exercised",
+      "anchor": "sha256:2041c79acda075c9253ba06d1db6926b6149923952a4d8005cdbe5d2fd976828",
+      "evidence": {
+        "trigger": "tests/batch-agreement.test.ts AGR-A1 stops after hasContiguousLaneRebind and the stale-refusal check; neither it nor tests/batch-completion-verifier.test.ts (contract rename only) runs Parent final verification in batch_git.ts after rebindBatchChildIdentity advances plan_digest → the clause 'Parent final verification passes under the Parent identity established before the rebind' has no asserting test",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/unattended/batch_state.ts:rebindBatchChildIdentity",
+          "plugins/immune-brain/runtime/unattended/batch_git.ts:observeParentCompletion",
+          "tests/batch-agreement.test.ts",
+          "tests/batch-completion-verifier.test.ts"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AGR-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-c9edc96c5370-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AGR-A4",
+      "source": "review",
+      "review_round": 2,
+      "summary": "The 'coordinator return follows return_policy' half of AGR-A4 is never tested through the runtime. The new 2-child checkout_delivery branch in runLaneBatch (deliverSingleTask from record.base_head, needs_human park with no cleanup) runs in no test. The AGR-A4 runtime tests call deliverSingleTask by hand, and no test asserts that retain_branch keeps refs/heads/imm/<slug>.",
+      "anchor": "sha256:c7690c6c010245c6442bcb216d5d674a71d88cf39088819d5aeaa28bd08e37bc",
+      "evidence": {
+        "trigger": "A 2-child v3 record with return_policy checkout_delivery whose children are all integrated reaches the new else-branch of the isCheckout block in runLaneBatch. tests/batch-agreement.test.ts 'AGR-A4 runtime' only writes a completed record, checks observeParentCompletion, and then calls deliverSingleTask(root, main, head) itself. A change that sent checkout_delivery records through returnBatchToCoordinator, skipped staging the delta for 2 children, or deleted refs/heads/imm/<slug> under retain_branch would still pass every AGR-A4 test. Wrong result: return-policy routing for 1- and 2-child agreements goes out unproven, and the new multi-child checkout path is untested.",
+        "caller_chain": [
+          "tests/batch-agreement.test.ts",
+          "plugins/immune-brain/runtime/unattended/batch_lanes.ts:runLaneBatch",
+          "plugins/immune-brain/runtime/unattended/batch_state.ts:effectiveReturnPolicy",
+          "plugins/immune-brain/runtime/unattended/checkout_delivery.ts:deliverSingleTask"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AGR-A4"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:batch-agreement-v3:2026-11-18T13:29:42.537Z",
+      "at": "2026-11-18T13:29:42.537Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/batch-agreement-v3.intent.json"
+    },
+    {
+      "id": "record_approval:batch-agreement-v3:2026-11-18T13:36:59.500Z",
+      "at": "2026-11-18T13:36:59.500Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-e269290a\naction_v2_sha256:46496b215f832d83a6a1a6bb80fd361705e45adba9992b6dbab87e077571e24b",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-18T13:36:59.500Z"
+      }
+    },
+    {
+      "id": "request_rework:batch-agreement-v3:2026-11-18T13:39:05.738Z",
+      "at": "2026-11-18T13:39:05.738Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:5eb9040e61f2d8b703741c70ec7404e55a3980364af2371af78150a3e68e4a3d",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:fab55e59-350c-4e5e-8f05-32621657f5d0",
+        "confirmation_ref": "pi:cli:claude-code:fab55e59-350c-4e5e-8f05-32621657f5d0",
+        "issued_at": "2026-11-18T13:39:05.738Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "e3320ba6ccbf979ede51c69f94684fc6334ef7c7",
+        "review_commit": "7bfa839bbdef57713a93cec9c54e719ca3ebbc57"
+      },
+      "review_started_at": "2026-11-18T13:37:06.317Z",
+      "review_submitted_at": "2026-11-18T13:39:04.146Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "resolve_finding:batch-agreement-v3:2026-11-18T13:53:04.876Z",
+      "at": "2026-11-18T13:53:04.876Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-052ca904dee9-1-review-1\naction_v2_sha256:c2bb503d0e6feea08b5324a9f4b862a3da13a28f9232bab265ac3924d0878b33"
+    },
+    {
+      "id": "resolve_finding:batch-agreement-v3:2026-11-18T13:53:17.578Z",
+      "at": "2026-11-18T13:53:17.578Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-052ca904dee9-2-review-2\naction_v2_sha256:9c06921d4dd2c3b01c31e0b2b7a8e05203f8c1e325bd35ef3ceb507eadde293f"
+    },
+    {
+      "id": "resolve_finding:batch-agreement-v3:2026-11-18T13:53:29.461Z",
+      "at": "2026-11-18T13:53:29.461Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-052ca904dee9-3-review-3\naction_v2_sha256:e16cdf5652f5346ea70cac36071f9e2ac63021ebc41d106ffe49a8568fd03a11"
+    },
+    {
+      "id": "resolve_finding:batch-agreement-v3:2026-11-18T13:53:42.035Z",
+      "at": "2026-11-18T13:53:42.035Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-052ca904dee9-4-review-4\naction_v2_sha256:5e1271271316bf020944c2ccd2b1e26d785ab4cd6151aff875d18099e2573227"
+    },
+    {
+      "id": "freeze_artifacts:batch-agreement-v3:2026-11-18T13:53:54.743Z",
+      "at": "2026-11-18T13:53:54.743Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/batch-agreement-v3.intent.json"
+    },
+    {
+      "id": "record_approval:batch-agreement-v3:2026-11-18T14:00:53.387Z",
+      "at": "2026-11-18T14:00:53.387Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-bfd53305\naction_v2_sha256:1945e0e130ef1972552374045658b1da113b2a918e98399f1dcd0448de90e6d2",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-18T14:00:53.387Z"
+      }
+    },
+    {
+      "id": "record_approval:batch-agreement-v3:2026-11-18T14:12:24.422Z",
+      "at": "2026-11-18T14:12:24.422Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-5d6d763d\naction_v2_sha256:8bdc63175cd41d89c055efe3bc0b70ca247325c0c482aec70038efe3291e50ed",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-18T14:12:24.423Z"
+      }
+    },
+    {
+      "id": "request_rework:batch-agreement-v3:2026-11-18T14:15:19.533Z",
+      "at": "2026-11-18T14:15:19.533Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:28bcc88e3c589505ec0662b24eab0261b35d39b89959cd51d4697634164513e6",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:320f4654-9f98-4a04-893f-a3dec09e3adb",
+        "confirmation_ref": "pi:cli:claude-code:320f4654-9f98-4a04-893f-a3dec09e3adb",
+        "issued_at": "2026-11-18T14:15:19.533Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "e3320ba6ccbf979ede51c69f94684fc6334ef7c7",
+        "review_commit": "1753a3b57fa536fb4c457b8eece79ced8e44a3d9"
+      },
+      "review_started_at": "2026-11-18T14:12:30.612Z",
+      "review_submitted_at": "2026-11-18T14:15:18.023Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "resolve_finding:batch-agreement-v3:2026-11-18T14:21:57.275Z",
+      "at": "2026-11-18T14:21:57.275Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-c9edc96c5370-1-review-1\naction_v2_sha256:a6ac7dd4b4d19babc7982381e98d224eef1c2d5ea372307d39cceb4f8af5103c"
+    },
+    {
+      "id": "freeze_artifacts:batch-agreement-v3:2026-11-18T14:22:08.364Z",
+      "at": "2026-11-18T14:22:08.364Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/batch-agreement-v3.intent.json"
+    },
+    {
+      "id": "record_approval:batch-agreement-v3:2026-11-18T14:28:31.369Z",
+      "at": "2026-11-18T14:28:31.369Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-61991da1\naction_v2_sha256:f895b0c0ac2656161af738868f27315bf0d2062b65bd3692ec9f440b3644f905",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-18T14:28:31.369Z"
+      }
+    },
+    {
+      "id": "record_approval:batch-agreement-v3:2026-11-19T01:36:54.129Z",
+      "at": "2026-11-19T01:36:54.129Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-198c30cc\naction_v2_sha256:b8e2e758411962f197656a0a79b1198b1ea6585d3f6b171f4a76460b325d64e3",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:35565872-1b93-45e4-965b-b2f04f4ee0aa",
+        "confirmation_ref": "pi:cli:claude-code:35565872-1b93-45e4-965b-b2f04f4ee0aa",
+        "issued_at": "2026-11-19T01:36:54.129Z"
+      },
+      "review_started_at": "2026-11-19T01:35:36.572Z",
+      "review_submitted_at": "2026-11-19T01:36:52.706Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:batch-agreement-v3:2026-11-19T01:36:58.612Z",
+      "at": "2026-11-19T01:36:58.612Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:c29ae1335864b06a97ee9e8faeef95da1a125bea42d298787a1ec987af8875b0"
+    }
+  ]
+}

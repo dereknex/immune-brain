@@ -37,6 +37,7 @@ const RUN_ENTRY_SESSION = { getSessionId: () => "pi-batch-acceptance-tests" };
 recordPiPhaseInput({ text: "/skill:drive", source: "interactive" }, { sessionManager: RUN_ENTRY_SESSION });
 import { readAuditTaskPair } from "../plugins/immune-brain/runtime/kernel/storage";
 import { readAnyBatchRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
+import { memoryLanePort, memoryLanePortEnv } from "./helpers/memory-lane-port";
 import type { GithubInitiativeObservation } from "../plugins/immune-brain/runtime/github_issue_tracker";
 
 // Real-ports acceptance seam for the registered Pi batch entry. Every fixture
@@ -105,7 +106,9 @@ async function fixture(slug: string) {
 		const pi = { registerTool: (tool: unknown) => tools.push(tool), registerCommand() {},
 			on(name: string, callback: Function) { handlers.set(name, [...(handlers.get(name) ?? []), callback]); }, events: { on() {}, emit() {} } } as never;
 		registerPiWork(pi);
-		registerPiBatch(pi, { readInitiative: async () => observation });
+		// The runtime opens each Lane's Executor session through the port, so the
+		// Host runs on a Herdr-shaped env with an in-memory port: no tab, no process.
+		registerPiBatch(pi, { readInitiative: async () => observation, env: { ...memoryLanePortEnv }, sessionPortFactory: memoryLanePort });
 		batchTool = tools.find(t => t.name === "start_unattended_batch");
 		workTool = tools.find(t => t.name === "imm_kernel_canary");
 	};
@@ -183,11 +186,14 @@ describe("registered Pi batch entry with real Kernel, QA and Git (routine fixtur
 		const first = await f.batch();
 		expect(first).toMatchObject({ state: "started", report: { batch_state: "running", commits: [],
 			children: [{ task_id: f.tasks[0], state: "enrolled", commit: null }, { task_id: f.tasks[1], state: "pending", commit: null }],
-			handoffs: [{ role: "executor", task_id: f.tasks[0], lane_path: f.lane(f.tasks[0]!), next_obligation: "submit_assurance" }] } });
+			handoffs: [] } });
+		// The runtime owns the Executor session, so no executor handoff is reported:
+		// the child's run and revision are read from the batch record and the Lane's Kernel.
+		expect(first.report.children[0].session).toMatchObject({ entry_submitted: true, attention: null });
 		expect(f.gates()).toBe(1);
 		expect(f.head()).toBe(f.base);
 		const owned = await f.kernel(f.tasks[0]!, { op: "status" });
-		expect(owned).toMatchObject({ run_id: first.report.handoffs[0].run_id, record_revision: first.report.handoffs[0].record_revision,
+		expect(owned).toMatchObject({ run_id: first.report.children[0].lane.run_id, record_revision: expect.stringMatching(/^sha256:/),
 			lifecycle: "active", artifact_state: "active", fresh_approval_kinds: [], missing_approval_kinds: ["qa"] });
 		// The runbook's loaded-build check compares this field with package.json.
 		expect(owned.plugin_version).toBe(JSON.parse(readFileSync(join(import.meta.dir, "../package.json"), "utf8")).version);
@@ -206,7 +212,7 @@ describe("registered Pi batch entry with real Kernel, QA and Git (routine fixtur
 			expect(status.lifecycle).not.toBe("active");
 		}
 		expect(first.report).not.toHaveProperty("handoff");
-		expect(f.state(first.batch_id)).toMatchObject({ contract: "assurance_kernel/batch_run_state/v2", max_parallel: 1, branch: f.batchRef() });
+		expect(f.state(first.batch_id)).toMatchObject({ contract: "assurance_kernel/batch_run_state/v3", max_parallel: 1, branch: f.batchRef() });
 		expect(readAuditTaskPair(f.lane(f.tasks[0]!), f.tasks[0]!)).toBeNull();
 	}, 120000);
 
@@ -223,10 +229,10 @@ describe("registered Pi batch entry with real Kernel, QA and Git (routine fixtur
 		const second = await f.batch();
 		expect(second).toMatchObject({ state: "started", batch_id: first.batch_id, report: { batch_state: "running",
 			children: [{ task_id: f.tasks[0], state: "integrated" }, { task_id: f.tasks[1], state: "enrolled", commit: null }],
-			handoffs: [{ role: "executor", task_id: f.tasks[1], next_obligation: "submit_assurance" }] } });
+			handoffs: [] } });
 		expect(f.commits()).toEqual(second.report.commits);
 		expect(f.commits()).toHaveLength(1);
-		const run1 = first.report.handoffs[0].run_id;
+		const run1 = first.report.children[0].lane.run_id;
 		expect(f.files(f.commits()[0]!)).toEqual([`.imm/audit/${f.tasks[0]}/${run1}/task-record.json`, `.imm/audit/${f.tasks[0]}/${run1}/terminal-proof.json`, "src/child-1.txt"]);
 		// A repeated continuation neither recommits the first child nor re-enrolls the second.
 		const repeated = await f.batch();
@@ -237,7 +243,9 @@ describe("registered Pi batch entry with real Kernel, QA and Git (routine fixtur
 		await settle(f, 2);
 		const third = await f.batch();
 		expect(third).toMatchObject({ batch_id: first.batch_id, report: { batch_state: "completed",
-			children: [{ task_id: f.tasks[0], state: "integrated" }, { task_id: f.tasks[1], state: "integrated" }] } });
+			children: [{ task_id: f.tasks[0], state: "released" }, { task_id: f.tasks[1], state: "integrated" }] } });
+		// Every integrated child was cleaned up on proof: each Lane records its exit proof.
+		for (const child of third.report.children) expect(child.lane_removed?.exit).toMatchObject({ ok: true, exited: true });
 		expect(third.report.handoffs).toEqual([]);
 		expect(f.commits()).toEqual(third.report.commits);
 		expect(f.commits()).toHaveLength(2);
@@ -271,17 +279,17 @@ describe("registered Pi batch entry with real Kernel, QA and Git (routine fixtur
 		f.implement(1, "wrong\n");
 		const failed = await f.kernel(f.tasks[0]!, { op: "advance_assurance" });
 		expect(failed).toMatchObject({ state: "rework", operation: "qa", diagnostics: [{ acceptance_id: "acc-1", outcome: "nonzero_exit", exit_code: 3 }],
-			recovery: { category: "repair", task_id: f.tasks[0], run_id: first.report.handoffs[0].run_id, next_obligation: "resolve_findings", acceptance_ids: ["acc-1"] } });
+			recovery: { category: "repair", task_id: f.tasks[0], run_id: first.report.children[0].lane.run_id, next_obligation: "resolve_findings", acceptance_ids: ["acc-1"] } });
 		const findings: string[] = failed.recovery.finding_ids;
 		expect(findings).toHaveLength(1);
 
 		// The Host adapter is recreated: only fresh Kernel projection carries the obligation.
 		f.restart();
-		expect(await f.kernel(f.tasks[0]!, { op: "status" })).toMatchObject({ run_id: first.report.handoffs[0].run_id, lifecycle: "active",
+		expect(await f.kernel(f.tasks[0]!, { op: "status" })).toMatchObject({ run_id: first.report.children[0].lane.run_id, lifecycle: "active",
 			next_obligation: "resolve_findings", blocking_finding_ids: findings, fresh_approval_kinds: [] });
 		const parked = await f.batch();
 		expect(parked).toMatchObject({ state: "started", batch_id: first.batch_id, report: { batch_state: "running", commits: [],
-			children: [{ state: "enrolled" }, { state: "pending" }], handoffs: [{ role: "executor", task_id: f.tasks[0], next_obligation: "resolve_findings" }] } });
+			children: [{ state: "enrolled" }, { state: "pending" }], handoffs: [] } });
 		expect(f.gates()).toBe(1);
 		expect(f.commits()).toEqual([]);
 
@@ -294,16 +302,22 @@ describe("registered Pi batch entry with real Kernel, QA and Git (routine fixtur
 		expect(await f.kernel(f.tasks[0]!, { op: "resolve_finding", finding_id: findings[0] })).toMatchObject({ lifecycle: "active" });
 		const fresh = await f.kernel(f.tasks[0]!, { op: "advance_assurance" });
 		expect(fresh).toMatchObject({ state: "completed", diagnostics: [{ outcome: "passed", exit_code: 0 }],
-			task_state: { run_id: first.report.handoffs[0].run_id, lifecycle: "done", blocking_finding_ids: [] } });
+			task_state: { run_id: first.report.children[0].lane.run_id, lifecycle: "done", blocking_finding_ids: [] } });
 		expect(fresh.operation_id).not.toBe(failed.operation_id);
 
 		expect(fresh).not.toHaveProperty("batch");
 		const second = await f.batch();
-		expect(second).toMatchObject({ batch_id: first.batch_id, report: { children: [{ state: "integrated" }, { state: "enrolled" }], handoffs: [{ task_id: f.tasks[1] }] } });
+		// D11 cleanup is observed per tick: an integrated child is `released` once its Lane is gone.
+		expect(second.batch_id).toBe(first.batch_id);
+		expect(["integrated", "released"]).toContain(second.report.children[0]!.state);
+		expect(second.report.children[1]).toMatchObject({ task_id: f.tasks[1], state: "enrolled" });
+		expect(second.report.handoffs).toEqual([]);
 		expect(second.report.recovery).toBeUndefined();
 		f.restart();
 		// Re-select the Parent from its persisted batch receipt in the recreated adapter.
-		expect((await f.batch()).report.handoffs[0].task_id).toBe(f.tasks[1]);
+		const reopened = (await f.batch()).report.children.map(c => c.state);
+		expect(["integrated", "released"]).toContain(reopened[0] as string);
+		expect(reopened[1]).toBe("enrolled");
 		await settle(f, 2);
 		expect((await f.batch()).report.batch_state).toBe("completed");
 		expect(f.commits()).toHaveLength(2);
@@ -328,10 +342,12 @@ describe("registered Pi batch entry with real Kernel, QA and Git (routine fixtur
 		f.answer(() => { throw new Error("a clockless resume must not open a gate"); });
 		const resumed = await f.batch();
 		expect(resumed).toMatchObject({ state: "started", batch_id: first.batch_id, report: { batch_state: "running", commits: second.report.commits,
-			children: [{ state: "integrated" }, { state: "enrolled" }], handoffs: second.report.handoffs } });
+			handoffs: second.report.handoffs } });
+		expect(resumed.report.children[0]).toMatchObject({ task_id: f.tasks[0], commit: second.report.children[0]!.commit });
+		expect(resumed.report.children[1]).toMatchObject({ task_id: f.tasks[1], state: "enrolled" });
 		expect(f.gates()).toBe(1);
 		expect(evidence()).toEqual(kept);
-		expect(await f.kernel(f.tasks[1]!, { op: "status" })).toMatchObject({ run_id: second.report.handoffs[0].run_id, lifecycle: "active", next_obligation: "submit_assurance" });
+		expect(await f.kernel(f.tasks[1]!, { op: "status" })).toMatchObject({ run_id: second.report.children[1].lane.run_id, lifecycle: "active", next_obligation: "submit_assurance" });
 
 		// Thirty days on, the closeout still continues without a gate.
 		await settle(f, 2);

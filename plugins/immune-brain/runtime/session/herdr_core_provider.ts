@@ -24,6 +24,7 @@ import {
 	resumeRefusal,
 	SUPERVISED_SESSION_PROTOCOL,
 	validateCreateInput,
+	validateSessionKey,
 	type AwaitResult,
 	type ExecutorHostKind,
 	type Observation,
@@ -54,10 +55,13 @@ export const HERDR_CORE_READY_TIMEOUT_MS = 30_000;
 /** Lines of history above the screen for a `scrollback` read. */
 export const SCROLLBACK_LINES = 200;
 
+export const SESSION_KEY_LABEL = "imm-session-key" as const;
+
 export const HC_CLI = {
 	schema: () => ["schema", "--json"],
 	status: () => ["server", "status", "--json"],
-	run: (name: string, cwd: string, token: string, argv: string[]) => ["run", "--bg", "--json", "--no-parent", "--name", name, "--cwd", cwd, "--label", `${OWNER_LABEL}=${token}`, "--", ...argv],
+	list: () => ["list", "--json"],
+	run: (name: string, cwd: string, token: string, argv: string[], sessionKey?: string) => ["run", "--bg", "--json", "--no-parent", "--name", name, "--cwd", cwd, "--label", `${OWNER_LABEL}=${token}`, ...(sessionKey !== undefined ? ["--label", `${SESSION_KEY_LABEL}=${sessionKey}`] : []), "--", ...argv],
 	get: (address: string) => ["get", address, "--json"],
 	send: (address: string, text: string, ifState?: "idle") => ["send", address, text, ...(ifState ? ["--if", ifState] : []), "--json"],
 	wait: (address: string, timeoutSeconds?: number) => ["wait", address, ...(timeoutSeconds ? ["--timeout", String(timeoutSeconds)] : []), "--json"],
@@ -246,7 +250,7 @@ export function createHerdrCoreSessionProvider(options: HerdrCoreProviderOptions
 			// `hc run` takes no environment; `env` sets it for the Host alone.
 			const envPrefix = Object.entries(input.env ?? {}).map(([key, value]) => `${key}=${value}`);
 			const argv = [...(envPrefix.length > 0 ? ["env", ...envPrefix] : []), HOST_STATUS_MINIMUM[input.host].binary, ...input.hostArgs];
-			const started = await hc(HC_CLI.run(name, input.cwd, token, argv));
+			const started = await hc(HC_CLI.run(name, input.cwd, token, argv, input.session_key));
 			if (isRefusal(started)) return started;
 			if (started.code !== 0) return refuse("start_failed", `hc run failed: ${failure(started)}`);
 			const address = pick(parseJson(started.stdout), ["address"]);
@@ -368,6 +372,62 @@ export function createHerdrCoreSessionProvider(options: HerdrCoreProviderOptions
 			if (isRefusal(removed)) return removed;
 			if (removed.code !== 0) return refuse("provider_error", `hc rm failed: ${failure(removed)}`, handle);
 			return { ok: true };
+		},
+		async findSession(session_key) {
+			const bad = validateSessionKey(session_key);
+			if (bad) return bad;
+			const listed = await hc(HC_CLI.list());
+			if (isRefusal(listed)) return listed;
+			if (listed.code !== 0) return refuse("provider_error", `hc list failed: ${failure(listed)}`);
+			const parsed = parseJson(listed.stdout);
+			const terminals = (pick(parsed, ["terminals"]) ?? pick(parsed, ["result", "terminals"])) as unknown;
+			if (!Array.isArray(terminals)) return refuse("provider_error", "hc list returned no terminals");
+			for (const terminal of terminals) {
+				if (pick(terminal, ["state"]) === "finished") continue;
+				if (pick(terminal, ["labels", SESSION_KEY_LABEL]) !== session_key) continue;
+				const address = pick(terminal, ["address"]);
+				const token = pick(terminal, ["labels", OWNER_LABEL]);
+				if (typeof address !== "string" || !address || typeof token !== "string" || !token) continue;
+				return { ok: true as const, handle: encodeHerdrCoreHandle({ address, token }) };
+			}
+			return { ok: true as const, not_found: true as const };
+		},
+		async closeWithProof(handle, session_key) {
+			const bad = validateSessionKey(session_key);
+			if (bad) return bad;
+			const ids = decodeHerdrCoreHandle(handle);
+			if (!ids) return refuse("not_owned", "handle is not a herdr-core session handle", handle);
+			const found = await owned(handle);
+			if (isRefusal(found)) {
+				if (found.code !== "not_owned") return found;
+				const listed = await hc(HC_CLI.list());
+				if (isRefusal(listed)) return listed;
+				if (listed.code !== 0) return refuse("provider_error", `hc list failed: ${failure(listed)}`, handle);
+				const parsed = parseJson(listed.stdout);
+				const terminals = (pick(parsed, ["terminals"]) ?? pick(parsed, ["result", "terminals"])) as unknown;
+				if (Array.isArray(terminals)) {
+					const survivor = (terminals as unknown[]).some(t => pick(t, ["state"]) !== "finished" && pick(t, ["labels", SESSION_KEY_LABEL]) === session_key);
+					if (!survivor) return { ok: true as const, exited: true as const, handle, session_key };
+				}
+				return found;
+			}
+			if (pick(found.terminal, ["labels", SESSION_KEY_LABEL]) !== undefined && pick(found.terminal, ["labels", SESSION_KEY_LABEL]) !== session_key) {
+				return refuse("not_owned", "terminal was not created for this session key", handle);
+			}
+			if (pick(found.terminal, ["labels", SESSION_KEY_LABEL]) === undefined && pick(found.terminal, ["labels", OWNER_LABEL]) !== session_key) {
+				// Sessions created without a key are not owned by any key; keyed closes bind only keyed sessions.
+				// A keyed session always carries its key label, so a missing key label means mismatch.
+				return refuse("not_owned", "terminal was not created for this session key", handle);
+			}
+			if (pick(found.terminal, ["state"]) !== "finished") {
+				const killed = await hc(HC_CLI.kill(found.ids.address));
+				if (isRefusal(killed)) return killed;
+				if (killed.code !== 0 && hcErrorKind(killed) !== "finished") return refuse("provider_error", `hc kill failed: ${failure(killed)}`, handle);
+			}
+			const removed = await hc(HC_CLI.rm(found.ids.address));
+			if (isRefusal(removed)) return removed;
+			if (removed.code !== 0) return refuse("provider_error", `hc rm failed: ${failure(removed)}`, handle);
+			return { ok: true as const, exited: true as const, handle, session_key };
 		},
 		async reconcile(handles) {
 			const sessions = [];
