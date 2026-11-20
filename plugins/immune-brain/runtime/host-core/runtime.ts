@@ -1163,7 +1163,11 @@ export class HostRuntime {
 					host: this.parentHost, executor: active.record.executor_preferences,
 					...(this.sessionPortFactory ? { createPort: this.sessionPortFactory as never } : {}) });
 				if (!opened.ok) return { state: "blocked", reason: opened.reason, recovery_action: opened.recovery };
-				await opened.port.stop(handle);
+				// An unproven stop parks nothing: the child stays enrolled and is reconciled.
+				const stopped = await opened.port.stop(handle);
+				if (!stopped.ok)
+					return { state: "blocked", reason: `lane_stop_rejected: ${stopped.reason} (${stopped.code})`,
+						recovery_action: "The Executor session is still running and the child stays enrolled; retry the stop in the current Host." };
 			}
 			parkLaneForExecutor(this.cwd, active.record.batch_id, initiativeSlug, "lane_executor_stopped");
 			return { state: "blocked", reason: "lane_executor_stopped", recovery_action: "The Lane task is stopped and its Lane retained; resume with a fresh drive entry." };
@@ -1475,9 +1479,9 @@ export class HostRuntime {
 			try {
 				const resolved = resolveConfig(this.cwd).session_providers as unknown as { value?: unknown };
 				const value = (resolved as { value?: unknown }).value;
-				return Array.isArray(value) ? (value as string[]) : ["herdr", "herdr-core"];
+				return Array.isArray(value) ? (value as string[]) : ["herdr"];
 			} catch {
-				return ["herdr", "herdr-core"];
+				return ["herdr"];
 			}
 		})();
 		const laneDeps = {
@@ -1494,6 +1498,7 @@ export class HostRuntime {
 			...(options.max_parallel !== undefined ? { max_parallel: options.max_parallel } : { max_parallel: options.plan_source ? 1 : (resolveConfig(this.cwd).batch.max_parallel.value as number) }),
 			now,
 			confirmation_time: now,
+			...(!authorization.reuse_authorization ? { literal_user_confirmation: true } : {}),
 			topology_digest: preflight.projection.topology_digest,
 			...(options.lane_instruction ? { lane_instruction: options.lane_instruction } : {}),
 			...(options.lane_session_close ? { lane_session_close: options.lane_session_close } : {}),

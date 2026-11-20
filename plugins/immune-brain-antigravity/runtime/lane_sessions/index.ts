@@ -74,6 +74,8 @@ export interface LaneSessionsDeps {
 	max_parallel?: number;
 	now?: string;
 	confirmation_time?: string;
+	/** A Host native gate just accepted this re-entry. Daemon advances omit it. */
+	literal_user_confirmation?: boolean;
 	executor_runtime?: string;
 	lane_instruction?: unknown;
 	lane_session_close?: unknown;
@@ -307,6 +309,7 @@ export async function advanceLanes(
 			...(deps.git ? { git: deps.git } : {}),
 			...(deps.tracker ? { tracker: deps.tracker } : {}),
 			max_parallel: deps.max_parallel ?? persisted.max_parallel,
+			...(deps.literal_user_confirmation ? { literal_user_confirmation: true } : {}),
 			confirmation: (persisted as { confirmation?: unknown }).confirmation,
 			return_policy: (persisted as { return_policy?: unknown }).return_policy,
 			interaction_mode: (persisted as { interaction_mode?: unknown }).interaction_mode,
@@ -346,6 +349,7 @@ export async function advanceLanes(
 		...(deps.git ? { git: deps.git } : {}),
 		...(deps.tracker ? { tracker: deps.tracker } : {}),
 		max_parallel: deps.max_parallel ?? persisted.max_parallel,
+		...(deps.literal_user_confirmation ? { literal_user_confirmation: true } : {}),
 		...(deps.lane_instruction !== undefined ? { lane_instruction: deps.lane_instruction } : {}),
 		...(deps.lane_session_close !== undefined ? { lane_session_close: deps.lane_session_close } : {}),
 		...(deps.lane_offers !== undefined ? { lane_offers: deps.lane_offers } : {}),
@@ -388,6 +392,9 @@ async function snapshotChildren(
 	let sawUnsubmitted = false;
 	let sawStalled = false;
 	let sawProgress = false;
+	let sawWorking = false;
+	/** A child settled or waits on a decision: the integrator acts whatever a sibling does. */
+	let sawOutcome = false;
 	for (const child of rec.children) {
 		const session = child.session ?? null;
 		let state: string | null = null;
@@ -412,7 +419,7 @@ async function snapshotChildren(
 					const isSettled = projection.lifecycle === "done" && projection.completion_ready === true;
 					settled = isSettled;
 					const hasDecision = (projection.open_user_decision_count ?? 0) > 0 || (projection.replan_required_ids?.length ?? 0) > 0;
-					if (isSettled || hasDecision) sawProgress = true;
+					if (isSettled || hasDecision) { sawProgress = true; sawOutcome = true; }
 				}
 			} catch {
 				settled = null;
@@ -421,6 +428,7 @@ async function snapshotChildren(
 		observations.push({ task_id: child.task_id, state, entry_submitted: session?.entry_submitted ?? null, settled });
 		if (session && session.entry_submitted === false) sawUnsubmitted = true;
 		if (state === "blocked") sawBlocked = true;
+		if (state === "working") sawWorking = true;
 		if (state === "idle" || state === "done" || state === "exited") sawProgress = true;
 		const mode = (rec as { interaction_mode?: string }).interaction_mode ?? "interactive_host";
 		if (mode === "interactive_host" && (state === "idle" || state === "done") && baseline !== null && revision !== null && baseline === revision && settled === false) {
@@ -428,6 +436,9 @@ async function snapshotChildren(
 		}
 	}
 	if (sawBlocked || sawUnsubmitted) return { children: observations, next_action: "relay_dialog" };
+	// A stalled interactive child needs the user even while a sibling still works;
+	// a sibling that exited, settled or waits on a decision advances instead.
+	if (sawStalled && sawWorking && !sawOutcome) return { children: observations, next_action: "ask_user" };
 	if (sawStalled && !sawProgress) return { children: observations, next_action: "ask_user" };
 	if (sawStalled && sawProgress) {
 		const onlyStall = observations.every((o) => o.state === "idle" || o.state === "done") && observations.every((o) => o.settled === false);

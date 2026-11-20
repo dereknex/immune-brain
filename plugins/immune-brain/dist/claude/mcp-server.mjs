@@ -7242,7 +7242,9 @@ function validateLaneRecordShape(value, batchId) {
       const proofOk = proof === null || isObject(proof) && proof.ok === true && proof.exited === true && typeof proof.handle === "string" && typeof proof.key === "string";
       const handled = s.handled_interventions;
       const handledOk = handled === undefined || Array.isArray(handled) && handled.every((d) => typeof d === "string" && d.length > 0);
-      if (!keyOk || !generationOk || !baselineOk || !handleOk || !entryOk || !attentionOk || !progressOk || !proofOk || !handledOk)
+      const refusals = s.open_refusals;
+      const refusalsOk = refusals === undefined || typeof refusals === "number" && Number.isSafeInteger(refusals) && refusals >= 0;
+      if (!keyOk || !generationOk || !baselineOk || !handleOk || !entryOk || !attentionOk || !progressOk || !proofOk || !handledOk || !refusalsOk)
         throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid session`);
     }
     if (child.tracker_closed === true && child.state !== "integrated" && child.state !== "released" && !deliveryParked)
@@ -10264,7 +10266,7 @@ function resolveConfig(root, options = {}) {
   for (const [, o, file] of layers)
     if (o && Object.hasOwn(o, "herdr"))
       diag("retired_key", "warning", file, "herdr", "herdr is retired and ignored; remove it (imm-kernel config migrate --write deletes it)");
-  const sessionProviders = pick((o) => o.session_providers, "session_providers", (v) => Array.isArray(v) && v.length > 0 && v.every((name) => REGISTERED_SESSION_PROVIDERS.includes(name)) && new Set(v).size === v.length, `expected a non-empty list of distinct registered providers (${REGISTERED_SESSION_PROVIDERS.join(", ")})`, ["herdr", "herdr-core"]);
+  const sessionProviders = pick((o) => o.session_providers, "session_providers", (v) => Array.isArray(v) && v.length > 0 && v.every((name) => REGISTERED_SESSION_PROVIDERS.includes(name)) && new Set(v).size === v.length, `expected a non-empty list of distinct registered providers (${REGISTERED_SESSION_PROVIDERS.join(", ")})`, ["herdr"]);
   for (const [, o, file] of layers)
     knownKeys(part(o, file, "batch"), ["max_parallel", "final_verification"], file, "batch");
   const maxParallel = pick((o) => o.batch?.max_parallel, "batch.max_parallel", (v) => integerWithin(v, BATCH_MAX_PARALLEL.min, BATCH_MAX_PARALLEL.max), `expected an integer between ${BATCH_MAX_PARALLEL.min} and ${BATCH_MAX_PARALLEL.max}`, BATCH_MAX_PARALLEL.default);
@@ -18263,8 +18265,18 @@ async function relayLaneDecision(input) {
   const active = findActiveLaneBatchForTask(input.root, input.taskId);
   if (input.operation === "stop") {
     const handle = active?.record.children.find((child) => child.task_id === input.taskId)?.session?.handle ?? null;
-    if (input.sessions && handle)
-      await input.sessions.stop(handle);
+    if (input.sessions && handle) {
+      const stopped = await input.sessions.stop(handle);
+      if (!stopped.ok)
+        return { relayed: true, result, lane_relay: {
+          batch_id: target.batch_id,
+          operation: input.operation,
+          applied: true,
+          rebound: false,
+          lane_supervision: null,
+          next_action: `lane_stop_rejected: ${stopped.reason} (${stopped.code}); the child stays enrolled and is reconciled on the next advance.`
+        } };
+    }
     parkLaneForExecutor(input.root, target.batch_id, input.taskId, "lane_executor_stopped");
     return { relayed: true, result, lane_relay: {
       batch_id: target.batch_id,
@@ -18445,10 +18457,19 @@ function markHandled(session, digest) {
     return session;
   return { ...session, handled_interventions: [...session.handled_interventions ?? [], digest] };
 }
-function openRejected(refusal) {
+function openRefusalReason(refusal) {
   const code = typeof refusal.code === "string" ? refusal.code : "refused";
   const reason = typeof refusal.reason === "string" ? refusal.reason : "the provider refused the session";
   return `lane_session_open_rejected: ${reason} (${code})`;
+}
+function refusedOpen(session, refusal) {
+  const openRefusals = (session.open_refusals ?? 0) + 1;
+  const next = { ...session, handle: null, open_refusals: openRefusals };
+  const parkedReason = openRefusalReason(refusal);
+  return openRefusals >= 2 ? { session: next, action: "parked_open_rejected", parkedReason } : { session: next, action: "open_refused", parkedReason };
+}
+function resetOpenRefusals(session) {
+  return session.open_refusals ? { ...session, open_refusals: 0 } : session;
 }
 async function reconcileChildSession(input) {
   const { port, batchId, taskId, kernel, interactionMode, entry, laneCwd, onWriteAhead } = input;
@@ -18467,58 +18488,62 @@ async function reconcileChildSession(input) {
     onWriteAhead?.({ ...session });
   }
   const key = session.key;
+  let adopted = false;
   if (!session.handle) {
     const found = await port.find(key);
-    if (!isPortRefusal(found)) {
-      if ("handle" in found) {
-        session.handle = found.handle;
-        session.entry_submitted = true;
-        return { session, action: "adopted" };
-      }
-    } else {
+    if (isPortRefusal(found))
       return { session, action: "held" };
+    if ("handle" in found) {
+      session = { ...session, handle: found.handle };
+      adopted = true;
+    } else {
+      const entryForOpen = pendingCorrection && isHandled(session, pendingCorrection.digest) ? pendingCorrection.text : entry;
+      const opened = await port.open({
+        key,
+        cwd: laneCwd,
+        label: laneSessionLabel(taskId),
+        entry: entryForOpen,
+        ...openEnv(interactionMode) ? { env: openEnv(interactionMode) } : {}
+      });
+      if (isPortRefusal(opened))
+        return refusedOpen(session, opened);
+      session = resetOpenRefusals({
+        ...session,
+        handle: opened.handle,
+        entry_submitted: opened.entry_submitted,
+        attention: opened.attention ?? null
+      });
+      return { session, action: "opened" };
     }
-    const opened = await port.open({
-      key,
-      cwd: laneCwd,
-      label: laneSessionLabel(taskId),
-      entry,
-      ...openEnv(interactionMode) ? { env: openEnv(interactionMode) } : {}
-    });
-    if (isPortRefusal(opened))
-      return { session, action: "parked_open_rejected", parkedReason: openRejected(opened) };
-    session.handle = opened.handle;
-    session.entry_submitted = opened.entry_submitted;
-    if (opened.attention !== undefined)
-      session.attention = opened.attention ?? null;
-    return { session, action: "opened" };
   }
+  const holdAction = adopted ? "adopted" : "held";
   const handle = session.handle;
   const observed = await port.observe(handle);
   if (isPortRefusal(observed))
-    return { session, action: "held" };
+    return { session, action: holdAction };
   const state = observed.state;
-  if (state === "working" || state === "unknown")
-    return { session, action: "held" };
   if (state === "blocked")
-    return { session, action: "held" };
+    return { session: { ...session, attention: "blocked" }, action: holdAction };
+  session = session.attention === null ? session : { ...session, attention: null };
+  if (state === "working" || state === "unknown")
+    return { session, action: holdAction };
   if (!session.entry_submitted) {
     if (state === "idle" || state === "done") {
       const resumed = await port.resume(handle, entry);
       if (isPortRefusal(resumed))
-        return { session, action: "held" };
-      session.entry_submitted = resumed.entry_submitted;
+        return { session, action: holdAction };
+      session = { ...session, entry_submitted: resumed.entry_submitted, attention: null };
       return { session, action: "resumed" };
     }
     if (state === "exited") {
       return await stallOrProgress(port, session, { batchId, taskId, kernel, interactionMode, entry, laneCwd, state, onWriteAhead });
     }
-    return { session, action: "held" };
+    return { session, action: holdAction };
   }
-  if (pendingCorrection && !isHandled(session, pendingCorrection.digest) && (state === "idle" || state === "done")) {
+  if (pendingCorrection && !isHandled(session, pendingCorrection.digest) && (state === "idle" || state === "done" || state === "exited")) {
     const closed = await port.closeWithProof(handle, key);
     if (isPortRefusal(closed))
-      return { session, action: "held" };
+      return { session, action: holdAction };
     const nextGeneration = session.generation + 1;
     const nextKey = laneSessionKey(batchId, taskId, nextGeneration);
     const writeAhead = {
@@ -18539,30 +18564,29 @@ async function reconcileChildSession(input) {
       entry: pendingCorrection.text,
       ...openEnv(interactionMode) ? { env: openEnv(interactionMode) } : {}
     });
-    if (isPortRefusal(opened)) {
-      return { session: { ...writeAhead, exit_proof: closed }, action: "parked_open_rejected", parkedReason: openRejected(opened) };
-    }
-    session = {
+    if (isPortRefusal(opened))
+      return refusedOpen({ ...writeAhead, exit_proof: closed }, opened);
+    session = resetOpenRefusals({
       ...writeAhead,
       handle: opened.handle,
       entry_submitted: opened.entry_submitted,
       attention: opened.attention ?? null
-    };
+    });
     return { session, action: "rotated" };
   }
   if (pendingInstruction && !isHandled(session, pendingInstruction.digest) && (state === "idle" || state === "done")) {
     const sent = await port.send(handle, pendingInstruction.text);
     if (isPortRefusal(sent))
-      return { session, action: "held" };
+      return { session, action: holdAction };
     return { session: markHandled(session, pendingInstruction.digest), action: "sent" };
   }
   if (pendingInstruction && isHandled(session, pendingInstruction.digest) || pendingCorrection && isHandled(session, pendingCorrection.digest)) {}
   if (kernel.settled || kernel.hasOpenDecision || kernel.hasReplan)
     return { session, action: "held" };
-  return await stallOrProgress(port, session, { batchId, taskId, kernel, interactionMode, entry, laneCwd, state, onWriteAhead });
+  return await stallOrProgress(port, session, { batchId, taskId, kernel, interactionMode, entry, laneCwd, state, onWriteAhead, adopted });
 }
 async function stallOrProgress(port, session, opts) {
-  const { batchId, taskId, kernel, interactionMode, entry, laneCwd, state, onWriteAhead } = opts;
+  const { batchId, taskId, kernel, interactionMode, entry, laneCwd, state, onWriteAhead, adopted } = opts;
   if (kernel.recordRevision !== session.baseline) {
     if (state === "idle" || state === "done") {
       const resumed = await port.resume(session.handle, entry);
@@ -18595,19 +18619,17 @@ async function stallOrProgress(port, session, opts) {
       entry,
       ...openEnv(interactionMode) ? { env: openEnv(interactionMode) } : {}
     });
-    if (isPortRefusal(opened)) {
-      session = { ...writeAhead, exit_proof: closed };
-      return { session, action: "parked_open_rejected", parkedReason: openRejected(opened) };
-    }
-    session = {
+    if (isPortRefusal(opened))
+      return refusedOpen({ ...writeAhead, exit_proof: closed }, opened);
+    session = resetOpenRefusals({
       ...writeAhead,
       handle: opened.handle,
       entry_submitted: opened.entry_submitted,
       attention: opened.attention ?? null
-    };
+    });
     return { session, action: "rotated" };
   }
-  if (state === "exited" || interactionMode === "parent_relayed") {
+  if (state === "exited" || interactionMode === "parent_relayed" && !adopted) {
     const closed = await port.closeWithProof(session.handle, session.key);
     if (isPortRefusal(closed))
       return { session, action: "held" };
@@ -18637,16 +18659,14 @@ async function stallOrProgress(port, session, opts) {
       entry,
       ...openEnv(interactionMode) ? { env: openEnv(interactionMode) } : {}
     });
-    if (isPortRefusal(opened)) {
-      session = { ...writeAhead, exit_proof: closed };
-      return { session, action: "parked_open_rejected", parkedReason: openRejected(opened) };
-    }
-    session = {
+    if (isPortRefusal(opened))
+      return refusedOpen({ ...writeAhead, exit_proof: closed }, opened);
+    session = resetOpenRefusals({
       ...writeAhead,
       handle: opened.handle,
       entry_submitted: opened.entry_submitted,
       attention: opened.attention ?? null
-    };
+    });
     return { session, action: "rotated" };
   }
   if ((state === "idle" || state === "done") && interactionMode === "interactive_host") {
@@ -19324,8 +19344,13 @@ async function runLaneBatchEngine(input, persisted) {
         return laneReport(record, invalid ?? "the parked batch requires a fresh literal-user confirmation", LANE_NEEDS_HUMAN_NEXT_ACTION, { ...parkedDecision ? { decision: parkedDecision } : {} });
       }
       const resumed = [];
+      const literalUser = input.literal_user_confirmation === true;
       for (const child of record.children) {
         if (child.state !== "needs_human") {
+          resumed.push(child);
+          continue;
+        }
+        if (!literalUser && child.reason?.startsWith("lane_session_open_rejected")) {
           resumed.push(child);
           continue;
         }
@@ -19885,6 +19910,8 @@ async function runLaneBatchEngine(input, persisted) {
       if (result.action === "parked_no_progress") {
         parkChild(child.task_id, "lane_executor_no_progress: two consecutive stalls without Kernel progress");
       }
+      if (result.action === "open_refused")
+        refusals.push({ task_id: child.task_id, path: child.lane.path, reason: result.parkedReason ?? "lane_session_open_refused" });
       if (result.action === "parked_open_rejected")
         parkChild(child.task_id, result.parkedReason ?? "lane_session_open_rejected");
     }
@@ -24659,12 +24686,8 @@ class SessionPortAdapter {
   }
   async send(handle, text) {
     const result = await this.port.sendInstruction(handle, text);
-    if (isRefusal(result)) {
-      const reason = refusalReason(result);
-      if (isPaneNotFound(reason))
-        return { ok: true, state: "exited" };
+    if (isRefusal(result))
       return { ok: false, code: result.code, reason: result.reason };
-    }
     return { ok: true, state: result.state };
   }
   async stop(handle) {
@@ -24863,6 +24886,7 @@ async function advanceLanes(root, batchId, deps) {
       ...deps.git ? { git: deps.git } : {},
       ...deps.tracker ? { tracker: deps.tracker } : {},
       max_parallel: deps.max_parallel ?? persisted.max_parallel,
+      ...deps.literal_user_confirmation ? { literal_user_confirmation: true } : {},
       confirmation: persisted.confirmation,
       return_policy: persisted.return_policy,
       interaction_mode: persisted.interaction_mode,
@@ -24905,6 +24929,7 @@ async function advanceLanes(root, batchId, deps) {
     ...deps.git ? { git: deps.git } : {},
     ...deps.tracker ? { tracker: deps.tracker } : {},
     max_parallel: deps.max_parallel ?? persisted.max_parallel,
+    ...deps.literal_user_confirmation ? { literal_user_confirmation: true } : {},
     ...deps.lane_instruction !== undefined ? { lane_instruction: deps.lane_instruction } : {},
     ...deps.lane_session_close !== undefined ? { lane_session_close: deps.lane_session_close } : {},
     ...deps.lane_offers !== undefined ? { lane_offers: deps.lane_offers } : {},
@@ -26720,7 +26745,13 @@ class HostRuntime {
         });
         if (!opened.ok)
           return { state: "blocked", reason: opened.reason, recovery_action: opened.recovery };
-        await opened.port.stop(handle);
+        const stopped = await opened.port.stop(handle);
+        if (!stopped.ok)
+          return {
+            state: "blocked",
+            reason: `lane_stop_rejected: ${stopped.reason} (${stopped.code})`,
+            recovery_action: "The Executor session is still running and the child stays enrolled; retry the stop in the current Host."
+          };
       }
       parkLaneForExecutor(this.cwd, active.record.batch_id, initiativeSlug, "lane_executor_stopped");
       return { state: "blocked", reason: "lane_executor_stopped", recovery_action: "The Lane task is stopped and its Lane retained; resume with a fresh drive entry." };
@@ -27013,9 +27044,9 @@ class HostRuntime {
       try {
         const resolved = resolveConfig(this.cwd).session_providers;
         const value = resolved.value;
-        return Array.isArray(value) ? value : ["herdr", "herdr-core"];
+        return Array.isArray(value) ? value : ["herdr"];
       } catch {
-        return ["herdr", "herdr-core"];
+        return ["herdr"];
       }
     })();
     const laneDeps = {
@@ -27032,6 +27063,7 @@ class HostRuntime {
       ...options.max_parallel !== undefined ? { max_parallel: options.max_parallel } : { max_parallel: options.plan_source ? 1 : resolveConfig(this.cwd).batch.max_parallel.value },
       now,
       confirmation_time: now,
+      ...!authorization.reuse_authorization ? { literal_user_confirmation: true } : {},
       topology_digest: preflight.projection.topology_digest,
       ...options.lane_instruction ? { lane_instruction: options.lane_instruction } : {},
       ...options.lane_session_close ? { lane_session_close: options.lane_session_close } : {},

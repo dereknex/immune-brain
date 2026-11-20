@@ -13,6 +13,7 @@ import type { StartBatchInput } from "../plugins/immune-brain/runtime/unattended
 import type { BatchPlanChild } from "../plugins/immune-brain/runtime/unattended/types";
 import type { BatchAgreement } from "../plugins/immune-brain/runtime/unattended/batch_agreement";
 import { startLanes, advanceLanes, observeLanes } from "../plugins/immune-brain/runtime/lane_sessions/index";
+import { reconcileChildSession } from "../plugins/immune-brain/runtime/unattended/child_session_reconciler";
 import { SessionPortAdapter } from "../plugins/immune-brain/runtime/lane_sessions/session_port_adapter";
 import type { SupervisedSessionPort } from "../plugins/immune-brain/runtime/session/supervised_session_port";
 import { runCli } from "../plugins/immune-brain/runtime/v4_runtime";
@@ -92,6 +93,7 @@ class FakeSupervised implements SupervisedSessionPort {
 	handles = new Map<string, string>(); // key -> handle
 	states = new Map<string, string>();
 	readonly failObserve = new Map<string, { code: string; reason: string }>();
+	readonly failSend = new Map<string, { code: string; reason: string }>();
 	counter = 0;
 	constructor(public workspace = "ws1") {}
 	async probe() {
@@ -112,6 +114,8 @@ class FakeSupervised implements SupervisedSessionPort {
 	}
 	async sendInstruction(handle: string, text: string) {
 		void text;
+		const fail = this.failSend.get(handle);
+		if (fail) return { ok: false as const, code: fail.code as "provider_error", reason: fail.reason, handle };
 		return { ok: true as const, state: (this.states.get(handle) ?? "idle") as "idle", provenance: "detected" as const };
 	}
 	async awaitTransition(handle: string) {
@@ -264,11 +268,11 @@ describe("HLS-A2: outside Herdr refuses without side effects", () => {
 				const fake = new FakeSupervised("ws1");
 				const kernel = fakeKernel(new Map([["task-a", "r1"]]));
 				const agreement = agreementFor(fx.repo, fx.base, "batch-hls-a2", "task-a", ["task-a"], { return_policy: "checkout_delivery", interaction_mode: "interactive_host" });
-				const deps = { ...depsFor(fx.repo, kernel, fake, "pi", env, agreement), providers: ["herdr", "herdr-core"] };
+				const deps = { ...depsFor(fx.repo, kernel, fake, "pi", env, agreement), providers: ["herdr"] };
 				const result = (await startLanes(agreement, deps as never)) as unknown as { ok?: boolean; code?: string; reason?: string; recovery?: string; reasons?: Array<{ provider: string; reason: string; recovery: string }> };
 				expect(result.ok).toBe(false);
 				expect(result.code).toBe("lane_session_unavailable");
-				expect(result.reasons!.map((r) => r.provider).sort()).toEqual(["herdr", "herdr-core"]);
+				expect(result.reasons!.map((r) => r.provider).sort()).toEqual(["herdr"]);
 				for (const r of result.reasons!) {
 					expect(r.reason.length).toBeGreaterThan(0);
 					expect(r.recovery.length).toBeGreaterThan(0);
@@ -384,6 +388,65 @@ describe("HLS-A3: re-entry never switches providers; adapter maps failures", () 
 			} as never)) as unknown as { batch_state: string };
 			expect(resumed.batch_state).toBe("running");
 			expect(fake.opens).toEqual([{ host: "pi", hostArgs: ["--model", "m", "--thinking", "high"] }]);
+		} finally {
+			fx.cleanup();
+		}
+	});
+});
+
+describe("review rework: a refused send retries, and a working sibling keeps a stalled child visible", () => {
+	test("a gone-pane send is a refusal, so the reconciler keeps that instruction digest unprocessed", async () => {
+		const fake = new FakeSupervised("ws1");
+		const adapter = new SessionPortAdapter(fake as unknown as SupervisedSessionPort, "pi", []);
+		const opened = await adapter.open({ key: "imm-t-g1-abc123def456", cwd: tmpdir(), label: "t", entry: "drive t" });
+		expect(opened.ok).toBe(true);
+		if (!opened.ok) throw new Error("the fake port would not open a session");
+		fake.states.set(opened.handle, "idle");
+		fake.failSend.set(opened.handle, { code: "provider_error", reason: "herdr send failed: pane_not_found" });
+		const sent = await adapter.send(opened.handle, "please adjust");
+		expect(sent.ok).toBe(false);
+		if (sent.ok) throw new Error("a gone pane must not read as sent");
+		expect(sent.reason).toContain("pane_not_found");
+		// Observe still maps the same provider failure to exited.
+		fake.failObserve.set(opened.handle, { code: "provider_error", reason: "herdr pane get failed: pane_not_found" });
+		expect(await adapter.observe(opened.handle)).toMatchObject({ ok: true, state: "exited" });
+		fake.failObserve.delete(opened.handle);
+		const reconciled = await reconcileChildSession({
+			port: adapter, batchId: "b", taskId: "t",
+			session: { key: "imm-t-g1-abc123def456", generation: 1, baseline: "r1", handle: opened.handle, entry_submitted: true, attention: null, no_progress: 0, exit_proof: null },
+			kernel: { recordRevision: "r1", settled: false, hasOpenDecision: false, hasReplan: false },
+			interactionMode: "parent_relayed", entry: "drive t", laneCwd: tmpdir(),
+			pendingInstruction: { text: "please adjust", digest: "sha256:instr-gone" },
+		});
+		expect(reconciled.action).toBe("held");
+		expect(reconciled.session.handled_interventions).toBeUndefined();
+	});
+
+	test("a stalled interactive child asks the user while a sibling still works and advances once it exits", async () => {
+		const fx = mkRepo(["task-a", "task-b"]);
+		try {
+			const fake = new FakeSupervised("ws1");
+			const kernel = fakeKernel(new Map([["task-a", "r1"], ["task-b", "r1"]]));
+			const env = { HERDR_ENV: "1", HERDR_WORKSPACE_ID: "ws1" };
+			const agreement = agreementFor(fx.repo, fx.base, "batch-hls-sibling", SLUG, ["task-a", "task-b"], { return_policy: "retain_branch", interaction_mode: "interactive_host" });
+			await startLanes(agreement, depsFor(fx.repo, kernel, fake, "pi", env, agreement) as never);
+			const record = readAnyBatchRunState(fx.repo, "batch-hls-sibling") as BatchLaneRunStateRecord;
+			const handles = record.children.map((c) => c.session!.handle!);
+			const deps = { kernel, env, host: "pi" as const, createPort: () => fake as unknown as SupervisedSessionPort };
+			// task-a stalls at its baseline while task-b still works: the user is needed.
+			fake.states.set(handles[0]!, "idle");
+			fake.states.set(handles[1]!, "working");
+			let obs = await observeLanes(fx.repo, "batch-hls-sibling", deps as never, { wait: false });
+			expect(obs.ok && obs.next_action).toBe("ask_user");
+			// The same stall advances once the sibling exits.
+			fake.states.set(handles[1]!, "exited");
+			obs = await observeLanes(fx.repo, "batch-hls-sibling", deps as never, { wait: false });
+			expect(obs.ok && obs.next_action).toBe("advance");
+			// A sibling waiting on a decision also advances, even while it works.
+			fake.states.set(handles[1]!, "working");
+			const deciding = fakeKernel(new Map([["task-a", "r1"], ["task-b", "r1"]]), { decisions: new Set(["task-b"]) });
+			obs = await observeLanes(fx.repo, "batch-hls-sibling", { ...deps, kernel: deciding } as never, { wait: false });
+			expect(obs.ok && obs.next_action).toBe("advance");
 		} finally {
 			fx.cleanup();
 		}

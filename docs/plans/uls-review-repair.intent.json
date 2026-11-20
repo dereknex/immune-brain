@@ -1,0 +1,100 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "uls-review-repair",
+  "owner": "user",
+  "goal": "Repair PR #581 (imm/unified-lane-sessions at 47786714; Spec docs/specs/unified-lane-sessions.spec.md, #570) before merge, per the verified review of 2026-11-20. Fix: N1 the Loop daemon drive job fails a running Lane instead of calling advanceLanes every tick (agent_handlers.ts:1172-1183 returns failed on 'lane running'; Spec D15/LDP-A1); N2 resume never clears session.attention (child_session_reconciler.ts:166); Must 1 find-adoption of a write-ahead key forces entry_submitted true (child_session_reconciler.ts:132-135); Must 2 a single open refusal parks needs_human and daemon re-entry auto-clears it with now() (batch_lanes.ts:1059,1673; agent_handlers.ts:1142) — decided: keep enrolled, retry next advance, park on the second consecutive refusal, never auto-clear by confirmation time, amend Spec D10; Must 3 a rejected port.stop still parks lane_executor_stopped (host-core/runtime.ts:1166, lane_decision.ts:139); Must 4 mid-run blocked never writes attention so holdOf misses it (child_session_reconciler.ts:159, drive_dispatcher.ts:275-278); Should 3 SessionPortAdapter.send turns pane_not_found into ok (session_port_adapter.ts:98); Should 4 an exited child with a pending correction falls into the stall path (child_session_reconciler.ts:290); Should 5 observeLanes never returns ask_user while a sibling works (lane_sessions/index.ts:424-436). Restore session_providers default [\"herdr\"] (Spec D9, decision Q1) and add a major changeset (decision Q5). Keep the plugins/immune-brain and plugins/immune-brain-antigravity runtime mirrors and derived bundles in sync. Out of scope (tracked in #582): extracting the triplicated rotation open, the comment-only if, defaultAgreementPolicies removal condition, any/as never cleanup, lane_decision plan_source guard, stop-path native gate, and #580.",
+  "acceptance": [
+    {
+      "id": "rr-1",
+      "assertion": "bun run typecheck passes.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"run\",\n      \"typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "rr-2",
+      "assertion": "Claude and Antigravity derived plugin outputs are in sync with plugins/immune-brain/runtime (bun scripts/build-claude-plugin.ts --check and the Antigravity build check both pass), so the two plugin mirrors carry every repair.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bash\",\n    \"argv\": [\n      \"-c\",\n      \"bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "rr-3",
+      "assertion": "Child session reconciler (review Must 1, Must 4, N2, Should 4, Q2): (a) a write-ahead key whose open crashed is adopted through find by restoring only the handle — the recorded entry_submitted stays false and, observed idle or done, the reconciler resumes the entry; (b) an observed mid-run blocked writes the observation into session.attention, and the next non-blocked observation or a successful resume clears attention to null; (c) an observed exited child with an unprocessed coordinator correction rotates to the next generation whose entry is the correction text, marks that correction processed, and leaves no_progress unchanged; (d) a provider open refusal keeps the child enrolled with handle null and the refusal reason in the report, the next advance retries find then open on the same provider, and only a second consecutive refusal parks the child needs_human with lane_session_open_rejected; the old immediate-park assertion in tests/batch-session-port.test.ts is rewritten, not deleted. Each case is a new or updated test in tests/batch-session-port.test.ts using a fake port.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-session-port.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "rr-4",
+      "assertion": "Session port adapter and observeLanes (review Should 3, Should 5): SessionPortAdapter.send returns a refusal when the provider reports pane_not_found, so the reconciler leaves that instruction digest unprocessed for the next tick; observe keeps mapping pane_not_found to exited. observeLanes returns next_action ask_user when any interactive_host child is stalled_idle while a sibling is still working, but returns advance when a sibling has exited, settled, or awaits a decision. Covered by new cases in tests/lane-sessions.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/lane-sessions.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "rr-5",
+      "assertion": "Single-child stop (review Must 3): when BatchSessionPort.stop rejects, both the host-core runtime path and the lane_decision relay path leave the child enrolled (not lane_executor_stopped), report the provider code and reason, and keep the session reconciled on the next advance; a successful stop still parks lane_executor_stopped and retains the Lane. Covered in tests/single-task-lane-decision.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-lane-decision.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "rr-6",
+      "assertion": "Loop daemon drive job (review N1, Must 4, Q2): while its Lane is running with no dialog the drive job does not fail and calls the drive (advanceLanes) again at the retry interval until the Lane settles, a dialog hold escalates, or the job's runtime limit is reached; no lane-running escalation is posted. A mid-run blocked child (attention set) escalates lane_entry_blocked once via planEscalation. A child parked needs_human after a second open refusal is not auto-resumed by a daemon re-entry that passes now() as confirmation_time; it escalates instead. Covered by new cases in tests/loop-daemon-agent-handlers.test.ts whose fake drive reports lane running for at least one call before settling.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-daemon-agent-handlers.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "rr-7",
+      "assertion": "Daemon drive dispatcher integration (review N1, Must 4): with a real v3 Batch Record and fake port, a mid-run blocked child surfaces as hold_for_dialog with its attention detail, and an unchanged running child surfaces as not settled and not held so the job keeps advancing. Covered in tests/loop-daemon-drive-pr.test.ts; existing async-drive scheduling tests still pass.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-daemon-drive-pr.test.ts\",\n      \"tests/loop-sched-async-drive.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "rr-8",
+      "assertion": "session_providers defaults to [\"herdr\"] (decision Q1, Spec D9) in layered_config, host-core runtime, drive_dispatcher, v4_runtime and the migrate hint; docs/reference/immune-brain-config.md states [\"herdr\"] consistently; outside Herdr with no configuration the refusal lists only the herdr recovery. tests/layered-config.test.ts asserts the default.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/layered-config.test.ts\",\n      \"tests/session-provider-registry.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "rr-9",
+      "assertion": "Spec D10 in docs/specs/unified-lane-sessions.spec.md is amended (decision Q2): an open refusal keeps the child enrolled and retries on the same provider at the next advance, and a second consecutive refusal parks it needs_human; daemon re-entry never clears needs_human by confirmation time alone.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"grep\",\n    \"argv\": [\n      \"-q\",\n      \"second consecutive\",\n      \"docs/specs/unified-lane-sessions.spec.md\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 10000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "rr-10",
+      "assertion": "A .changeset entry declares \"immune-brain\": major for the unified-lane-sessions release (decision Q5: v2 records refused, herdr key retired, daemon regression outside Herdr).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"grep\",\n    \"argv\": [\n      \"-rqE\",\n      \"^\\\"immune-brain\\\": major$\",\n      \".changeset\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 10000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/unified-lane-sessions-major.md",
+    "docs/agents/derived-files.json",
+    "docs/plans/uls-review-repair.intent.json",
+    "docs/reference/immune-brain-config.md",
+    "docs/specs/unified-lane-sessions.spec.md",
+    "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+    "plugins/immune-brain-antigravity/runtime/config/layered_config.ts",
+    "plugins/immune-brain-antigravity/runtime/config/migrate.ts",
+    "plugins/immune-brain-antigravity/runtime/host-core/runtime.ts",
+    "plugins/immune-brain-antigravity/runtime/lane_sessions/index.ts",
+    "plugins/immune-brain-antigravity/runtime/lane_sessions/session_port_adapter.ts",
+    "plugins/immune-brain-antigravity/runtime/loop_daemon/agent_handlers.ts",
+    "plugins/immune-brain-antigravity/runtime/loop_daemon/drive_dispatcher.ts",
+    "plugins/immune-brain-antigravity/runtime/unattended/batch_lanes.ts",
+    "plugins/immune-brain-antigravity/runtime/unattended/batch_session_port.ts",
+    "plugins/immune-brain-antigravity/runtime/unattended/child_session_reconciler.ts",
+    "plugins/immune-brain-antigravity/runtime/unattended/lane_decision.ts",
+    "plugins/immune-brain-antigravity/runtime/v4_runtime.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/config/layered_config.ts",
+    "plugins/immune-brain/runtime/config/migrate.ts",
+    "plugins/immune-brain/runtime/host-core/runtime.ts",
+    "plugins/immune-brain/runtime/lane_sessions/index.ts",
+    "plugins/immune-brain/runtime/lane_sessions/session_port_adapter.ts",
+    "plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts",
+    "plugins/immune-brain/runtime/loop_daemon/drive_dispatcher.ts",
+    "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+    "plugins/immune-brain/runtime/unattended/batch_session_port.ts",
+    "plugins/immune-brain/runtime/unattended/child_session_reconciler.ts",
+    "plugins/immune-brain/runtime/unattended/lane_decision.ts",
+    "plugins/immune-brain/runtime/v4_runtime.ts",
+    "tests/batch-session-port.test.ts",
+    "tests/lane-sessions.test.ts",
+    "tests/layered-config.test.ts",
+    "tests/loop-daemon-agent-handlers.test.ts",
+    "tests/loop-daemon-drive-pr.test.ts",
+    "tests/single-task-lane-decision.test.ts"
+  ],
+  "scope_size_reason": "Pre-merge review repair of one PR: each runtime module has a byte-identical Antigravity mirror and an inlined derived bundle, so the 12 behavioural modules double to 24 paths; the defects share the reconciler/daemon state machine and cannot ship separately without leaving PR #581 unmergeable.",
+  "risk": "material",
+  "revision": 1
+}

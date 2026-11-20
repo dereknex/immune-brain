@@ -136,7 +136,14 @@ export async function relayLaneDecision<R>(input: LaneRelayInput<R>): Promise<La
 	const active = findActiveLaneBatchForTask(input.root, input.taskId);
 	if (input.operation === "stop") {
 		const handle = active?.record.children.find(child => child.task_id === input.taskId)?.session?.handle ?? null;
-		if (input.sessions && handle) await input.sessions.stop(handle);
+		if (input.sessions && handle) {
+			// A refused stop is not an exit: the child stays enrolled, its Lane retained.
+			const stopped = await input.sessions.stop(handle);
+			if (!stopped.ok)
+				return { relayed: true, result, lane_relay: { batch_id: target.batch_id, operation: input.operation, applied: true, rebound: false,
+					lane_supervision: null,
+					next_action: `lane_stop_rejected: ${stopped.reason} (${stopped.code}); the child stays enrolled and is reconciled on the next advance.` } };
+		}
 		parkLaneForExecutor(input.root, target.batch_id, input.taskId, "lane_executor_stopped");
 		return { relayed: true, result, lane_relay: { batch_id: target.batch_id, operation: input.operation, applied: true, rebound: false,
 			lane_supervision: null,

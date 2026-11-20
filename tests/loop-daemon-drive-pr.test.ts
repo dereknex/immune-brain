@@ -403,6 +403,55 @@ describe("LDP-A1: daemon drive through the session port", () => {
 	});
 });
 
+describe("review rework: a running Lane keeps advancing and a blocked one holds", () => {
+	it("reports a running child as not settled and not held, then settles once it delivers", async () => {
+		herdrEnv();
+		const { repo, base } = fixture();
+		const fake = new FakeHerdr();
+		const revisions = new Map([[TASK, "r1"]]);
+		const settled = new Set<string>();
+		const kernel = fakeKernel(revisions, settled);
+		const batchId = `batch-${TASK}-running`;
+		await dispatchLoopDrive(driveArgs(repo, base, batchId, kernel, fake));
+		const record = readAnyBatchRunState(repo, batchId);
+		if (!record || !isLaneBatchRecord(record)) throw new Error("expected a v3 lane batch record");
+		const handle = record.children[0]!.session!.handle!;
+		// The Executor is still working: the tick must neither settle nor hold.
+		fake.states.set(handle, "working");
+		const running = await dispatchLoopDrive(driveArgs(repo, base, batchId, kernel, fake));
+		expect(running.settled).toBe(false);
+		expect(running.hold_for_dialog).toBeNull();
+		expect(running.parked).toBeNull();
+		expect(running.reason).toContain("lane running");
+		// Once it delivers, the same batch settles.
+		const lane = laneOf(repo, batchId);
+		settleLane(repo, lane);
+		revisions.set(TASK, "r2");
+		settled.add(TASK);
+		const done = await dispatchLoopDrive(driveArgs(repo, base, batchId, kernel, fake));
+		expect(done.settled).toBe(true);
+	});
+
+	it("surfaces a mid-run blocked child as hold_for_dialog with its attention", async () => {
+		herdrEnv();
+		const { repo, base } = fixture();
+		const fake = new FakeHerdr();
+		const kernel = fakeKernel(new Map([[TASK, "r1"]]), new Set());
+		const batchId = `batch-${TASK}-blocked`;
+		await dispatchLoopDrive(driveArgs(repo, base, batchId, kernel, fake));
+		const record = readAnyBatchRunState(repo, batchId);
+		if (!record || !isLaneBatchRecord(record)) throw new Error("expected a v3 lane batch record");
+		fake.states.set(record.children[0]!.session!.handle!, "blocked");
+		const held = await dispatchLoopDrive(driveArgs(repo, base, batchId, kernel, fake));
+		expect(held.settled).toBe(false);
+		expect(held.hold_for_dialog).toMatchObject({ task_id: TASK, batch_id: batchId });
+		expect(held.hold_for_dialog!.detail).toContain("blocked");
+		const after = readAnyBatchRunState(repo, batchId);
+		if (!after || !isLaneBatchRecord(after)) throw new Error("expected a v3 lane batch record");
+		expect(after.children[0]!.session?.attention).toBe("blocked");
+	});
+});
+
 describe("LDP-A2: no sessions outside Herdr, fail-closed evidence", () => {
 	it("refuses lane_session_unavailable and creates nothing", async () => {
 		const { repo, base } = fixture();

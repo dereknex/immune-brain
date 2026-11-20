@@ -172,6 +172,32 @@ class MemPort implements BatchSessionPort {
 		if (handle) return { ok: true as const, handle };
 		return { ok: true as const, not_found: true as const };
 	}
+	/** The supervised-port capability the adapter delegates `find` to. */
+	async findSession(key: string) {
+		return this.find(key);
+	}
+	/** The supervised-port capability the adapter delegates `closeWithProof` to. */
+	async closeSession(handle: string, _record: unknown) {
+		void _record;
+		return { ok: true as const };
+	}
+	async closeWithProof(handle: string, key: string) {
+		return this.closeWithProofBatch(handle, key);
+	}
+	// Supervised-port vocabulary the adapter expects from a real provider.
+	readonly protocolVersion = 1;
+	async probe() { return { ok: true as const }; }
+	async createSession(input: { cwd: string; label: string; host: unknown; hostArgs: string[]; entry: string; session_key?: string; env?: Record<string, string> }) {
+		const opened = await this.open({ key: input.session_key ?? "k", cwd: input.cwd, label: input.label, entry: input.entry, env: input.env });
+		if (!opened.ok) return opened;
+		return { ok: true as const, handle: opened.handle, entry_submitted: true as const, state: "idle" as const, provenance: "detected" as const };
+	}
+	async sendInstruction(handle: string, text: string) { return this.send(handle, text).then(r => r.ok ? { ok: true as const, state: r.state, provenance: "detected" as const } : r); }
+	async awaitTransition(handle: string) { return { ok: true as const, transition: "changed" as const, state: "idle" as const, provenance: "detected" as const }; }
+	async readOutput(handle: string) { void handle; return { ok: true as const, text: "", source: "visible" as const }; }
+	async observeState(handle: string) { const r = await this.observe(handle); return r.ok ? { ok: true as const, state: r.state, provenance: "detected" as const } : r; }
+	async stopSession(handle: string) { return this.stop(handle); }
+	async reconcile(owned: string[]) { void owned; return { ok: true as const, sessions: [] as never[] }; }
 	async observe(handle: string) {
 		this.observes.push(handle);
 		if (this.refuseObserve.has(handle)) return { ok: false as const, code: "provider_error", reason: "observe refused" };
@@ -185,7 +211,7 @@ class MemPort implements BatchSessionPort {
 		void handle;
 		return { ok: true as const };
 	}
-	async closeWithProof(handle: string, key: string) {
+	async closeWithProofBatch(handle: string, key: string) {
 		this.closes.push({ handle, key });
 		return { ok: true as const, exited: true as const, handle, key };
 	}
@@ -355,7 +381,7 @@ describe("BSP-A5: bounded label and a surfaced open rejection", () => {
 		expect(laneSessionLabel(long)).toBe(laneSessionLabel(long));
 	});
 
-	test("a refused open parks the child with the provider's reason instead of holding a handleless session", async () => {
+	test("a first open refusal keeps the child enrolled and names the provider's reason; the second parks it", async () => {
 		const port = new MemPort("mem-open-refused");
 		port.refuseOpen = "label must be 1 to 32 characters";
 		const refused = await reconcileChildSession({
@@ -365,18 +391,21 @@ describe("BSP-A5: bounded label and a surfaced open rejection", () => {
 		});
 		expect(port.opens.map(input => input.label)).toEqual(["task-a"]);
 		expect(refused.session.handle).toBeNull();
-		expect(refused.action).toBe("parked_open_rejected");
+		expect(refused.action).toBe("open_refused");
 		expect(refused.parkedReason).toContain("label must be 1 to 32 characters");
 
-		// Through the batch the same refusal is a named park, never a silent hold.
+		// Through the batch the first refusal keeps the child enrolled; the second parks it.
 		const fx = mkRepo(["task-a"]);
 		try {
 			const kernel = fakeKernel(new Map([["task-a", "r1"]]));
 			const input = laneInput(fx.repo, fx.base, "batch-a5", [child("task-a")], kernel, port);
-			const report = (await advanceBatch(input, null)) as unknown as { batch_state: string; children: Array<{ state: string; reason: string | null }> };
-			expect(report.batch_state).toBe("needs_human");
-			expect(report.children[0]!.state).toBe("needs_human");
-			expect(report.children[0]!.reason).toContain("lane_session_open_rejected: label must be 1 to 32 characters");
+			const first = (await advanceBatch(input, null)) as unknown as { batch_state: string; children: Array<{ state: string; reason: string | null }> };
+			expect(first.batch_state).toBe("running");
+			expect(first.children[0]!.state).toBe("enrolled");
+			const second = (await advanceBatch(input, readAnyBatchRunState(fx.repo, "batch-a5"))) as unknown as { batch_state: string; children: Array<{ state: string; reason: string | null }> };
+			expect(second.batch_state).toBe("needs_human");
+			expect(second.children[0]!.state).toBe("needs_human");
+			expect(second.children[0]!.reason).toContain("lane_session_open_rejected: label must be 1 to 32 characters");
 		} finally {
 			fx.cleanup();
 		}
@@ -686,5 +715,167 @@ describe("review rework: intervention consumption and write-ahead persistence", 
 		expect(rotatedPersisted[0]!.handle).toBeNull();
 		expect(rotatedPersisted[0]!.key).toBe(rotated.session.key);
 		expect(openSaw).toEqual(rotatedPersisted[0]);
+	});
+});
+
+describe("review rework: adoption, attention, refusals and exited corrections", () => {
+	test("adopting a crashed open restores only the handle and resumes the unsubmitted entry", async () => {
+		const port = new MemPort("mem-adopt-resume");
+		const key = laneSessionKey("b", "t", 1);
+		port.store.set(key, "h-crashed");
+		port.states.set("h-crashed", "idle");
+		const adopted = await reconcileChildSession({
+			port, batchId: "b", taskId: "t",
+			session: { key, generation: 1, baseline: "r1", handle: null, entry_submitted: false, attention: null, no_progress: 0, exit_proof: null },
+			kernel: { recordRevision: "r1", settled: false, hasOpenDecision: false, hasReplan: false },
+			interactionMode: "parent_relayed", entry: "drive t", laneCwd: tmpdir(),
+		});
+		expect(adopted.action).toBe("resumed");
+		expect(adopted.session.handle).toBe("h-crashed");
+		expect(adopted.session.entry_submitted).toBe(true);
+		expect(port.opens.length).toBe(0);
+		expect(port.resumes).toEqual([{ handle: "h-crashed", entry: "drive t" }]);
+	});
+
+	test("an observed mid-run blocked writes attention, and the next non-blocked observation clears it", async () => {
+		const port = new MemPort("mem-attention");
+		port.states.set("h1", "blocked");
+		const base = { key: laneSessionKey("b", "t", 1), generation: 1, baseline: "r1", handle: "h1", entry_submitted: true, attention: null, no_progress: 0, exit_proof: null };
+		const held = await reconcileChildSession({
+			port, batchId: "b", taskId: "t", session: { ...base },
+			kernel: { recordRevision: "r1", settled: false, hasOpenDecision: false, hasReplan: false },
+			interactionMode: "parent_relayed", entry: "drive t", laneCwd: tmpdir(),
+		});
+		expect(held.action).toBe("held");
+		expect(held.session.attention).toBe("blocked");
+		port.states.set("h1", "working");
+		const cleared = await reconcileChildSession({
+			port, batchId: "b", taskId: "t", session: held.session,
+			kernel: { recordRevision: "r1", settled: false, hasOpenDecision: false, hasReplan: false },
+			interactionMode: "parent_relayed", entry: "drive t", laneCwd: tmpdir(),
+		});
+		expect(cleared.action).toBe("held");
+		expect(cleared.session.attention).toBeNull();
+		// A successful resume clears it too.
+		port.states.set("h1", "blocked");
+		const again = await reconcileChildSession({
+			port, batchId: "b", taskId: "t", session: cleared.session,
+			kernel: { recordRevision: "r1", settled: false, hasOpenDecision: false, hasReplan: false },
+			interactionMode: "parent_relayed", entry: "drive t", laneCwd: tmpdir(),
+		});
+		expect(again.session.attention).toBe("blocked");
+		port.states.set("h1", "idle");
+		const resumed = await reconcileChildSession({
+			port, batchId: "b", taskId: "t", session: again.session,
+			kernel: { recordRevision: "r2", settled: false, hasOpenDecision: false, hasReplan: false },
+			interactionMode: "parent_relayed", entry: "drive t", laneCwd: tmpdir(),
+		});
+		expect(resumed.action).toBe("resumed");
+		expect(resumed.session.attention).toBeNull();
+	});
+
+	test("an exited child with an unprocessed correction rotates to a generation whose entry is the correction", async () => {
+		const port = new MemPort("mem-exited-correction");
+		port.states.set("h1", "exited");
+		const pending = { text: "design correction", digest: "sha256:corr-exit" };
+		const rotated = await reconcileChildSession({
+			port, batchId: "b", taskId: "t",
+			session: { key: laneSessionKey("b", "t", 1), generation: 1, baseline: "r1", handle: "h1", entry_submitted: true, attention: null, no_progress: 0, exit_proof: null },
+			kernel: { recordRevision: "r1", settled: false, hasOpenDecision: false, hasReplan: false },
+			interactionMode: "parent_relayed", entry: "drive t", laneCwd: tmpdir(),
+			pendingCorrection: pending,
+		});
+		expect(rotated.action).toBe("rotated");
+		expect(rotated.session.generation).toBe(2);
+		expect(rotated.session.no_progress).toBe(0);
+		expect(rotated.session.handled_interventions).toEqual([pending.digest]);
+		expect(port.opens.map((o) => o.entry)).toEqual(["design correction"]);
+	});
+
+	test("a first open refusal keeps the child enrolled and retries; the second parks it", async () => {
+		const port = new MemPort("mem-two-refusals");
+		port.refuseOpen = "provider is busy";
+		const kernel = { recordRevision: "r1", settled: false, hasOpenDecision: false, hasReplan: false };
+		const first = await reconcileChildSession({
+			port, batchId: "b", taskId: "t", session: null, kernel,
+			interactionMode: "parent_relayed", entry: "drive t", laneCwd: tmpdir(),
+		});
+		expect(first.action).toBe("open_refused");
+		expect(first.session.handle).toBeNull();
+		expect(first.session.open_refusals).toBe(1);
+		expect(first.parkedReason).toContain("provider is busy");
+		const second = await reconcileChildSession({
+			port, batchId: "b", taskId: "t", session: first.session, kernel,
+			interactionMode: "parent_relayed", entry: "drive t", laneCwd: tmpdir(),
+		});
+		expect(second.action).toBe("parked_open_rejected");
+		expect(second.session.open_refusals).toBe(2);
+		expect(port.opens.length).toBe(2);
+		expect(port.finds.length).toBe(2);
+		// A later successful open resets the counter.
+		port.refuseOpen = null;
+		const third = await reconcileChildSession({
+			port, batchId: "b", taskId: "t", session: { ...first.session }, kernel,
+			interactionMode: "parent_relayed", entry: "drive t", laneCwd: tmpdir(),
+		});
+		expect(third.action).toBe("opened");
+		expect(third.session.open_refusals).toBe(0);
+	});
+
+	test("a refused correction open retries with the correction text, not the default entry", async () => {
+		const port = new MemPort("mem-correction-retry");
+		port.states.set("h1", "idle");
+		port.refuseOpen = "provider is busy";
+		const pending = { text: "design correction", digest: "sha256:corr-retry" };
+		const kernel = { recordRevision: "r1", settled: false, hasOpenDecision: false, hasReplan: false };
+		const first = await reconcileChildSession({
+			port, batchId: "b", taskId: "t",
+			session: { key: laneSessionKey("b", "t", 1), generation: 1, baseline: "r1", handle: "h1", entry_submitted: true, attention: null, no_progress: 0, exit_proof: null },
+			kernel, interactionMode: "parent_relayed", entry: "drive t", laneCwd: tmpdir(),
+			pendingCorrection: pending,
+		});
+		expect(first.action).toBe("open_refused");
+		expect(first.session.handle).toBeNull();
+		expect(first.session.handled_interventions).toEqual([pending.digest]);
+		port.refuseOpen = null;
+		const retried = await reconcileChildSession({
+			port, batchId: "b", taskId: "t", session: first.session, kernel,
+			interactionMode: "parent_relayed", entry: "drive t", laneCwd: tmpdir(),
+			pendingCorrection: pending,
+		});
+		expect(retried.action).toBe("opened");
+		expect(retried.session.generation).toBe(2);
+		expect(port.opens.map((opened) => opened.entry)).toEqual(["design correction", "design correction"]);
+	});
+
+	test("a newer confirmation_time does not clear an open refusal; a literal-user re-entry does", async () => {
+		const fx = mkRepo(["task-a"]);
+		try {
+			const port = new MemPort("mem-resume-refusal");
+			port.refuseOpen = "provider is busy";
+			const kernel = fakeKernel(new Map([["task-a", "r1"]]));
+			const input = laneInput(fx.repo, fx.base, "batch-resume-refusal", [child("task-a")], kernel, port, {
+				confirmation: { source: "tracker_approval", ref: "tracker_approval:plan" },
+			});
+			await advanceBatch(input, null);
+			const parked = (await advanceBatch(input, readAnyBatchRunState(fx.repo, "batch-resume-refusal"))) as unknown as { batch_state: string; children: Array<{ state: string }> };
+			expect(parked.batch_state).toBe("needs_human");
+			const daemonAgain = (await advanceBatch({ ...input, confirmation_time: FAR_FUTURE }, readAnyBatchRunState(fx.repo, "batch-resume-refusal"))) as unknown as { children: Array<{ state: string; reason: string | null }> };
+			expect(daemonAgain.children[0]!.state).toBe("needs_human");
+			expect(daemonAgain.children[0]!.reason).toContain("lane_session_open_rejected");
+			port.refuseOpen = null;
+			// A literal-user re-entry re-issues the capability at its own confirmation time.
+			const userRegistry = createBatchAuthorityRegistry();
+			const userCapability = userRegistry.issue(
+				{ batch_id: "batch-resume-refusal", initiative_slug: SLUG, plan_digest: input.plan_digest, branch: "main", base_head: input.base_head, budget: input.budget, actor_id: "user", confirmation_ref: "confirm", nonce: "n" },
+				input.children,
+				FAR_FUTURE,
+			);
+			const user = (await advanceBatch({ ...input, registry: userRegistry, capability: userCapability, confirmation_time: FAR_FUTURE, literal_user_confirmation: true }, readAnyBatchRunState(fx.repo, "batch-resume-refusal"))) as unknown as { batch_state: string; children: Array<{ state: string; reason?: string | null }> };
+			expect(user.batch_state).toBe("running");
+			expect(user.children[0]!.state).toBe("enrolled");
+		} finally {
+			fx.cleanup();
+		}
 	});
 });

@@ -217,6 +217,8 @@ export interface BatchChildSession {
 	exit_proof: unknown | null;
 	/** Digests of recorded interventions already acted on; a digest is never handled twice. */
 	handled_interventions?: string[];
+	/** Consecutive provider `open` refusals; the second one parks the child (Spec D10). */
+	open_refusals?: number;
 }
 
 export interface BatchLaneChildRun {
@@ -1059,7 +1061,9 @@ function validateLaneRecordShape(value: unknown, batchId: string): asserts value
 			const proofOk = proof === null || (isObject(proof) && (proof as { ok?: unknown }).ok === true && (proof as { exited?: unknown }).exited === true && typeof (proof as { handle?: unknown }).handle === "string" && typeof (proof as { key?: unknown }).key === "string");
 			const handled = s.handled_interventions;
 			const handledOk = handled === undefined || (Array.isArray(handled) && handled.every((d) => typeof d === "string" && d.length > 0));
-			if (!keyOk || !generationOk || !baselineOk || !handleOk || !entryOk || !attentionOk || !progressOk || !proofOk || !handledOk)
+			const refusals = s.open_refusals;
+			const refusalsOk = refusals === undefined || (typeof refusals === "number" && Number.isSafeInteger(refusals) && refusals >= 0);
+			if (!keyOk || !generationOk || !baselineOk || !handleOk || !entryOk || !attentionOk || !progressOk || !proofOk || !handledOk || !refusalsOk)
 				throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid session`);
 		}
 		if (child.tracker_closed === true && child.state !== "integrated" && child.state !== "released" && !deliveryParked)

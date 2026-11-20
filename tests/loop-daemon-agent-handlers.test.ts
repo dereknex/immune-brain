@@ -302,6 +302,12 @@ function makeHarness(
 		scopeHint?: string[];
 		/** How many leading drive calls report a blocked startup dialog before the drive settles. */
 		dialogHolds?: number;
+		/** How many leading drive calls report a Lane that is still running before the drive settles. */
+		runningTicks?: number;
+		/** The drive reports the child parked `needs_human` and never settles. */
+		parked?: boolean;
+		/** The drive refuses permanently (no Lane is running) and never settles. */
+		refused?: boolean;
 	} = {},
 ): Harness {
 	const sessions = createFakeSessions(options.behavior);
@@ -371,6 +377,12 @@ function makeHarness(
 			drives.push(input);
 			// A queued startup dialog holds the drive before it settles, as an
 			// Executor session reporting entry_submitted: false would.
+			if (options.parked) {
+				return { settled: false, exit: null, reason: "lane parked", parked: { task_id: input.task_id, reason: "lane_session_open_rejected: provider is busy (refused)" } };
+			}
+			if (options.refused) {
+				return { settled: false, exit: null, reason: "lane_session_unavailable: not running inside Herdr" };
+			}
 			if (options.dialogHolds && drives.length <= options.dialogHolds) {
 				return {
 					settled: false,
@@ -382,6 +394,9 @@ function makeHarness(
 						detail: "lane_entry_not_submitted: the Executor session waits on a startup dialog",
 					},
 				};
+			}
+			if (options.runningTicks && drives.length <= options.runningTicks) {
+				return { settled: false, exit: null, reason: "lane running" };
 			}
 			// S8: the daemon reads settlement from the v3 Batch Record plus `.imm/audit/`.
 			const { laneDeliveryEvidence } = await import(
@@ -801,6 +816,103 @@ describe("Loop Daemon: Agent-Backed Handlers (S9)", () => {
 			if (oldRetry === undefined) delete process.env.IMM_LOOP_DIALOG_RETRY_MS;
 			else process.env.IMM_LOOP_DIALOG_RETRY_MS = oldRetry;
 		}
+	});
+
+	it("keeps advancing a running Lane until it settles, without posting a lane-running escalation", async () => {
+		const oldRetry = process.env.IMM_LOOP_DIALOG_RETRY_MS;
+		process.env.IMM_LOOP_DIALOG_RETRY_MS = "10";
+		try {
+			const workspace = makeWorkspace({ loopConfig: { mode: "assist" } });
+			cleanups.push(workspace.cleanup);
+			const harness = makeHarness(workspace, { runningTicks: 2 });
+			await runLoopDaemonCli(["tick", "--json"], workspace.root, {
+				gh: mockGh(), gitHubPort: harness.gitHubPort,
+				snapshotOverride: snapshotOf([issue(10, "Add the S9 fixture behaviour")]),
+				guardFacts: { daemon_identity: "daemon-bot" }, classify: s9IssueClassifier,
+				agentPort: harness.port, standingDaemon: true,
+			});
+			const plan = readPlanPublication(workspace.stateDir, 10)!;
+			seedWorkspaceDelivery(workspace.root, PLAN_TASK_ID);
+			const approvedAt = new Date(Date.parse(TS) + 60_000).toISOString();
+			const approval: RawComment = { id: 9002, body: `/approve ${plan.digest}`, user: { login: "human-owner" }, author_association: "OWNER", created_at: approvedAt, updated_at: approvedAt };
+			harness.comments.byId.set(9002, { body: approval.body, author: "human-owner", author_association: "OWNER", created_at: approvedAt, updated_at: approvedAt });
+			const tick = await runLoopDaemonCli(["tick", "--json"], workspace.root, {
+				gh: mockGh(), gitHubPort: harness.gitHubPort,
+				snapshotOverride: snapshotOf([issue(10, "Add the S9 fixture behaviour", [approval])]),
+				guardFacts: { daemon_identity: "daemon-bot" }, classify: s9IssueClassifier,
+				agentPort: harness.port, standingDaemon: true,
+			});
+			expect(tick.returncode).toBe(0);
+			// The Lane reports running twice before it settles: the job re-drives
+			// instead of failing, and posts no lane-running escalation.
+			for (let attempt = 0; attempt < 400 && harness.drives.length < 3; attempt++)
+				await new Promise((resolve) => setTimeout(resolve, 5));
+			expect(harness.drives.length).toBe(3);
+			await settleJob(workspace.stateDir, "issue-10");
+			expect(readLoopJob(workspace.stateDir, "issue-10")?.outcome).toBe("settled");
+			const comments = [...harness.gitHubPort.comments.values()].map((comment) => comment.body).join("\n");
+			expect(comments).not.toContain("lane running");
+		} finally {
+			if (oldRetry === undefined) delete process.env.IMM_LOOP_DIALOG_RETRY_MS;
+			else process.env.IMM_LOOP_DIALOG_RETRY_MS = oldRetry;
+		}
+	});
+
+	it("escalates a child parked needs_human once and does not keep re-driving it", async () => {
+		const workspace = makeWorkspace({ loopConfig: { mode: "assist" } });
+		cleanups.push(workspace.cleanup);
+		const harness = makeHarness(workspace, { parked: true });
+		await runLoopDaemonCli(["tick", "--json"], workspace.root, {
+			gh: mockGh(), gitHubPort: harness.gitHubPort,
+			snapshotOverride: snapshotOf([issue(10, "Add the S9 fixture behaviour")]),
+			guardFacts: { daemon_identity: "daemon-bot" }, classify: s9IssueClassifier,
+			agentPort: harness.port, standingDaemon: true,
+		});
+		const plan = readPlanPublication(workspace.stateDir, 10)!;
+		const approvedAt = new Date(Date.parse(TS) + 60_000).toISOString();
+		const approval: RawComment = { id: 9003, body: `/approve ${plan.digest}`, user: { login: "human-owner" }, author_association: "OWNER", created_at: approvedAt, updated_at: approvedAt };
+		harness.comments.byId.set(9003, { body: approval.body, author: "human-owner", author_association: "OWNER", created_at: approvedAt, updated_at: approvedAt });
+		await runLoopDaemonCli(["tick", "--json"], workspace.root, {
+			gh: mockGh(), gitHubPort: harness.gitHubPort,
+			snapshotOverride: snapshotOf([issue(10, "Add the S9 fixture behaviour", [approval])]),
+			guardFacts: { daemon_identity: "daemon-bot" }, classify: s9IssueClassifier,
+			agentPort: harness.port, standingDaemon: true,
+		});
+		await settleJob(workspace.stateDir, "issue-10");
+		const job = readLoopJob(workspace.stateDir, "issue-10");
+		expect(job?.outcome).toBe("failed");
+		expect(job?.detail).toContain("needs_human");
+		// Escalated once, and the parked child was not re-driven.
+		expect(harness.drives.length).toBe(1);
+		const escalations = [...harness.gitHubPort.comments.values()].map((comment) => comment.body).filter((body) => body.includes("needs_human"));
+		expect(escalations).toHaveLength(1);
+	});
+
+	it("fails a permanent drive refusal at once instead of retrying it", async () => {
+		const workspace = makeWorkspace({ loopConfig: { mode: "assist" } });
+		cleanups.push(workspace.cleanup);
+		const harness = makeHarness(workspace, { refused: true });
+		await runLoopDaemonCli(["tick", "--json"], workspace.root, {
+			gh: mockGh(), gitHubPort: harness.gitHubPort,
+			snapshotOverride: snapshotOf([issue(10, "Add the S9 fixture behaviour")]),
+			guardFacts: { daemon_identity: "daemon-bot" }, classify: s9IssueClassifier,
+			agentPort: harness.port, standingDaemon: true,
+		});
+		const plan = readPlanPublication(workspace.stateDir, 10)!;
+		const approvedAt = new Date(Date.parse(TS) + 60_000).toISOString();
+		const approval: RawComment = { id: 9004, body: `/approve ${plan.digest}`, user: { login: "human-owner" }, author_association: "OWNER", created_at: approvedAt, updated_at: approvedAt };
+		harness.comments.byId.set(9004, { body: approval.body, author: "human-owner", author_association: "OWNER", created_at: approvedAt, updated_at: approvedAt });
+		await runLoopDaemonCli(["tick", "--json"], workspace.root, {
+			gh: mockGh(), gitHubPort: harness.gitHubPort,
+			snapshotOverride: snapshotOf([issue(10, "Add the S9 fixture behaviour", [approval])]),
+			guardFacts: { daemon_identity: "daemon-bot" }, classify: s9IssueClassifier,
+			agentPort: harness.port, standingDaemon: true,
+		});
+		await settleJob(workspace.stateDir, "issue-10");
+		const job = readLoopJob(workspace.stateDir, "issue-10");
+		expect(job?.outcome).toBe("failed");
+		expect(job?.detail).toContain("lane_session_unavailable");
+		expect(harness.drives.length).toBe(1);
 	});
 
 	it("does not enroll an approval whose digest is not the published one", async () => {
