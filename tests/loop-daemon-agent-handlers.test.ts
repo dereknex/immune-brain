@@ -29,6 +29,7 @@ import type { GhExecution, GhTransport } from "../plugins/immune-brain/runtime/g
 import {
 	createAgentHandlerPort,
 	createDefaultAgentHandlerDeps,
+	driveInitiativeLane,
 	readPlanPublication,
 	type AgentDriveRequest,
 	type AgentDriveResult,
@@ -56,6 +57,7 @@ import { escalationKey, escalationKeyMarker } from "../plugins/immune-brain/runt
 import { eventTarget } from "../plugins/immune-brain/runtime/loop_daemon/guards.ts";
 import { setCachedDaemonGithubLogin } from "../plugins/immune-brain/runtime/loop_daemon/identity.ts";
 import { readLoopJob } from "../plugins/immune-brain/runtime/loop_daemon/jobs.ts";
+import { readWorkItem, writeWorkItem } from "../plugins/immune-brain/runtime/loop_daemon/work_items.ts";
 import { LOOP_PR_MARKER, repairKey, saveRepairRetries } from "../plugins/immune-brain/runtime/loop_daemon/repair_agent.ts";
 import { initLoopState, loadLoopDispatches } from "../plugins/immune-brain/runtime/loop_daemon/state.ts";
 import {
@@ -913,6 +915,47 @@ describe("Loop Daemon: Agent-Backed Handlers (S9)", () => {
 		expect(job?.outcome).toBe("failed");
 		expect(job?.detail).toContain("lane_session_unavailable");
 		expect(harness.drives.length).toBe(1);
+	});
+
+	// Exit condition: Slice S2 of loop-leader-uls-alignment adds the Initiative entry
+	// and replaces this refusal with the drive it guards.
+	it("fails an Initiative-shaped drive with lane_initiative_entry_pending and leaves the WorkItem retryable", async () => {
+		const workspace = makeWorkspace({ loopConfig: { mode: "assist" } });
+		cleanups.push(workspace.cleanup);
+		const harness = makeHarness(workspace);
+		const port = createAgentHandlerPort({ ...harness.deps, driveInitiative: async (input) => driveInitiativeLane(input) });
+		await runLoopDaemonCli(["tick", "--json"], workspace.root, {
+			gh: mockGh(), gitHubPort: harness.gitHubPort,
+			snapshotOverride: snapshotOf([issue(10, "Add the S9 fixture behaviour")]),
+			guardFacts: { daemon_identity: "daemon-bot" }, classify: s9IssueClassifier,
+			agentPort: port, standingDaemon: true,
+		});
+		const plan = readPlanPublication(workspace.stateDir, 10)!;
+		// The leader shaped this target as an Initiative before the owner approved.
+		const shaped = readWorkItem(workspace.stateDir, "issue-10")!;
+		shaped.binding.initiative_slug = "widget-initiative";
+		writeWorkItem(workspace.stateDir, shaped);
+
+		const approvedAt = new Date(Date.parse(TS) + 60_000).toISOString();
+		const approval: RawComment = { id: 9005, body: `/approve ${plan.digest}`, user: { login: "human-owner" }, author_association: "OWNER", created_at: approvedAt, updated_at: approvedAt };
+		harness.comments.byId.set(9005, { body: approval.body, author: "human-owner", author_association: "OWNER", created_at: approvedAt, updated_at: approvedAt });
+		await runLoopDaemonCli(["tick", "--json"], workspace.root, {
+			gh: mockGh(), gitHubPort: harness.gitHubPort,
+			snapshotOverride: snapshotOf([issue(10, "Add the S9 fixture behaviour", [approval])]),
+			guardFacts: { daemon_identity: "daemon-bot" }, classify: s9IssueClassifier,
+			agentPort: port, standingDaemon: true,
+		});
+		await settleJob(workspace.stateDir, "issue-10");
+		const job = readLoopJob(workspace.stateDir, "issue-10");
+		expect(job?.outcome).toBe("failed");
+		expect(job?.detail).toContain("lane_initiative_entry_pending");
+		// No single-task Lane ran for a slice, and nothing settled.
+		expect(harness.drives).toHaveLength(0);
+		expect(job?.settled_lanes ?? []).toEqual([]);
+		// The WorkItem is neither closed, escalated nor abandoned: a later tick may retry once S2 lands.
+		const item = readWorkItem(workspace.stateDir, "issue-10")!;
+		expect(["closed", "escalated", "abandoned"]).not.toContain(item.state);
+		expect(item.binding.initiative_slug).toBe("widget-initiative");
 	});
 
 	it("does not enroll an approval whose digest is not the published one", async () => {

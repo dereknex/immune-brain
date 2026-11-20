@@ -1,6 +1,8 @@
 # Leader plus catalog replace the judging agent
 
 Status: accepted; amends [ADR 0039](0039-loop-daemon.md) Decisions 2, 6 and 7.
+Numbered 0041 until Slice `S1` of `docs/specs/loop-leader-uls-alignment.spec.md`
+renumbered it: [ADR 0041](0041-simplified-configuration.md) already held that number.
 Slice `S3` of `docs/specs/loop-leader.spec.md` (`loop-leader-s3-guarded-dispatch`).
 
 ## Context

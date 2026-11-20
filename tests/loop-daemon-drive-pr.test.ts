@@ -15,7 +15,7 @@
  *   evidence fails closed with no record, no integrated commit, or no audit.
  */
 
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -50,15 +50,20 @@ const TS = "2026-01-01T00:00:00.000Z";
 const TASK = "loop-daemon-drive-task";
 
 const roots: string[] = [];
-// Restore, not delete: other files in the same bun process set these once at import.
-const PRIOR_HERDR_ENV = process.env.HERDR_ENV;
-const PRIOR_HERDR_WORKSPACE_ID = process.env.HERDR_WORKSPACE_ID;
+// Every HERDR_* variable is scrubbed before each test and restored after it, so a
+// run inside a Herdr pane (which inherits HERDR_ENV, HERDR_SOCKET_PATH, ...) sees
+// the same "no Herdr" baseline as CI. Restore, not delete: other files in the same
+// bun process set these once at import.
+let priorHerdrEnv: Array<[string, string]> = [];
+const herdrKeys = (): string[] => Object.keys(process.env).filter((key) => key.startsWith("HERDR_"));
+beforeEach(() => {
+	priorHerdrEnv = herdrKeys().map((key) => [key, process.env[key]!]);
+	for (const key of herdrKeys()) delete process.env[key];
+});
 afterEach(() => {
 	for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
-	if (PRIOR_HERDR_ENV === undefined) delete process.env.HERDR_ENV;
-	else process.env.HERDR_ENV = PRIOR_HERDR_ENV;
-	if (PRIOR_HERDR_WORKSPACE_ID === undefined) delete process.env.HERDR_WORKSPACE_ID;
-	else process.env.HERDR_WORKSPACE_ID = PRIOR_HERDR_WORKSPACE_ID;
+	for (const key of herdrKeys()) delete process.env[key];
+	for (const [key, value] of priorHerdrEnv) process.env[key] = value;
 });
 
 function git(cwd: string, ...args: string[]): string {

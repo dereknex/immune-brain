@@ -138,7 +138,6 @@ import {
 	prepareBatchLaneRunState,
 	writeBatchLaneRunState,
 } from "../plugins/immune-brain/runtime/unattended/batch_state.ts";
-import { recordExecutorExit } from "../plugins/immune-brain/runtime/loop_daemon/exit_recorder.ts";
 import { readWorkItem } from "../plugins/immune-brain/runtime/loop_daemon/work_items.ts";
 
 const TS = "2026-11-12T10:00:00.000Z";

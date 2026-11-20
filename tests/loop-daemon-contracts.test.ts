@@ -380,3 +380,44 @@ describe("loop daemon upstream contracts (loop-daemon-s0-contracts)", () => {
 		expect(baseDist).toBe(baseRoot);
 	});
 });
+
+describe("loop-leader ADR numbering and judging references (loop-leader-uls-s1-compile-contract)", () => {
+	const HISTORICAL = [/^\.imm\/audit\//, /^docs\/plans\/.*\.intent\.json$/, /^docs\/specs\/(loop-leader|unified-lane-sessions|loop-leader-uls-alignment)\.spec\.md$/];
+
+	test("docs/adr/0042-loop-leader-role-catalog.md exists, states its former number, and is the only ADR numbered 0042", () => {
+		expect(existsSync(join(ROOT, "docs/adr/0042-loop-leader-role-catalog.md"))).toBe(true);
+		expect(existsSync(join(ROOT, `docs/adr/0041-loop-leader-${"role-catalog"}.md`))).toBe(false);
+		expect(normalized("docs/adr/0042-loop-leader-role-catalog.md")).toMatch(/Numbered 0041 until Slice `S1`/);
+		const numbered = execFileSync("git", ["ls-files", "docs/adr"], { cwd: ROOT, encoding: "utf8" })
+			.split("\n")
+			.filter((path) => /^docs\/adr\/0042-/.test(path));
+		expect(numbered).toEqual(["docs/adr/0042-loop-leader-role-catalog.md"]);
+	});
+
+	test("no tracked file outside historical records names the old loop-leader ADR file", () => {
+		const hits = execFileSync("git", ["grep", "-l", "-F", `0041-loop-leader-${"role-catalog"}`, "--", "."], {
+			cwd: ROOT,
+			encoding: "utf8",
+		})
+			.split("\n")
+			.filter(Boolean)
+			.filter((path) => !HISTORICAL.some((pattern) => pattern.test(path)));
+		expect(hits).toEqual([]);
+	});
+
+	test("the S3 changeset cites ADR 0042 and ADR 0041 stops naming judging as a live role", () => {
+		const changeset = normalized(".changeset/loop-leader-s3-guarded-dispatch.md");
+		expect(changeset).toContain("ADR 0042 records the leader plus catalog");
+		expect(changeset).not.toContain("ADR 0041");
+		// ADR 0041 here is the simplified-configuration ADR; its other citations stay.
+		expect(read("docs/adr/0041-simplified-configuration.md")).not.toMatch(/judging/i);
+	});
+
+	test("the alignment Spec records the ULS D15/D19 and loop-leader ADR-citation corrections", () => {
+		const spec = read("docs/specs/loop-leader-uls-alignment.spec.md");
+		const amendments = spec.slice(spec.indexOf("## Amendments to Settled Specs"), spec.indexOf("## Technical Design"));
+		expect(amendments).toContain("ULS D15: non-`drive` daemon agents are `judging`");
+		expect(amendments).toContain("ULS D19: \"ADR 0041 Decision 4\"");
+		expect(amendments).toContain("docs/adr/0042-loop-leader-role-catalog.md");
+	});
+});

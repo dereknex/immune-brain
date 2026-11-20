@@ -11327,7 +11327,7 @@ function projectFromRecord(record, recordRevision, workspaceRevision, snapshot, 
     })
   };
 }
-async function projectAssurance2(root, taskId, diffProvider = taskDeliveryIdentity) {
+async function projectAssurance(root, taskId, diffProvider = taskDeliveryIdentity) {
   const fail = (error, claim = null) => ({
     contract: "assurance_kernel/assurance_projection/v1",
     task_id: taskId,
@@ -12627,7 +12627,7 @@ function verifiedReviewFindings(input) {
   return findings.filter((finding) => kept.has(finding.id));
 }
 async function requireFreshVerdictSnapshot(ctx, snapshot) {
-  const fresh = await projectAssurance2(ctx.cwd, snapshot.task_id);
+  const fresh = await projectAssurance(ctx.cwd, snapshot.task_id);
   const fields = ["record_revision", "workspace_revision", "intent_revision", "intent_content_hash", "diff_hash", "lifecycle", "artifact_state"];
   const mismatches = fields.filter((field) => fresh.projection[field] !== snapshot[field]);
   if (fresh.error || fresh.claim?.task_id !== snapshot.task_id || mismatches.length)
@@ -13082,7 +13082,7 @@ async function projectTaskStatus(root, taskId, loadedFrom) {
   let unstaged = [];
   let outOfScope = [];
   let changed = [];
-  const result = await projectAssurance2(root, taskId, (dir, record) => {
+  const result = await projectAssurance(root, taskId, (dir, record) => {
     const identity = taskStatusIdentity(dir, record);
     changed = identity.changed_paths;
     unstaged = identity.unstaged_scope_paths;
@@ -20731,7 +20731,7 @@ function batchQaFailureFacts(record) {
   };
 }
 function createBatchKernelPort(input) {
-  const project = input.deps?.projectAssurance ?? projectAssurance2;
+  const project = input.deps?.projectAssurance ?? projectAssurance;
   const readRecord = input.deps?.readTaskRecordRaw ?? readTaskRecordRaw;
   const deriveEnrollment = input.deps?.deriveChildEnrollment ?? deriveChildEnrollment;
   const enrollKernelTask = input.deps?.enrollTask ?? enrollTask;
@@ -26491,7 +26491,7 @@ class HostRuntime {
     return {
       host: this.reviewHost,
       confirmationReference: this.actorConfirmationRef,
-      projectTask: (root, taskId) => projectAssurance2(root, taskId, diffSnapshotOf),
+      projectTask: (root, taskId) => projectAssurance(root, taskId, diffSnapshotOf),
       readTaskRecord: async (root, taskId) => readTaskRecordRaw(root, taskId),
       readTaskIntent: async (root, taskId) => readTaskIntentForRecord(root, taskId),
       runQa: (snapshot, descriptors, options) => runDeterministicQa(snapshot, descriptors, options),
@@ -26547,7 +26547,7 @@ class HostRuntime {
     return nextScope ? this.project(taskId, nextScope) : projectTaskStatus(this.cwd, taskId);
   }
   async project(taskId, nextScope) {
-    return projectAssurance2(this.cwd, taskId, nextScope ? nextScopeDiffProvider(nextScope) : diffSnapshotOf);
+    return projectAssurance(this.cwd, taskId, nextScope ? nextScopeDiffProvider(nextScope) : diffSnapshotOf);
   }
   async advance(taskId, signal, meta) {
     return this.closeOutBatchChild(taskId, withSettleCommit(this.cwd, taskId, await this.withTerminalTracker(taskId, await this.coordinator.advance(taskId, { cwd: this.cwd }, signal)), signal), meta);
@@ -26760,7 +26760,7 @@ class HostRuntime {
         taskId,
         operation,
         expectedRecordRevision: typeof extra.record_revision === "string" ? extra.record_revision : undefined,
-        project: (lanePath, id) => projectAssurance2(lanePath, id, diffSnapshotOf),
+        project: (lanePath, id) => projectAssurance(lanePath, id, diffSnapshotOf),
         apply: async () => laneRuntime.authorizeInRoot(taskId, operation, meta, extra),
         applied: (result) => !(result && typeof result === "object" && ("state" in result) && result.state === "replan_selected"),
         ...sessions ? { sessions } : {},

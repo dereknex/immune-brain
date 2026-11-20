@@ -26,5 +26,5 @@ pass retires what it reported, so candidates never accumulate; started sessions
 a dead tick left running is reaped on the next tick instead of blocking its
 role forever. A
 retired `roles.judging` preset binding is tolerated with one
-`deprecated_config_source` diagnostic and never invalidates `agents`. ADR 0041
+`deprecated_config_source` diagnostic and never invalidates `agents`. ADR 0042
 records the leader plus catalog replacing ADR 0039 Decisions 2, 6 and 7.

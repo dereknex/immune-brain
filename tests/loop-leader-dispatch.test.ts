@@ -756,98 +756,24 @@ describe("Loop Leader: initiative plan contract (S3-AC1)", () => {
 	});
 });
 
-function writeInitiativeFixture(ws: { root: string }): void {
-	const verification = JSON.stringify({
-		contract: "assurance_kernel/verification_descriptor/v2",
-		command: { executable: "bun", argv: ["-e", "process.exit(0)"], cwd: ".", timeout_ms: 60000, max_output_bytes: 4096 },
-		environment: { prepare: null, writable_paths: [] },
-	});
-	const intent = (taskId: string) =>
-		`${JSON.stringify({ contract: "assurance_kernel/task_intent/v1", task_id: taskId, owner: "user", goal: `Deliver ${taskId}`,
-			acceptance: [{ id: "A1", assertion: "A1 holds", verification }], scope_hint: ["delivery.txt"], risk: "routine", revision: 1 })}\n`;
-	mkdirSync(join(ws.root, "docs/initiatives"), { recursive: true });
-	mkdirSync(join(ws.root, "docs/plans"), { recursive: true });
-	writeFileSync(
-		join(ws.root, "docs/initiatives/widget-initiative.md"),
-		"# Initiative: widget-initiative\n\n## s1: schema first\n\nTasks:\n\n- task-a\n\n## s2: then the widget\n\nTasks:\n\n- task-b\n\nBlocked by: task-a\n",
-	);
-	writeFileSync(join(ws.root, "docs/plans/task-a.intent.json"), intent("task-a"));
-	writeFileSync(join(ws.root, "docs/plans/task-b.intent.json"), intent("task-b"));
-	writeFileSync(join(ws.root, "delivery.txt"), "deliver\n");
-	mkdirSync(join(ws.root, "docs/agents"), { recursive: true });
-	writeFileSync(
-		join(ws.root, "docs/agents/no-touch.json"),
-		`${JSON.stringify({ contract: "immune_brain/no_touch/v1", paths: [] })}\n`,
-	);
-	execFileSync("git", ["add", "-A"], { cwd: ws.root });
-	execFileSync("git", ["commit", "-qm", "initiative fixture"], { cwd: ws.root });
-}
-
-describe("Loop Leader: initiative drive (S3-AC1)", () => {
-	it("drives the carrier as one batch through observeInitiative, with every slice as a batch child", async () => {
-		const ws = workspace();
-		execFileSync("git", ["config", "user.name", "Immune Test"], { cwd: ws.root });
-		execFileSync("git", ["config", "user.email", "test@immune-brain.internal"], { cwd: ws.root });
-		writeInitiativeFixture(ws);
-
-		const seen: Array<{ initiative_slug: string; children: Array<{ task_id: string; blocked_by: string[] }> }> = [];
-		const driver = (async (input: {
-			initiative_slug: string;
-			children: Array<{ task_id: string; blocked_by: string[] }>;
-			plan_digest: string;
-			batch_id: string;
-		}) => {
-			seen.push({ initiative_slug: input.initiative_slug, children: input.children.map((child) => ({ task_id: child.task_id, blocked_by: [...child.blocked_by] })) });
-			return {
-				report: {
-					contract: "assurance_kernel/batch_run_report/v1",
-					batch_id: input.batch_id,
-					initiative_slug: input.initiative_slug,
-					batch_state: "completed",
-					children: input.children.map((child) => ({ task_id: child.task_id, state: "settled" })),
-					commits: [],
-					reason: null,
-				},
-				exit_record: {
-					state: "exited",
-					exit_code: 0,
-					generation: 1,
-					final_commit_sha: "a".repeat(40),
-					verification_evidence_digest: "sha256:evidence",
-				},
-			};
-		}) as never;
-
-		const result = await driveInitiativeLane(
-			{ root: ws.root, slug: "widget-initiative", task_ids: ["task-a", "task-b"], plan_digest: "sha256:plan", confirmation_ref: "policy_auto:plan", base_head: "deadbeef", now: NOW },
-			{ stateDir: ws.stateDir, profile: { host: "pi", model: null, effort: null }, pluginRoot: ws.root },
-			driver,
-		);
-
-		expect(result.settled).toBe(true);
-		expect(result.exit).toMatchObject({ state: "exited", exit_code: 0 });
-		// The batch ran the carrier's slices in carrier order with the carrier's
-		// blocked_by edges: this is the `observeInitiative` drive D3.3 requires.
-		expect(seen).toHaveLength(1);
-		expect(seen[0]!.initiative_slug).toBe("widget-initiative");
-		expect(seen[0]!.children.map((child) => child.task_id)).toEqual(["task-a", "task-b"]);
-		expect(seen[0]!.children.find((child) => child.task_id === "task-b")!.blocked_by).toEqual(["task-a"]);
-	});
-
-	it("fails a drive whose carrier vanished before any driver runs", async () => {
-		const ws = workspace();
-		let driverCalls = 0;
-		const result = await driveInitiativeLane(
-			{ root: ws.root, slug: "missing-initiative", task_ids: [], plan_digest: "sha256:plan", confirmation_ref: "policy_auto:plan", base_head: "deadbeef", now: NOW },
-			{ stateDir: ws.stateDir, profile: { host: "pi", model: null, effort: null }, pluginRoot: ws.root },
-			(async () => {
-				driverCalls += 1;
-				throw new Error("must not run without a carrier");
-			}) as never,
-		);
+describe("Loop Leader: initiative entry refusal (ULS S1)", () => {
+	// Exit condition: Slice S2 of loop-leader-uls-alignment adds the Initiative entry
+	// and replaces this refusal with the drive it guards.
+	it("refuses lane_initiative_entry_pending without enrolling, planning or settling anything", async () => {
+		const result = await driveInitiativeLane({
+			root: "/nonexistent-root",
+			slug: "widget-initiative",
+			task_ids: ["task-a", "task-b"],
+			plan_digest: "sha256:plan",
+			confirmation_ref: "policy_auto:plan",
+			base_head: "deadbeef",
+			now: NOW,
+		});
 		expect(result.settled).toBe(false);
-		expect(result.reason).toContain("drive_preflight_failed");
-		expect(driverCalls).toBe(0);
+		expect(result.exit).toBeNull();
+		expect(result.reason).toContain("lane_initiative_entry_pending");
+		expect(result.reason).toContain("widget-initiative");
+		expect(result.reason).toContain("S2");
 	});
 });
 

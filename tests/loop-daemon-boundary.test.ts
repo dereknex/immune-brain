@@ -465,4 +465,14 @@ describe("S8 composition-root boundary (LDP-A4)", () => {
 		walk(dir);
 		expect(violations).toEqual([]);
 	});
+
+	// The ULS `ExecutorPreferences` fields are `model` / `effort`; the retired
+	// request names must not return to the daemon (Spec loop-leader-uls-alignment D1.2).
+	it("keeps no executor_model or executor_effort under loop_daemon/", () => {
+		const dir = join(__dirname, "..", "plugins", "immune-brain", "runtime", "loop_daemon");
+		const violations = readdirSync(dir)
+			.filter((entry) => entry.endsWith(".ts"))
+			.filter((entry) => /executor_model|executor_effort/.test(readFileSync(join(dir, entry), "utf8")));
+		expect(violations).toEqual([]);
+	});
 });
