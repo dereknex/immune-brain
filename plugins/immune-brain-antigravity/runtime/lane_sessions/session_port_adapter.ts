@@ -6,8 +6,10 @@
 //
 // Interface: `SessionPortAdapter` implements `BatchSessionPort` over one
 // `SupervisedSessionPort`, with a fixed Executor host and host args.
-// Invariants: provider `pane_not_found` maps to `exited`; every other provider
-// failure maps to `unknown` (never a refusal that would park the child as held).
+// Invariants: provider `pane_not_found` maps to `exited` when observing;
+// every other provider failure maps to `unknown` (never a refusal that would
+// park the child as held). A refused `send` stays a refusal so the recorded
+// instruction digest is retried at the next tick instead of counting as sent.
 // Side Effects: delegates to the wrapped port.
 // Verification: `bun test tests/lane-sessions.test.ts`.
 import type { BatchSessionPort, BatchSessionOpenInput } from "../unattended/batch_session_port";
@@ -93,11 +95,8 @@ export class SessionPortAdapter implements BatchSessionPort {
 
 	async send(handle: string, text: string) {
 		const result = await this.port.sendInstruction(handle, text);
-		if (isRefusal(result)) {
-			const reason = refusalReason(result);
-			if (isPaneNotFound(reason)) return { ok: true as const, state: "exited" as const };
-			return { ok: false as const, code: result.code, reason: result.reason };
-		}
+		// A gone pane is a refusal here: the reconciler keeps the digest unprocessed.
+		if (isRefusal(result)) return { ok: false as const, code: result.code, reason: result.reason };
 		return { ok: true as const, state: result.state };
 	}
 

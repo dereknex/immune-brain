@@ -103,6 +103,8 @@ export interface StartBatchInput {
 	lane_session_close?: LaneSessionCloseRequest;
 	/** S8: every advance carries the session port; a mismatched provider refuses. */
 	sessions?: BatchSessionPort;
+	/** Set only by a Host whose native gate just accepted; a daemon re-entry never sets it. */
+	literal_user_confirmation?: boolean;
 }
 import {
 	BatchIntegrationError,
@@ -1070,8 +1072,13 @@ async function runLaneBatchEngine(
 					{ ...(parkedDecision ? { decision: parkedDecision } : {}) });
 			}
 			const resumed: BatchLaneChildRun[] = [];
+			// D10: a provider-refused open is retried on the same provider by the next
+			// advance, and a park it caused is not cleared by a fresher timestamp alone:
+			// only a literal-user confirmation may resume it.
+			const literalUser = input.literal_user_confirmation === true;
 			for (const child of record.children) {
 				if (child.state !== "needs_human") { resumed.push(child); continue; }
+				if (!literalUser && child.reason?.startsWith("lane_session_open_rejected")) { resumed.push(child); continue; }
 				if (!child.lane?.run_id) { resumed.push(child); continue; }
 				if (effectiveReturnPolicy(record) === "checkout_delivery" && child.commit && record.final_report?.return_to_coordinator.status === "blocked" &&
 					record.final_report.return_to_coordinator.reason === child.reason) {
@@ -1668,7 +1675,11 @@ async function runLaneBatchEngine(
 			if (result.action === "parked_no_progress") {
 				parkChild(child.task_id, "lane_executor_no_progress: two consecutive stalls without Kernel progress");
 			}
-			// D8: a provider-refused create is an error the report names, never a held child with no handle.
+			// D8/D10: a provider-refused create keeps the child enrolled with no
+			// handle and retries at the next advance; only the second consecutive
+			// refusal parks it, and the report always names the provider's reason.
+			if (result.action === "open_refused")
+				refusals.push({ task_id: child.task_id, path: child.lane.path, reason: result.parkedReason ?? "lane_session_open_refused" });
 			if (result.action === "parked_open_rejected")
 				parkChild(child.task_id, result.parkedReason ?? "lane_session_open_rejected");
 		}

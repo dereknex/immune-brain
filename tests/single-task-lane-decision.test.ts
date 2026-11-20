@@ -28,6 +28,7 @@ import { prepareBatchLaneRunState, writeBatchLaneRunState } from "../plugins/imm
 import { hasContiguousLaneRebind } from "../plugins/immune-brain/runtime/assurance/run_continuation";
 import { laneSessionKey } from "../plugins/immune-brain/runtime/unattended/batch_session_port";
 import { openBatchSessionPort, startLanes, advanceLanes } from "../plugins/immune-brain/runtime/lane_sessions/index";
+import { SessionPortAdapter } from "../plugins/immune-brain/runtime/lane_sessions/session_port_adapter";
 import type { BatchAgreement } from "../plugins/immune-brain/runtime/unattended/batch_agreement";
 import { reconcileChildSession } from "../plugins/immune-brain/runtime/unattended/child_session_reconciler";
 import { readTaskRecordRaw } from "../plugins/immune-brain/runtime/kernel/storage";
@@ -401,6 +402,7 @@ interface HostHarness {
 	/** What the next native gate answers: accept when true, decline otherwise. */
 	answer: { approve: boolean };
 	start(): Promise<any>;
+	stop(): Promise<any>;
 	stopBatch(): Promise<void>;
 	relay(op: "request_authorization" | "approve_breaking_intent_revision" | "stop", extra?: { record_revision?: string; next_intent?: unknown }): Promise<Relayed>;
 }
@@ -469,6 +471,7 @@ function claudeHarness(root: string, factory: () => unknown): HostHarness {
 	return {
 		gates, answer,
 		start: () => tool("start_unattended_batch", { task_id: TASK, agents: { executor: "claude-code" }, final_verification: FINAL_VERIFICATION }),
+		stop: () => tool("start_unattended_batch", { task_id: TASK, stop: true, final_verification: FINAL_VERIFICATION }),
 		stopBatch: async () => { await tool("start_unattended_batch", { task_id: TASK, stop: true, final_verification: FINAL_VERIFICATION }).catch(() => undefined); },
 		relay: async (op, extra = {}) => {
 			try { const raw = await tool(op, { task_id: TASK, ...extra }); return { raw, lane_relay: raw.lane_relay }; }
@@ -499,6 +502,7 @@ function piHarness(root: string, factory: () => unknown): HostHarness {
 	return {
 		gates, answer,
 		start: () => executePiUnattendedBatch({ root, taskId: TASK, executor: { executor_host: "pi" }, confirmBatch: async details => { gates.push({ text: details.summary }); return answer.approve ? "accept" : "cancel"; }, sessionPortFactory: factory, env: { ...memoryLanePortEnv } }),
+		stop: () => executePiUnattendedBatch({ root, taskId: TASK, stop: true, sessionPortFactory: factory, env: { ...memoryLanePortEnv } }),
 		stopBatch: async () => { await executePiUnattendedBatch({ root, taskId: TASK, stop: true, sessionPortFactory: factory, env: { ...memoryLanePortEnv } }).catch(() => undefined); },
 		relay: async (op, extra = {}) => {
 			try {
@@ -658,6 +662,51 @@ for (const host of ["claude", "pi"] as const) describe(`single-task Lane decisio
 			expect(h.gates.length - gatesBefore).toBe(controlGates);
 			expect(resumed.report.lane_rebinds?.[0]?.to_revision).toBe(2);
 			expect(readTaskIntent(f.root, TASK).intent.revision).toBe(1);
+		} finally { await h.stopBatch(); }
+	}, 40000);
+
+	it("a rejected port.stop leaves the child enrolled instead of parking it stopped", async () => {
+		const { f, h, target } = await waitingHostLane();
+		try {
+			expect((await h.relay("request_authorization")).error).toBeUndefined();
+			const port = f.factory();
+			const handle = (readAnyBatchRunState(f.root, target.batch_id) as BatchLaneRunStateRecord).children.find(child => child.task_id === TASK)?.session?.handle!;
+			port.stopSession = async () => ({ ok: false as const, code: "provider_error" as const, reason: "herdr pane stop failed: busy" });
+			const stopped = await h.relay("stop");
+			expect(stopped.error).toBeUndefined();
+			expect(stopped.lane_relay?.next_action).toContain("lane_stop_rejected");
+			expect(stopped.lane_relay?.next_action).toContain("busy");
+			const record = readAnyBatchRunState(f.root, target.batch_id) as BatchLaneRunStateRecord;
+			const child = record.children.find(entry => entry.task_id === TASK)!;
+			expect(child.state).toBe("enrolled");
+			expect(child.reason).toBeNull();
+			// The next reconcile observes the still-running session in place
+			// instead of opening another one.
+			const reconciled = await reconcileChildSession({
+				port: new SessionPortAdapter(port, "claude-code", []), batchId: target.batch_id, taskId: TASK,
+				session: child.session!, kernel: { recordRevision: child.session!.baseline ?? "r", settled: false, hasOpenDecision: false, hasReplan: false },
+				interactionMode: "interactive_host", entry: `drive ${TASK}`, laneCwd: target.lane_path,
+			});
+			expect(["held", "stalled_idle"]).toContain(reconciled.action);
+			expect(reconciled.session.handle).toBe(handle);
+			expect(reconciled.session.generation).toBe(child.session!.generation);
+			expect(existsSync(target.lane_path)).toBe(true);
+		} finally { await h.stopBatch(); }
+	}, 40000);
+
+	it("a rejected start_unattended_batch stop leaves the child enrolled", async () => {
+		const { f, h, target } = await waitingHostLane();
+		try {
+			const port = f.factory();
+			port.stopSession = async () => ({ ok: false as const, code: "provider_error" as const, reason: "herdr pane stop failed: busy" });
+			const stopped = await h.stop();
+			expect(stopped.state ?? stopped.raw?.state).toBe("blocked");
+			expect(JSON.stringify(stopped)).toContain("lane_stop_rejected");
+			expect(JSON.stringify(stopped)).toContain("busy");
+			const record = readAnyBatchRunState(f.root, target.batch_id) as BatchLaneRunStateRecord;
+			expect(record.children.find(child => child.task_id === TASK)?.state).toBe("enrolled");
+			expect(record.children.find(child => child.task_id === TASK)?.reason ?? null).toBeNull();
+			expect(existsSync(target.lane_path)).toBe(true);
 		} finally { await h.stopBatch(); }
 	}, 40000);
 

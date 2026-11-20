@@ -274,7 +274,7 @@ async function runCli(command: string, args: string[], root: string): Promise<{
 				// Pass the configured list through: `herdr` is admitted only inside
 				// Herdr, so outside Herdr this refuses with every reason and opens
 				// no session. Fall back only to the layered-config default.
-				let providers: string[] = ["herdr", "herdr-core"];
+				let providers: string[] = ["herdr"];
 				try {
 					const resolved = resolveConfig(root).session_providers as unknown as { value?: unknown };
 					const value = (resolved as { value?: unknown }).value;

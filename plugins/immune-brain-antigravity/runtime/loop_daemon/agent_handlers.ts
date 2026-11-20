@@ -208,6 +208,8 @@ export interface AgentDriveResult {
 	reason: string;
 	/** The active child waits on a dialog the unattended daemon cannot answer; the tick escalates it. */
 	hold_for_dialog?: { task_id: string; batch_id: string; detail: string } | null;
+	/** The child is parked `needs_human`; only a literal-user confirmation resumes it. */
+	parked?: { task_id: string; reason: string } | null;
 }
 
 export type AgentHandlerOutcome = "executed" | "failed" | "requires_standing_daemon";
@@ -303,6 +305,8 @@ const REPAIR_OUTPUT = ".imm-loop/repair.json";
 export const LANE_DIALOG_RETRY_MS = 30_000;
 /** Default dialog-hold window before the job fails with the escalation already posted; `IMM_LOOP_DIALOG_HOLD_MAX_MS` overrides it. */
 export const LANE_DIALOG_HOLD_MAX_MS = 60 * 60_000;
+/** Default runtime limit for a running Lane the job keeps advancing; `IMM_LOOP_DRIVE_MAX_MS` overrides it. */
+export const LANE_DRIVE_MAX_MS = 6 * 60 * 60_000;
 
 const envMs = (value: string | undefined, fallback: number): number =>
 	Number.isFinite(Number(value)) && Number(value) > 0 ? Number(value) : fallback;
@@ -1147,26 +1151,50 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 				// every retry interval until the user answers the dialog in Herdr; the
 				// job keeps its lease while it waits, and a dialog never answered inside
 				// the hold window fails the job with the escalation already posted.
+				// A Lane that is merely running is advanced again at the same interval
+				// (D15) until it settles or the job's runtime limit is reached.
 				let escalatedDetail: string | null = null;
 				const holdDeadline = Date.now() + envMs(process.env.IMM_LOOP_DIALOG_HOLD_MAX_MS, LANE_DIALOG_HOLD_MAX_MS);
-				while (!driven.settled && driven.hold_for_dialog) {
-					if (escalatedDetail !== driven.hold_for_dialog.detail) {
-						escalatedDetail = driven.hold_for_dialog.detail;
-						await escalateOnce(
-							context,
-							"lane_entry_blocked",
-							jobTarget,
-							candidateTaskId,
-							`Lane ${candidateTaskId} waits on a dialog the daemon cannot answer (${escalatedDetail}); answer it in Herdr, and the drive resumes batch ${driven.hold_for_dialog.batch_id}`,
-						);
+				const driveDeadline = Date.now() + envMs(process.env.IMM_LOOP_DRIVE_MAX_MS, LANE_DRIVE_MAX_MS);
+				const retry = () => new Promise((resolve) => setTimeout(resolve, envMs(process.env.IMM_LOOP_DIALOG_RETRY_MS, LANE_DIALOG_RETRY_MS)));
+				while (!driven.settled) {
+					// A parked child is a human decision: escalate once and stop retrying.
+					if (driven.parked) {
+						const detail = `Lane ${candidateTaskId} is parked needs_human (${driven.parked.reason}); a literal-user confirmation must resume it`;
+						await escalateOnce(context, "lane_entry_blocked", jobTarget, candidateTaskId, detail);
+						return { outcome: "failed" as const, detail, exit: driven.exit };
 					}
-					if (Date.now() >= holdDeadline)
+					if (driven.hold_for_dialog) {
+						if (escalatedDetail !== driven.hold_for_dialog.detail) {
+							escalatedDetail = driven.hold_for_dialog.detail;
+							await escalateOnce(
+								context,
+								"lane_entry_blocked",
+								jobTarget,
+								candidateTaskId,
+								`Lane ${candidateTaskId} waits on a dialog the daemon cannot answer (${escalatedDetail}); answer it in Herdr, and the drive resumes batch ${driven.hold_for_dialog.batch_id}`,
+							);
+						}
+						if (Date.now() >= holdDeadline)
+							return {
+								outcome: "failed" as const,
+								detail: `${candidateTaskId} still waits on a dialog: ${driven.hold_for_dialog.detail}`,
+								exit: driven.exit,
+							};
+					} else if (driven.reason !== "lane running" && driven.reason !== "lane started")
+						// A refusal is permanent. Only a Lane that is actually running is retried.
 						return {
 							outcome: "failed" as const,
-							detail: `${candidateTaskId} still waits on a dialog: ${driven.hold_for_dialog.detail}`,
+							detail: `${candidateTaskId} did not settle: ${driven.reason}`,
 							exit: driven.exit,
 						};
-					await new Promise((resolve) => setTimeout(resolve, envMs(process.env.IMM_LOOP_DIALOG_RETRY_MS, LANE_DIALOG_RETRY_MS)));
+					else if (Date.now() >= driveDeadline)
+						return {
+							outcome: "failed" as const,
+							detail: `${candidateTaskId} did not settle inside the drive limit: ${driven.reason}`,
+							exit: driven.exit,
+						};
+					await retry();
 					driven = await deps.drive(driveInput());
 				}
 				const exit = driven.exit;
@@ -1875,5 +1903,6 @@ async function driveSingleTaskLane(
 			exit: result.exit,
 			reason: result.reason,
 			...(result.hold_for_dialog ? { hold_for_dialog: result.hold_for_dialog } : {}),
+			...(result.parked ? { parked: result.parked } : {}),
 		};
 }

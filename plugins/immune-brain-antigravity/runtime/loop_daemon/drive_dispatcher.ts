@@ -94,6 +94,8 @@ export interface LoopDriveResult {
 	exit: LoopDriveExit | null;
 	/** Present when the active child waits on a startup or mid-run dialog the daemon cannot answer. */
 	hold_for_dialog: LoopDriveHold | null;
+	/** Present when the child is parked `needs_human`: only a literal-user confirmation resumes it. */
+	parked: { task_id: string; reason: string } | null;
 	batch_id: string;
 	reason: string;
 }
@@ -102,9 +104,9 @@ function sessionProviders(root: string): string[] {
 	try {
 		const resolved = resolveConfig(root).session_providers as unknown as { value?: unknown };
 		const value = (resolved as { value?: unknown }).value;
-		return Array.isArray(value) ? (value as string[]) : ["herdr", "herdr-core"];
+		return Array.isArray(value) ? (value as string[]) : ["herdr"];
 	} catch {
-		return ["herdr", "herdr-core"];
+		return ["herdr"];
 	}
 }
 
@@ -148,19 +150,19 @@ export async function dispatchLoopDrive(input: LoopDriveInput): Promise<LoopDriv
 			actor: LOOP_DAEMON_ACTOR_ID,
 		});
 		if (!agreement.ok) {
-			return { settled: false, exit: null, hold_for_dialog: null, batch_id: batchId, reason: agreement.reason };
+			return { settled: false, exit: null, hold_for_dialog: null, parked: null, batch_id: batchId, reason: agreement.reason };
 		}
 		const started = await startLanes(agreement.agreement, laneDeps as never);
 		if (started && typeof started === "object" && (started as { ok?: unknown }).ok === false) {
 			const refusal = started as { code: string; reason: string; recovery: string };
-			return { settled: false, exit: null, hold_for_dialog: null, batch_id: batchId, reason: `${refusal.reason}. ${refusal.recovery}` };
+			return { settled: false, exit: null, hold_for_dialog: null, parked: null, batch_id: batchId, reason: `${refusal.reason}. ${refusal.recovery}` };
 		}
-		return { settled: false, exit: null, hold_for_dialog: holdOf(input.root, batchId, input.task_id), batch_id: batchId, reason: "lane started" };
+		return { settled: false, exit: null, hold_for_dialog: holdOf(input.root, batchId, input.task_id), parked: parkedOf(input.root, batchId, input.task_id), batch_id: batchId, reason: "lane started" };
 	}
 	const advanced = await advanceLanes(input.root, batchId, laneDeps as never);
 	if (advanced && typeof advanced === "object" && (advanced as { ok?: unknown }).ok === false) {
 		const refusal = advanced as { code: string; reason: string; recovery: string };
-		return { settled: false, exit: null, hold_for_dialog: holdOf(input.root, batchId, input.task_id), batch_id: batchId, reason: `${refusal.reason}. ${refusal.recovery}` };
+		return { settled: false, exit: null, hold_for_dialog: holdOf(input.root, batchId, input.task_id), parked: parkedOf(input.root, batchId, input.task_id), batch_id: batchId, reason: `${refusal.reason}. ${refusal.recovery}` };
 	}
 	const record = readAnyBatchRunState(input.root, batchId);
 	const child = record && isLaneBatchRecord(record) ? record.children.find(entry => entry.task_id === input.task_id) : undefined;
@@ -174,6 +176,7 @@ export async function dispatchLoopDrive(input: LoopDriveInput): Promise<LoopDriv
 		settled: integrated && commit !== null,
 		exit,
 		hold_for_dialog: integrated ? null : holdOf(input.root, batchId, input.task_id),
+		parked: integrated ? null : parkedOf(input.root, batchId, input.task_id),
 		batch_id: batchId,
 		reason: integrated ? (digest ? "lane integrated with verification digest" : "lane integrated without audit evidence") : "lane running",
 	};
@@ -262,6 +265,17 @@ export async function advanceDaemonLanes(root: string, batchId: string, options:
 	};
 	const advanced = await advanceLanes(root, batchId, laneDeps as never);
 	return advanced as unknown as Record<string, unknown>;
+}
+
+/** A child parked `needs_human` waits for a decision the daemon must escalate, never retry. */
+function parkedOf(root: string, batchId: string, taskId: string): { task_id: string; reason: string } | null {
+	try {
+		const record = readAnyBatchRunState(root, batchId);
+		const child = record && isLaneBatchRecord(record) ? record.children.find(entry => entry.task_id === taskId) : undefined;
+		return child?.state === "needs_human" ? { task_id: taskId, reason: child.reason ?? "needs_human" } : null;
+	} catch {
+		return null;
+	}
 }
 
 /** A child waiting on a dialog the unattended daemon cannot answer holds the Lane open. */
