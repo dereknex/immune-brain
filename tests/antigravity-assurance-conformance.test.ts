@@ -64,6 +64,7 @@ import type { StatusProjectionResult } from "../plugins/immune-brain/runtime/ass
 import { digestOfReviewerBytes } from "../plugins/immune-brain/runtime/assurance/review_mediation";
 import type { AssuranceObligation } from "../plugins/immune-brain/runtime/kernel/types";
 import type { AssuranceProjection } from "../plugins/immune-brain/runtime/kernel/assurance_projection";
+import { memoryLanePort, memoryLanePortEnv } from "./helpers/memory-lane-port";
 
 describe("Antigravity Harness Conformance", () => {
 	it("probes host capability and enforces fail-closed version checking", () => {
@@ -1668,11 +1669,14 @@ describe("Antigravity Harness Conformance", () => {
 			});
 			const next = () => replies.length ? Promise.resolve(replies.shift()!) : new Promise<Record<string, any>>((resolve) => waiters.push(resolve));
 			const send = (message: unknown) => input.write(`${JSON.stringify(message)}\n`);
+			// A Lane batch opens its Executor session through the port: a Herdr-shaped
+			// env plus an in-memory port, so no `herdr` process or tab is involved.
 			void serveAntigravityStdio({
 				input,
 				output,
 				cwd: root,
-				env: {},
+				env: { ...memoryLanePortEnv },
+				sessionPortFactory: memoryLanePort,
 				interactive: true,
 				confirmationStoreRoot: store,
 				exit: () => undefined,
@@ -3987,7 +3991,8 @@ describe("Antigravity allow rule provenance (AARP-A1, AARP-A2)", () => {
 			try {
 				const mcp = createAntigravityMcpRuntime({
 					cwd: root,
-					env: { HERDR_ENV: "1" },
+					env: { ...memoryLanePortEnv },
+					sessionPortFactory: memoryLanePort,
 					interactive: true,
 					confirmationStoreRoot: store,
 				});

@@ -309,6 +309,10 @@ export async function executePiRetireStaleBatch(options: {
 
 export interface PiBatchExtensionDependencies {
 	runtime?: PiRuntime;
+	/** Explicit env for Lane session provider selection; a test passes a Herdr-shaped one so no real tab opens. */
+	env?: Record<string, string | undefined>;
+	/** A test double for the Lane session provider; production resolves the real one. */
+	sessionPortFactory?: (provider: string, env: Record<string, string | undefined>) => unknown;
 	readInitiative?: InitiativeObservationReader;
 	batchKernel?: Partial<BatchRunnerKernelPort>;
 	batchGit?: BatchRunnerGitPort;
@@ -410,6 +414,8 @@ export default function (
 				toolCallId: _toolCallId,
 				sessionId: (ctx as any).sessionManager?.getSessionId?.() ?? "pi-batch",
 				runtime: dependencies.runtime,
+				...(dependencies.env ? { env: dependencies.env } : {}),
+				...(dependencies.sessionPortFactory ? { sessionPortFactory: dependencies.sessionPortFactory } : {}),
 				readInitiative: dependencies.readInitiative,
 				batchKernel: dependencies.batchKernel,
 				batchGit: dependencies.batchGit,

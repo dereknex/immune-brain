@@ -16,6 +16,7 @@ import { startLanes, advanceLanes, observeLanes } from "../plugins/immune-brain/
 import { SessionPortAdapter } from "../plugins/immune-brain/runtime/lane_sessions/session_port_adapter";
 import type { SupervisedSessionPort } from "../plugins/immune-brain/runtime/session/supervised_session_port";
 import { runCli } from "../plugins/immune-brain/runtime/v4_runtime";
+import { runtimeClaudePluginDir } from "../plugins/immune-brain/runtime/plugin_source_skew";
 
 const SLUG = "hls-slug";
 const FAR_FUTURE = "2099-01-01T00:00:00.000Z";
@@ -250,6 +251,25 @@ describe("HLS-A1: Host entries open one Herdr session per child", () => {
 			} as never) as unknown as { batch_state: string };
 			expect(requested.batch_state).toBe("running");
 			expect(fake.opens).toEqual([{ host: "pi", hostArgs: ["--model", "m", "--thinking", "high"] }]);
+		} finally {
+			fx.cleanup();
+		}
+	});
+	test("a claude-code executor loads the coordinator's own plugin directory", async () => {
+		// Spec lane-runtime-contract-check D3: the same --plugin-dir the CLI
+		// reviewer gets, so a claude-code Lane runs the coordinator's build.
+		const fx = mkRepo(["task-a"]);
+		try {
+			const fake = new FakeSupervised("ws1");
+			const kernel = fakeKernel(new Map([["task-a", "r1"]]));
+			const agreement = agreementFor(fx.repo, fx.base, "batch-hls-executor-cc", "task-a", ["task-a"], { return_policy: "checkout_delivery", interaction_mode: "interactive_host" });
+			const env = { HERDR_ENV: "1", HERDR_WORKSPACE_ID: "ws1" };
+			const requested = await startLanes(agreement, {
+				...depsFor(fx.repo, kernel, fake, "pi", env, agreement),
+				executor: { host: "claude-code", model: "m", effort: "high" },
+			} as never) as unknown as { batch_state: string };
+			expect(requested.batch_state).toBe("running");
+			expect(fake.opens).toEqual([{ host: "claude-code", hostArgs: ["--model", "m", "--effort", "high", "--plugin-dir", runtimeClaudePluginDir()!] }]);
 		} finally {
 			fx.cleanup();
 		}

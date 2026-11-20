@@ -80,6 +80,17 @@ function foldTask(taskId: string, maxLen: number): string {
 }
 
 /**
+ * Bounded session label for the port's `label` contract (1..32 chars): a
+ * `task_id` is usually longer, so an over-long one is folded and disambiguated
+ * by a digest instead of being passed through and rejected by the provider.
+ */
+export function laneSessionLabel(taskId: string): string {
+	if (taskId.length > 0 && taskId.length <= 32) return taskId;
+	const digest = createHash("sha256").update(taskId).digest("hex").slice(0, 12);
+	return `${foldTask(taskId, 32 - 1 - 12)}-${digest}`;
+}
+
+/**
  * Bounded lane session key, stored on write and never recomputed on read.
  * `imm-<folded_task_16>-g<n>-<sha256(batch_id + "\0" + task_id + "\0" + n).slice(0,12)>`.
  */

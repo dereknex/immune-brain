@@ -1,0 +1,104 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "uls-final-repair-64e79ff5",
+  "owner": "user",
+  "goal": "unified-lane-sessions final repair (#570; Spec docs/specs/unified-lane-sessions.spec.md). Host Parents and the Loop daemon each build one self-contained `BatchAgreement` (`confirmation`, `final_verification`, `return_policy`, `interaction_mode`) via `authorizeBatch` and drive execution through the `runtime/lane_sessions/` composition root (`startLanes` on creation, `advanceLanes` on re-entry and ticks, `observeLanes` for read-only waiting), which resolves a session provider once from `session_providers` through a role-indexed capability registry and lets `advanceBatch` + `child_session_reconciler.ts` reconcile every child's session through an injected `BatchSessionPort` with write-ahead `laneSessionKey` and `closeWithProof`; integrated children remove their own worktree and `imm-lane/` branch on exit proof while `return_policy` governs `imm/<slug>`, decisions and `lane_rebinds` work per child by `task_id`, the daemon gates PRs on `v3` Batch Record commits and `.imm/audit/` digests, `startBatch`, `LaneSupervisor` and `exit_recorder.ts` are deleted, and the `herdr` key is retired. Restore the full suite at the integrated delivery HEAD 52f374d7: bun test failed 29 tests in 11 files outside the slices' own verification scope (all pass on main cbd1ce43). Also fix the Lane session label defect found when this repair first ran as unified-lane-sessions-repair-64e79ff59be2: runtime/unattended/batch_lanes.ts passes the raw task_id as the session label, validateCreateInput (runtime/lane_sessions supervised_session_port.ts) rejects labels over 32 characters, and child_session_reconciler.ts treats that rejection as held, so the child session stays handle null with no surfaced error; long task ids must get a bounded label and a rejected create must surface as an error.",
+  "acceptance": [
+    {
+      "id": "final-1",
+      "assertion": "bun run typecheck passes at the repaired batch tip.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"run\",\n      \"typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "final-2",
+      "assertion": "Every test in tests/antigravity-assurance-conformance.test.ts, which failed at delivery HEAD 52f374d7 and passes on main cbd1ce43, passes again without skipping, deleting or weakening a case; tests assert the unified-lane-sessions behaviour (fake BatchSessionPort, never a real Herdr provider).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/antigravity-assurance-conformance.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "final-3",
+      "assertion": "Every test in tests/batch-final-report.test.ts, which failed at delivery HEAD 52f374d7 and passes on main cbd1ce43, passes again without skipping, deleting or weakening a case; tests assert the unified-lane-sessions behaviour (fake BatchSessionPort, never a real Herdr provider).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-final-report.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "final-4",
+      "assertion": "Every test in tests/batch-serial-retirement.test.ts, which failed at delivery HEAD 52f374d7 and passes on main cbd1ce43, passes again without skipping, deleting or weakening a case; tests assert the unified-lane-sessions behaviour (fake BatchSessionPort, never a real Herdr provider).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-serial-retirement.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "final-5",
+      "assertion": "Every test in tests/claude-phase-entry-gate.test.ts, which failed at delivery HEAD 52f374d7 and passes on main cbd1ce43, passes again without skipping, deleting or weakening a case; tests assert the unified-lane-sessions behaviour (fake BatchSessionPort, never a real Herdr provider).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-phase-entry-gate.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "final-6",
+      "assertion": "Every test in tests/claude-run-continuation.test.ts, which failed at delivery HEAD 52f374d7 and passes on main cbd1ce43, passes again without skipping, deleting or weakening a case; tests assert the unified-lane-sessions behaviour (fake BatchSessionPort, never a real Herdr provider).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-run-continuation.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "final-7",
+      "assertion": "Every test in tests/dual-host-assurance-conformance.test.ts, which failed at delivery HEAD 52f374d7 and passes on main cbd1ce43, passes again without skipping, deleting or weakening a case; tests assert the unified-lane-sessions behaviour (fake BatchSessionPort, never a real Herdr provider).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/dual-host-assurance-conformance.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "final-8",
+      "assertion": "Every test in tests/goal-driven-batch-run.test.ts, which failed at delivery HEAD 52f374d7 and passes on main cbd1ce43, passes again without skipping, deleting or weakening a case; tests assert the unified-lane-sessions behaviour (fake BatchSessionPort, never a real Herdr provider).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/goal-driven-batch-run.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "final-9",
+      "assertion": "Every test in tests/pi-batch-acceptance-integration.test.ts, which failed at delivery HEAD 52f374d7 and passes on main cbd1ce43, passes again without skipping, deleting or weakening a case; tests assert the unified-lane-sessions behaviour (fake BatchSessionPort, never a real Herdr provider).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-batch-acceptance-integration.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "final-10",
+      "assertion": "Every test in tests/role-prompt-bridge.test.ts, which failed at delivery HEAD 52f374d7 and passes on main cbd1ce43, passes again without skipping, deleting or weakening a case; tests assert the unified-lane-sessions behaviour (fake BatchSessionPort, never a real Herdr provider).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/role-prompt-bridge.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "final-11",
+      "assertion": "Every test in tests/unattended-batch-lanes.test.ts, which failed at delivery HEAD 52f374d7 and passes on main cbd1ce43, passes again without skipping, deleting or weakening a case; tests assert the unified-lane-sessions behaviour (fake BatchSessionPort, never a real Herdr provider).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-lanes.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "final-12",
+      "assertion": "Every test in tests/unattended-batch-run.test.ts, which failed at delivery HEAD 52f374d7 and passes on main cbd1ce43, passes again without skipping, deleting or weakening a case; tests assert the unified-lane-sessions behaviour (fake BatchSessionPort, never a real Herdr provider).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-run.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/agents/derived-files.json",
+    "docs/plans/uls-final-repair-64e79ff5.intent.json",
+    "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+    "plugins/immune-brain/.pi-extension/pi-host-runtime.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/drive-batch.md",
+    "plugins/immune-brain/dist/drive.md",
+    "plugins/immune-brain/dist/role-prompts/lane-steward.md",
+    "plugins/immune-brain/runtime/assurance/run_continuation.ts",
+    "plugins/immune-brain/runtime/host-core/runtime.ts",
+    "plugins/immune-brain/runtime/lane_sessions/index.ts",
+    "plugins/immune-brain/runtime/prompts/lane-steward.md",
+    "plugins/immune-brain/runtime/unattended/batch_disposition.ts",
+    "plugins/immune-brain/runtime/unattended/batch_git.ts",
+    "plugins/immune-brain/runtime/unattended/batch_kernel_port.ts",
+    "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+    "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+    "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+    "plugins/immune-brain/runtime/unattended/batch_state.ts",
+    "plugins/immune-brain/runtime/unattended/child_session_reconciler.ts",
+    "tests/antigravity-assurance-conformance.test.ts",
+    "tests/batch-final-report.test.ts",
+    "tests/batch-serial-retirement.test.ts",
+    "tests/claude-phase-entry-gate.test.ts",
+    "tests/claude-run-continuation.test.ts",
+    "tests/dual-host-assurance-conformance.test.ts",
+    "tests/goal-driven-batch-run.test.ts",
+    "tests/pi-batch-acceptance-integration.test.ts",
+    "tests/role-prompt-bridge.test.ts",
+    "tests/unattended-batch-lanes.test.ts",
+    "tests/unattended-batch-run.test.ts"
+  ],
+  "scope_size_reason": "Cross-slice final repair: 11 test files failed only at the integrated batch tip; scope is mechanically derived from those files plus the runtime modules, prompts and derived outputs the batch changed that they import. It cannot be split without re-failing final verification.",
+  "risk": "material",
+  "revision": 2
+}

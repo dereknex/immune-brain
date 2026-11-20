@@ -285,7 +285,7 @@ describe("internal role-prompt bridge", () => {
 		}
 		expect(existsSync(resolve(ROOT, "plugins/immune-brain/skills/fix-pr/SKILL.md"))).toBe(true);
 	});
-	it("keeps Executor Host launch with the Parent, not the lane-steward", () => {
+	it("keeps Executor Host launch with the runtime, not the Parent or the lane-steward", () => {
 		const prompt = read("plugins/immune-brain/runtime/prompts/lane-steward.md").replace(/\s+/g, " ");
 		expect(prompt).toContain("Start no Host session, in the Lane or anywhere else");
 		expect(prompt).toContain("report every one the prepared Lane can run, not only the Host you are running in");
@@ -293,10 +293,11 @@ describe("internal role-prompt bridge", () => {
 
 		const loop = read("plugins/immune-brain/dist/drive-batch.md").replace(/\s+/g, " ");
 		for (const fragment of [
-			"The Parent launches and supervises every Lane's Executor Host; no other role starts one",
+			"The runtime owns every Lane session through `runtime/lane_sessions/`; the Parent never launches, polls, closes, or re-attaches a session itself",
+			"The runtime opens each Lane session itself through `runtime/lane_sessions/`; the Parent never creates a session.",
 			"A subagent that runs inside the Parent's process shares the Parent's root and is never a Lane Executor",
 			"The Parent Host and the Executor Host are chosen independently",
-			"the Parent does not substitute a detached job, an in-process subagent or serial in-place work",
+			"the Parent substitutes nothing: no detached job, no in-process subagent, no serial in-place work",
 			"never from the session's output or exit status",
 			"Handles are not authority",
 			"its Host session never re-enters the batch",
@@ -305,8 +306,9 @@ describe("internal role-prompt bridge", () => {
 		}
 		// The standing rule the supervision section narrows stays in the main Loop contract.
 		expect(read("plugins/immune-brain/dist/drive.md").replace(/\s+/g, " ")).toContain("Do not poll or create detached jobs");
-		// Each supported Parent Host has its own row, plus the no-capability row.
-		for (const row of ["| Claude Code |", "| Pi |", "| Any Host without one |"]) expect(loop).toContain(row);
+		// Each supported Parent Host names its own waiting mechanism, plus the fallback Host.
+		for (const row of ["(Claude Code) runs it as a Host background command, so its return re-invokes the Parent",
+			"A Parent Host without that (Pi, whose bash tool is not woken when a background process ends, and any Host not known to re-invoke) runs it in the foreground with `--timeout-ms 600000`"]) expect(loop).toContain(row);
 		expect(read("plugins/immune-brain/skills/drive/SKILL.md")).toContain("../../dist/drive-batch.md#lane-executor-supervision");
 	});
 	// Spec batch-resource-safety-s2 AC4: without trusted Executor exit evidence no contract
@@ -314,12 +316,12 @@ describe("internal role-prompt bridge", () => {
 	it("aligns Lane lifecycle contracts with conservative retention", () => {
 		const loop = read("plugins/immune-brain/dist/drive-batch.md").replace(/\s+/g, " ");
 		for (const fragment of [
-			"the runtime never removes or recreates a Lane it created",
-			"`lane_refusals` reports `batch_lane_retained`",
-			"Delivery is complete; cleanup is the user's",
-			"never enables an automatic redo",
+			"only a proven `exited` exit proof bound to `(handle, key)` plus clean-Lane Git checks removes that child's worktree",
+			"Any failed proof or Git condition retains the Lane and reports `batch_lane_retained` naming it; parked, stopped and redo Lanes are never removed.",
+			"its Lane is neither deleted nor recreated, and no redo grant is spent",
 			"the child parks `needs_human` with `batch_lane_redo_retained`",
-			"no redo grant is spent",
+			// Delivery and cleanup stay apart: a kept Lane is the user's to read and close.
+			"Every other tab (a parked, failed, stopped or not yet integrated child's, and any tab the Parent did not create) stays open for the user to read and close.",
 		]) expect(loop).toContain(fragment);
 		expect(loop).not.toContain("the runtime removes a clean, unoccupied Lane");
 		expect(loop).not.toContain("spending one of the child's two redo grants");
@@ -336,33 +338,34 @@ describe("internal role-prompt bridge", () => {
 		expect(context).toContain("legacy records admit offered Lanes and never create, switch or delete them");
 		expect(loop).toContain("the Parent removes no Lane and dispatches no one to remove it");
 	});
-	it("launches Lane Executors in Herdr tabs without asking, and never answers their dialogs", () => {
+	it("drives Lane Executors through the session port, and never answers their dialogs", () => {
 		const loop = read("plugins/immune-brain/dist/drive-batch.md").replace(/\s+/g, " ");
 		for (const fragment of [
-			"| Either Host, inside Herdr (`HERDR_ENV=1`) |",
-			"the first matching row applies, and the user is not asked to choose",
-			// The Herdr command spelling moved behind the Supervised Session Port
-			// (ADR 0038); tests/supervised-session-herdr.test.ts asserts it.
-			'imm-session create --provider herdr --cwd <lane_path> --label <name> --host <executor_host> --entry "<drive entry> <task_id>" -- <host arguments>',
-			"in the Parent's own Herdr workspace without taking focus",
+			// The D20 wake table is the Parent's whole re-entry vocabulary.
+			"| Wake | `next_action` | Parent action |",
+			"| settlement or idle/done/exited progress | `advance` |",
+			"| startup or mid-run dialog (`entry_submitted: false`, `blocked`) | `relay_dialog` |",
+			"| `interactive_host` child stalled idle | `ask_user` |",
+			"| timeout with nothing pending | `wait` |",
+			"| batch terminal | `complete` |",
+			"The Parent waits read-only with `imm-session await --batch <batch_id>`",
 			"Resolve `../bin/imm-session` from this packaged contract",
 			"names it `/immune-brain:drive`",
-			"Supervise with one `imm-session await <handle>... --provider herdr` over the handles of every live Lane session",
-			"(Claude Code) runs it as a Host background command, so its return re-invokes the Parent",
-			"runs it in the foreground with `--timeout-ms 600000`",
-			"Start it only after the create reported `entry_submitted: true` and `state: \"working\"`",
+			"Keep `task_id → handle` from the result; the handle is opaque and is not authority.",
+			"The Parent may send one text instruction to a Lane session, and only while it is `idle` or `done` (a finished turn not yet seen) and its child is still running in the Lane",
 			"only when accepted does the Parent submit it",
-			"The Parent sends that tab no keys and no prompt",
+			"The Parent sends that tab no keys and no prompt, and never answers such a dialog for the user.",
 			"a relaunch submits the entry again in the same tab instead of creating another",
-			"The Parent adds no permission or trust option of its own",
-			"The Parent closes a tab only under the Executor close rule, and only one it created",
-			"`imm-session close <handle> --provider herdr --batch <batch_id> --task <task_id> --recorded-at <at>`",
-			"closes only a session it lists",
-			"Closing a session removes no Lane and no branch",
+			// Closing is the runtime's, with proof; the Parent only reports and reads.
+			"The runtime closes each integrated child session with proof via `closeWithProof(handle, key)`; the Parent never closes a session",
+			"Every other tab (a parked, failed, stopped or not yet integrated child's, and any tab the Parent did not create) stays open for the user to read and close.",
+			"Closing a session removes no Lane and no branch beyond the proven per-child cleanup.",
 			"The Parent stops no session",
 			"the Parent removes no Lane and dispatches no one to remove it",
 			"It splits no pane and creates no workspace",
 			"The Parent never invokes `herdr` itself, and outside Herdr it never invokes `imm-session`",
+			"A `timeout` return is no transition",
+			"A wait that returns `exited` means the Host process is gone, never that the child finished.",
 			// The tab path changes how a session is obtained, not what counts as progress.
 			"never from the session's output or exit status",
 		]) {
