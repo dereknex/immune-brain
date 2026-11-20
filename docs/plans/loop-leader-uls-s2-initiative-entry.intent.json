@@ -1,0 +1,45 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "loop-leader-uls-s2-initiative-entry",
+  "owner": "user",
+  "goal": "Run an Initiative-shaped loop work item as one v3 batch through startLanes with entry_kind initiative, retain_branch, parent_relayed and final_verification.required true from the project batch verification commands, record its batch_id on WorkItem.binding, re-enter advanceLanes for that batch on every tick (adopting an orphaned active batch by task lookup), and emit one E13 at batch completion, replacing the S1 lane_initiative_entry_pending refusal, per D2 of docs/specs/loop-leader-uls-alignment.spec.md.",
+  "acceptance": [
+    {
+      "id": "S2-AC1",
+      "assertion": "Source BR-DEC-A1, BR-DEC-A5; meet D2.1-D2.3 in docs/specs/loop-leader-uls-alignment.spec.md. Agreed seam: tests/loop-daemon-drive-pr.test.ts, tests/lane-sessions.test.ts. Done looks like: an Initiative drive with a fake executor provider and scrubbed HERDR_* writes one v3 record with entry_kind initiative, retain_branch, parent_relayed and final_verification.required true carrying the configured commands. Negative: with no configured final verification commands it refuses final_verification_required and writes no record; without a usable provider it refuses lane_session_unavailable; single-task drives still use required false.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/loop-daemon-drive-pr.test.ts tests/lane-sessions.test.ts && bun scripts/sync-dist-docs.ts --check && bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "S2-AC2",
+      "assertion": "Source BR-DEC-A1; meet D2.4-D2.5 in docs/specs/loop-leader-uls-alignment.spec.md. Agreed seam: tests/loop-leader-dispatch.test.ts. Done looks like: binding.batch_id is written after the first drive; three later ticks call advanceLanes with that id and create no second batch record; a batch started before a simulated crash prevented the binding write is adopted by task lookup instead of duplicated; batch completion yields exactly one E13. Negative: a terminal or missing recorded batch clears batch_id before a new startLanes; the lane_initiative_entry_pending refusal no longer exists.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/loop-leader-dispatch.test.ts && bun scripts/sync-dist-docs.ts --check && bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/loop-leader-uls-s2-initiative-entry.md",
+    "docs/plans/loop-leader-uls-s2-initiative-entry.intent.json",
+    "docs/specs/loop-leader-uls-alignment.spec.md",
+    "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+    "plugins/immune-brain-antigravity/runtime/lane_sessions/index.ts",
+    "plugins/immune-brain-antigravity/runtime/loop_daemon/agent_handlers.ts",
+    "plugins/immune-brain-antigravity/runtime/loop_daemon/cli.ts",
+    "plugins/immune-brain-antigravity/runtime/loop_daemon/drive_dispatcher.ts",
+    "plugins/immune-brain-antigravity/runtime/loop_daemon/jobs.ts",
+    "plugins/immune-brain-antigravity/runtime/loop_daemon/work_items.ts",
+    "plugins/immune-brain-antigravity/runtime/unattended/batch_preflight.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/lane_sessions/index.ts",
+    "plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts",
+    "plugins/immune-brain/runtime/loop_daemon/cli.ts",
+    "plugins/immune-brain/runtime/loop_daemon/drive_dispatcher.ts",
+    "plugins/immune-brain/runtime/loop_daemon/jobs.ts",
+    "plugins/immune-brain/runtime/loop_daemon/work_items.ts",
+    "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+    "tests/lane-sessions.test.ts",
+    "tests/loop-daemon-drive-pr.test.ts",
+    "tests/loop-leader-dispatch.test.ts"
+  ],
+  "scope_size_reason": "The Initiative entry kind, the dispatcher input, the WorkItem binding and the per-tick re-entry form one start-then-advance contract; splitting them would leave a batch that starts but is never advanced.",
+  "risk": "material",
+  "revision": 1
+}
