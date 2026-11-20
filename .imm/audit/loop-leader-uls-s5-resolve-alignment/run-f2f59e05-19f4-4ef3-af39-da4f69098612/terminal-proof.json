@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "loop-leader-uls-s5-resolve-alignment",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:loop-leader-uls-s5-resolve-alignment:2026-11-20T16:02:48.319Z",
+  "final_record_hash": "sha256:02db26af4853add3bcfeece542cba65da4caf79de613e8dbc4621de267ad660c",
+  "terminalized_at": "2026-11-20T16:02:48.319Z"
+}

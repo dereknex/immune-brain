@@ -26,7 +26,8 @@ import { createHash } from "node:crypto";
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-import { readAnyBatchRunState, isLaneBatchRecord } from "../unattended/batch_state.ts";
+import { findActiveLaneBatchForTask } from "../unattended/batch_preflight.ts";
+import { readAnyBatchRunState, isLaneBatchRecord, isTerminalBatchState } from "../unattended/batch_state.ts";
 import { readLocalRequests } from "./interaction/local_channel.ts";
 import { isWithdrawn, parseInteractionMarker } from "./interaction/github_channel.ts";
 import {
@@ -40,6 +41,7 @@ import {
 	type InteractionRequest,
 	type InteractionSubject,
 } from "./interaction/protocol.ts";
+import { LANE_ENTRY_BLOCKED_ID_PREFIX } from "./escalation.ts";
 import { recordWaitingPointer, clearWaitingPointersForTarget } from "./waiting.ts";
 
 /** D4.3: at three accepted rounds the item is forced to `ask_owner`. */
@@ -60,6 +62,10 @@ export interface ResolveTaskFacts {
 export interface ResolveFacts {
 	/** The batch record state that owns the target, when one does. */
 	batch_state: string | null;
+	/** ULS D5.1: children of that batch parked `lane_executor_no_progress`; only the owner resumes them. */
+	no_progress_children?: string[];
+	/** ULS D5.2: Lane-dialog escalations the subject already holds, annotated rather than asked again. */
+	pending_lane_entry_blocked?: Array<{ interaction_id: string }>;
 	/** Pending `literal_user` requests on the subject, with the id `annotate` names. */
 	pending_literal_user: Array<{ interaction_id: string; kind: InteractionKind }>;
 	task_records: ResolveTaskFacts[];
@@ -74,6 +80,10 @@ export function resolveBlockers(facts: ResolveFacts): string[] {
 	for (const entry of facts.pending_literal_user) blockers.push(`pending_${entry.kind}`);
 	// A parked batch leaves `needs_human` only through a fresh Batch Authorization.
 	if (facts.batch_state === "needs_human") blockers.push("batch_parked");
+	// ULS D5.1: a stalled Executor resumes through a fresh drive entry, never a leader `resume`.
+	for (const taskId of facts.no_progress_children ?? []) blockers.push(`lane_executor_no_progress:${taskId}`);
+	// ULS D5.2: an unanswered Lane dialog is the owner's question already.
+	if ((facts.pending_lane_entry_blocked ?? []).length > 0) blockers.push("pending_lane_entry_blocked");
 	for (const record of facts.task_records) {
 		if (record.open_user_decision_count > 0) blockers.push(`open_user_decision:${record.task_id}`);
 		if (record.unresolved_user_decision_ids.length > 0) blockers.push(`unresolved_user_decision:${record.task_id}`);
@@ -105,6 +115,14 @@ export interface ResolveFactSources {
 	project: (taskId: string) => Promise<ResolveProjection | null>;
 	/** The batch state that owns the target, or null when no batch does. */
 	batchState: (target: string) => string | null;
+	/** ULS D5.1: the task ids of that batch's children parked `lane_executor_no_progress`. */
+	noProgressChildren?: (target: string) => string[];
+	/**
+	 * ULS D5.2: the task ids of that batch's children still held for the owner. A
+	 * `lane_entry_blocked` comment counts as pending only while one remains, so an
+	 * answered dialog never blocks a later resolve.
+	 */
+	heldChildren?: (target: string) => string[];
 	/** The GitHub comments the daemon observed this tick, when that channel owns the request. */
 	comments?: ReadonlyArray<{ body: string }>;
 }
@@ -133,37 +151,76 @@ export async function collectResolveFacts(sources: ResolveFactSources): Promise<
 	}
 	return {
 		batch_state: sources.batchState(sources.target),
+		...(sources.noProgressChildren ? { no_progress_children: sources.noProgressChildren(sources.target) } : {}),
 		pending_literal_user: pendingLiteralUserRequests({
 			subject: sources.subject,
 			stateDir: sources.stateDir,
 			...(sources.comments ? { comments: sources.comments } : {}),
 		}),
+		pending_lane_entry_blocked:
+			sources.heldChildren && sources.heldChildren(sources.target).length === 0
+				? []
+				: pendingLaneEntryBlocked({ subject: sources.subject, comments: sources.comments ?? [] }),
 		task_records,
 	};
 }
 
 /**
- * D4.2: the batch record that owns a target, as `{batch_id, batch_state}`. A
- * batch is the target's when it names one of its task ids or its Initiative slug.
+ * D4.2 / ULS D5.4: the active batch that owns a target, as
+ * `{batch_id, batch_state, no_progress_children}`. Each bound task resolves
+ * through `findActiveLaneBatchForTask`, which throws on an unreadable record or on
+ * two active batches claiming one task, so an ambiguous target refuses instead of
+ * taking the first file. Two tasks of one target that resolve to different
+ * batches refuse the same way. A target named only by its Initiative slug falls
+ * back to a slug scan with the same fail-closed rule.
  */
 export function batchStateForTarget(
 	root: string,
 	input: { task_ids: readonly string[]; initiative_slug?: string | null },
-): { batch_id: string; batch_state: string } | null {
-	const dir = join(root, ".imm", "state", "batches");
-	if (!existsSync(dir)) return null;
-	const wanted = new Set(input.task_ids);
-	for (const file of readdirSync(dir).sort()) {
-		if (!file.endsWith(".json")) continue;
-		const batchId = file.slice(0, -".json".length);
-		const record = readAnyBatchRunState(root, batchId);
-		if (!record || !isLaneBatchRecord(record)) continue;
-		const owns =
-			(input.initiative_slug ? record.initiative_slug === input.initiative_slug : false) ||
-			record.children.some((child) => wanted.has(child.task_id));
-		if (owns) return { batch_id: batchId, batch_state: record.batch_state };
+): { batch_id: string; batch_state: string; no_progress_children: string[] } | null {
+	const found = new Map<string, { batch_id: string; batch_state: string; no_progress_children: string[] }>();
+	const remember = (record: { batch_id: string; batch_state: string; children: ReadonlyArray<{ task_id: string; state: string; reason: string | null }> }) =>
+		found.set(record.batch_id, {
+			batch_id: record.batch_id,
+			batch_state: record.batch_state,
+			no_progress_children: record.children
+				.filter((child) => child.state === "needs_human" && (child.reason ?? "").startsWith("lane_executor_no_progress"))
+				.map((child) => child.task_id)
+				.sort(),
+		});
+	for (const taskId of [...new Set(input.task_ids)].sort()) {
+		const active = findActiveLaneBatchForTask(root, taskId);
+		if (active) remember(active.record);
 	}
-	return null;
+	if (found.size === 0 && input.initiative_slug) {
+		const dir = join(root, ".imm", "state", "batches");
+		if (existsSync(dir)) {
+			for (const file of readdirSync(dir).sort()) {
+				if (!file.endsWith(".json") || file.endsWith(".report.json")) continue;
+				const record = readAnyBatchRunState(root, file.slice(0, -".json".length));
+				if (!record || !isLaneBatchRecord(record) || record.initiative_slug !== input.initiative_slug) continue;
+				if (isTerminalBatchState(record.batch_state)) continue;
+				remember(record);
+			}
+		}
+	}
+	if (found.size > 1) throw new Error(`batch_lane_ambiguous: ${[...found.keys()].sort().join(", ")}`);
+	return [...found.values()][0] ?? null;
+}
+
+/** ULS D5.2: the unwithdrawn `lane_entry_blocked` escalations one subject already holds. */
+export function pendingLaneEntryBlocked(input: {
+	subject: InteractionSubject;
+	comments: ReadonlyArray<{ body: string }>;
+}): Array<{ interaction_id: string }> {
+	const found = new Set<string>();
+	for (const comment of input.comments) {
+		if (isWithdrawn(comment.body)) continue;
+		const marker = parseInteractionMarker(comment.body);
+		if (!marker || !marker.interaction_id.startsWith(LANE_ENTRY_BLOCKED_ID_PREFIX)) continue;
+		if (subjectsMatch(marker.subject, input.subject)) found.add(marker.interaction_id);
+	}
+	return [...found].sort().map((interaction_id) => ({ interaction_id }));
 }
 
 /** D4.2: the pending `literal_user` requests one subject already holds. */
@@ -221,6 +278,8 @@ export interface AskOwnerDeps {
 	channel: InteractionChannel;
 	/** The `literal_user` requests the subject already waits on (D4.5). */
 	pending_literal_user: ReadonlyArray<{ interaction_id: string; kind: InteractionKind }>;
+	/** ULS D5.2: the Lane dialog the daemon already escalated on the subject; annotated like a pending request. */
+	pending_lane_entry_blocked?: ReadonlyArray<{ interaction_id: string }>;
 }
 
 export interface AskOwnerResult {
@@ -239,9 +298,9 @@ export async function askOwnerQuestion(
 	deps: AskOwnerDeps,
 	input: { subject: InteractionSubject; context: InteractionContext },
 ): Promise<AskOwnerResult> {
-	const pending = deps.pending_literal_user.find(
-		(entry) => entry.kind === "plan_approval" || entry.kind === "lane_decision",
-	);
+	const pending =
+		deps.pending_literal_user.find((entry) => entry.kind === "plan_approval" || entry.kind === "lane_decision") ??
+		deps.pending_lane_entry_blocked?.[0];
 	// D4.6: one target waits on one question, so every other pointer it recorded
 	// describes a superseded or retired request.
 	clearWaitingPointersForTarget(deps.stateDir, deps.target, pending?.interaction_id);

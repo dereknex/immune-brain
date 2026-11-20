@@ -15,7 +15,7 @@
  * and its wake rule never depends on a projection.
  */
 
-import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { sessionEnvironment, runAgentSession, type AgentSessionProvider, type AgentSessionRecord } from "./agent_runner.ts";
@@ -42,8 +42,8 @@ import { readLocalRequests } from "./interaction/local_channel.ts";
 import type { InteractionSubject } from "./interaction/protocol.ts";
 import type { ResolvedLoopRole } from "./role_catalog.ts";
 import { loadLoopDispatches } from "./state.ts";
-import { isTerminalBatchState, type BatchRunState } from "../unattended/batch_state.ts";
-import { listWorkItems } from "./work_items.ts";
+import { findActiveLaneBatchForTask } from "../unattended/batch_preflight.ts";
+import { countedRefusals, listWorkItems } from "./work_items.ts";
 
 export const LOOP_LEADER_TICK_CONTRACT = "assurance_kernel/loop_leader_tick/v1" as const;
 /** `.imm-loop` holds the only two inputs the leader session is given. */
@@ -136,7 +136,7 @@ export function leaderEntryPrompt(briefing: LeaderBriefing, fingerprint: string)
 		'- `"priority"` with an integer `rank`.',
 		'- `"shape"` with `plan` (`"task"` or `"initiative"`) and `reason`.',
 		'- `"dispatch"` with `role` (a catalog role name), `subject` and `brief` (at most 16 KiB).',
-		'- `"resolve"` with `kind` (`"resume"`, `"release"`, `"replan"` or `"ask_owner"`) and, for `ask_owner`, the `context` the owner needs.',
+		'- `"resolve"` with `kind` (`"resume"`, `"release"`, `"replan"` or `"ask_owner"`) and, for `ask_owner`, the `context` the owner needs. `resume` applies only to an escalated item without a batch blocker; a batch in `needs_human` or a child parked `lane_executor_no_progress` accepts only `ask_owner`.',
 		'- `"note"` with `text`.',
 		"",
 		"Propose nothing when the briefing already says everything that is happening. An empty `items` array is a valid answer.",
@@ -165,7 +165,8 @@ export function collectLeaderBriefingInput(input: {
 			run_id: item.binding.run_id,
 			pr: item.binding.pr,
 		},
-		refusals: item.refused_transitions.map((refusal) => ({
+		// ULS D5.3: an environment refusal never reaches the leader, so repeating it cannot change the fingerprint.
+		refusals: countedRefusals(item).map((refusal) => ({
 			from: refusal.from,
 			to: refusal.to,
 			handler: refusal.handler,
@@ -175,11 +176,20 @@ export function collectLeaderBriefingInput(input: {
 		paused: (item as { paused?: boolean }).paused ?? false,
 	}));
 	const taskIds = new Set(workItems.flatMap((item) => item.binding.task_ids));
-	const interactions: LeaderBriefingInteraction[] = readLocalRequests(input.stateDir).map((request) => ({
-		id: request.interaction_id,
-		kind: request.kind,
-		subject: interactionSubjectKey(request.subject),
-	}));
+	const summaries = readBatchSummaries(input.root, [...taskIds]);
+	const interactions: LeaderBriefingInteraction[] = [
+		...readLocalRequests(input.stateDir).map((request) => ({
+			id: request.interaction_id,
+			kind: request.kind,
+			subject: interactionSubjectKey(request.subject),
+		})),
+		// ULS D5.2: the Lane dialog the daemon escalated once is the question the owner already holds.
+		...summaries.blocked_children.map((child) => ({
+			id: `lane-entry-blocked:${child.task_id}`,
+			kind: "lane_entry_blocked",
+			subject: `task-${child.task_id}`,
+		})),
+	];
 	const outcomes: LeaderBriefingOutcome[] = loadLoopDispatches(input.stateDir).map((dispatch) => ({
 		handler: typeof dispatch.handler === "string" ? dispatch.handler : null,
 		outcome: typeof dispatch.outcome === "string" ? dispatch.outcome : "unknown",
@@ -188,7 +198,7 @@ export function collectLeaderBriefingInput(input: {
 	return {
 		work_items: workItems,
 		// Only batches that own a work item are Initiative-shaped (D2.1).
-		batches: readBatchSummaries(input.root).filter((batch) => batch.children.some((child) => taskIds.has(child.task_id))),
+		batches: summaries.batches,
 		interactions,
 		outcomes,
 		// D3.4: model skips and needs_judging baselines are the leader's reconcile input.
@@ -214,35 +224,62 @@ function interactionSubjectKey(subject: InteractionSubject): string {
 	return "unknown";
 }
 
-function readBatchSummaries(root: string): LeaderBriefingBatch[] {
-	const dir = join(root, ".imm/state/batches");
-	let names: string[];
-	try {
-		names = readdirSync(dir);
-	} catch {
-		return [];
-	}
-	const batches: LeaderBriefingBatch[] = [];
-	for (const name of names.sort()) {
-		if (!name.startsWith("batch-") || !name.endsWith(".json") || name.endsWith(".report.json")) continue;
-		let record: Record<string, any>;
+/**
+ * ULS D5.4: the active `v3` batch of each bound task, resolved through
+ * `findActiveLaneBatchForTask` so an ambiguous or unreadable match is reported
+ * as an unresolved batch instead of silently taking the first file. Each child
+ * carries its session generation, no_progress and attention.
+ */
+export function readBatchSummaries(
+	root: string,
+	taskIds: readonly string[],
+): { batches: LeaderBriefingBatch[]; blocked_children: Array<{ task_id: string }> } {
+	const batches = new Map<string, LeaderBriefingBatch>();
+	const blockedChildren: Array<{ task_id: string }> = [];
+	for (const taskId of [...new Set(taskIds)].sort()) {
+		let found: ReturnType<typeof findActiveLaneBatchForTask>;
 		try {
-			record = JSON.parse(readFileSync(join(dir, name), "utf8"));
-		} catch {
+			found = findActiveLaneBatchForTask(root, taskId);
+		} catch (error) {
+			const code = (error instanceof Error ? error.message : String(error)).split(/[:\s]/)[0] || "batch_lane_unresolved";
+			batches.set(`unresolved:${taskId}`, {
+				batch_id: `unresolved:${taskId}`,
+				initiative_slug: null,
+				batch_state: code,
+				children: [{ task_id: taskId, state: "unknown", reason: null, session: null }],
+			});
 			continue;
 		}
-		if (typeof record?.contract !== "string" || !record.contract.startsWith("assurance_kernel/batch_run_state/")) continue;
-		if (typeof record.batch_state !== "string" || isTerminalBatchState(record.batch_state as BatchRunState)) continue;
-		batches.push({
-			batch_id: String(record.batch_id ?? name.replace(/\.json$/, "")),
+		if (!found || batches.has(found.record.batch_id)) continue;
+		const record = found.record;
+		batches.set(record.batch_id, {
+			batch_id: record.batch_id,
 			initiative_slug: typeof record.initiative_slug === "string" ? record.initiative_slug : null,
 			batch_state: record.batch_state,
-			children: Array.isArray(record.children)
-				? record.children.map((child: any) => ({ task_id: String(child?.task_id ?? ""), state: String(child?.state ?? "unknown") }))
-				: [],
+			children: record.children.map((child) => ({
+				task_id: child.task_id,
+				state: child.state,
+				reason: child.reason ?? null,
+				session: child.session
+					? { generation: child.session.generation, no_progress: child.session.no_progress, attention: child.session.attention }
+					: null,
+			})),
 		});
+		for (const child of record.children) {
+			if (isChildHeldForOwner(child)) blockedChildren.push({ task_id: child.task_id });
+		}
 	}
-	return batches;
+	return { batches: [...batches.values()].sort((left, right) => (left.batch_id < right.batch_id ? -1 : left.batch_id > right.batch_id ? 1 : 0)), blocked_children: blockedChildren };
+}
+
+/**
+ * ULS D5.2: a child the daemon escalated once as `lane_entry_blocked`: parked
+ * `needs_human`, or still enrolled with its session held on a dialog
+ * (`attention: "blocked"`). An answered dialog clears `attention`, so the question
+ * stops being pending without anyone editing the Issue comment.
+ */
+export function isChildHeldForOwner(child: { state: string; session?: { attention: string | null } | null }): boolean {
+	return child.state === "needs_human" || (child.state === "enrolled" && child.session?.attention === "blocked");
 }
 
 export interface LeaderTickDeps {

@@ -34,7 +34,17 @@ export interface LeaderBriefingBatch {
 	batch_id: string;
 	initiative_slug: string | null;
 	batch_state: string;
-	children: Array<{ task_id: string; state: string }>;
+	children: LeaderBriefingBatchChild[];
+}
+
+/** ULS D5.4: one child with the `v3` session facts the leader resolves from. */
+export interface LeaderBriefingBatchChild {
+	task_id: string;
+	state: string;
+	/** Why the child is parked (`needs_human`), else null. */
+	reason: string | null;
+	/** `generation`, `no_progress` and `attention` of the child's session; null until one opens. */
+	session: { generation: number; no_progress: number; attention: string | null } | null;
 }
 
 export interface LeaderBriefingInteraction {

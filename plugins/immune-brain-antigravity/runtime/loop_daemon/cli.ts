@@ -31,7 +31,7 @@ import { POINT_REGISTRY } from "../decision_model/thresholds.ts";
 import { buildDecisionRecord } from "./decision_record.ts";
 import { selectBestDuplicateCandidate } from "./duplicate_candidates.ts";
 import { loopSessionLimits, runAgentSession, sessionEnvironment, type AgentSessionKind, type AgentSessionProvider } from "./agent_runner.ts";
-import { recordLeaderWake, runLeaderTick } from "./leader_agent.ts";
+import { readBatchSummaries, recordLeaderWake, runLeaderTick } from "./leader_agent.ts";
 import { applyLeaderProposal, parseInitiativePlan, type InitiativePlan, type LeaderDispatchDeps } from "./leader_dispatch.ts";
 import { reconcileCandidates } from "./reconcile.ts";
 import { reapOrphanedRoleSessions, runningRoleSessions } from "./role_sessions.ts";
@@ -534,6 +534,10 @@ Options:
 			paused_items: listWorkItems(stateDir)
 				.filter((item) => item.paused === true)
 				.map((item) => ({ target: item.target, state: item.state, updated_at: item.updated_at })),
+			// ULS D5.3: items held by the environment, shown here and nowhere in the leader's counters.
+			environment_blocked_items: listWorkItems(stateDir)
+				.filter((item) => (item.environment_blocked ?? null) !== null)
+				.map((item) => ({ target: item.target, state: item.state, environment_blocked: item.environment_blocked, updated_at: item.updated_at })),
 			leader: {
 				last_wake_at: lastWake?.at ?? null,
 				wakes_today: stats.leader_wakes_today ?? 0,
@@ -1402,6 +1406,12 @@ Options:
 							resolveFacts: async ({ target, work_item }) => {
 								const subject = resolveSubject(target);
 								const taskIds = [...new Set([...work_item.binding.task_ids, ...(subject.task_id ? [subject.task_id] : [])])];
+								let owned: ReturnType<typeof batchStateForTarget> | undefined;
+								const ownedBatch = () =>
+									(owned ??= batchStateForTarget(absoluteRoot, {
+										task_ids: taskIds,
+										initiative_slug: work_item.binding.initiative_slug ?? null,
+									}));
 								return collectResolveFacts({
 									stateDir,
 									target,
@@ -1423,31 +1433,38 @@ Options:
 											return null;
 										}
 									},
-									batchState: () =>
-										batchStateForTarget(absoluteRoot, {
-											task_ids: taskIds,
-											initiative_slug: work_item.binding.initiative_slug ?? null,
-										})?.batch_state ?? null,
+									// ULS D5.4: an ambiguous or unreadable batch throws, and the leader dispatch refuses the item as unresolved.
+									batchState: () => ownedBatch()?.batch_state ?? null,
+									noProgressChildren: () => ownedBatch()?.no_progress_children ?? [],
+									heldChildren: () => readBatchSummaries(absoluteRoot, taskIds).blocked_children.map((child) => child.task_id),
 									comments: obs.snapshot.issues.flatMap((issue) => issue.comments ?? []),
 								});
 							},
-							// D4.2: a parked batch leaves `needs_human` only through a fresh Batch Authorization,
-							// so only a batch that is still running can be resumed without the owner.
+							// D4.2 / ULS D5.1: a parked batch leaves `needs_human` only through a fresh Batch
+							// Authorization and a stalled Executor only through a fresh drive entry, so `resume`
+							// applies to an item with no batch blocker.
 							resumeBatch: ({ work_item }) => {
 								const subject = resolveSubject(work_item.target);
-								const batch = batchStateForTarget(absoluteRoot, {
-									task_ids: [...new Set([...work_item.binding.task_ids, ...(subject.task_id ? [subject.task_id] : [])])],
-									initiative_slug: work_item.binding.initiative_slug ?? null,
-								});
-								if (!batch) return { resumed: false, reason: "batch_unknown" };
+								let batch: ReturnType<typeof batchStateForTarget>;
+								try {
+									batch = batchStateForTarget(absoluteRoot, {
+										task_ids: [...new Set([...work_item.binding.task_ids, ...(subject.task_id ? [subject.task_id] : [])])],
+										initiative_slug: work_item.binding.initiative_slug ?? null,
+									});
+								} catch (error) {
+									return { resumed: false, reason: error instanceof Error ? error.message : String(error) };
+								}
+								if (!batch) return { resumed: true, reason: "no batch blocks the item" };
 								if (batch.batch_state === "needs_human")
 									return { resumed: false, reason: "the parked batch needs a fresh Batch Authorization" };
+								if (batch.no_progress_children.length > 0)
+									return { resumed: false, reason: `lane_executor_no_progress: ${batch.no_progress_children.join(", ")} needs a fresh drive entry` };
 								if (batch.batch_state !== "running" && batch.batch_state !== "pending")
 									return { resumed: false, reason: `batch_${batch.batch_state}` };
 								return { resumed: true, reason: `batch ${batch.batch_id} is ${batch.batch_state}` };
 							},
 							// D4.5: ask on the subject; a pending literal_user request is annotated, never withdrawn.
-							askOwner: async ({ target, subject, context, pending_literal_user }) => {
+							askOwner: async ({ target, subject, context, pending_literal_user, pending_lane_entry_blocked }) => {
 								const channel =
 									loopConfig.interaction?.channel === "local"
 										? createLocalInteractionChannel({ stateDir })
@@ -1459,7 +1476,10 @@ Options:
 												// D4.6: a withdrawn request is no longer a waiting pointer.
 												onRetired: (interactionId) => clearWaitingPointer(stateDir, interactionId),
 											});
-								return askOwnerQuestion({ stateDir, now: recordedAt, target, channel, pending_literal_user }, { subject, context });
+								return askOwnerQuestion(
+									{ stateDir, now: recordedAt, target, channel, pending_literal_user, ...(pending_lane_entry_blocked ? { pending_lane_entry_blocked } : {}) },
+									{ subject, context },
+								);
 							},
 						});
 

@@ -20,7 +20,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { parseLaneDecisionQuestion, renderLaneDecisionQuestion } from "../plugins/immune-brain/runtime/loop_daemon/decision_relay.ts";
-import { escalationInteractionRequest } from "../plugins/immune-brain/runtime/loop_daemon/escalation.ts";
+import { escalationInteractionRequest, planEscalation } from "../plugins/immune-brain/runtime/loop_daemon/escalation.ts";
 import { parsePlanDigestFromComment } from "../plugins/immune-brain/runtime/loop_daemon/events.ts";
 import {
 	createGithubInteractionChannel,
@@ -42,7 +42,7 @@ import {
 	type InteractionBinding,
 	type InteractionRequest,
 } from "../plugins/immune-brain/runtime/loop_daemon/interaction/protocol.ts";
-import { askOwnerQuestion, ownerQuestionRequest } from "../plugins/immune-brain/runtime/loop_daemon/replan.ts";
+import { askOwnerQuestion, ownerQuestionRequest, pendingLaneEntryBlocked } from "../plugins/immune-brain/runtime/loop_daemon/replan.ts";
 import { clearWaitingPointer, listWaitingStatus } from "../plugins/immune-brain/runtime/loop_daemon/waiting.ts";
 import type { GuardFacts } from "../plugins/immune-brain/runtime/loop_daemon/guards.ts";
 import type { RawComment } from "../plugins/immune-brain/runtime/loop_daemon/types.ts";
@@ -642,5 +642,33 @@ describe("interaction context pack and in-place questions (S4-AC2)", () => {
 		expect(asked.action).toBe("failed");
 		expect(asked.reason).toContain("HTTP 502");
 		expect(listWaitingStatus(stateDir)).toEqual([]);
+	});
+});
+
+describe("a Lane dialog is asked once (S5-AC2)", () => {
+	it("posts one lane_entry_blocked comment per distinct dialog and annotates it for a leader ask_owner", async () => {
+		const { port, read, channel } = setup(approvalRequest({ plan_digest: PLAN_DIGEST }));
+		const dialog = { key: "dialog-key", message: "The Lane waits on a startup dialog.", label: "lane_entry_blocked" as const, issue_number: ISSUE };
+
+		// The daemon's escalation path: post once, then skip every retry of the same dialog.
+		const first = planEscalation(read.comments(), dialog);
+		expect(first.action).toBe("post");
+		await port.postComment(ISSUE, first.body);
+		expect(planEscalation(read.comments(), dialog).action).toBe("skip");
+		expect(port.comments).toHaveLength(1);
+
+		const pending = pendingLaneEntryBlocked({ subject: { issue: ISSUE }, comments: read.comments() });
+		expect(pending).toEqual([{ interaction_id: "escalation:lane_entry_blocked:dialog-key" }]);
+
+		const asked = await askOwnerQuestion(
+			{ stateDir: waitingStateDir(), now: TS, target: "issue-42", channel, pending_literal_user: [], pending_lane_entry_blocked: pending },
+			{ subject: { issue: ISSUE }, context: CONTEXT },
+		);
+
+		expect(asked).toMatchObject({ action: "annotated", interaction_id: "escalation:lane_entry_blocked:dialog-key" });
+		// Still one comment on the Issue: edited in place, never a second question.
+		expect(port.comments).toHaveLength(1);
+		expect(port.comments[0]!.body).toContain(CONTEXT.blocked_on);
+		expect(isWithdrawn(port.comments[0]!.body)).toBe(false);
 	});
 });

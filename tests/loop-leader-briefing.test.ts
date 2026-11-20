@@ -40,6 +40,7 @@ import {
 import {
 	LEADER_BRIEFING_FILE,
 	LEADER_JOURNAL_TAIL_FILE,
+	collectLeaderBriefingInput,
 	leaderEntryPrompt,
 	leaderWakeDecision,
 	leaderWorktreePath,
@@ -59,7 +60,14 @@ import {
 	parseLeaderProposal,
 } from "../plugins/immune-brain/runtime/loop_daemon/leader_proposal.ts";
 import { defaultLoopRole } from "../plugins/immune-brain/runtime/loop_daemon/role_catalog.ts";
-import { newWorkItem, writeWorkItem } from "../plugins/immune-brain/runtime/loop_daemon/work_items.ts";
+import {
+	advanceWorkItem,
+	countedRefusals,
+	newWorkItem,
+	readWorkItem,
+	writeWorkItem,
+} from "../plugins/immune-brain/runtime/loop_daemon/work_items.ts";
+import { seedLaneBatch } from "./helpers/loop-leader-batch.ts";
 import { runLoopDaemonCli } from "../plugins/immune-brain/runtime/loop_daemon/cli.ts";
 import { loadLoopState } from "../plugins/immune-brain/runtime/loop_daemon/state.ts";
 import { DEFAULT_LOOP_CONFIG } from "../plugins/immune-brain/runtime/config/layered_config.ts";
@@ -549,5 +557,148 @@ describe("Loop Leader: proposal parsing and journal (S2-AC2)", () => {
 		expect(calls[1]!.inputs).toEqual(["briefing.json", "journal-tail.jsonl"]);
 		expect(existsSync(join(worktree, "stray.txt"))).toBe(false);
 		expect(readdirSync(worktree).sort()).toEqual([".imm-loop"]);
+	});
+});
+
+describe("Loop Leader: briefing batches carry v3 session facts (S5-AC1)", () => {
+	const TASK = "task-s5";
+	const collect = (root: string, dir: string) =>
+		collectLeaderBriefingInput({
+			root,
+			stateDir: dir,
+			roles: [defaultLoopRole("leader")],
+			ownerHints: [],
+			budget: { wakes_today: 0, max_leader_wakes_per_day: 48, dispatches_today: 0, max_dispatches_per_day: null },
+		});
+	const bound = (dir: string) => {
+		const item = newWorkItem("issue-42", "driving", NOW);
+		writeWorkItem(dir, { ...item, binding: { ...item.binding, task_ids: [TASK] } });
+	};
+
+	it("lists each child's session generation, no_progress, attention and parked reason", () => {
+		const root = tempDir("imm-leader-batches-");
+		const dir = join(root, ".imm/state/loop");
+		mkdirSync(dir, { recursive: true });
+		bound(dir);
+		seedLaneBatch(
+			root,
+			"batch-s5",
+			[
+				{
+					task_id: TASK,
+					state: "needs_human",
+					reason: "lane_executor_no_progress",
+					session: { generation: 3, no_progress: 2, attention: "stalled", entry_submitted: true },
+				},
+				{ task_id: "task-unstarted" },
+			],
+			{ batch_state: "running", now: NOW },
+		);
+
+		const batches = collect(root, dir).batches;
+		expect(batches).toHaveLength(1);
+		expect(batches[0]!.children).toEqual([
+			{
+				task_id: TASK,
+				state: "needs_human",
+				reason: "lane_executor_no_progress",
+				session: { generation: 3, no_progress: 2, attention: "stalled" },
+			},
+			{ task_id: "task-unstarted", state: "pending", reason: null, session: null },
+		]);
+	});
+
+	it("lists a child held on a dialog as one pending lane_entry_blocked interaction until the dialog is answered", () => {
+		const root = tempDir("imm-leader-batches-");
+		const dir = join(root, ".imm/state/loop");
+		mkdirSync(dir, { recursive: true });
+		bound(dir);
+		const seed = (attention: string | null, entry_submitted: boolean, state: "enrolled" | "needs_human" = "enrolled") =>
+			seedLaneBatch(root, "batch-s5", [{ task_id: TASK, state, reason: state === "needs_human" ? "lane_parked" : null, session: { generation: 1, no_progress: 0, attention, entry_submitted } }], {
+				batch_state: "running",
+				now: NOW,
+			});
+		const pending = () => collect(root, dir).interactions.filter((entry) => entry.kind === "lane_entry_blocked");
+
+		seed("blocked", true);
+		expect(pending()).toEqual([{ id: `lane-entry-blocked:${TASK}`, kind: "lane_entry_blocked", subject: `task-${TASK}` }]);
+		// An entry not yet submitted is not a dialog: nothing is asked of the owner.
+		seed(null, false);
+		expect(pending()).toEqual([]);
+		// A parked child is the other state the daemon escalates once.
+		seed(null, true, "needs_human");
+		expect(pending()).toHaveLength(1);
+		// The dialog answered clears attention, and the question stops being pending.
+		seed(null, true);
+		expect(pending()).toEqual([]);
+	});
+
+	it("reports two active batches for one task as unresolved instead of taking the first file", () => {
+		const root = tempDir("imm-leader-batches-");
+		const dir = join(root, ".imm/state/loop");
+		mkdirSync(dir, { recursive: true });
+		bound(dir);
+		seedLaneBatch(root, "batch-a", [{ task_id: TASK }], { now: NOW });
+		seedLaneBatch(root, "batch-b", [{ task_id: TASK }], { now: NOW });
+
+		const batches = collect(root, dir).batches;
+		expect(batches.map((batch) => batch.batch_id)).toEqual([`unresolved:${TASK}`]);
+		expect(batches[0]!.batch_state).toBe("batch_lane_ambiguous");
+	});
+});
+
+describe("Loop Leader: lane_session_unavailable is an environment fact (S5-AC3)", () => {
+	const REASON = "lane_session_unavailable: no usable Lane session provider";
+
+	it("leaves refusals, revision, fingerprint and wake count unchanged over five refused ticks, and shows it in status", async () => {
+		const root = tempDir("imm-leader-env-");
+		const dir = join(root, ".imm/state/loop");
+		mkdirSync(dir, { recursive: true });
+		const target = seedWorkItem(dir);
+		const { provider, calls } = fakeLeader((recorded) => proposal(recorded, [{ action: "note", text: "wait" }]));
+		const first = await runLeaderTick(deps(dir, provider, { root }));
+		expect(first.woke).toBe(true);
+
+		for (let tick = 0; tick < 5; tick += 1) {
+			const current = readWorkItem(dir, target)!;
+			const { item, refused } = advanceWorkItem(current, "merged", { reason: REASON, now: NOW });
+			expect(refused).toBe(true);
+			writeWorkItem(dir, item);
+			const again = await runLeaderTick(deps(dir, provider, { root }));
+			expect(again.reason).toBe("fingerprint_unchanged");
+			expect(again.briefing_fingerprint).toBe(first.briefing_fingerprint);
+		}
+		const after = readWorkItem(dir, target)!;
+		expect(after.refused_transitions).toEqual([]);
+		expect(after.revision).toBe(newWorkItem(target, "triage", NOW).revision);
+		expect(after.replan_rounds ?? 0).toBe(0);
+		expect(after.environment_blocked).toBe("lane_session_unavailable");
+		expect(calls).toHaveLength(1);
+
+		const status = await runLoopDaemonCli(["status", "--json"], root, { stateDir: dir, loopConfig: DEFAULT_LOOP_CONFIG });
+		expect(JSON.parse(status.stdout).environment_blocked_items).toEqual([
+			expect.objectContaining({ target, environment_blocked: "lane_session_unavailable" }),
+		]);
+	});
+
+	it("still counts a different refusal reason toward the leader's refusal list and fingerprint", async () => {
+		const dir = stateDir();
+		const target = seedWorkItem(dir);
+		const { provider } = fakeLeader((recorded) => proposal(recorded, []));
+		const first = await runLeaderTick(deps(dir, provider));
+
+		const { item } = advanceWorkItem(readWorkItem(dir, target)!, "merged", { reason: "handler declined", now: NOW });
+		writeWorkItem(dir, item);
+		expect(countedRefusals(item)).toHaveLength(1);
+		const second = await runLeaderTick(deps(dir, provider));
+		expect(second.briefing_fingerprint).not.toBe(first.briefing_fingerprint);
+		expect(second.woke).toBe(true);
+	});
+
+	it("clears the environment fact once a legal transition happens", () => {
+		const blocked = { ...newWorkItem("issue-42", "triage", NOW), environment_blocked: "lane_session_unavailable" as const };
+		const { item, refused } = advanceWorkItem(blocked, "clarifying", { now: NOW });
+		expect(refused).toBe(false);
+		expect(item.environment_blocked).toBeUndefined();
 	});
 });

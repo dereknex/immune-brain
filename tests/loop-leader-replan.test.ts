@@ -22,8 +22,11 @@ import { join } from "node:path";
 import { applyLeaderProposal, type LeaderDispatchDeps } from "../plugins/immune-brain/runtime/loop_daemon/leader_dispatch.ts";
 import { readLeaderJournal } from "../plugins/immune-brain/runtime/loop_daemon/leader_journal.ts";
 import type { LeaderProposalItem } from "../plugins/immune-brain/runtime/loop_daemon/leader_proposal.ts";
+import { seedLaneBatch } from "./helpers/loop-leader-batch.ts";
 import {
+	batchStateForTarget,
 	collectResolveFacts,
+	pendingLaneEntryBlocked,
 	pendingLiteralUserRequests,
 	REPLAN_CAP,
 	resolveBlockers,
@@ -35,6 +38,8 @@ import { listRoleSessions } from "../plugins/immune-brain/runtime/loop_daemon/ro
 import { defaultLoopRole, type ResolvedLoopRole } from "../plugins/immune-brain/runtime/loop_daemon/role_catalog.ts";
 import { newWorkItem, readWorkItem, writeWorkItem } from "../plugins/immune-brain/runtime/loop_daemon/work_items.ts";
 import type { AskOwnerResult } from "../plugins/immune-brain/runtime/loop_daemon/replan.ts";
+import { renderEscalationBody } from "../plugins/immune-brain/runtime/loop_daemon/escalation.ts";
+import { INTERACTION_WITHDRAWN_MARKER, isWithdrawn } from "../plugins/immune-brain/runtime/loop_daemon/interaction/github_channel.ts";
 
 const NOW = "2026-11-17T10:00:00.000Z";
 const TASK = "s4-lane-task";
@@ -227,6 +232,21 @@ describe("Loop Leader: replanning (S4-AC1)", () => {
 				name: "a parked batch",
 				facts: { batch_state: "needs_human", pending_literal_user: [], task_records: [] },
 			},
+			// ULS D5.1: a stalled Executor resumes only through a fresh drive entry.
+			{
+				name: "a child parked lane_executor_no_progress",
+				facts: { batch_state: "running", no_progress_children: [TASK], pending_literal_user: [], task_records: [] },
+			},
+			// ULS D5.2: an unanswered Lane dialog is already the owner's question.
+			{
+				name: "a pending lane_entry_blocked escalation",
+				facts: {
+					batch_state: "running",
+					pending_lane_entry_blocked: [{ interaction_id: "escalation:lane_entry_blocked:k" }],
+					pending_literal_user: [],
+					task_records: [],
+				},
+			},
 		];
 
 		for (const gate of gates) {
@@ -391,6 +411,154 @@ describe("Loop Leader: resolve facts come from local state (S4-AC1)", () => {
 				],
 			}),
 		).toEqual([]);
+	});
+});
+
+describe("Loop Leader: resolve alignment with ULS (S5-AC1)", () => {
+	it("resumes an escalated item with no batch blocker and counts the round", async () => {
+		const ws = workspace();
+		const target = "issue-42";
+		escalated(ws, target, { task_ids: [TASK] });
+		const recorded: Recorded = { ask_owner: [], resumed: [] };
+		const noBatch = deps(ws, recorded, {
+			resolveFacts: async () => ({ ...NO_FACTS, batch_state: null, no_progress_children: [] }),
+		});
+
+		const results = await applyLeaderProposal([resolveItem(target, "resume")], noBatch);
+
+		expect(results[0]).toMatchObject({ action: "resolve", outcome: "accepted" });
+		expect(recorded.resumed).toEqual([target]);
+		expect(readWorkItem(ws.stateDir, target)).toMatchObject({ state: "driving", replan_rounds: 1 });
+	});
+
+	it("names the no_progress child in the blocker and leaves a running batch with healthy children unblocked", () => {
+		expect(resolveBlockers({ ...NO_FACTS, batch_state: "running", no_progress_children: [TASK] })).toEqual([
+			`lane_executor_no_progress:${TASK}`,
+		]);
+		expect(resolveBlockers({ ...NO_FACTS, batch_state: "running", no_progress_children: [] })).toEqual([]);
+	});
+
+	it("reads parked-child facts from the v3 batch record through the active-batch lookup", async () => {
+		const ws = workspace();
+		seedLaneBatch(ws.root, "batch-s5", [{ task_id: TASK, state: "needs_human", reason: "lane_executor_no_progress" }, { task_id: "other-task" }], {
+			batch_state: "running",
+			now: NOW,
+		});
+		expect(batchStateForTarget(ws.root, { task_ids: [TASK] })).toEqual({
+			batch_id: "batch-s5",
+			batch_state: "running",
+			no_progress_children: [TASK],
+		});
+		// A different parked reason is not a no_progress block.
+		seedLaneBatch(ws.root, "batch-s5", [{ task_id: TASK, state: "needs_human", reason: "lane_executor_stopped" }], { now: NOW });
+		expect(batchStateForTarget(ws.root, { task_ids: [TASK] })?.no_progress_children).toEqual([]);
+
+		const facts = await collectResolveFacts({
+			stateDir: ws.stateDir,
+			target: "issue-42",
+			subject: { issue: 42 },
+			task_ids: [TASK],
+			project: async () => null,
+			batchState: () => "running",
+			noProgressChildren: () => [TASK],
+		});
+		expect(facts.no_progress_children).toEqual([TASK]);
+	});
+
+	it("refuses a task claimed by two active batches instead of taking the first file", async () => {
+		const ws = workspace();
+		seedLaneBatch(ws.root, "batch-a", [{ task_id: TASK }], { now: NOW });
+		seedLaneBatch(ws.root, "batch-b", [{ task_id: TASK }], { now: NOW });
+		expect(() => batchStateForTarget(ws.root, { task_ids: [TASK] })).toThrow("batch_lane_ambiguous");
+
+		// The leader dispatch reports the unresolved target as rejected and moves nothing.
+		const target = "issue-42";
+		escalated(ws, target, { task_ids: [TASK] });
+		const recorded: Recorded = { ask_owner: [], resumed: [] };
+		const refusing = deps(ws, recorded, {
+			resolveFacts: async () =>
+				collectResolveFacts({
+					stateDir: ws.stateDir,
+					target,
+					subject: { issue: 42 },
+					task_ids: [TASK],
+					project: async () => null,
+					batchState: () => batchStateForTarget(ws.root, { task_ids: [TASK] })?.batch_state ?? null,
+				}),
+		});
+		const results = await applyLeaderProposal([resolveItem(target, "resume")], refusing);
+		expect(results[0]).toMatchObject({ outcome: "rejected" });
+		expect(results[0]!.reason).toContain("batch_lane_ambiguous");
+		expect(readWorkItem(ws.stateDir, target)!.state).toBe("escalated");
+		expect(recorded.resumed).toEqual([]);
+	});
+
+	it("stops counting a lane_entry_blocked comment as pending once no child is held for the owner", async () => {
+		const ws = workspace();
+		const comment = { body: renderEscalationBody("key-1", "Lane t waits on a dialog", { label: "lane_entry_blocked", issue_number: 42 }) };
+		const facts = (held: string[]) =>
+			collectResolveFacts({
+				stateDir: ws.stateDir,
+				target: "issue-42",
+				subject: { issue: 42 },
+				task_ids: [TASK],
+				project: async () => null,
+				batchState: () => "running",
+				heldChildren: () => held,
+				comments: [comment],
+			});
+		expect((await facts([TASK])).pending_lane_entry_blocked).toEqual([{ interaction_id: "escalation:lane_entry_blocked:key-1" }]);
+		// The dialog was answered: the old comment no longer blocks resume, release or replan.
+		expect((await facts([])).pending_lane_entry_blocked).toEqual([]);
+	});
+
+	it("keeps a terminal batch out of the lookup so it never blocks a resume", () => {
+		const ws = workspace();
+		seedLaneBatch(ws.root, "batch-done", [{ task_id: TASK }], { batch_state: "failed", now: NOW });
+		expect(batchStateForTarget(ws.root, { task_ids: [TASK] })).toBeNull();
+	});
+});
+
+describe("Loop Leader: one question per Lane dialog (S5-AC2)", () => {
+	it("recognises the unwithdrawn lane_entry_blocked escalation on the subject Issue only", () => {
+		const posted = renderEscalationBody("key-1", "Lane t waits on a dialog", { label: "lane_entry_blocked", issue_number: 42 });
+		const other = renderEscalationBody("key-2", "repair cap reached", {});
+		const withdrawn = `${posted}\n${INTERACTION_WITHDRAWN_MARKER}\n`;
+		expect(pendingLaneEntryBlocked({ subject: { issue: 42 }, comments: [{ body: posted }, { body: other }] })).toEqual([
+			{ interaction_id: "escalation:lane_entry_blocked:key-1" },
+		]);
+		expect(pendingLaneEntryBlocked({ subject: { issue: 43 }, comments: [{ body: posted }] })).toEqual([]);
+		expect(isWithdrawn(withdrawn)).toBe(true);
+		expect(pendingLaneEntryBlocked({ subject: { issue: 42 }, comments: [{ body: withdrawn }] })).toEqual([]);
+	});
+
+	it("folds a leader ask_owner into the pending lane_entry_blocked request instead of asking again", async () => {
+		const ws = workspace();
+		const target = "issue-42";
+		escalated(ws, target, { task_ids: [TASK] });
+		const recorded: Recorded = { ask_owner: [], resumed: [] };
+		const dialogFacts: ResolveFacts = {
+			...NO_FACTS,
+			pending_lane_entry_blocked: [{ interaction_id: "escalation:lane_entry_blocked:key-1" }],
+		};
+		const seen: Array<{ pending: number; entry: number }> = [];
+		const folded = deps(ws, recorded, {
+			resolveFacts: async () => dialogFacts,
+			askOwner: async ({ pending_literal_user, pending_lane_entry_blocked }) => {
+				seen.push({ pending: pending_literal_user.length, entry: pending_lane_entry_blocked?.length ?? 0 });
+				return { action: "annotated", interaction_id: "escalation:lane_entry_blocked:key-1" };
+			},
+		});
+
+		const results = await applyLeaderProposal([resolveItem(target, "ask_owner")], folded);
+		expect(results[0]).toMatchObject({ outcome: "accepted" });
+		expect(results[0]!.reason).toContain("annotated");
+		expect(seen).toEqual([{ pending: 0, entry: 1 }]);
+
+		// Every other resolve kind is rejected: the dialog is the owner's to answer.
+		const others = await applyLeaderProposal([resolveItem(target, "resume"), resolveItem(target, "release")], folded);
+		expect(others.map((entry) => entry.outcome)).toEqual(["rejected", "rejected"]);
+		expect(others[0]!.reason).toContain("pending_lane_entry_blocked");
 	});
 });
 

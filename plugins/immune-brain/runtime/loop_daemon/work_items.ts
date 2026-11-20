@@ -122,10 +122,41 @@ export interface WorkItem {
 	replan_rounds?: number;
 	/** D5.2: a natively confirmed `pause` holds every dispatch path, not the state machine. */
 	paused?: boolean;
+	/**
+	 * ULS D5.3: the environment fact holding this item (no usable Lane session
+	 * provider). It is shown in status and never enters the briefing, a refusal
+	 * count or a replan round, so waiting on the environment burns no leader budget.
+	 */
+	environment_blocked?: EnvironmentBlock | null;
 	updated_at: string;
 }
 
 const MAX_REFUSALS = 20;
+
+/** ULS D5.3 (BR-DEC-A6): refusal reasons that describe the environment, not the work. */
+export type EnvironmentBlock = "lane_session_unavailable";
+
+/** The environment block a refusal or drive reason names, or null for an ordinary reason. */
+export function environmentBlockOf(reason: string | null | undefined): EnvironmentBlock | null {
+	return typeof reason === "string" && reason.includes("lane_session_unavailable") ? "lane_session_unavailable" : null;
+}
+
+/** ULS D5.3: the refusals that count toward the leader's three-refusal trigger. */
+export function countedRefusals(item: Pick<WorkItem, "refused_transitions">): WorkItemRefusal[] {
+	return item.refused_transitions.filter((refusal) => environmentBlockOf(refusal.reason) === null);
+}
+
+/**
+ * ULS D5.3: record or clear the environment block on one item. A no-op write is
+ * skipped, and `revision` never moves, so repeated ticks leave the briefing
+ * fingerprint and the leader wake count exactly as they were.
+ */
+export function setEnvironmentBlock(stateDir: string, target: string, block: EnvironmentBlock | null, now: string): void {
+	const item = readWorkItem(stateDir, target);
+	if (!item || (item.environment_blocked ?? null) === block) return;
+	const { environment_blocked: _cleared, ...rest } = item;
+	writeWorkItem(stateDir, block === null ? { ...rest, updated_at: now } : { ...rest, environment_blocked: block, updated_at: now });
+}
 
 export function workItemsDir(stateDir: string): string {
 	return join(stateDir, "work_items");
@@ -223,10 +254,17 @@ export function advanceWorkItem(
 	options: { handler?: LoopHandler | null; reason?: string; now: string },
 ): { item: WorkItem; refused: boolean } {
 	if (isLegalWorkItemTransition(item.state, to)) {
+		const { environment_blocked: _cleared, ...rest } = item;
 		return {
-			item: { ...item, state: to, revision: item.revision + 1, updated_at: options.now },
+			item: { ...rest, state: to, revision: item.revision + 1, updated_at: options.now },
 			refused: false,
 		};
+	}
+	// ULS D5.3: an environment refusal is a status fact, not a refusal: it adds no
+	// entry, moves no revision and so never changes what the leader is shown.
+	const environment = environmentBlockOf(options.reason);
+	if (environment !== null) {
+		return { item: { ...item, environment_blocked: environment, updated_at: options.now }, refused: true };
 	}
 	const refusal: WorkItemRefusal = {
 		from: item.state,

@@ -107,7 +107,16 @@ import {
 	type RepairResult,
 } from "./repair_agent.ts";
 import { ensureLoopStateDir, loadLoopDecisions } from "./state.ts";
-import { drivingInitiativeSlug, markPlanPublished, parkOnClarifyQuestion, readWorkItem, releaseClarifyWait, writeWorkItem } from "./work_items.ts";
+import {
+	drivingInitiativeSlug,
+	environmentBlockOf,
+	markPlanPublished,
+	parkOnClarifyQuestion,
+	readWorkItem,
+	releaseClarifyWait,
+	setEnvironmentBlock,
+	writeWorkItem,
+} from "./work_items.ts";
 import type { NormalizedLoopEvent, ObservationInput, RawComment, RawPR } from "./types.ts";
 
 /** The plan one Issue's planning chain recorded; published by the handler that owns the write. */
@@ -492,6 +501,15 @@ function workItemTargetOf(context: AgentHandlerContext): string {
 	return `${context.decision.target.kind}-${context.decision.target.id}`;
 }
 
+/**
+ * ULS D5.3: a drive refused for want of a Lane session provider is an environment
+ * fact of the item, shown in status; any other drive result clears it. Neither
+ * touches the item's refusals, revision or replan rounds.
+ */
+function noteDriveEnvironment(context: AgentHandlerContext, reason: string, at: string): void {
+	setEnvironmentBlock(context.stateDir, workItemTargetOf(context), environmentBlockOf(reason), at);
+}
+
 function taskIdOfEvent(context: AgentHandlerContext): string | null {
 	const event = context.event;
 	if (event && "task_id" in event && typeof event.task_id === "string" && event.task_id) return event.task_id;
@@ -539,7 +557,12 @@ async function escalateOnce(
 	const key = escalationKey({ kind, target, detail });
 	const targetNumber = Number.parseInt(target.replace(/^[a-z]+-/, ""), 10);
 	const existing = Number.isFinite(targetNumber) ? existingCommentsOf(context, targetNumber) : [];
-	const plan = planEscalation(existing, { key, message });
+	// ULS D5.2: a Lane dialog is asked once, here; the leader annotates this comment instead of posting another.
+	const plan = planEscalation(existing, {
+		key,
+		message,
+		...(kind === "lane_entry_blocked" && Number.isFinite(targetNumber) ? { label: "lane_entry_blocked" as const, issue_number: targetNumber } : {}),
+	});
 	if (plan.action === "post" && Number.isFinite(targetNumber)) {
 		const posted = await context.gitHubPort.postComment(targetNumber, plan.body);
 		existing.push({
@@ -1184,6 +1207,7 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 					now: now(),
 				});
 				let driven = await deps.drive(driveInput());
+				noteDriveEnvironment(context, driven.reason, now());
 				// A startup or mid-run dialog holds the Lane open without failing the
 				// job: post the Issue escalation once per distinct detail, then re-drive
 				// every retry interval until the user answers the dialog in Herdr; the
@@ -1234,6 +1258,7 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 						};
 					await retry();
 					driven = await deps.drive(driveInput());
+					noteDriveEnvironment(context, driven.reason, now());
 				}
 				const exit = driven.exit;
 				firstExit ??= exit ?? null;
@@ -1318,6 +1343,7 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 					const item = readWorkItem(context.stateDir, workTarget);
 					if (item && driven.batch_id !== undefined && (item.binding.batch_id ?? null) !== driven.batch_id)
 						writeWorkItem(context.stateDir, { ...item, binding: { ...item.binding, batch_id: driven.batch_id } });
+					noteDriveEnvironment(context, driven.reason, now());
 					return driven;
 				};
 				let driven = await step();

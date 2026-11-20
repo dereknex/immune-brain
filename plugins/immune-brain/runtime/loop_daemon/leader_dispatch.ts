@@ -134,6 +134,7 @@ export interface LeaderDispatchDeps {
 		subject: InteractionSubject;
 		context: NonNullable<Extract<LeaderProposalItem, { action: "resolve" }>["context"]>;
 		pending_literal_user: ResolveFacts["pending_literal_user"];
+		pending_lane_entry_blocked?: NonNullable<ResolveFacts["pending_lane_entry_blocked"]>;
 	}) => Promise<AskOwnerResult>;
 }
 
@@ -390,6 +391,7 @@ async function applyResolve(
 			subject: resolveSubject(item.target),
 			context: item.context,
 			pending_literal_user: facts.pending_literal_user,
+			pending_lane_entry_blocked: facts.pending_lane_entry_blocked ?? [],
 		});
 		if (asked.action === "failed") return reject(index, item, `owner_question_failed: ${asked.reason ?? "unknown"}`);
 		return {
