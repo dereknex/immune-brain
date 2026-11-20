@@ -1370,10 +1370,7 @@ function readNoTouchAt(root, commit) {
   return parseNoTouch(JSON.parse(execFileSync2("git", ["show", `${commit}:${NO_TOUCH_PATH}`], options)));
 }
 function noTouchPaths(paths, additions = []) {
-  return paths.filter((path) => {
-    const name = path.split("/").at(-1);
-    return path === ".imm/state" || path.startsWith(".imm/state/") || path === ".github/workflows" || path.startsWith(".github/workflows/") || path === ".changeset/config.json" || name === ".env" || name.startsWith(".env.") || /\.(pem|key)$/.test(name) || /^id_(rsa|ed25519)/.test(name) || name === ".npmrc" || name === ".netrc" || additions.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
-  });
+  return paths.filter((path) => path === STATE_RELATIVE || path.startsWith(`${STATE_RELATIVE}/`) || additions.some((prefix) => path === prefix || path.startsWith(`${prefix}/`)));
 }
 function assertNoTouch(paths, additions = []) {
   const forbidden = noTouchPaths(paths, additions);
@@ -1381,7 +1378,9 @@ function assertNoTouch(paths, additions = []) {
     throw new Error(`no_touch_path_changed: ${forbidden.join(", ")}`);
 }
 var NO_TOUCH_PATH = "docs/agents/no-touch.json", CONTRACT = "immune_brain/no_touch/v1";
-var init_no_touch = () => {};
+var init_no_touch = __esm(() => {
+  init_storage_paths();
+});
 
 // plugins/immune-brain/runtime/kernel/intent.ts
 import { createHash as createHash2 } from "node:crypto";
