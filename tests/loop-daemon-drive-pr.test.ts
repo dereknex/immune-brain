@@ -50,10 +50,15 @@ const TS = "2026-01-01T00:00:00.000Z";
 const TASK = "loop-daemon-drive-task";
 
 const roots: string[] = [];
+// Restore, not delete: other files in the same bun process set these once at import.
+const PRIOR_HERDR_ENV = process.env.HERDR_ENV;
+const PRIOR_HERDR_WORKSPACE_ID = process.env.HERDR_WORKSPACE_ID;
 afterEach(() => {
 	for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
-	delete process.env.HERDR_ENV;
-	delete process.env.HERDR_WORKSPACE_ID;
+	if (PRIOR_HERDR_ENV === undefined) delete process.env.HERDR_ENV;
+	else process.env.HERDR_ENV = PRIOR_HERDR_ENV;
+	if (PRIOR_HERDR_WORKSPACE_ID === undefined) delete process.env.HERDR_WORKSPACE_ID;
+	else process.env.HERDR_WORKSPACE_ID = PRIOR_HERDR_WORKSPACE_ID;
 });
 
 function git(cwd: string, ...args: string[]): string {

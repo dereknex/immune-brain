@@ -20,12 +20,16 @@ import {
 } from "../plugins/immune-brain/runtime/kernel/sqlite_store";
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
 import { mockHostSdkForDeliveryTree } from "./helpers/pi-canary-assurance-harness";
+import { installCliReviewer } from "./helpers/cli-reviewer";
 
 // The deterministic QA delivery tree has no `node_modules`, so the Host-provided
 // packages behind the Pi adapter need the conditional stand-in seam before the
 // adapter module is instantiated (memory #3390). Register first, load next.
 await mockHostSdkForDeliveryTree();
 afterAll(() => mock.restore());
+// The harness admits Herdr only when its module first loads; a cached import in a
+// full run carries no guarantee, so this file installs its own reviewer.
+installCliReviewer();
 const {
 	ensureTaskReviewRevision,
 	diffSnapshotOf: piDiffSnapshotOf,
