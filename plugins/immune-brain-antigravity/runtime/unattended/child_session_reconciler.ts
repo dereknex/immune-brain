@@ -6,13 +6,16 @@
 // `record_revision` the generation started from; `no_progress` counts only
 // consecutive stalls at an unchanged baseline; a recorded intervention digest
 // is never handled twice; a generation key is persisted via `onWriteAhead`
-// before its `open` runs.
+// before its `open` runs; a `label` is bounded to the port's 32 characters and
+// a refused `open` parks the child with the provider's own reason instead of
+// holding a session that has no handle.
 // Side Effects: calls the port's `find`/`open`/`resume`/`send`/`closeWithProof`
 // and the caller's `onWriteAhead`; the caller persists the returned session.
 // Verification: `bun test tests/batch-session-port.test.ts`.
 import {
 	isPortRefusal,
 	laneSessionKey,
+	laneSessionLabel,
 	LANE_EXECUTOR_ENV,
 	type BatchSessionPort,
 	type SessionExitProof,
@@ -59,7 +62,8 @@ export interface ReconcileChildResult {
 		| "sent"
 		| "rotated"
 		| "stalled_idle"
-		| "parked_no_progress";
+		| "parked_no_progress"
+		| "parked_open_rejected";
 	parkedReason?: string | null;
 }
 
@@ -92,6 +96,13 @@ function isHandled(session: BatchChildSession, digest: string): boolean {
 function markHandled(session: BatchChildSession, digest: string): BatchChildSession {
 	if (isHandled(session, digest)) return session;
 	return { ...session, handled_interventions: [...(session.handled_interventions ?? []), digest] };
+}
+
+/** A refused `open` is a named error, never a silent hold with a null handle. */
+function openRejected(refusal: { code?: unknown; reason?: unknown }): ReconcileChildResult["parkedReason"] {
+	const code = typeof refusal.code === "string" ? refusal.code : "refused";
+	const reason = typeof refusal.reason === "string" ? refusal.reason : "the provider refused the session";
+	return `lane_session_open_rejected: ${reason} (${code})`;
 }
 
 export async function reconcileChildSession(input: ReconcileChildInput): Promise<ReconcileChildResult> {
@@ -129,11 +140,11 @@ export async function reconcileChildSession(input: ReconcileChildInput): Promise
 		const opened = await port.open({
 			key,
 			cwd: laneCwd,
-			label: taskId,
+			label: laneSessionLabel(taskId),
 			entry,
 			...(openEnv(interactionMode) ? { env: openEnv(interactionMode) } : {}),
 		});
-		if (isPortRefusal(opened)) return { session, action: "held" };
+		if (isPortRefusal(opened)) return { session, action: "parked_open_rejected", parkedReason: openRejected(opened) };
 		session.handle = opened.handle;
 		session.entry_submitted = opened.entry_submitted;
 		if (opened.attention !== undefined) session.attention = opened.attention ?? null;
@@ -182,12 +193,12 @@ export async function reconcileChildSession(input: ReconcileChildInput): Promise
 		const opened = await port.open({
 			key: nextKey,
 			cwd: laneCwd,
-			label: taskId,
+			label: laneSessionLabel(taskId),
 			entry: pendingCorrection.text,
 			...(openEnv(interactionMode) ? { env: openEnv(interactionMode) } : {}),
 		});
 		if (isPortRefusal(opened)) {
-			return { session: { ...writeAhead, exit_proof: closed as SessionExitProof }, action: "held" };
+			return { session: { ...writeAhead, exit_proof: closed as SessionExitProof }, action: "parked_open_rejected", parkedReason: openRejected(opened) };
 		}
 		session = {
 			...writeAhead,
@@ -258,13 +269,13 @@ async function stallOrProgress(
 		const opened = await port.open({
 			key: nextKey,
 			cwd: laneCwd,
-			label: taskId,
+			label: laneSessionLabel(taskId),
 			entry,
 			...(openEnv(interactionMode) ? { env: openEnv(interactionMode) } : {}),
 		});
 		if (isPortRefusal(opened)) {
 			session = { ...writeAhead, exit_proof: closed as SessionExitProof };
-			return { session, action: "held" };
+			return { session, action: "parked_open_rejected", parkedReason: openRejected(opened) };
 		}
 		session = {
 			...writeAhead,
@@ -301,13 +312,13 @@ async function stallOrProgress(
 		const opened = await port.open({
 			key: nextKey,
 			cwd: laneCwd,
-			label: taskId,
+			label: laneSessionLabel(taskId),
 			entry,
 			...(openEnv(interactionMode) ? { env: openEnv(interactionMode) } : {}),
 		});
 		if (isPortRefusal(opened)) {
 			session = { ...writeAhead, exit_proof: closed as SessionExitProof };
-			return { session, action: "held" };
+			return { session, action: "parked_open_rejected", parkedReason: openRejected(opened) };
 		}
 		session = {
 			...writeAhead,

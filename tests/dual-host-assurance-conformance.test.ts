@@ -68,6 +68,7 @@ import { withKernelTransaction } from "../plugins/immune-brain/runtime/kernel/sq
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
 import { writeEnrollmentBaseline } from "../plugins/immune-brain/runtime/workspace_scope";
+import { memoryLanePort, memoryLanePortEnv } from "./helpers/memory-lane-port";
 
 // The phase entry gate (ADR 0019) sits in front of
 // `start_unattended_batch`. These tests exercise what lies behind it, so the
@@ -90,8 +91,12 @@ function withRunEntry(workspace?: string): { consumePhaseAdmission: (toolCallId:
 		},
 	};
 }
+const runPiBatch = (options: Parameters<typeof executePiUnattendedBatch>[0]) =>
+	executePiUnattendedBatch({ env: { ...memoryLanePortEnv }, sessionPortFactory: memoryLanePort, ...options });
+
 function createMcpRuntime(options: Parameters<typeof createMcpRuntimeUngated>[0] = {}) {
-	const runtime = createMcpRuntimeUngated({ ...withRunEntry(options.cwd), ...options });
+	const runtime = createMcpRuntimeUngated({ ...withRunEntry(options.cwd), ...options,
+		env: { ...(options.env ?? {}), ...memoryLanePortEnv }, sessionPortFactory: options.sessionPortFactory ?? memoryLanePort });
 	const callTool = runtime.callTool.bind(runtime);
 	runtime.callTool = (name, args, meta) => callTool(name, name === "start_unattended_batch"
 		? { final_verification: ["bun --version"], ...args } : args, meta);
@@ -455,7 +460,10 @@ writeFileSync(join(ROOT, ".imm/config.json"), JSON.stringify({
 	contract: "immune_brain/project_config/v2",
 	agents: { reviewer: "pi" },
 }) + "\n");
-if (!existsSync(join(ROOT, ".git"))) {
+// A half-created fixture (an aborted run leaves `.git` without a commit) is
+// repaired here instead of failing every Review preparation on an unborn HEAD.
+const fixtureHasHead = existsSync(join(ROOT, ".git")) && spawnSync("git", ["rev-parse", "--verify", "--quiet", "HEAD"], { cwd: ROOT }).status === 0;
+if (!fixtureHasHead) {
 	execFileSync("git", ["init", "-q"], { cwd: ROOT });
 	writeFileSync(join(ROOT, "tracked.ts"), "export const value = 1;\n");
 	execFileSync("git", ["add", "-A"], { cwd: ROOT });
@@ -1220,7 +1228,7 @@ describe("dual-host assurance conformance", () => {
 			);
 
 			let piBinding: any = null;
-			const piResult = await executePiUnattendedBatch({
+			const piResult = await runPiBatch({
 				root: piFixture.root,
 				initiativeSlug: sharedSlug,
 				interactive: true,
@@ -1280,7 +1288,7 @@ describe("dual-host assurance conformance", () => {
 			cr.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
 			const cRes = await cr.callTool("start_unattended_batch", { initiative_slug: "conf-dec-c" }, { toolCallId: "toolu-dec" });
 
-			const pRes = await executePiUnattendedBatch({
+			const pRes = await runPiBatch({
 				root: pf.root,
 				initiativeSlug: "conf-dec-p",
 				interactive: true,
@@ -1308,7 +1316,7 @@ describe("dual-host assurance conformance", () => {
 			cr.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
 			const cRes = await cr.callTool("start_unattended_batch", { initiative_slug: "conf-can-c" }, { toolCallId: "toolu-can" });
 
-			const pRes = await executePiUnattendedBatch({
+			const pRes = await runPiBatch({
 				root: pf.root,
 				initiativeSlug: "conf-can-p",
 				interactive: true,
@@ -1337,7 +1345,7 @@ describe("dual-host assurance conformance", () => {
 			cr.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
 			const cRes = await cr.callTool("start_unattended_batch", { initiative_slug: "conf-claim-c" }, { toolCallId: "toolu-cl" });
 
-			const pRes = await executePiUnattendedBatch({
+			const pRes = await runPiBatch({
 				root: pf.root,
 				initiativeSlug: "conf-claim-p",
 				interactive: true,
@@ -1367,7 +1375,7 @@ describe("dual-host assurance conformance", () => {
 			cr.bindClientHandshake({ version: "2.1.236", interactive: false, protocolVersion: "2025-06-18" });
 			await expect(cr.callTool("start_unattended_batch", { initiative_slug: "conf-noninter-c" })).rejects.toThrow("unsupported_host");
 
-			const pRes = await executePiUnattendedBatch({
+			const pRes = await runPiBatch({
 				root: pf.root,
 				initiativeSlug: "conf-noninter-p",
 				interactive: false,
@@ -1398,7 +1406,7 @@ describe("dual-host assurance conformance", () => {
 			cr.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
 			const cRes = await cr.callTool("start_unattended_batch", { initiative_slug: "conf-branchfail-c" }, { toolCallId: "toolu-bf" });
 
-			const pRes = await executePiUnattendedBatch({
+			const pRes = await runPiBatch({
 				root: pf.root,
 				initiativeSlug: "conf-branchfail-p",
 				interactive: true,
@@ -1435,7 +1443,7 @@ describe("dual-host assurance conformance", () => {
 			cr.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
 			const cRes = await cr.callTool("start_unattended_batch", { initiative_slug: "conf-empty" }, { toolCallId: "toolu-emp" });
 
-			const pRes = await executePiUnattendedBatch({
+			const pRes = await runPiBatch({
 				root: pf.root,
 				initiativeSlug: "conf-empty",
 				interactive: true,
@@ -1463,10 +1471,12 @@ describe("dual-host assurance conformance", () => {
 				cr.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
 				const piOptions = { root: f.root, initiativeSlug: slug, interactive: true, readInitiative: async () => f.observation,
 					confirmBatch: async () => { gates++; return "accept" as const; } };
-				const tick = () => host === "claude" ? cr.callTool("start_unattended_batch", { initiative_slug: slug }, { toolCallId: "lane-tick" }) : executePiUnattendedBatch(piOptions);
+				const tick = () => host === "claude" ? cr.callTool("start_unattended_batch", { initiative_slug: slug }, { toolCallId: "lane-tick" }) : runPiBatch(piOptions);
 				const first = await tick();
 				expect(first.state).toBe("started");
-				const lane = first.report.handoffs.find((handoff: any) => handoff.role === "executor").lane_path;
+				// The runtime opens each Lane's session itself, so the Lane path comes from
+				// the child record rather than an executor handoff (Spec D14).
+				const lane = first.report.children[0].lane.path;
 				const task = `${slug}-c1`;
 				const laneRuntime = createMcpRuntime({ cwd: lane, env: ENV, interactive: true });
 				const ports = host === "claude" ? laneRuntime.runtime.kernelPorts() : createPiAssuranceProgressionPorts();
@@ -1535,7 +1545,7 @@ describe("dual-host assurance conformance", () => {
 			const cRes1 = await cr.callTool("start_unattended_batch", { initiative_slug: `${sharedSwapSlug}-c` }, { toolCallId: "toolu-sw1" });
 
 			let pStep = 0;
-			const pRes1 = await executePiUnattendedBatch({
+			const pRes1 = await runPiBatch({
 				root: pf.root,
 				initiativeSlug: `${sharedSwapSlug}-p`,
 				interactive: true,
@@ -1602,7 +1612,7 @@ describe("dual-host assurance conformance", () => {
 			cr2.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
 			const cRes2 = await cr2.callTool("start_unattended_batch", { initiative_slug: `${sharedSwapSlug}-c` }, { toolCallId: "toolu-sw2" });
 
-			const pRes2 = await executePiUnattendedBatch({
+			const pRes2 = await runPiBatch({
 				root: pf.root,
 				initiativeSlug: `${sharedSwapSlug}-p`,
 				interactive: true,
@@ -1652,8 +1662,8 @@ describe("dual-host assurance conformance", () => {
 			});
 			cr.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
 			let cRes1 = await cr.callTool("start_unattended_batch", { initiative_slug: `${sharedReplaySlug}-c`, final_verification: ["bun --version"] }, { toolCallId: "toolu-rp1" });
-			expect(cRes1.report.handoffs[0].role).toBe("executor");
-			const cLane = cRes1.report.handoffs[0].lane_path;
+			// The runtime opened the Lane and its session: the path is on the child record.
+			const cLane = cRes1.report.children[0].lane.path;
 			const laneRuntime = createMcpRuntime({ cwd: cLane, env: ENV, interactive: true });
 			mkdirSync(join(cLane, "docs/specs"), { recursive: true });
 			writeFileSync(join(cLane, `docs/specs/${sharedReplaySlug}-c-c1.spec.md`), "# Replay fixture Spec\n");
@@ -1676,9 +1686,8 @@ describe("dual-host assurance conformance", () => {
 			},
 				confirmBatch: async () => "accept",
 			};
-			let pRes1 = await executePiUnattendedBatch(replayOptions);
-			expect(pRes1.report.handoffs[0].role).toBe("executor");
-			const pLane = pRes1.report.handoffs[0].lane_path;
+			let pRes1 = await runPiBatch(replayOptions);
+			const pLane = pRes1.report.children[0].lane.path;
 			mkdirSync(join(pLane, "docs/specs"), { recursive: true });
 			writeFileSync(join(pLane, `docs/specs/${sharedReplaySlug}-p-c1.spec.md`), "# Replay fixture Spec\n");
 			execFileSync("git", ["add", `docs/specs/${sharedReplaySlug}-p-c1.spec.md`], { cwd: pLane });
@@ -1687,7 +1696,7 @@ describe("dual-host assurance conformance", () => {
 			expect((await piLaneRuntime.advance(`${sharedReplaySlug}-p-c1`)).state).toBe("completed");
 			await piLaneRuntime.shutdown();
 			execFileSync("git", ["add", `.imm/audit/${sharedReplaySlug}-p-c1`], { cwd: pLane });
-			pRes1 = await executePiUnattendedBatch(replayOptions);
+			pRes1 = await runPiBatch(replayOptions);
 
 			expect(cRes1.state).toBe("started");
 			expect(pRes1.state).toBe("started");
@@ -1714,7 +1723,7 @@ describe("dual-host assurance conformance", () => {
 			}
 			const parkedBefore = [cf, pf].map(f => readFileSync(join(f.root, ".imm/state/batches/parked.json")));
 			const cParked = await cr.callTool("start_unattended_batch", { initiative_slug: `${sharedReplaySlug}-c` }, { toolCallId: "parked" });
-			const pParked = await executePiUnattendedBatch(replayOptions);
+			const pParked = await runPiBatch(replayOptions);
 			expect(cParked).toMatchObject({ state: "rejected", reason: expect.stringContaining("batch plan changed") });
 			expect(pParked).toMatchObject({ state: "rejected", reason: expect.stringContaining("batch plan changed") });
 			for (const [i, f] of [cf, pf].entries()) {
@@ -1737,7 +1746,7 @@ describe("dual-host assurance conformance", () => {
 				cReplayReader = reader;
 				const replay = f === cf
 					? await cr.callTool("start_unattended_batch", { initiative_slug: f.observation.initiative_id }, { toolCallId: "snapshot-replay" })
-					: await executePiUnattendedBatch({ ...replayOptions, readInitiative: async () => reader() });
+					: await runPiBatch({ ...replayOptions, readInitiative: async () => reader() });
 				expect(replay).toMatchObject({ state: "started", report: { batch_state: "completed" } });
 				expect(replay.report.children.map((child: { task_id: string }) => child.task_id))
 					.toEqual(f.observation.tasks.map(child => child.task_id));
@@ -1750,7 +1759,7 @@ describe("dual-host assurance conformance", () => {
 			cf.observation.tasks = [];
 			pf.observation.tasks = [];
 			const cRes2 = await cr.callTool("start_unattended_batch", { initiative_slug: `${sharedReplaySlug}-c` }, { toolCallId: "toolu-rp2" });
-			const pRes2 = await executePiUnattendedBatch({
+			const pRes2 = await runPiBatch({
 				root: pf.root,
 				initiativeSlug: `${sharedReplaySlug}-p`,
 				interactive: true,
@@ -1790,7 +1799,7 @@ describe("dual-host assurance conformance", () => {
 			const cPending = cr
 				.callTool("start_unattended_batch", { initiative_slug: "conf-pending-c" }, { toolCallId: "toolu-pending" })
 				.finally(() => { settled += 1; });
-			const pPending = executePiUnattendedBatch({
+			const pPending = runPiBatch({
 				root: pf.root,
 				initiativeSlug: "conf-pending-p",
 				interactive: true,
@@ -1842,7 +1851,7 @@ describe("dual-host assurance conformance", () => {
 			const cRes = await cr.callTool("start_unattended_batch", { initiative_slug: `${sharedLateSlug}-c` }, { toolCallId: "toolu-late" });
 
 			let pReads = 0;
-			const pRes = await executePiUnattendedBatch({
+			const pRes = await runPiBatch({
 				root: pf.root,
 				initiativeSlug: `${sharedLateSlug}-p`,
 				interactive: true,
@@ -1923,7 +1932,7 @@ describe("dual-host assurance conformance", () => {
 					return { state: "completed" };
 				},
 			};
-			const pFirst = await executePiUnattendedBatch({
+			const pFirst = await runPiBatch({
 				root: pf.root,
 				initiativeSlug: `${sharedPendingSlug}-p`,
 				interactive: true,
@@ -1969,7 +1978,7 @@ describe("dual-host assurance conformance", () => {
 			cr2.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
 			const cRes = await cr2.callTool("start_unattended_batch", { initiative_slug: `${sharedPendingSlug}-c` }, { toolCallId: "toolu-pending2" });
 
-			const pRes = await executePiUnattendedBatch({
+			const pRes = await runPiBatch({
 				root: pf.root,
 				initiativeSlug: `${sharedPendingSlug}-p`,
 				interactive: true,
@@ -2030,7 +2039,7 @@ describe("dual-host assurance conformance", () => {
 					return { state: "completed" };
 				},
 			};
-			const pRes1 = await executePiUnattendedBatch({
+			const pRes1 = await runPiBatch({
 				root: pf.root,
 				initiativeSlug: `${sharedRenewSlug}-p`,
 				interactive: true,
@@ -2054,7 +2063,7 @@ describe("dual-host assurance conformance", () => {
 			}
 
 			const cRes2 = await cr.callTool("start_unattended_batch", { initiative_slug: `${sharedRenewSlug}-c` }, { toolCallId: "toolu-renew2" });
-			const pRes2 = await executePiUnattendedBatch({
+			const pRes2 = await runPiBatch({
 				root: pf.root,
 				initiativeSlug: `${sharedRenewSlug}-p`,
 				interactive: true,
@@ -2067,8 +2076,8 @@ describe("dual-host assurance conformance", () => {
 			expect(pRes2.state).toBe("started");
 			expect(cRes2.report.batch_state).toBe("running");
 			expect(pRes2.report.batch_state).toBe("running");
-			expect(cRes2.report.handoffs).toMatchObject([{ role: "executor", task_id: `${sharedRenewSlug}-c-c1` }]);
-			expect(pRes2.report.handoffs).toMatchObject([{ role: "executor", task_id: `${sharedRenewSlug}-p-c1` }]);
+			expect(cRes2.report.children.map((child: { task_id: string }) => child.task_id)).toContain(`${sharedRenewSlug}-c-c1`);
+			expect(pRes2.report.children.map((child: { task_id: string }) => child.task_id)).toContain(`${sharedRenewSlug}-p-c1`);
 			for (const result of [cRes2, pRes2]) {
 				expect(result.report.children.map((child: { state: string }) => child.state)).toEqual(["enrolled", "pending"]);
 				expect(result.report.commits).toEqual([]);

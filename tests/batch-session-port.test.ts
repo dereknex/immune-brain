@@ -10,6 +10,7 @@ import { runLaneBatch as advanceBatch } from "../plugins/immune-brain/runtime/un
 import { readAnyBatchRunState, type BatchLaneRunStateRecord } from "../plugins/immune-brain/runtime/unattended/batch_state";
 import {
 	laneSessionKey,
+	laneSessionLabel,
 	LANE_EXECUTOR_ENV,
 	type BatchSessionPort,
 	type BatchSessionOpenInput,
@@ -144,6 +145,7 @@ class MemPort implements BatchSessionPort {
 	worktreeExistsAtOpen: boolean[] = [];
 	states = new Map<string, SessionObservation>();
 	refuseObserve = new Set<string>();
+	refuseOpen: string | null = null;
 	store = new Map<string, string>();
 	counter = 0;
 	constructor(provider = "mem-port") {
@@ -152,6 +154,7 @@ class MemPort implements BatchSessionPort {
 	async open(input: BatchSessionOpenInput) {
 		this.opens.push(input);
 		this.worktreeExistsAtOpen.push(existsSync(input.cwd));
+		if (this.refuseOpen) return { ok: false as const, code: "invalid_input", reason: this.refuseOpen };
 		this.counter += 1;
 		const handle = `h-${this.counter}-${input.key.slice(-6)}`;
 		this.openHandles.push(handle);
@@ -336,6 +339,44 @@ describe("BSP-A2: crash recovery and provider mismatch", () => {
 			expect(secondPort.observes.length).toBe(0);
 			expect(secondPort.closes.length).toBe(0);
 			expect(secondPort.sends.length).toBe(0);
+		} finally {
+			fx.cleanup();
+		}
+	});
+});
+
+describe("BSP-A5: bounded label and a surfaced open rejection", () => {
+	test("bounds an over-long task id to the port's label contract and keeps a short one", () => {
+		const long = "uls-final-repair-64e79ff5-unattended-lane-child";
+		const label = laneSessionLabel(long);
+		expect(label.length).toBeLessThanOrEqual(32);
+		expect(label).not.toBe(laneSessionLabel(`${long}-2`));
+		expect(laneSessionLabel("task-a")).toBe("task-a");
+		expect(laneSessionLabel(long)).toBe(laneSessionLabel(long));
+	});
+
+	test("a refused open parks the child with the provider's reason instead of holding a handleless session", async () => {
+		const port = new MemPort("mem-open-refused");
+		port.refuseOpen = "label must be 1 to 32 characters";
+		const refused = await reconcileChildSession({
+			port, batchId: "b", taskId: "task-a", session: null,
+			kernel: { recordRevision: "r1", settled: false, hasOpenDecision: false, hasReplan: false },
+			interactionMode: "parent_relayed", entry: "drive task-a", laneCwd: tmpdir(),
+		});
+		expect(port.opens.map(input => input.label)).toEqual(["task-a"]);
+		expect(refused.session.handle).toBeNull();
+		expect(refused.action).toBe("parked_open_rejected");
+		expect(refused.parkedReason).toContain("label must be 1 to 32 characters");
+
+		// Through the batch the same refusal is a named park, never a silent hold.
+		const fx = mkRepo(["task-a"]);
+		try {
+			const kernel = fakeKernel(new Map([["task-a", "r1"]]));
+			const input = laneInput(fx.repo, fx.base, "batch-a5", [child("task-a")], kernel, port);
+			const report = (await advanceBatch(input, null)) as unknown as { batch_state: string; children: Array<{ state: string; reason: string | null }> };
+			expect(report.batch_state).toBe("needs_human");
+			expect(report.children[0]!.state).toBe("needs_human");
+			expect(report.children[0]!.reason).toContain("lane_session_open_rejected: label must be 1 to 32 characters");
 		} finally {
 			fx.cleanup();
 		}

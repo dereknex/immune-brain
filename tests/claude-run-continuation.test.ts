@@ -316,8 +316,8 @@ function laneParent(options: {
 			children: [{ ...prepared.children[0]!, state: "released", commit: head,
 				lane: { ...lane, lane_commit: head },
 				...(options.laneRemoved
-					? { lane_removed: { exit: { generation: 1, code: 0, signal: null }, worktree: lanePath,
-						branches: [laneBranch, `imm/${LANE_TASK}`] } }
+					? { lane_removed: { exit: { ok: true as const, exited: true as const, handle: "herdr:ws1/tab1/pane1/key", key: "imm-lane-task-g1-000000000000" },
+						worktree: lanePath, branches: [laneBranch, `imm/${LANE_TASK}`] } }
 					: { lane_retained: { condition: "exit_proof_unavailable" } }) }] }
 		: { ...prepared, batch_state: "running", children: [{ ...prepared.children[0]!, state: "enrolled", lane }] };
 	writeBatchLaneRunState(root, record);

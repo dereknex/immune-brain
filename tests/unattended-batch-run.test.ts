@@ -779,6 +779,8 @@ describe("shared batch preflight projection", () => {
 			batch_parent_branch_exists: ["batch_parent_branch_exists: <detail> does not point at base_head", "inspect the existing Parent branch and retry with a reconciled base in the current Host"],
 			batch_resource_collision: ["batch_resource_collision: <detail>", "inspect the retained branch or Lane and its missing provenance in the current Host before retrying"],
 			batch_record_shape_retired: ["batch_record_shape_retired: v1 serial batch records are read-and-retire only", "Inspect the recorded batch, then use retire_stale_batch for this Initiative in the current Host."],
+			batch_record_retired: ["<detail>", "Inspect the recorded batch, then use retire_stale_batch for this Initiative in the current Host."],
+			batch_agreement_invalid: ["<detail>", "Correct the agreement fields and retry in the current Host."],
 			git_status_unreadable: ["branch preflight failed: git status is unreadable", "check the repository integrity and retry in the current Host"],
 			working_tree_dirty: ["branch preflight failed: working tree is dirty: <detail>", "resolve the listed remaining paths outside the batch committable set, then retry in the current Host"],
 			authorized_scope_underivable: ["branch preflight failed: cannot derive the in-flight child's authorized scope", "resolve the child's intent record, then retry in the current Host"],
@@ -806,7 +808,6 @@ describe("shared batch preflight projection", () => {
 			lane_executor_unavailable: ["lane_executor_unavailable", "Install the selected Executor on PATH and retry in the current Host."],
 			lane_executor_unobservable: ["lane_executor_unobservable", "Inspect the retained Lane and Executor process in the current Host."],
 			lane_executor_no_progress: ["lane_executor_no_progress", "Inspect the Lane and resume with a fresh drive entry."],
-			lane_executor_requires_tui: ["lane_executor_requires_tui", "Open interactive pi in the Lane and run `/skill:drive <task_id>` there; when it finishes, call `start_unattended_batch` again with that task_id in the current Host."],
 			lane_decision_stale: ["lane_decision_stale", "Read the Lane decision facts again with status and relay the decision for the current record revision."],
 			lane_decision_rebind_failed: ["lane_decision_rebind_failed", "The decision was applied in the Lane; inspect the batch record with status before any further entry."],
 		};

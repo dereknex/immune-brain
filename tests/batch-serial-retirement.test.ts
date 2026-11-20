@@ -62,7 +62,8 @@ function fixture(independent = false) {
 		projectTask: async (_root, task_id) => ({ task_id, error: null,
 			claim: enrolled.has(task_id) && !settled.has(task_id) ? { task_id, lifecycle_status: "active" } : null,
 			projection: { run_id: enrolled.has(task_id) ? `run-${task_id}` : null, record_revision: "r1", lifecycle: settled.has(task_id) ? "done" : "active",
-				artifact_state: "active", completion_ready: settled.has(task_id), open_user_decision_count: 0, replan_required_ids: [], next_obligation: "submit_assurance" },
+				artifact_state: "active", completion_ready: settled.has(task_id), open_user_decision_count: 0, replan_required_ids: [], next_obligation: "submit_assurance",
+				authorization: { state: "none", blocked: null } },
 		} as unknown as AssuranceProjectionResult),
 	};
 	const input: StartBatchInput = { root, ...binding, children, registry, capability, confirmation_time: now, now, kernel };

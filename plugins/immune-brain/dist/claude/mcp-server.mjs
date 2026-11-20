@@ -18400,6 +18400,12 @@ function foldTask(taskId, maxLen) {
   }
   return folded;
 }
+function laneSessionLabel(taskId) {
+  if (taskId.length > 0 && taskId.length <= 32)
+    return taskId;
+  const digest = createHash24("sha256").update(taskId).digest("hex").slice(0, 12);
+  return `${foldTask(taskId, 32 - 1 - 12)}-${digest}`;
+}
 function laneSessionKey(batchId, taskId, generation) {
   if (!Number.isSafeInteger(generation) || generation <= 0)
     throw new Error("laneSessionKey: generation must be a positive integer");
@@ -18439,6 +18445,11 @@ function markHandled(session, digest) {
     return session;
   return { ...session, handled_interventions: [...session.handled_interventions ?? [], digest] };
 }
+function openRejected(refusal) {
+  const code = typeof refusal.code === "string" ? refusal.code : "refused";
+  const reason = typeof refusal.reason === "string" ? refusal.reason : "the provider refused the session";
+  return `lane_session_open_rejected: ${reason} (${code})`;
+}
 async function reconcileChildSession(input) {
   const { port, batchId, taskId, kernel, interactionMode, entry, laneCwd, onWriteAhead } = input;
   const pendingInstruction = normalizePending(input.pendingInstruction);
@@ -18470,12 +18481,12 @@ async function reconcileChildSession(input) {
     const opened = await port.open({
       key,
       cwd: laneCwd,
-      label: taskId,
+      label: laneSessionLabel(taskId),
       entry,
       ...openEnv(interactionMode) ? { env: openEnv(interactionMode) } : {}
     });
     if (isPortRefusal(opened))
-      return { session, action: "held" };
+      return { session, action: "parked_open_rejected", parkedReason: openRejected(opened) };
     session.handle = opened.handle;
     session.entry_submitted = opened.entry_submitted;
     if (opened.attention !== undefined)
@@ -18524,12 +18535,12 @@ async function reconcileChildSession(input) {
     const opened = await port.open({
       key: nextKey,
       cwd: laneCwd,
-      label: taskId,
+      label: laneSessionLabel(taskId),
       entry: pendingCorrection.text,
       ...openEnv(interactionMode) ? { env: openEnv(interactionMode) } : {}
     });
     if (isPortRefusal(opened)) {
-      return { session: { ...writeAhead, exit_proof: closed }, action: "held" };
+      return { session: { ...writeAhead, exit_proof: closed }, action: "parked_open_rejected", parkedReason: openRejected(opened) };
     }
     session = {
       ...writeAhead,
@@ -18580,13 +18591,13 @@ async function stallOrProgress(port, session, opts) {
     const opened = await port.open({
       key: nextKey,
       cwd: laneCwd,
-      label: taskId,
+      label: laneSessionLabel(taskId),
       entry,
       ...openEnv(interactionMode) ? { env: openEnv(interactionMode) } : {}
     });
     if (isPortRefusal(opened)) {
       session = { ...writeAhead, exit_proof: closed };
-      return { session, action: "held" };
+      return { session, action: "parked_open_rejected", parkedReason: openRejected(opened) };
     }
     session = {
       ...writeAhead,
@@ -18622,13 +18633,13 @@ async function stallOrProgress(port, session, opts) {
     const opened = await port.open({
       key: nextKey,
       cwd: laneCwd,
-      label: taskId,
+      label: laneSessionLabel(taskId),
       entry,
       ...openEnv(interactionMode) ? { env: openEnv(interactionMode) } : {}
     });
     if (isPortRefusal(opened)) {
       session = { ...writeAhead, exit_proof: closed };
-      return { session, action: "held" };
+      return { session, action: "parked_open_rejected", parkedReason: openRejected(opened) };
     }
     session = {
       ...writeAhead,
@@ -19014,6 +19025,7 @@ var TERMINAL_NEXT_ACTIONS = {
 };
 var LANE_RETAINED = "batch_lane_retained";
 var LANE_REDO_RETAINED = "batch_lane_redo_retained";
+var NO_EXIT_EVIDENCE = "no exit proof was returned for this Lane session";
 function redoRetained(cause) {
   if (cause?.startsWith(`${LANE_REDO_RETAINED}:`))
     return cause;
@@ -19022,10 +19034,11 @@ function redoRetained(cause) {
 function retainedLaneNotices(root, record, lanes = createDefaultLaneGitPort()) {
   if (!isParentBranch(record.branch))
     return [];
-  return record.children.filter((child) => child.lane && (child.lane_retained || child.state === "needs_human") && lanes.inspectLane(root, child.lane.path).exists).map((child) => ({
+  const checkout = effectiveReturnPolicy(record) === "checkout_delivery";
+  return record.children.filter((child) => child.lane && lanes.inspectLane(root, child.lane.path).exists && (child.lane_retained !== undefined || child.state === "integrated" || child.state === "needs_human" && (!checkout || child.commit !== null))).map((child) => ({
     task_id: child.task_id,
     path: child.lane.path,
-    reason: retainedLaneReason(child.lane_retained?.condition ?? `the return step is parked (${child.reason})`)
+    reason: retainedLaneReason(child.lane_retained?.condition ?? (child.state === "integrated" ? NO_EXIT_EVIDENCE : `the return step is parked (${child.reason})`))
   }));
 }
 async function cleanupOneIntegratedChild(input) {
@@ -19134,6 +19147,11 @@ function laneReport(record, reason, nextAction, extra = {}) {
     created_at: record.updated_at
   };
 }
+function laneRejectionReport(input, record, reason, nextAction) {
+  const lanes = laneGitOf(input);
+  const handoffs = releaseHandoffs(input, record, lanes);
+  return laneReport({ ...record, batch_state: "rejected" }, reason, handoffs.length ? `${nextAction}. Check each release handoff with the Lane Steward.` : nextAction, { handoffs, refusals: retainedLaneNotices(input.root, record, lanes) });
+}
 function finalizeLane(root, record, reason, nextAction, extra = {}) {
   const report = laneReport(record, reason, nextAction, extra);
   if (isTerminalBatchState(record.batch_state) || record.batch_state === "needs_human")
@@ -19232,6 +19250,18 @@ function isLineageBreak(message) {
   return message.includes("batch_head_lineage_broken");
 }
 async function runLaneBatch(input, persisted) {
+  try {
+    return await runLaneBatchEngine(input, persisted);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!/retired file-store|kernel store|CAS mismatch|store is busy|locked/i.test(message))
+      throw error;
+    if (!persisted || !isLaneBatchRecord(persisted))
+      throw error;
+    return laneRejectionReport(input, persisted, message, "settle the reported kernel store condition and retry in the current Host");
+  }
+}
+async function runLaneBatchEngine(input, persisted) {
   if (persisted && !isLaneBatchRecord(persisted))
     return { ...refuse2(input, persisted, "batch_record_shape_retired", "v1 serial batch records are read-and-retire only"), next_action: "Inspect the recorded batch, then use retire_stale_batch for this Initiative in the current Host." };
   if (persisted && isRetiredLaneRecord(persisted))
@@ -19855,6 +19885,8 @@ async function runLaneBatch(input, persisted) {
       if (result.action === "parked_no_progress") {
         parkChild(child.task_id, "lane_executor_no_progress: two consecutive stalls without Kernel progress");
       }
+      if (result.action === "parked_open_rejected")
+        parkChild(child.task_id, result.parkedReason ?? "lane_session_open_rejected");
     }
   }
   if (record.children.every((c) => c.state === "integrated" || c.state === "released")) {

@@ -663,19 +663,30 @@ const TERMINAL_NEXT_ACTIONS: Record<string, string> = {
 // the runtime never deletes or recreates a Lane it created.
 export const LANE_RETAINED = "batch_lane_retained";
 export const LANE_REDO_RETAINED = "batch_lane_redo_retained";
+/** A Lane with no recorded cleanup decision: nothing proved its session exited. */
+const NO_EXIT_EVIDENCE = "no exit proof was returned for this Lane session";
 
 function redoRetained(cause: string | null | undefined): string {
 	if (cause?.startsWith(`${LANE_REDO_RETAINED}:`)) return cause;
 	return `${LANE_REDO_RETAINED}: no redo Lane is created, so the Lane, its branch and its files are kept${cause ? ` (${cause})` : ""}`;
 }
 
-/** Two-tier proof-based cleanup (Spec unified-lane-sessions D11): only retained Lanes are reported; removed Lanes are gone. */
+/**
+ * Two-tier proof-based cleanup (Spec unified-lane-sessions D11): a Lane still
+ * present is reported on every read, whichever tier decided to keep it, so a
+ * completed delivery never implies cleanup (Spec batch-resource-safety-s2 D4).
+ */
 export function retainedLaneNotices(root: string, record: BatchLaneRunStateRecord, lanes: BatchLaneGitPort = createDefaultLaneGitPort()): NonNullable<BatchLaneRunReport["lane_refusals"]> {
 	if (!isParentBranch(record.branch)) return [];
+	// A checkout delivery keeps the Lane only after its delta was delivered, so a
+	// parked child there is reported once it has a commit.
+	const checkout = effectiveReturnPolicy(record) === "checkout_delivery";
 	return record.children
-		.filter(child => child.lane && (child.lane_retained || child.state === "needs_human") && lanes.inspectLane(root, child.lane.path).exists)
-			.map(child => ({ task_id: child.task_id, path: child.lane!.path,
-				reason: retainedLaneReason(child.lane_retained?.condition ?? `the return step is parked (${child.reason})`) }));
+		.filter(child => child.lane && lanes.inspectLane(root, child.lane.path).exists &&
+			(child.lane_retained !== undefined || child.state === "integrated" || (child.state === "needs_human" && (!checkout || child.commit !== null))))
+		.map(child => ({ task_id: child.task_id, path: child.lane!.path,
+			reason: retainedLaneReason(child.lane_retained?.condition ??
+				(child.state === "integrated" ? NO_EXIT_EVIDENCE : `the return step is parked (${child.reason})`)) }));
 }
 
 /**
@@ -974,6 +985,23 @@ function isLineageBreak(message: string): boolean {
  * the existing batch lock; every step is idempotent against durable facts.
  */
 export async function runLaneBatch(
+	input: StartBatchInput,
+	persisted: AnyBatchRunStateRecord | null,
+): Promise<BatchLaneRunReport> {
+	try {
+		return await runLaneBatchEngine(input, persisted);
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		// A store that is busy, locked or mid-compaction is a condition to report,
+		// not a batch decision: the persisted record is reported as rejected and
+		// nothing is written (Spec batch-execution-recovery).
+		if (!/retired file-store|kernel store|CAS mismatch|store is busy|locked/i.test(message)) throw error;
+		if (!persisted || !isLaneBatchRecord(persisted)) throw error;
+		return laneRejectionReport(input, persisted, message, "settle the reported kernel store condition and retry in the current Host");
+	}
+}
+
+async function runLaneBatchEngine(
 	input: StartBatchInput,
 	persisted: AnyBatchRunStateRecord | null,
 ): Promise<BatchLaneRunReport> {
@@ -1641,6 +1669,9 @@ export async function runLaneBatch(
 			if (result.action === "parked_no_progress") {
 				parkChild(child.task_id, "lane_executor_no_progress: two consecutive stalls without Kernel progress");
 			}
+			// D8: a provider-refused create is an error the report names, never a held child with no handle.
+			if (result.action === "parked_open_rejected")
+				parkChild(child.task_id, result.parkedReason ?? "lane_session_open_rejected");
 		}
 	}
 
