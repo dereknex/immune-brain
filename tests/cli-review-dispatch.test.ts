@@ -554,6 +554,7 @@ describe("review profile required", () => {
 		if (!gitBinary) throw new Error("git is not on PATH");
 		symlinkSync(gitBinary, join(bin, "git"));
 		process.env.PATH = bin;
+		enterHerdr();
 		const ready = await kernel.coordinator.advance(TASK, ctx(root));
 		expect(ready).toMatchObject({ state: "review_preparation_failed", code: "review_host_unavailable" });
 		const recovery = (ready as { recovery_action: string }).recovery_action;

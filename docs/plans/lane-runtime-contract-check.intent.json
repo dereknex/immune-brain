@@ -1,0 +1,49 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "lane-runtime-contract-check",
+  "owner": "user",
+  "goal": "A Lane batch start refuses only when the coordinator's runtime and the Lane Executor's runtime disagree on runtime contract identifiers; a loaded plugin build that merely differs byte-wise from the workspace plugin stays a non-blocking status warning, a claude-code Lane Executor loads the coordinator's own plugin, and the refusal carries a recovery action that names the runtime mismatch (Spec docs/specs/lane-runtime-contract-check.spec.md D1-D4).",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "In a plugin-source workspace whose dist/claude/mcp-server.mjs differs from the loaded build while runtime_contracts.json identifiers match, laneRuntimeContractRefusal returns null and a new lane startBatch reaches batch_state running; an executor_runtime whose task_record differs still refuses batch_runtime_contract_mismatch naming both manifests and creates no batch record. Done looks like: the former byte-skew refusal case in tests/unattended-batch-lanes.test.ts now starts, and the contract-mismatch case still rejects.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-lanes.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "For an ordinary plugin-source checkout with a differing loaded build, pluginSourceSkewWarning still returns loaded_plugin_differs_from_workspace with the reload guidance and projectTaskStatus still lists it in warnings, while laneRuntimeContractRefusal for the same checkout and loaded build returns null. Done looks like: tests/lane-executor-status-guidance.test.ts asserts the warning and the null refusal.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/lane-executor-status-guidance.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "A Lane session opened for a claude-code Executor passes --plugin-dir followed by the coordinator's runtimeClaudePluginDir() in its hostArgs, alongside the profile's --model and --effort; a pi Executor's hostArgs carry no --plugin-dir. Done looks like: the requested-executor-profile cases in tests/lane-sessions.test.ts assert both argv shapes.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/lane-sessions.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC4",
+      "assertion": "The batch reason table maps batch_runtime_contract_mismatch to a rejected state whose recovery_action tells the user to load the same Immune-Brain runtime contracts in the coordinator Host and the Lane Executor Host and retry in the current Host, with no mention of a conflicting branch; batch_run_rejected keeps its existing text. Done looks like: the reason-table expectations in tests/unattended-batch-run.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-run.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/lane-runtime-contract-check.md",
+    "docs/plans/lane-runtime-contract-check.intent.json",
+    "docs/specs/lane-runtime-contract-check.spec.md",
+    "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+    "plugins/immune-brain-antigravity/runtime/host-core/runtime.ts",
+    "plugins/immune-brain-antigravity/runtime/lane_sessions/index.ts",
+    "plugins/immune-brain-antigravity/runtime/unattended/batch_lanes.ts",
+    "plugins/immune-brain-antigravity/runtime/unattended/batch_reasons.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/host-core/runtime.ts",
+    "plugins/immune-brain/runtime/lane_sessions/index.ts",
+    "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+    "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+    "tests/lane-executor-status-guidance.test.ts",
+    "tests/lane-sessions.test.ts",
+    "tests/unattended-batch-lanes.test.ts",
+    "tests/unattended-batch-run.test.ts"
+  ],
+  "risk": "critical",
+  "revision": 1
+}

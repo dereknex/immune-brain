@@ -12,6 +12,7 @@
 // enrollment, session reconciliation); `observeLanes` performs no writes.
 // Verification: `bun test tests/lane-sessions.test.ts`.
 import { resolveSessionProvider, SESSION_PROVIDER_REGISTRY, type SessionProviderDescriptor } from "../session/provider_registry";
+import { runtimeClaudePluginDir } from "../plugin_source_skew";
 import type { ExecutorHostKind, SupervisedSessionPort } from "../session/supervised_session_port";
 import { laneExecutorChoice } from "../unattended/agent_profiles";
 import type { ExecutorPreferences } from "../unattended/agent_profiles";
@@ -120,7 +121,10 @@ function resumeChildren(record: BatchLaneRunStateRecord): Array<{ task_id: strin
  * profile: the frozen/requested choice, else the configured `executor` role,
  * else the Parent Host on its defaults. The entry is submitted via prompt, so
  * no `--print` flag is included; model and effort use the same flags the
- * supervisor and Review sessions use (`--thinking` for pi effort).
+ * supervisor and Review sessions use (`--thinking` for pi effort). A
+ * claude-code Executor is pointed at the coordinator's own plugin directory, so
+ * it cannot run a different build than the coordinator (Spec
+ * lane-runtime-contract-check D3).
  */
 export function executorSessionTarget(input: { root: string; executor?: ExecutorPreferences; host: ExecutorHostKind }): {
 	host: ExecutorHostKind;
@@ -130,6 +134,10 @@ export function executorSessionTarget(input: { root: string; executor?: Executor
 	const hostArgs: string[] = [];
 	if (choice.model) hostArgs.push("--model", choice.model);
 	if (choice.effort) hostArgs.push(choice.host === "pi" ? "--thinking" : "--effort", choice.effort);
+	if (choice.host === "claude-code") {
+		const pluginDir = runtimeClaudePluginDir();
+		if (pluginDir) hostArgs.push("--plugin-dir", pluginDir);
+	}
 	return { host: choice.host as ExecutorHostKind, hostArgs };
 }
 

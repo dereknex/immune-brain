@@ -769,6 +769,8 @@ describe("shared batch preflight projection", () => {
 		const expected: Record<string, [string, string]> = {
 			batch_entry_ambiguous: ["batch_entry_ambiguous: specify exactly one of initiative_slug or task_id", "specify exactly one batch entry and retry in the current Host"],
 			batch_entry_kind_mismatch: ["batch_entry_kind_mismatch: the existing batch has a different plan source", "use the entry matching the existing batch in the current Host"],
+			batch_agreement_invalid: ["<detail>", "Correct the agreement fields and retry in the current Host."],
+			batch_record_retired: ["<detail>", "Inspect the recorded batch, then use retire_stale_batch for this Initiative in the current Host."],
 			batch_runtime_too_old: ["batch_runtime_too_old: <detail>", "reconnect the immune-brain MCP server or upgrade the plugin so the loaded runtime supports this batch record, then retry in the current Host"],
 			invalid_slug: ["invalid initiative slug: <detail>", "specify a valid initiative slug and retry in the current Host"],
 			batch_state_unreadable: ["batch run state is unreadable or invalid: <detail>", "resolve or remove the invalid batch state file, then retry in the current Host"],
@@ -802,6 +804,7 @@ describe("shared batch preflight projection", () => {
 			cancelled_before_execution: ["user cancelled before batch execution", "wait for a fresh literal-user request"],
 			precondition_commit_failed: ["batch precondition commit failed: <detail>", "repair the reported Git precondition failure and retry the batch in the current Host"],
 			batch_run_rejected: ["<detail>", "delete or rename the conflicting branch, or commit working changes and retry in the current Host"],
+			batch_runtime_contract_mismatch: ["<detail>", "load the same Immune-Brain runtime contracts in the coordinator Host and the Lane Executor Host, then retry in the current Host"],
 			stale_batch_absent: ["no retirable batch record to dispose: <detail>", "start a batch for this Initiative, or inspect the batch records under .imm/state/batches in the current Host"],
 			stale_batch_in_flight: ["a batch child is still mid-flight, so the record cannot be disposed: <detail>", "settle or stop the in-flight child through its own task, then dispose the batch in the current Host; a child whose Kernel run already ended no longer blocks the disposition"],
 			lane_config_invalid: ["lane_config_invalid", "Correct the Lane configuration and retry in the current Host."],

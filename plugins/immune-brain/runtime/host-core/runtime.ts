@@ -98,7 +98,7 @@ import {
 } from "../loop_daemon/interaction/local_channel";
 import { LANE_EXECUTOR_ENV, LANE_EXECUTOR_HEADLESS, writeLaneDecisionRequest } from "../unattended/lane_decision_request";
 import { createBatchKernelPort } from "../unattended/batch_kernel_port";
-import { createBatchTrackerPort, laneRuntimeContractRefusal, type LaneInstructionRequest, type LaneOffer, type LaneSessionCloseRequest } from "../unattended/batch_lanes";
+import { createBatchTrackerPort, laneRuntimeContractRefusal, RUNTIME_CONTRACT_MISMATCH, type LaneInstructionRequest, type LaneOffer, type LaneSessionCloseRequest } from "../unattended/batch_lanes";
 import { retireStaleBatch } from "../unattended/batch_disposition";
 import { runEntryManifest, type RunEntryManifest } from "../unattended/run_entry_manifest";
 import { batchTopologyDigest, isLaneBatchRecord, parkLaneForExecutor, type BatchLaneRunReport } from "../unattended/batch_state";
@@ -1303,7 +1303,7 @@ export class HostRuntime {
 		// contracts is refused before the gate opens; a match adds nothing.
 		if (options.max_parallel !== undefined && !isResuming) {
 			const contractRefusal = laneRuntimeContractRefusal(this.cwd);
-			if (contractRefusal) return batchReason("batch_run_rejected", contractRefusal);
+			if (contractRefusal) return batchReason("batch_runtime_contract_mismatch", contractRefusal);
 		}
 		// 5. Literal-user gate plus the shared reuse decision, the post-gate
 		// claim/drift cascade, and the Batch Authorization binding. The Host supplies
@@ -1544,7 +1544,8 @@ export class HostRuntime {
 		}
 
 		// review-3 & review-batch-preflight-recovery-is-diagnostic: map rejected batch state to rejected result with same-Host recovery action
-		if (report.batch_state === "rejected") return batchReason("batch_run_rejected", report.reason ?? "");
+		if (report.batch_state === "rejected")
+			return batchReason(report.reason?.startsWith(`${RUNTIME_CONTRACT_MISMATCH}: `) ? "batch_runtime_contract_mismatch" : "batch_run_rejected", report.reason ?? "");
 
 		if (!options.plan_source && report.batch_state === "completed" && report.final_verification?.passed)
 			report = await completedParentReport(this.cwd, initiativeSlug, this.readInitiative, this.batchTracker) ?? report;
