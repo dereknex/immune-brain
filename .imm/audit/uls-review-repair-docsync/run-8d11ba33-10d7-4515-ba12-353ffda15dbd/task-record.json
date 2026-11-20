@@ -1,0 +1,177 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "uls-review-repair-docsync",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "uls-review-repair-docsync",
+    "goal": "Restore the full suite at the uls-review-repair delivery HEAD 49fe1fcb (PR #581, imm/unified-lane-sessions; Spec docs/specs/unified-lane-sessions.spec.md). Batch final verification failed bun test with 5 failures in 5 files, all one root cause: rr-8 changed docs/reference/immune-brain-config.md (session_providers default back to [\"herdr\"]) but did not regenerate its packaged mirror plugins/immune-brain/dist/docs/reference/immune-brain-config.md, so `bun scripts/sync-dist-docs.ts --check` reports 1 out-of-sync doc. Regenerate the mirror with `bun scripts/sync-dist-docs.ts` (and any other derived output it reports) so it is byte-identical to the docs/ source; do not change the docs/ source text or the runtime default.",
+    "acceptance": [
+      {
+        "id": "ds-1",
+        "assertion": "bun run typecheck passes at the repaired tip.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"run\",\n      \"typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "ds-2",
+        "assertion": "`bun scripts/sync-dist-docs.ts --check` reports every packaged doc in sync.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"scripts/sync-dist-docs.ts\",\n      \"--check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "ds-3",
+        "assertion": "Every test in tests/git-integration-preference.test.ts, which failed at delivery HEAD 49fe1fcb only because the packaged immune-brain-config.md mirror is stale, passes without skipping, deleting or weakening a case.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/git-integration-preference.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "ds-4",
+        "assertion": "Every test in tests/pi-only-current-contracts.test.ts, which failed at delivery HEAD 49fe1fcb only because the packaged immune-brain-config.md mirror is stale, passes without skipping, deleting or weakening a case.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-only-current-contracts.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "ds-5",
+        "assertion": "Every test in tests/loop-daemon-contracts.test.ts, which failed at delivery HEAD 49fe1fcb only because the packaged immune-brain-config.md mirror is stale, passes without skipping, deleting or weakening a case.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-daemon-contracts.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "ds-6",
+        "assertion": "Every test in tests/dist-docs-sync-contract.test.ts, which failed at delivery HEAD 49fe1fcb only because the packaged immune-brain-config.md mirror is stale, passes without skipping, deleting or weakening a case.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/dist-docs-sync-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "ds-7",
+        "assertion": "Every test in tests/skill-dist-consistency.test.ts, which failed at delivery HEAD 49fe1fcb only because the packaged immune-brain-config.md mirror is stale, passes without skipping, deleting or weakening a case.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/skill-dist-consistency.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/uls-review-repair-docsync.intent.json",
+      "plugins/immune-brain/dist/docs/reference/immune-brain-config.md"
+    ],
+    "risk": "routine",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/uls-review-repair-docsync.intent.json",
+    "content_hash": "sha256:b1d38e2d28cf005210f45bb66b85c7f815806cbf650d4606213bacfb7e5de892"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:b1d38e2d28cf005210f45bb66b85c7f815806cbf650d4606213bacfb7e5de892",
+  "git_base_head": "49fe1fcb0a57dadb206890b83d1dcd26b697f50d",
+  "attestations": [
+    {
+      "id": "approval-qa-f106ec40",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:b1d38e2d28cf005210f45bb66b85c7f815806cbf650d4606213bacfb7e5de892",
+      "diff_hash": "sha256:53ca1f99037f98e327845fb9ecf4e973874f278f389fadb8393d6cb8a0b828aa",
+      "actor_id": "deterministic-qa",
+      "summary": "all 8 project verification check(s) passed; execution=sha256:e436b15981ab3028a9fdea757a19e6c86b3c8b4cbd09ba305d7a0d4f4e23a8b2",
+      "acceptance_results": [
+        {
+          "acceptance_id": "ds-1",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:e436b15981ab3028a9fdea757a19e6c86b3c8b4cbd09ba305d7a0d4f4e23a8b2"
+        },
+        {
+          "acceptance_id": "ds-2",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:e436b15981ab3028a9fdea757a19e6c86b3c8b4cbd09ba305d7a0d4f4e23a8b2"
+        },
+        {
+          "acceptance_id": "ds-3",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:e436b15981ab3028a9fdea757a19e6c86b3c8b4cbd09ba305d7a0d4f4e23a8b2"
+        },
+        {
+          "acceptance_id": "ds-4",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:e436b15981ab3028a9fdea757a19e6c86b3c8b4cbd09ba305d7a0d4f4e23a8b2"
+        },
+        {
+          "acceptance_id": "ds-5",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:e436b15981ab3028a9fdea757a19e6c86b3c8b4cbd09ba305d7a0d4f4e23a8b2"
+        },
+        {
+          "acceptance_id": "ds-6",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:e436b15981ab3028a9fdea757a19e6c86b3c8b4cbd09ba305d7a0d4f4e23a8b2"
+        },
+        {
+          "acceptance_id": "ds-7",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:e436b15981ab3028a9fdea757a19e6c86b3c8b4cbd09ba305d7a0d4f4e23a8b2"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-8559ec23",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:b1d38e2d28cf005210f45bb66b85c7f815806cbf650d4606213bacfb7e5de892",
+      "diff_hash": "sha256:53ca1f99037f98e327845fb9ecf4e973874f278f389fadb8393d6cb8a0b828aa",
+      "actor_id": "cli:claude-code:72630169-d25c-4c4c-a308-417ba0bf1302",
+      "summary": "Packaged immune-brain-config.md mirror regenerated to the session_providers default [\"herdr\"] and is byte-identical to docs/reference/immune-brain-config.md at the review commit (empty git diff between the two blobs); intent file added; no source, runtime or test changes, so ds-1..ds-7 rest on settled QA. Blast radius: tier low, one derived doc mirror plus a plan file.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "49fe1fcb0a57dadb206890b83d1dcd26b697f50d",
+        "review_commit": "929d068fdfd2c17e62c176164fe4bee577d39e3c"
+      },
+      "reviewer_verdict_sha256": "sha256:c3acaca140a11e7934f0de031d2ee226d98c4c99cbfda8d1eaa887a9126d5f06"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:uls-review-repair-docsync:2026-11-20T06:55:28.534Z",
+      "at": "2026-11-20T06:55:28.534Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/uls-review-repair-docsync.intent.json"
+    },
+    {
+      "id": "record_approval:uls-review-repair-docsync:2026-11-20T06:55:43.342Z",
+      "at": "2026-11-20T06:55:43.342Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-f106ec40\naction_v2_sha256:19b3ed475c828760423a4d98318e729c2dc8fe2f2f226d7c6908e5ad47708813",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-20T06:55:43.343Z"
+      }
+    },
+    {
+      "id": "record_approval:uls-review-repair-docsync:2026-11-20T06:57:53.752Z",
+      "at": "2026-11-20T06:57:53.752Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-8559ec23\naction_v2_sha256:823a3ef6468b04bfcfeab9a19c0d63f814dc9732b7a725a19d7da42a817bd870",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:72630169-d25c-4c4c-a308-417ba0bf1302",
+        "confirmation_ref": "pi:cli:claude-code:72630169-d25c-4c4c-a308-417ba0bf1302",
+        "issued_at": "2026-11-20T06:57:53.752Z"
+      },
+      "review_started_at": "2026-11-20T06:55:46.070Z",
+      "review_submitted_at": "2026-11-20T06:57:53.280Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:uls-review-repair-docsync:2026-11-20T06:57:55.147Z",
+      "at": "2026-11-20T06:57:55.147Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:6352c7ad8cc2af25816f5ec4788b246594d0fc7d293b8d6b2af62efab750dab5"
+    }
+  ]
+}
