@@ -29,7 +29,7 @@ import type { GhExecution, GhTransport } from "../plugins/immune-brain/runtime/g
 import {
 	createAgentHandlerPort,
 	createDefaultAgentHandlerDeps,
-	driveInitiativeLane,
+	type AgentDriveInitiativeRequest,
 	readPlanPublication,
 	type AgentDriveRequest,
 	type AgentDriveResult,
@@ -56,7 +56,7 @@ import { createFakeLoopGitHubPort } from "../plugins/immune-brain/runtime/loop_d
 import { escalationKey, escalationKeyMarker } from "../plugins/immune-brain/runtime/loop_daemon/escalation.ts";
 import { eventTarget } from "../plugins/immune-brain/runtime/loop_daemon/guards.ts";
 import { setCachedDaemonGithubLogin } from "../plugins/immune-brain/runtime/loop_daemon/identity.ts";
-import { readLoopJob } from "../plugins/immune-brain/runtime/loop_daemon/jobs.ts";
+import { loopJobEvents, readLoopJob } from "../plugins/immune-brain/runtime/loop_daemon/jobs.ts";
 import { readWorkItem, writeWorkItem } from "../plugins/immune-brain/runtime/loop_daemon/work_items.ts";
 import { LOOP_PR_MARKER, repairKey, saveRepairRetries } from "../plugins/immune-brain/runtime/loop_daemon/repair_agent.ts";
 import { initLoopState, loadLoopDispatches } from "../plugins/immune-brain/runtime/loop_daemon/state.ts";
@@ -917,13 +917,15 @@ describe("Loop Daemon: Agent-Backed Handlers (S9)", () => {
 		expect(harness.drives.length).toBe(1);
 	});
 
-	// Exit condition: Slice S2 of loop-leader-uls-alignment adds the Initiative entry
-	// and replaces this refusal with the drive it guards.
-	it("fails an Initiative-shaped drive with lane_initiative_entry_pending and leaves the WorkItem retryable", async () => {
+	/** Run the approve tick for an Initiative-shaped issue-10 through a port whose `driveInitiative` the caller supplies. */
+	async function approveInitiativeShaped(
+		driveInitiative: AgentHandlerDeps["driveInitiative"],
+		seed?: (stateDir: string) => void,
+	) {
 		const workspace = makeWorkspace({ loopConfig: { mode: "assist" } });
 		cleanups.push(workspace.cleanup);
 		const harness = makeHarness(workspace);
-		const port = createAgentHandlerPort({ ...harness.deps, driveInitiative: async (input) => driveInitiativeLane(input) });
+		const port = createAgentHandlerPort({ ...harness.deps, driveInitiative });
 		await runLoopDaemonCli(["tick", "--json"], workspace.root, {
 			gh: mockGh(), gitHubPort: harness.gitHubPort,
 			snapshotOverride: snapshotOf([issue(10, "Add the S9 fixture behaviour")]),
@@ -935,6 +937,7 @@ describe("Loop Daemon: Agent-Backed Handlers (S9)", () => {
 		const shaped = readWorkItem(workspace.stateDir, "issue-10")!;
 		shaped.binding.initiative_slug = "widget-initiative";
 		writeWorkItem(workspace.stateDir, shaped);
+		seed?.(workspace.stateDir);
 
 		const approvedAt = new Date(Date.parse(TS) + 60_000).toISOString();
 		const approval: RawComment = { id: 9005, body: `/approve ${plan.digest}`, user: { login: "human-owner" }, author_association: "OWNER", created_at: approvedAt, updated_at: approvedAt };
@@ -946,14 +949,60 @@ describe("Loop Daemon: Agent-Backed Handlers (S9)", () => {
 			agentPort: port, standingDaemon: true,
 		});
 		await settleJob(workspace.stateDir, "issue-10");
+		return { workspace, harness };
+	}
+
+	it("drives an Initiative as one batch: writes binding.batch_id, re-enters that batch, and settles once with one E13", async () => {
+		const priorRetry = process.env.IMM_LOOP_DIALOG_RETRY_MS;
+		process.env.IMM_LOOP_DIALOG_RETRY_MS = "1";
+		try {
+			const calls: AgentDriveInitiativeRequest[] = [];
+			const { workspace, harness } = await approveInitiativeShaped(async (input) => {
+				calls.push(input);
+				if (calls.length <= 4) return { settled: false, exit: null, reason: "lane running", batch_id: "batch-widget-initiative-1" };
+				return {
+					settled: true,
+					exit: { state: "exited", exit_code: 0, generation: null, final_commit_sha: "c".repeat(40), verification_evidence_digest: `sha256:${"d".repeat(64)}` },
+					reason: "batch completed with passing final verification",
+					batch_id: "batch-widget-initiative-1",
+				};
+			});
+			const job = readLoopJob(workspace.stateDir, "issue-10");
+			expect(job?.outcome).toBe("settled");
+			// First entry has no batch; every later pass re-enters the recorded one.
+			expect(calls[0]!.batch_id).toBeNull();
+			expect(calls.slice(1).every((call) => call.batch_id === "batch-widget-initiative-1")).toBe(true);
+			expect(calls.length).toBe(5);
+			expect(readWorkItem(workspace.stateDir, "issue-10")!.binding.batch_id).toBe("batch-widget-initiative-1");
+			// One settled entry for the batch, not one per slice, so one E13.
+			expect(job?.settled_lanes).toHaveLength(1);
+			const e13 = loopJobEvents(workspace.stateDir, { now: TS }).filter((event) => event.kind === "E13_LANE_SETTLED");
+			expect(e13).toHaveLength(1);
+			// No single-task Lane ran for a slice.
+			expect(harness.drives).toHaveLength(0);
+		} finally {
+			if (priorRetry === undefined) delete process.env.IMM_LOOP_DIALOG_RETRY_MS;
+			else process.env.IMM_LOOP_DIALOG_RETRY_MS = priorRetry;
+		}
+	});
+
+	it("fails a refused Initiative drive, clears a binding whose batch is gone, and leaves the WorkItem retryable", async () => {
+		const { workspace, harness } = await approveInitiativeShaped(
+			async () => ({ settled: false, exit: null, reason: "final_verification_required: configure batch.final_verification", batch_id: null }),
+			(stateDir) => {
+				const item = readWorkItem(stateDir, "issue-10")!;
+				item.binding.batch_id = "batch-gone";
+				writeWorkItem(stateDir, item);
+			},
+		);
 		const job = readLoopJob(workspace.stateDir, "issue-10");
 		expect(job?.outcome).toBe("failed");
-		expect(job?.detail).toContain("lane_initiative_entry_pending");
-		// No single-task Lane ran for a slice, and nothing settled.
-		expect(harness.drives).toHaveLength(0);
+		expect(job?.detail).toContain("final_verification_required");
+		expect(job?.detail).not.toContain("lane_initiative_entry_pending");
 		expect(job?.settled_lanes ?? []).toEqual([]);
-		// The WorkItem is neither closed, escalated nor abandoned: a later tick may retry once S2 lands.
+		expect(harness.drives).toHaveLength(0);
 		const item = readWorkItem(workspace.stateDir, "issue-10")!;
+		expect(item.binding.batch_id).toBeNull();
 		expect(["closed", "escalated", "abandoned"]).not.toContain(item.state);
 		expect(item.binding.initiative_slug).toBe("widget-initiative");
 	});

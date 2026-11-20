@@ -32,6 +32,7 @@ import {
 	LOOP_DAEMON_BATCH_ACTOR,
 	LOOP_DAEMON_COMPOSITION_ROOT,
 	type LoopDriveInput,
+	type LoopInitiativeDriveInput,
 } from "../plugins/immune-brain/runtime/loop_daemon/drive_dispatcher";
 import { laneDeliveryEvidence } from "../plugins/immune-brain/runtime/unattended/batch_preflight";
 import type { BatchRunnerKernelPort } from "../plugins/immune-brain/runtime/unattended/batch_kernel_port";
@@ -221,6 +222,7 @@ function driveArgs(
 	kernel: BatchRunnerKernelPort,
 	fake: FakeHerdr,
 	overrides: Partial<LoopDriveInput> = {},
+	slug: string = TASK,
 ): LoopDriveInput {
 	const intent = readTaskIntent(repo, TASK);
 	const children = [{
@@ -239,7 +241,7 @@ function driveArgs(
 	const budget = { max_children: 1, qa_failure_limit: 2 };
 	const binding = {
 		batch_id: batchId,
-		initiative_slug: TASK,
+		initiative_slug: slug,
 		plan_digest: planDigest,
 		branch: `imm/${TASK}`,
 		base_head: base,
@@ -517,5 +519,101 @@ describe("LDP-A2: no sessions outside Herdr, fail-closed evidence", () => {
 			commits: [base],
 		});
 		expect(laneDeliveryEvidence(auditRepo, TASK)).toMatchObject({ ok: false, reason: expect.stringContaining("no audit evidence") });
+	});
+});
+
+describe("ULS S2-AC1: the Initiative entry through the session port", () => {
+	const SLUG = "widget-initiative";
+	const COMMANDS = ["bun run typecheck", "bun test"];
+
+	/** The single-task args re-shaped as an Initiative drive over the same slice. */
+	function initiativeArgs(
+		repo: string,
+		base: string,
+		batchId: string,
+		kernel: BatchRunnerKernelPort,
+		fake: FakeHerdr,
+		overrides: Partial<LoopInitiativeDriveInput> = {},
+	): LoopInitiativeDriveInput {
+		const { task_id: _task, ...shared } = driveArgs(repo, base, batchId, kernel, fake, {}, SLUG) as Extract<LoopDriveInput, { task_id: string }>;
+		void _task;
+		return { ...shared, kind: "initiative", slug: SLUG, final_verification: COMMANDS, ...overrides };
+	}
+
+	it("writes one v3 record with entry kind initiative, retain_branch, parent_relayed and required final verification", async () => {
+		herdrEnv();
+		const { repo, base } = fixture();
+		const fake = new FakeHerdr();
+		const kernel = fakeKernel(new Map([[TASK, "r1"]]), new Set());
+		const batchId = `batch-${SLUG}-start`;
+		const first = await dispatchLoopDrive(initiativeArgs(repo, base, batchId, kernel, fake));
+		expect(first.reason).toBe("lane running");
+		expect(first.settled).toBe(false);
+		expect(first.batch_id).toBe(batchId);
+		const record = readAnyBatchRunState(repo, batchId);
+		if (!record || !isLaneBatchRecord(record)) throw new Error("expected a v3 lane batch record");
+		// The Initiative entry kind carries no plan_source, like a Host Initiative record.
+		expect(record.plan_source).toBeUndefined();
+		expect(record.initiative_slug).toBe(SLUG);
+		expect(record.return_policy).toBe("retain_branch");
+		expect(record.interaction_mode).toBe("parent_relayed");
+		expect(record.final_verification_required).toBe(true);
+		expect(record.final_verification).toEqual(COMMANDS);
+		expect(record.confirmation).toMatchObject({ source: "policy_auto", ref: "policy_auto:plan" });
+		expect(fake.opens).toHaveLength(1);
+	});
+
+	it("refuses final_verification_required before writing anything when no commands are configured", async () => {
+		herdrEnv();
+		const { repo, base } = fixture();
+		const fake = new FakeHerdr();
+		const kernel = fakeKernel(new Map([[TASK, "r1"]]), new Set());
+		const batchId = `batch-${SLUG}-nocommands`;
+		const refused = await dispatchLoopDrive(initiativeArgs(repo, base, batchId, kernel, fake, { final_verification: [] }));
+		expect(refused.settled).toBe(false);
+		expect(refused.reason).toContain("final_verification_required");
+		expect(refused.batch_id).toBeNull();
+		expect(readAnyBatchRunState(repo, batchId)).toBeNull();
+		expect(fake.opens).toHaveLength(0);
+	});
+
+	it("refuses lane_session_unavailable without a usable provider and leaves no record", async () => {
+		const { repo, base } = fixture();
+		const fake = new FakeHerdr();
+		const kernel = fakeKernel(new Map([[TASK, "r1"]]), new Set());
+		const batchId = `batch-${SLUG}-refused`;
+		const refused = await dispatchLoopDrive(initiativeArgs(repo, base, batchId, kernel, fake));
+		expect(refused.settled).toBe(false);
+		expect(refused.reason).toContain("lane_session_unavailable");
+		expect(refused.batch_id).toBeNull();
+		expect(readAnyBatchRunState(repo, batchId)).toBeNull();
+		expect(fake.opens).toHaveLength(0);
+	});
+
+	it("refuses with the rejection reason when the batch authorization does not match the capability", async () => {
+		herdrEnv();
+		const { repo, base } = fixture();
+		const fake = new FakeHerdr();
+		const kernel = fakeKernel(new Map([[TASK, "r1"]]), new Set());
+		const batchId = `batch-${SLUG}-mismatch`;
+		const args = initiativeArgs(repo, base, batchId, kernel, fake, { slug: "other-initiative" });
+		const refused = await dispatchLoopDrive(args);
+		expect(refused.settled).toBe(false);
+		expect(refused.reason).toContain("initiative_slug mismatch");
+		expect(refused.batch_id).toBeNull();
+		expect(readAnyBatchRunState(repo, batchId)).toBeNull();
+	});
+
+	it("keeps single-task drives at final_verification.required false", async () => {
+		herdrEnv();
+		const { repo, base } = fixture();
+		const fake = new FakeHerdr();
+		const kernel = fakeKernel(new Map([[TASK, "r1"]]), new Set());
+		const batchId = `batch-${TASK}-single`;
+		await dispatchLoopDrive(driveArgs(repo, base, batchId, kernel, fake));
+		const record = readAnyBatchRunState(repo, batchId);
+		if (!record || !isLaneBatchRecord(record)) throw new Error("expected a v3 lane batch record");
+		expect(record.plan_source).toBe("single_task");
+		expect(record.final_verification_required).toBe(false);
 	});
 });

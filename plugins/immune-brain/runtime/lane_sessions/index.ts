@@ -23,6 +23,7 @@ import {
 	isTerminalBatchState,
 	readAnyBatchRunState,
 	type AnyBatchRunStateRecord,
+	type BatchEntryKind,
 	type BatchLaneRunStateRecord,
 } from "../unattended/batch_state";
 import type { BatchAgreement } from "../unattended/batch_agreement";
@@ -67,7 +68,7 @@ export interface LaneSessionsDeps {
 	providerRegistry?: readonly SessionProviderDescriptor[];
 	createPort?: (provider: string, env: Record<string, string | undefined>) => SupervisedSessionPort;
 	/** Entry kind the batch was authorized under; new records persist it so re-entry matches. Carried opaquely: this composition root never interprets it. */
-	entry_kind?: "single_task";
+	entry_kind?: BatchEntryKind;
 	hostArgs?: string[] | ((taskId: string) => string[]);
 	/** The requested Executor profile; sessions open with the effective choice, never the Parent Host by default. */
 	executor?: ExecutorPreferences;

@@ -6596,13 +6596,16 @@ function isRetiredLaneRecord(record) {
 function isSingleTaskRecord(record) {
   return isLaneBatchRecord(record) && record.plan_source === "single_task";
 }
+function persistedEntryKind(kind) {
+  return kind === "initiative" ? undefined : kind;
+}
 function entryKindMatches(persisted, input) {
   const persistedKind = isLaneBatchRecord(persisted) ? persisted.plan_source : undefined;
-  return persistedKind === (input.plan_source ?? input.entry_kind);
+  return persistedKind === persistedEntryKind(input.plan_source ?? input.entry_kind);
 }
 function planSourceIdentity(input) {
-  const kind = input.plan_source ?? input.entry_kind;
-  return kind ? { plan_source: kind } : {};
+  const kind = persistedEntryKind(input.plan_source ?? input.entry_kind);
+  return kind === "single_task" ? { plan_source: kind } : {};
 }
 function defaultAgreementPolicies(input) {
   const single = input.plan_source === "single_task";
@@ -7033,7 +7036,7 @@ function batchTopologyDigest(tasks) {
 }
 function prepareBatchLaneRunState(input) {
   validateBatchId(input.batch_id);
-  const entryKind = input.plan_source ?? input.entry_kind;
+  const entryKind = persistedEntryKind(input.plan_source ?? input.entry_kind);
   return {
     contract: "assurance_kernel/batch_run_state/v3",
     ...entryKind ? { plan_source: entryKind } : {},

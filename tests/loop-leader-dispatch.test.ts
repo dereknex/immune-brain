@@ -9,9 +9,9 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "bun:test";
 
 import type { AgentSessionProcess, AgentSessionProvider, AgentSessionRequest } from "../plugins/immune-brain/runtime/loop_daemon/agent_runner.ts";
@@ -30,6 +30,8 @@ import {
 	type LeaderDispatchDeps,
 } from "../plugins/immune-brain/runtime/loop_daemon/leader_dispatch.ts";
 import { driveInitiativeLane } from "../plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts";
+import { resolveInitiativeBatchId } from "../plugins/immune-brain/runtime/loop_daemon/drive_dispatcher.ts";
+import { batchStatePath } from "../plugins/immune-brain/runtime/kernel/storage_paths.ts";
 import { loadLoopState } from "../plugins/immune-brain/runtime/loop_daemon/state.ts";
 import type { LoopGitHubPort } from "../plugins/immune-brain/runtime/loop_daemon/github_port.ts";
 import type { GhTransport } from "../plugins/immune-brain/runtime/github_issue_tracker.ts";
@@ -756,24 +758,101 @@ describe("Loop Leader: initiative plan contract (S3-AC1)", () => {
 	});
 });
 
-describe("Loop Leader: initiative entry refusal (ULS S1)", () => {
-	// Exit condition: Slice S2 of loop-leader-uls-alignment adds the Initiative entry
-	// and replaces this refusal with the drive it guards.
-	it("refuses lane_initiative_entry_pending without enrolling, planning or settling anything", async () => {
-		const result = await driveInitiativeLane({
-			root: "/nonexistent-root",
-			slug: "widget-initiative",
-			task_ids: ["task-a", "task-b"],
-			plan_digest: "sha256:plan",
-			confirmation_ref: "policy_auto:plan",
+describe("Loop Leader: Initiative entry batch resolution (ULS S2-AC2)", () => {
+	const SLUG = "widget-initiative";
+	const TASKS = ["task-a", "task-b"];
+
+	/** A minimal v3 lane batch record, written where the batch store reads it. */
+	function seedBatch(root: string, batchId: string, batchState: string, children = TASKS): void {
+		const integrated = batchState === "completed";
+		const commit = "a".repeat(40);
+		const record = {
+			contract: "assurance_kernel/batch_run_state/v3",
+			batch_id: batchId,
+			initiative_slug: SLUG,
 			base_head: "deadbeef",
-			now: NOW,
-		});
+			branch: `imm/${SLUG}`,
+			plan_digest: "sha256:plan",
+			confirmation_time: NOW,
+			batch_state: batchState,
+			max_parallel: 1,
+			children: children.map((taskId) => ({
+				task_id: taskId,
+				slice_id: taskId,
+				state: integrated ? "integrated" : "pending",
+				commit: integrated ? commit : null,
+				blocked_by: [],
+				reason: null,
+				qa_failures: 0,
+				lane: integrated
+					? { path: root, branch: `imm/${SLUG}-${taskId}`, base_head: "deadbeef", lane_commit: commit, run_id: `run-${taskId}` }
+					: null,
+			})),
+			commits: integrated ? [commit] : [],
+			consecutive_qa_failures: 0,
+			budget: { max_children: children.length, qa_failure_limit: 2 },
+			created_at: NOW,
+			updated_at: NOW,
+		};
+		const path = join(root, batchStatePath(batchId));
+		mkdirSync(dirname(path), { recursive: true });
+		writeFileSync(path, `${JSON.stringify(record, null, 2)}\n`);
+	}
+
+	it("re-enters the recorded batch while it is active, without minting a second one", () => {
+		const { root } = workspace();
+		seedBatch(root, "batch-recorded", "running");
+		for (let tick = 0; tick < 3; tick++) {
+			expect(resolveInitiativeBatchId(root, SLUG, "batch-recorded", TASKS)).toEqual({ batch_id: "batch-recorded", origin: "recorded" });
+		}
+		expect(readdirSync(join(root, ".imm/state/batches")).filter((name) => name.endsWith(".json"))).toEqual(["batch-recorded.json"]);
+	});
+
+	it("adopts an active batch found by task lookup when the binding write never landed", () => {
+		const { root } = workspace();
+		// The daemon crashed after startLanes wrote the record but before WorkItem.binding.batch_id.
+		seedBatch(root, "batch-orphaned", "running");
+		expect(resolveInitiativeBatchId(root, SLUG, null, TASKS)).toEqual({ batch_id: "batch-orphaned", origin: "adopted" });
+	});
+
+	it("keeps a completed recorded batch so the job settles from it instead of starting another", () => {
+		const { root } = workspace();
+		seedBatch(root, "batch-done", "completed");
+		expect(resolveInitiativeBatchId(root, SLUG, "batch-done", TASKS)).toEqual({ batch_id: "batch-done", origin: "recorded" });
+	});
+
+	it("drops a terminal or missing recorded batch before a new start", () => {
+		const { root } = workspace();
+		seedBatch(root, "batch-failed", "failed");
+		for (const recorded of ["batch-failed", "batch-gone"]) {
+			const resolved = resolveInitiativeBatchId(root, SLUG, recorded, TASKS);
+			expect(resolved.origin).toBe("fresh");
+			expect(resolved.batch_id).not.toBe(recorded);
+			expect(resolved.batch_id.startsWith(`batch-${SLUG}-`)).toBe(true);
+		}
+	});
+
+	it("no longer refuses lane_initiative_entry_pending: a fresh drive without configured final verification refuses final_verification_required before any write", async () => {
+		const { root, stateDir } = workspace();
+		const result = await driveInitiativeLane(
+			{
+				root,
+				slug: SLUG,
+				task_ids: TASKS,
+				batch_id: null,
+				plan_digest: "sha256:plan",
+				confirmation_ref: "policy_auto:plan",
+				base_head: "deadbeef",
+				now: NOW,
+			},
+			{ stateDir, profile: { host: "claude-code" }, pluginRoot: root },
+		);
 		expect(result.settled).toBe(false);
 		expect(result.exit).toBeNull();
-		expect(result.reason).toContain("lane_initiative_entry_pending");
-		expect(result.reason).toContain("widget-initiative");
-		expect(result.reason).toContain("S2");
+		expect(result.batch_id).toBeNull();
+		expect(result.reason).toContain("final_verification_required");
+		expect(result.reason).not.toContain("lane_initiative_entry_pending");
+		expect(existsSync(join(root, ".imm/state/batches"))).toBe(false);
 	});
 });
 

@@ -108,6 +108,8 @@ export interface WorkItem {
 		pr: number | null;
 		/** D3.3: set when the leader shaped this target as an Initiative. */
 		initiative_slug?: string | null;
+		/** ULS D2.4: the v3 batch an Initiative drive started; absent or null reads as no batch yet. */
+		batch_id?: string | null;
 	};
 	pending_interactions: string[];
 	jobs: string[];

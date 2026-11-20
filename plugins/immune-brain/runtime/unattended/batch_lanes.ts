@@ -38,7 +38,7 @@ import type { ReviewProfile } from "../config/layered_config";
 
 export interface StartBatchInput {
 	/** Opaque entry-kind marker for composition roots; the state owner interprets it as the entry kind (D4: the plan identity lives in the record, not the driver input). */
-	entry_kind?: "single_task";
+	entry_kind?: BatchEntryKind;
 	/**
 	 * The Executor request and Parent Host that decide a new batch's frozen
 	 * profile. Set for every batch.
@@ -124,6 +124,7 @@ import {
 	type BatchLaneChildRun,
 	type BatchLaneHandoff,
 	type BatchLaneRunReport,
+	type BatchEntryKind,
 	type BatchLaneRunStateRecord,
 	defaultAgreementPolicies,
 	effectiveReturnPolicy,

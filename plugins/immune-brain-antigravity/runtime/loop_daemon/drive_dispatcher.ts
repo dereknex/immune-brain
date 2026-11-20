@@ -22,11 +22,12 @@ import { auditEvidenceDigest } from "../unattended/batch_git";
 import type { BatchRunnerGitPort } from "../unattended/batch_git";
 import { createBatchKernelPort } from "../unattended/batch_kernel_port";
 import type { BatchRunnerKernelPort } from "../unattended/batch_kernel_port";
-import { observeSingleTask } from "../unattended/batch_plan";
+import { observeInitiative, observeSingleTask } from "../unattended/batch_plan";
 import { createBatchAuthorityRegistry } from "../kernel/batch_authority";
 import type { BatchPlanChild } from "../kernel/batch_authority";
 import { findActiveLaneBatchForTask } from "../unattended/batch_preflight";
-import { isLaneBatchRecord, readAnyBatchRunState } from "../unattended/batch_state";
+import { isLaneBatchRecord, isTerminalBatchState, readAnyBatchRunState } from "../unattended/batch_state";
+import { randomUUID } from "node:crypto";
 import { resolveConfig } from "../config/layered_config";
 import { advanceLanes, startLanes } from "../lane_sessions/index";
 import type { ExecutorPreferences } from "../unattended/agent_profiles";
@@ -50,11 +51,10 @@ export interface LoopDriveSupervision {
 	stop?: boolean;
 }
 
-export interface LoopDriveInput {
+/** The fields every drive entry shares. */
+export interface LoopDriveBase {
 	root: string;
-	/** The single task this Lane drives; it is also the batch's initiative slug. */
-	task_id: string;
-	/** The batch to advance, or to create when no active v3 batch drives this task. */
+	/** The batch to advance, or to create when no active v3 batch drives this entry. */
 	batch_id: string;
 	registry: BatchAuthorityRegistry;
 	capability: object;
@@ -73,6 +73,26 @@ export interface LoopDriveInput {
 	/** Test seam for the session provider; production resolves the real one and fails closed outside Herdr. */
 	createPort?: (provider: string, env: Record<string, string | undefined>) => never;
 }
+
+/** One enrolled task driven as its own single-task Lane batch. */
+export interface LoopSingleTaskDriveInput extends LoopDriveBase {
+	kind?: "single_task";
+	/** The single task this Lane drives; it is also the batch's initiative slug. */
+	task_id: string;
+}
+
+/**
+ * An Initiative whose slices run as one v3 batch (ULS Spec D2.2). `children` are
+ * the carrier's slices in order; `final_verification` is the project's configured
+ * batch verification commands, which the batch requires (D2.3).
+ */
+export interface LoopInitiativeDriveInput extends LoopDriveBase {
+	kind: "initiative";
+	slug: string;
+	final_verification: readonly string[];
+}
+
+export type LoopDriveInput = LoopSingleTaskDriveInput | LoopInitiativeDriveInput;
 
 export interface LoopDriveHold {
 	task_id: string;
@@ -96,7 +116,8 @@ export interface LoopDriveResult {
 	hold_for_dialog: LoopDriveHold | null;
 	/** Present when the child is parked `needs_human`: only a literal-user confirmation resumes it. */
 	parked: { task_id: string; reason: string } | null;
-	batch_id: string;
+	/** The batch record this drive left behind, or null when it wrote none. */
+	batch_id: string | null;
 	reason: string;
 }
 
@@ -117,6 +138,7 @@ function sessionProviders(root: string): string[] {
  * process exit.
  */
 export async function dispatchLoopDrive(input: LoopDriveInput): Promise<LoopDriveResult> {
+	if (input.kind === "initiative") return dispatchInitiativeDrive(input);
 	const providers = sessionProviders(input.root);
 	const active = findActiveLaneBatchForTask(input.root, input.task_id);
 	const batchId = input.batch_id;
@@ -236,7 +258,10 @@ export async function advanceDaemonLanes(root: string, batchId: string, options:
 		};
 	});
 	const capability = registry.issue(binding, authorityChildren, new Date().toISOString());
-	const parent = await observeSingleTask(root, record.initiative_slug);
+	const singleTask = record.plan_source === "single_task";
+	const parent = singleTask
+		? await observeSingleTask(root, record.initiative_slug)
+		: await observeInitiative(root, record.initiative_slug);
 	const kernel = createBatchKernelPort({
 		root,
 		parent,
@@ -253,7 +278,7 @@ export async function advanceDaemonLanes(root: string, batchId: string, options:
 		registry,
 		capability,
 		kernel,
-		entry_kind: "single_task" as const,
+		entry_kind: singleTask ? ("single_task" as const) : ("initiative" as const),
 		providers: sessionProviders(root),
 		host: options.parent_host ?? config.agents.roles.executor?.host ?? "claude-code",
 		env: { ...process.env } as Record<string, string | undefined>,
@@ -265,6 +290,159 @@ export async function advanceDaemonLanes(root: string, batchId: string, options:
 	};
 	const advanced = await advanceLanes(root, batchId, laneDeps as never);
 	return advanced as unknown as Record<string, unknown>;
+}
+
+function laneRecord(root: string, batchId: string) {
+	try {
+		const record = readAnyBatchRunState(root, batchId);
+		return record && isLaneBatchRecord(record) ? record : null;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * The batch an Initiative drive enters (ULS Spec D2.4): the recorded id while its
+ * record is active or completed; else an active batch found through any slice
+ * task, which adopts a batch whose id never reached the WorkItem; else a fresh id.
+ * A missing or terminal recorded batch is dropped here, before any new start.
+ */
+export function resolveInitiativeBatchId(
+	root: string,
+	slug: string,
+	recorded: string | null,
+	taskIds: readonly string[],
+): { batch_id: string; origin: "recorded" | "adopted" | "fresh" } {
+	if (recorded) {
+		const record = laneRecord(root, recorded);
+		if (record && (!isTerminalBatchState(record.batch_state) || record.batch_state === "completed"))
+			return { batch_id: recorded, origin: "recorded" };
+	}
+	for (const taskId of taskIds) {
+		const found = findActiveLaneBatchForTask(root, taskId);
+		if (found) return { batch_id: found.record.batch_id, origin: "adopted" };
+	}
+	return { batch_id: `batch-${slug}-${randomUUID()}`, origin: "fresh" };
+}
+
+/** What a recorded Initiative batch means to the job: completed, refused, or still running. */
+export function initiativeBatchResult(root: string, batchId: string, taskIds: readonly string[]): LoopDriveResult | null {
+	const record = laneRecord(root, batchId);
+	if (!record) return null;
+	const base = { hold_for_dialog: null, parked: null, batch_id: batchId } as const;
+	if (record.batch_state === "completed") {
+		const required = record.final_verification_required !== false;
+		const passed = record.final_verification_result?.passed === true;
+		const last = [...record.children].reverse().find((child) => child.commit);
+		const commit = record.commits.at(-1) ?? last?.commit ?? null;
+		const digest = commit && last ? auditEvidenceDigest(root, commit, last.task_id) : null;
+		if (required && !passed) return { ...base, settled: false, exit: null, reason: "final_verification_not_passed: the batch completed without a passing final verification" };
+		if (!commit) return { ...base, settled: false, exit: null, reason: "batch completed without an integrated commit" };
+		return {
+			...base,
+			settled: true,
+			exit: { state: "exited", exit_code: 0, generation: null, final_commit_sha: commit, verification_evidence_digest: digest },
+			reason: digest ? "batch completed with passing final verification" : "batch completed without audit evidence",
+		};
+	}
+	if (isTerminalBatchState(record.batch_state))
+		return { ...base, settled: false, exit: null, reason: `batch_${record.batch_state}: the Initiative batch ended without completing` };
+	return {
+		...base,
+		settled: false,
+		exit: null,
+		hold_for_dialog: holdOfAny(root, batchId, taskIds),
+		parked: parkedOfAny(root, batchId, taskIds),
+		reason: "lane running",
+	};
+}
+
+/** The settled result of an Initiative batch whose record is already `completed`, else null. */
+export function completedInitiativeBatch(root: string, batchId: string, taskIds: readonly string[]): LoopDriveResult | null {
+	return laneRecord(root, batchId)?.batch_state === "completed" ? initiativeBatchResult(root, batchId, taskIds) : null;
+}
+
+/**
+ * Drive one Initiative as a single v3 batch (ULS Spec D2). First entry
+ * authorizes it with `final_verification.required: true` and starts Lanes; every
+ * later entry advances the recorded batch and never mints a second one.
+ */
+async function dispatchInitiativeDrive(input: LoopInitiativeDriveInput): Promise<LoopDriveResult> {
+	const taskIds = input.children.map((child) => child.task_id);
+	const refuse = (reason: string): LoopDriveResult => ({
+		settled: false,
+		exit: null,
+		hold_for_dialog: null,
+		parked: null,
+		batch_id: laneRecord(input.root, input.batch_id) ? input.batch_id : null,
+		reason,
+	});
+	const completed = completedInitiativeBatch(input.root, input.batch_id, taskIds);
+	if (completed) return completed;
+	const existing = laneRecord(input.root, input.batch_id);
+	const laneDeps = {
+		root: input.root,
+		registry: input.registry,
+		capability: input.capability,
+		kernel: input.kernel,
+		...(input.git ? { git: input.git } : {}),
+		providers: sessionProviders(input.root),
+		host: input.supervision.parent_host,
+		env: { ...process.env } as Record<string, string | undefined>,
+		...(input.supervision.request ? { executor: input.supervision.request } : {}),
+		max_parallel: input.max_parallel ?? 1,
+		now: input.now,
+		confirmation_time: input.confirmation_time,
+		entry_kind: "initiative" as const,
+		...(input.createPort ? { createPort: input.createPort as never } : {}),
+	};
+	let outcome: unknown;
+	if (existing && !isTerminalBatchState(existing.batch_state)) {
+		outcome = await advanceLanes(input.root, input.batch_id, laneDeps as never);
+	} else {
+		if (input.final_verification.length === 0)
+			return refuse("final_verification_required: an Initiative batch needs the project's batch final verification commands; configure batch.final_verification in .imm/config.json");
+		const agreement = authorizeBatch({
+			batch_id: input.batch_id,
+			initiative_slug: input.slug,
+			children: input.children,
+			base_head: input.base_head,
+			budget: input.budget,
+			confirmation: input.confirmation,
+			final_verification: { required: true, commands: [...input.final_verification] },
+			return_policy: "retain_branch",
+			interaction_mode: "parent_relayed",
+			actor: LOOP_DAEMON_ACTOR_ID,
+		});
+		if (!agreement.ok) return refuse(agreement.reason);
+		outcome = await startLanes(agreement.agreement, laneDeps as never);
+	}
+	if (outcome && typeof outcome === "object" && (outcome as { ok?: unknown }).ok === false) {
+		const refusal = outcome as { reason: string; recovery: string };
+		return refuse(`${refusal.reason}. ${refusal.recovery}`);
+	}
+	// A rejected start is a batch report, not an `ok: false` refusal, and persists no record.
+	const report = outcome as { batch_state?: unknown; reason?: unknown; next_action?: unknown } | null;
+	if (report?.batch_state === "rejected") {
+		return refuse(`${typeof report.reason === "string" ? report.reason : "batch_rejected"}. ${typeof report.next_action === "string" ? report.next_action : "start a fresh batch"}`);
+	}
+	return initiativeBatchResult(input.root, input.batch_id, taskIds) ?? refuse("lane running");
+}
+
+function holdOfAny(root: string, batchId: string, taskIds: readonly string[]): LoopDriveHold | null {
+	for (const taskId of taskIds) {
+		const hold = holdOf(root, batchId, taskId);
+		if (hold) return hold;
+	}
+	return null;
+}
+
+function parkedOfAny(root: string, batchId: string, taskIds: readonly string[]): { task_id: string; reason: string } | null {
+	for (const taskId of taskIds) {
+		const parked = parkedOf(root, batchId, taskId);
+		if (parked) return parked;
+	}
+	return null;
 }
 
 /** A child parked `needs_human` waits for a decision the daemon must escalate, never retry. */

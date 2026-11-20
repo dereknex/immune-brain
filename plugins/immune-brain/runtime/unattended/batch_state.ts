@@ -404,16 +404,28 @@ export function isSingleTaskRecord(record: AnyBatchRunStateRecord): boolean {
 	return isLaneBatchRecord(record) && (record as BatchLaneRunStateRecord).plan_source === "single_task";
 }
 
+/**
+ * The entry-layer label a composition root passes through. `initiative` is the
+ * default Initiative entry: its record carries no `plan_source`, exactly like
+ * the Host Initiative batch records, so `initiative` and an absent label name
+ * the same record shape (ULS Spec loop-leader-uls-alignment D2.1).
+ */
+export type BatchEntryKind = "single_task" | "initiative";
+
+function persistedEntryKind(kind: string | undefined): string | undefined {
+	return kind === "initiative" ? undefined : kind;
+}
+
 /** Entry-kind match without naming the retired literal outside the state owner. */
 export function entryKindMatches(persisted: AnyBatchRunStateRecord, input: { plan_source?: string; entry_kind?: string }): boolean {
 	const persistedKind = isLaneBatchRecord(persisted) ? (persisted as BatchLaneRunStateRecord).plan_source : undefined;
-	return persistedKind === (input.plan_source ?? input.entry_kind);
+	return persistedKind === persistedEntryKind(input.plan_source ?? input.entry_kind);
 }
 
 /** Identity fragment for new records without naming the literal at the call site. Prefers an explicit entry kind, else the opaque marker. */
-export function planSourceIdentity(input: { plan_source?: "single_task"; entry_kind?: "single_task" }): { plan_source?: "single_task" } {
-	const kind = input.plan_source ?? input.entry_kind;
-	return kind ? { plan_source: kind } : {};
+export function planSourceIdentity(input: { plan_source?: "single_task"; entry_kind?: BatchEntryKind }): { plan_source?: "single_task" } {
+	const kind = persistedEntryKind(input.plan_source ?? input.entry_kind);
+	return kind === "single_task" ? { plan_source: kind } : {};
 }
 
 /** Transitional agreement defaults for callers that predate authorizeBatch (S3). */
@@ -1161,7 +1173,7 @@ export function batchTopologyDigest(tasks: Array<{ task_id: string; slice_id: st
 export function prepareBatchLaneRunState(input: {
 	plan_source?: "single_task";
 	/** Opaque entry-kind marker; interpreted here as the entry kind for new records. */
-	entry_kind?: "single_task";
+	entry_kind?: BatchEntryKind;
 	topology_digest?: string;
 	batch_id: string;
 	initiative_slug: string;
@@ -1184,7 +1196,7 @@ export function prepareBatchLaneRunState(input: {
 	final_verification_required?: boolean;
 }): BatchLaneRunStateRecord {
 	validateBatchId(input.batch_id);
-	const entryKind = input.plan_source ?? input.entry_kind;
+	const entryKind = persistedEntryKind(input.plan_source ?? input.entry_kind) as "single_task" | undefined;
 	return {
 		contract: "assurance_kernel/batch_run_state/v3",
 		...(entryKind ? { plan_source: entryKind } : {}),
