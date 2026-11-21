@@ -10,9 +10,10 @@
  *   `a19_owner_comment_intent` (`0.80`; `approve_plan` and `command` always yield
  *   a deduplicated format reminder and never `enroll_and_drive`), and
  *   `a14_pr_comment_triage` (`0.80`).
- * - Tier 3: read-only judging agent session (`judging_agent.ts`) for disabled
- *   points, unavailable/truncated answers, or below-threshold answers, falling
- *   back to the D12 point baseline when the judging agent is unavailable or invalid.
+ * - Tier 3: escalation and the D12 point baselines. The read-only judging
+ *   session is retired (Spec loop-leader D3.4): a `needs_judging` outcome applies
+ *   the point baseline and is listed as a leader reconcile candidate, so no
+ *   session starts and nothing is invented in its place.
  */
 
 import {
@@ -30,9 +31,8 @@ import {
 	evaluateGuards,
 	firstBlock,
 } from "./guards.ts";
-import { isLoopHandler, type LoopHandler } from "./handlers.ts";
+import { type LoopHandler } from "./handlers.ts";
 import { LOOP_JOB_MAX_ATTEMPTS } from "./jobs.ts";
-import type { JudgingAgentFn, JudgingContext, JudgingDecision } from "./judging_agent.ts";
 import { resolveOwnerCommand } from "./owner_commands.ts";
 import type { NormalizedLoopEvent } from "./types.ts";
 
@@ -87,11 +87,7 @@ export interface JudgeDeps {
 	facts?: GuardFacts;
 	classify?: ClassifyFn;
 	enabledPoints?: readonly string[];
-	judgingAgent?: JudgingAgentFn;
 	budgetTracker?: JudgingBudgetTracker;
-	offeredOptionsForEvent?: (
-		event: NormalizedLoopEvent,
-	) => Array<{ id: string; label: string; description?: string }> | undefined;
 }
 
 type PointOutcome =
@@ -227,56 +223,6 @@ async function classifyPoint(
 	};
 }
 
-async function runJudgingAgent(
-	point: ApplicationPointId,
-	outcome: Extract<PointOutcome, { kind: "needs_judging" }>,
-	event: NormalizedLoopEvent,
-	deps: JudgeDeps,
-	extra: Pick<JudgingContext, "candidate" | "offered_options" | "extra"> = {},
-): Promise<JudgingDecision | null> {
-	if (!deps.judgingAgent) return null;
-	if (deps.budgetTracker && !deps.budgetTracker.canInvoke()) {
-		return null;
-	}
-	deps.budgetTracker?.recordInvocation();
-	try {
-		const decision = await deps.judgingAgent({
-			point,
-			escalation_reason: outcome.detail,
-			event,
-			...(outcome.choice !== undefined ? { model_choice: outcome.choice } : {}),
-			...(outcome.confidence !== undefined ? { model_confidence: outcome.confidence } : {}),
-			...(outcome.truncation !== undefined ? { truncation: outcome.truncation } : {}),
-			options: POINT_REGISTRY[point]?.options,
-			...extra,
-		});
-		if (!decision || !isLoopHandler(decision.handler) || !decision.reason) {
-			return null;
-		}
-		return decision;
-	} catch {
-		return null;
-	}
-}
-
-function judgingJudgement(
-	decision: JudgingDecision,
-	classification: JudgementClassification | null,
-): Judgement {
-	return {
-		tier: 3,
-		handler: decision.handler,
-		reason: decision.reason,
-		guard: null,
-		classification,
-		judging_agent_used: true,
-		...(decision.corrected_option !== undefined
-			? { corrected_option: decision.corrected_option }
-			: {}),
-		...(decision.lane_option !== undefined ? { lane_option: decision.lane_option } : {}),
-	};
-}
-
 /** Tier 1: exact label, marker and command transitions. `null` means Tier 2 must decide. */
 function matchTier1(event: NormalizedLoopEvent, facts: GuardFacts): Judgement | null {
 	const decided = (handler: LoopHandler, reason: string): Judgement => ({
@@ -352,7 +298,7 @@ function matchTier1(event: NormalizedLoopEvent, facts: GuardFacts): Judgement | 
 function escalated(
 	reason: string,
 	classification: JudgementClassification | null = null,
-	extra: Partial<Pick<Judgement, "escalation_key" | "judging_agent_used">> = {},
+	extra: Partial<Pick<Judgement, "escalation_key" | "needs_judging">> = {},
 ): Judgement {
 	return { tier: 3, handler: "escalate", reason, guard: null, classification, ...extra };
 }
@@ -361,8 +307,9 @@ function baseline(
 	handler: LoopHandler,
 	reason: string,
 	classification: JudgementClassification | null = null,
+	extra: Partial<Pick<Judgement, "needs_judging">> = {},
 ): Judgement {
-	return { tier: 3, handler, reason, guard: null, classification };
+	return { tier: 3, handler, reason, guard: null, classification, ...extra };
 }
 
 async function triageIssue(
@@ -392,11 +339,7 @@ async function triageIssue(
 		};
 	}
 	if (prefilter.kind === "needs_judging") {
-		const judged = await runJudgingAgent("a18_event_prefilter", prefilter, event, deps);
-		if (judged !== null) {
-			return judgingJudgement(judged, prefilter.classification);
-		}
-		// D12 item 2 baseline for a18: proceed as `actionable`.
+		// D3.4: no judging session starts. The D12 item 2 baseline for a18 proceeds as `actionable`.
 	}
 
 	const candidate = facts.duplicate_candidate ?? facts.duplicate_candidates_by_issue?.[event.issue_number];
@@ -419,18 +362,7 @@ async function triageIssue(
 			};
 		}
 		if (duplicate.kind === "needs_judging") {
-			const judged = await runJudgingAgent("a20_issue_duplicate_pair", duplicate, event, deps, {
-				candidate,
-			});
-			if (judged !== null) {
-				const reason =
-					judged.handler === "escalate" &&
-					(!judged.reason.includes(`#${candidate.number}`) || !judged.reason.includes(`#${event.issue_number}`))
-						? `issue #${event.issue_number} / #${candidate.number}: ${judged.reason}`
-						: judged.reason;
-				return judgingJudgement({ ...judged, reason }, duplicate.classification);
-			}
-			// D12 item 2 baseline for a20: proceed as `unrelated`.
+			// D3.4: no judging session starts. The D12 item 2 baseline for a20 proceeds as `unrelated`.
 		}
 	}
 
@@ -473,13 +405,10 @@ async function triageIssue(
 		}
 	}
 
-	const judged = await runJudgingAgent("a15_task_granularity", granularity, event, deps);
-	if (judged !== null) {
-		return judgingJudgement(judged, granularity.classification);
-	}
 	return escalated(
 		`a15_task_granularity fallback to escalate (${granularity.detail})`,
 		granularity.classification,
+		{ needs_judging: true },
 	);
 }
 
@@ -529,11 +458,7 @@ async function classifyOwnerComment(
 		};
 	}
 	if (prefilter.kind === "needs_judging") {
-		const judged = await runJudgingAgent("a18_event_prefilter", prefilter, event, deps);
-		if (judged !== null) {
-			return judgingJudgement(judged, prefilter.classification);
-		}
-		// D12 item 2 baseline for a18: proceed as `actionable`.
+		// D3.4: no judging session starts. The D12 item 2 baseline for a18 proceeds as `actionable`.
 	}
 
 	const intent = await classifyPoint(
@@ -579,20 +504,10 @@ async function classifyOwnerComment(
 		}
 	}
 
-	const offeredOptions = deps.offeredOptionsForEvent?.(event);
-	const judged = await runJudgingAgent("a19_owner_comment_intent", intent, event, deps, {
-		...(offeredOptions ? { offered_options: offeredOptions } : {}),
-	});
-	if (judged !== null) {
-		// S10-AC2 invariant: `a19` never turns an unstructured comment into `enroll_and_drive`.
-		if (judged.handler === "enroll_and_drive") {
-			return a19FormatReminder(event, "approve_plan", intent.classification);
-		}
-		return judgingJudgement(judged, intent.classification);
-	}
 	return escalated(
 		`a19_owner_comment_intent fallback to escalate (${intent.detail})`,
 		intent.classification,
+		{ needs_judging: true },
 	);
 }
 
@@ -645,18 +560,15 @@ async function classifyPrComment(
 		}
 	}
 
-	const judged = await runJudgingAgent("a14_pr_comment_triage", intent, event, deps);
-	if (judged !== null) {
-		return judgingJudgement(judged, intent.classification);
-	}
 	return baseline(
 		"address_pr_review",
 		`a14_pr_comment_triage fallback to address_pr_review (${intent.detail})`,
 		intent.classification,
+		{ needs_judging: true },
 	);
 }
 
-/** Tiers 2-3: the decision-model points, judging agent, then D12 baseline fallbacks. */
+/** Tiers 2-3: the decision-model points and the D12 point baselines. */
 async function judgeTier2(
 	event: NormalizedLoopEvent,
 	facts: GuardFacts,

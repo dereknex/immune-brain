@@ -9,7 +9,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { cleanupOneIntegratedChild, createDefaultLaneGitPort, retainedLaneNotices } from "../plugins/immune-brain/runtime/unattended/batch_lanes";
+import { cleanupOneIntegratedChild, createDefaultLaneGitPort, discardBatchLanes, retainedLaneNotices } from "../plugins/immune-brain/runtime/unattended/batch_lanes";
 import { cleanupIntegratedChildLane, cleanupParentBranch, retainedLaneReason } from "../plugins/immune-brain/runtime/unattended/lane_cleanup";
 import type { BatchSessionPort } from "../plugins/immune-brain/runtime/unattended/batch_session_port";
 import { computeBatchPlanDigest, createBatchAuthorityRegistry } from "../plugins/immune-brain/runtime/kernel/batch_authority";
@@ -408,3 +408,148 @@ describe("end-to-end single-task checkout_delivery drives runLaneBatch to persis
 	}, 120_000);
 });
 
+// Spec loop-leader-uls-alignment D4.1-D4.2 / S4-AC1: abandon discards an active batch.
+describe("S4-AC1: discardBatchLanes tears an abandoned batch down with proof", () => {
+	const SLUG = "init-discard";
+	const NOW = "2026-01-03T00:00:00.000Z";
+
+	/** An active two-child batch: two Lane worktrees each holding a session, plus the shared imm/<slug> branch. */
+	function activeBatch() {
+		const dir = realpathSync(mkdtempSync(join(tmpdir(), "imm-slc-discard-")));
+		roots.push(dir);
+		const repo = join(dir, "repo");
+		mkdirSync(repo);
+		writeFileSync(join(repo, ".gitignore"), ".imm/state/\n");
+		writeFileSync(join(repo, "base.txt"), "base\n");
+		git(repo, "init", "-q", "-b", "main");
+		git(repo, "add", "-A"); git(repo, "commit", "-qm", "base");
+		const base = git(repo, "rev-parse", "HEAD");
+		git(repo, "branch", `imm/${SLUG}`, base);
+		const tasks = ["child-1", "child-2"];
+		const lanes = tasks.map((task) => {
+			const path = join(dir, task), branch = `imm-lane/${SLUG}/${task}`;
+			git(repo, "worktree", "add", "-q", "-b", branch, path);
+			// Unmerged work: the owner abandoned it, so the branch is not integrated.
+			writeFileSync(join(path, `${task}.txt`), "wip\n");
+			git(path, "add", "-A"); git(path, "commit", "-qm", task);
+			return { task, path, branch, key: `imm-${task}-g1-${task.slice(-1).repeat(12)}`, handle: `h-${task}` };
+		});
+		const kids = tasks.map((task) => ({ task_id: task, slice_id: task, blocked_by: [] as string[], status: "enrollable" as const, reason: null,
+			intent_path: `docs/plans/${task}.intent.json`, intent_revision: 1, intent_content_hash: "0".repeat(64) }));
+		const record = prepareBatchLaneRunState({ batch_id: "b-discard", initiative_slug: SLUG, children: kids as never,
+			plan_digest: "d".repeat(64), base_head: base, confirmation_time: "2026-01-01T00:00:00.000Z",
+			budget: { max_children: 2, qa_failure_limit: 3 }, max_parallel: 2, now: "2026-01-02T00:00:00.000Z" });
+		record.branch = `refs/heads/imm/${SLUG}`;
+		record.batch_state = "running";
+		record.children = lanes.map((l) => ({ task_id: l.task, slice_id: l.task, blocked_by: [], state: "enrolled", reason: null, commit: null,
+			lane: { path: l.path, branch: l.branch, base_head: base, lane_commit: base }, qa_failures: 0,
+			session: { key: l.key, generation: 1, baseline: "r", handle: l.handle, entry_submitted: true, attention: null, no_progress: 0, exit_proof: null } }) as never);
+		writeBatchLaneRunState(repo, record);
+		return { repo, lanes };
+	}
+
+	/** A port that proves exit for every session whose key it owns, and counts each call. */
+	function countingPort(owned: Set<string>) {
+		const calls = { stop: [] as string[], close: [] as string[] };
+		const port: BatchSessionPort = {
+			provider: "fake",
+			open: async () => ({ ok: true, handle: "unused", entry_submitted: true }),
+			resume: async () => ({ ok: true, entry_submitted: true }),
+			find: async () => ({ ok: true, not_found: true as const }),
+			observe: async () => ({ ok: true, state: "working" as const }),
+			send: async () => ({ ok: false, code: "provider_error", reason: "unused" }),
+			stop: async (handle) => { calls.stop.push(handle); return { ok: true }; },
+			closeWithProof: async (handle, key) => {
+				calls.close.push(handle);
+				return owned.has(key)
+					? { ok: true, exited: true as const, handle, key }
+					: { ok: false, code: "not_owned", reason: `handle ${handle} was not created for key ${key}` };
+			},
+		};
+		return { port, calls };
+	}
+
+	const lanePaths = (fx: ReturnType<typeof activeBatch>) => fx.lanes.map((l) => existsSync(l.path));
+
+	it("stops and proof-closes both sessions, removes both Lanes and imm/<slug>, and records discarded", async () => {
+		const fx = activeBatch();
+		const { port, calls } = countingPort(new Set(fx.lanes.map((l) => l.key)));
+		const result = await discardBatchLanes({ root: fx.repo, batch_id: "b-discard", sessions: port, now: NOW });
+		if ("ok" in result) throw new Error(result.reason);
+		expect(result).toMatchObject({ batch_state: "discarded", parent_branch_removed: true, retained: [] });
+		expect([...result.removed].sort()).toEqual(["child-1", "child-2"]);
+		// Each session is stopped, then closed with proof, before its Lane goes.
+		expect(calls.stop.sort()).toEqual(["h-child-1", "h-child-2"]);
+		expect(calls.close.sort()).toEqual(["h-child-1", "h-child-2"]);
+		expect(lanePaths(fx)).toEqual([false, false]);
+		expect(branches(fx.repo)).toEqual([]);
+		const record = readAnyBatchRunState(fx.repo, "b-discard")!;
+		expect(record.batch_state).toBe("discarded");
+	});
+
+	it("retains a Lane whose session ownership does not match, keeps imm/<slug>, and a retry touches only that Lane", async () => {
+		const fx = activeBatch();
+		const [one, two] = fx.lanes as [typeof fx.lanes[number], typeof fx.lanes[number]];
+		// Child 2's key is not owned: closeWithProof refuses it.
+		const first = countingPort(new Set([one.key]));
+		const partial = await discardBatchLanes({ root: fx.repo, batch_id: "b-discard", sessions: first.port, now: NOW });
+		if ("ok" in partial) throw new Error(partial.reason);
+		expect(partial.batch_state).toBe("discarding");
+		expect(partial.removed).toEqual(["child-1"]);
+		expect(partial.retained).toHaveLength(1);
+		expect(partial.retained[0]).toMatchObject({ task_id: "child-2", path: two.path });
+		expect(partial.retained[0]!.condition).toContain("not_owned");
+		expect(partial.parent_branch_removed).toBe(false);
+		expect(lanePaths(fx)).toEqual([false, true]);
+		expect(branches(fx.repo).sort()).toEqual([two.branch, `imm/${SLUG}`].sort());
+		const midway = readAnyBatchRunState(fx.repo, "b-discard")!;
+		expect(midway.batch_state).toBe("discarding");
+
+		// The next tick retries only the retained Lane: child 1 is never revisited.
+		const retry = countingPort(new Set([two.key]));
+		const done = await discardBatchLanes({ root: fx.repo, batch_id: "b-discard", sessions: retry.port, now: NOW });
+		if ("ok" in done) throw new Error(done.reason);
+		expect(done).toMatchObject({ batch_state: "discarded", parent_branch_removed: true, retained: [] });
+		expect(retry.calls.close).toEqual(["h-child-2"]);
+		expect(retry.calls.stop).toEqual(["h-child-2"]);
+		expect(branches(fx.repo)).toEqual([]);
+		expect(readAnyBatchRunState(fx.repo, "b-discard")!.batch_state).toBe("discarded");
+	});
+
+	it("retains a dirty Lane worktree even when its exit is proven, and removes it once clean", async () => {
+		const fx = activeBatch();
+		const [one, two] = fx.lanes as [typeof fx.lanes[number], typeof fx.lanes[number]];
+		writeFileSync(join(two.path, "unsaved.txt"), "owner edit\n");
+		const { port } = countingPort(new Set(fx.lanes.map((l) => l.key)));
+		const partial = await discardBatchLanes({ root: fx.repo, batch_id: "b-discard", sessions: port, now: NOW });
+		if ("ok" in partial) throw new Error(partial.reason);
+		expect(partial.batch_state).toBe("discarding");
+		expect(partial.removed).toEqual(["child-1"]);
+		expect(partial.retained[0]).toMatchObject({ task_id: "child-2" });
+		expect(partial.retained[0]!.condition).toContain("unsaved.txt");
+		expect(existsSync(two.path)).toBe(true);
+		expect(existsSync(join(two.path, "unsaved.txt"))).toBe(true);
+		expect(existsSync(one.path)).toBe(false);
+		expect(branches(fx.repo)).toContain(`imm/${SLUG}`);
+
+		rmSync(join(two.path, "unsaved.txt"));
+		const retry = countingPort(new Set(fx.lanes.map((l) => l.key)));
+		const done = await discardBatchLanes({ root: fx.repo, batch_id: "b-discard", sessions: retry.port, now: NOW });
+		if ("ok" in done) throw new Error(done.reason);
+		expect(done.batch_state).toBe("discarded");
+		expect(branches(fx.repo)).toEqual([]);
+	});
+
+	it("never deletes a terminal batch's retained branch", async () => {
+		const fx = activeBatch();
+		const record = readAnyBatchRunState(fx.repo, "b-discard")!;
+		const integrated = (record as unknown as { children: Array<Record<string, unknown>> }).children.map((c) => ({ ...c, state: "integrated", commit: "c" }));
+		writeBatchLaneRunState(fx.repo, { ...(record as never as Record<string, unknown>), batch_state: "completed", children: integrated, commits: ["c"] } as never);
+		const { port, calls } = countingPort(new Set(fx.lanes.map((l) => l.key)));
+		const result = await discardBatchLanes({ root: fx.repo, batch_id: "b-discard", sessions: port, now: NOW });
+		if ("ok" in result) throw new Error(result.reason);
+		expect(calls.close).toEqual([]);
+		expect(branches(fx.repo)).toContain(`imm/${SLUG}`);
+		expect(readAnyBatchRunState(fx.repo, "b-discard")!.batch_state).toBe("completed");
+	});
+});

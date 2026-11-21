@@ -1,0 +1,163 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "loop-leader-uls-s3-initiative-pr-gate",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "loop-leader-uls-s3-initiative-pr-gate",
+    "goal": "Open exactly one PR from retained imm/<slug> for a completed daemon Initiative batch whose final verification passed, gated on the batch commit and every child's .imm/audit/ evidence digest through batchDeliveryEvidence, idempotent on repeated E13, with single-task delivery unchanged and the ULS Spec D13 amendment recorded in the new Spec, per D3 of docs/specs/loop-leader-uls-alignment.spec.md.",
+    "acceptance": [
+      {
+        "id": "S3-AC1",
+        "assertion": "Source BR-DEC-A1, BR-SCN-A1; meet D3.1-D3.3 in docs/specs/loop-leader-uls-alignment.spec.md. Agreed seam: tests/loop-daemon-drive-pr.test.ts. Done looks like: a completed Initiative batch with passing final verification opens one PR whose head is imm/<slug> and whose body lists every child's acceptance IDs and audit digest; imm-loop status shows the item in review. Negative: a child without audit evidence, a failed or missing final verification result, or a batch not in completed state opens no PR and records the named reason; a repeated E13 for the same batch opens no second PR; single-task PR creation from refs/heads/imm/<task_id> is unchanged.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/loop-daemon-drive-pr.test.ts && bun scripts/sync-dist-docs.ts --check && bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/loop-leader-uls-s3-initiative-pr-gate.md",
+      "docs/plans/loop-leader-uls-s3-initiative-pr-gate.intent.json",
+      "docs/specs/loop-leader-uls-alignment.spec.md",
+      "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+      "plugins/immune-brain-antigravity/runtime/loop_daemon/dispatch.ts",
+      "plugins/immune-brain-antigravity/runtime/unattended/batch_preflight.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/loop_daemon/dispatch.ts",
+      "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+      "tests/loop-daemon-drive-pr.test.ts"
+    ],
+    "scope_size_reason": "The aggregated delivery evidence and the open_pr branch that consumes it are one gate; neither is observable alone.",
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/loop-leader-uls-s3-initiative-pr-gate.intent.json",
+    "content_hash": "sha256:3b3c1a815e7da64f0eaa794b4b23c3573e621034dbe44a1deeffe1ba16a29953"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:3b3c1a815e7da64f0eaa794b4b23c3573e621034dbe44a1deeffe1ba16a29953",
+  "git_base_head": "71a4aa1a8c1601128461f0a013c6a3aac1503b03",
+  "attestations": [
+    {
+      "id": "approval-qa-840ec89f",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:3b3c1a815e7da64f0eaa794b4b23c3573e621034dbe44a1deeffe1ba16a29953",
+      "diff_hash": "sha256:9166938af272d35b9b07ecd83203c2bd328af67392684153f5d89f0eb5697083",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:1c1932cac1a5a86a9c9f6665a86f995f63f2fb4bb6181ec37b91c6daf8670bc8",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S3-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:1c1932cac1a5a86a9c9f6665a86f995f63f2fb4bb6181ec37b91c6daf8670bc8"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-587d84e1",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:3b3c1a815e7da64f0eaa794b4b23c3573e621034dbe44a1deeffe1ba16a29953",
+      "diff_hash": "sha256:9166938af272d35b9b07ecd83203c2bd328af67392684153f5d89f0eb5697083",
+      "actor_id": "cli:claude-code:94fbccfe-db65-43fb-af9f-1aa1d94694f1",
+      "summary": "S3-AC1 met: batchDeliveryEvidence fails closed on non-completed, missing/failed final verification, missing retained branch, unintegrated child and missing audit pair; open_pr routes Initiative WorkItems to one imm/<slug> PR listing acceptance ids and audit digests, repeated E13 upserts the existing PR, single-task path untouched; antigravity runtime mirror identical, dist diffs are bundler createHash renames only. Blast radius: medium — loop_daemon/dispatch.ts open_pr handler and unattended/batch_preflight.ts, no persisted shape change.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "71a4aa1a8c1601128461f0a013c6a3aac1503b03",
+        "review_commit": "f92aaa01e65201378320a773ff8bcd6376390c37"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-8c0f1fee444a-1-review-1",
+          "acceptance_id": "S3-AC1",
+          "summary": "The gate verifies record.branch, but the PR head is derived from the slug, so the two could diverge.",
+          "anchor": "sha256:45544cb7913580123d3c266ac9b1a46255f82f13c0e7c0f4a8a4b0f5785c7a77",
+          "evidence": {
+            "trigger": "A v3 batch record whose branch field is set to something other than imm/<initiative_slug>: batchDeliveryEvidence checks that branch contains the commit, but openLoopPullRequest builds its head from prBranchName(evidence.slug), so the PR head is a branch the gate never checked",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/loop_daemon/dispatch.ts:dispatchDecisions",
+              "plugins/immune-brain/runtime/unattended/batch_preflight.ts:batchDeliveryEvidence",
+              "plugins/immune-brain/runtime/loop_daemon/pr_opener.ts:openLoopPullRequest"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S3-AC1"
+            }
+          }
+        },
+        {
+          "id": "review-8c0f1fee444a-2-review-2",
+          "acceptance_id": "S3-AC1",
+          "summary": "The Initiative PR risk is the first non-routine child risk, not the highest one, and the single-task test only covers the refusal path.",
+          "anchor": "sha256:83bebaf4603f0ea1742de47024e0e5104b5080496a423457d5abd163234223fa",
+          "evidence": {
+            "trigger": "Children with risks [low, material] give risk=low; this only changes the PR body risk text because draft is risk!==routine either way. Separately, the 'keeps single-task delivery' test only asserts a failed refusal, not a successful single-task PR",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/loop_daemon/dispatch.ts:dispatchDecisions",
+              "tests/loop-daemon-drive-pr.test.ts"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S3-AC1"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:54e7176e2690da6ebc6cda6ec8ee2f31b5788de4134afd4a2234668583f25d78"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:loop-leader-uls-s3-initiative-pr-gate:2026-11-20T16:43:03.341Z",
+      "at": "2026-11-20T16:43:03.341Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-leader-uls-s3-initiative-pr-gate.intent.json"
+    },
+    {
+      "id": "record_approval:loop-leader-uls-s3-initiative-pr-gate:2026-11-20T16:43:22.485Z",
+      "at": "2026-11-20T16:43:22.485Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-840ec89f\naction_v2_sha256:147441cf8d8399022e1b164598e3cf2143969add61f0dbdbcd95b13d5e06fb1c",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-11-20T16:43:22.485Z"
+      }
+    },
+    {
+      "id": "record_approval:loop-leader-uls-s3-initiative-pr-gate:2026-11-20T16:44:38.365Z",
+      "at": "2026-11-20T16:44:38.365Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-587d84e1\naction_v2_sha256:73d62f83730fe5c35f35e0a3664016414d6d2ca326328be6b6517f1693e4750a",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:94fbccfe-db65-43fb-af9f-1aa1d94694f1",
+        "confirmation_ref": "claude:cli:claude-code:94fbccfe-db65-43fb-af9f-1aa1d94694f1",
+        "issued_at": "2026-11-20T16:44:38.365Z"
+      },
+      "review_started_at": "2026-11-20T16:43:25.421Z",
+      "review_submitted_at": "2026-11-20T16:44:37.666Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:loop-leader-uls-s3-initiative-pr-gate:2026-11-20T16:44:40.454Z",
+      "at": "2026-11-20T16:44:40.454Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:7f501c574e346bd7961934eb70dbfb3fc674120f0e2ffb1bdabcee822f8c81a5"
+    }
+  ]
+}

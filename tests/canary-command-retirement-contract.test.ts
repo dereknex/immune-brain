@@ -36,7 +36,7 @@ describe("Canary Slash Command retirement", () => {
 		expect(existsSync(join(EXT, "imm-canary-enroll.ts"))).toBe(false);
 		expect(loadFactory("imm-canary-work.ts")).toEqual({
 			// Spec loop-agent-scheduling D4: the local Interaction channel's Tools.
-			tools: ["imm_kernel_canary", "imm_loop_action", "loop_interactions", "answer_loop_interaction"],
+			tools: ["imm_kernel_canary", "imm_loop_action", "loop_interactions", "answer_loop_interaction", "steer_loop_work_item"],
 			commands: ["imm-tasks"],
 		});
 	});

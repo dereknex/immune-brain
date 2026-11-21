@@ -26,7 +26,7 @@
 
 import { createHash, randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -47,7 +47,7 @@ import type { TaskRisk } from "../kernel/types.ts";
 import { parseVerificationDescriptor, type VerificationDescriptor } from "../verification_descriptor.ts";
 import { createBatchKernelPort } from "../unattended/batch_kernel_port.ts";
 import { createDefaultBatchGitPort } from "../unattended/batch_git.ts";
-import { observeSingleTask } from "../unattended/batch_plan.ts";
+import { observeInitiative, observeSingleTask } from "../unattended/batch_plan.ts";
 import { findActiveLaneBatchForTask, prepareBatchPreflight } from "../unattended/batch_preflight.ts";
 import type { ExecutorHost } from "../unattended/agent_profiles.ts";
 import {
@@ -59,6 +59,7 @@ import {
 import {
 	createCliAgentSessionProvider,
 	loopRoleProfile,
+	loopSessionLimits,
 	ROLE_SESSION_LIMITS,
 	runAgentSession,
 	sessionEnvironment,
@@ -68,7 +69,8 @@ import {
 	type AgentSessionProvider,
 	type AgentSessionRecord,
 } from "./agent_runner.ts";
-import { daemonAdvanceTask, dispatchLoopDrive } from "./drive_dispatcher.ts";
+import type { LoopSessionConfig } from "./role_catalog.ts";
+import { completedInitiativeBatch, daemonAdvanceTask, dispatchLoopDrive, resolveInitiativeBatchId } from "./drive_dispatcher.ts";
 import { escalationKey, planEscalation } from "./escalation.ts";
 import { createGithubInteractionChannel, withInteractionMarker } from "./interaction/github_channel.ts";
 import { createLocalInteractionChannel, retireLocalRequest } from "./interaction/local_channel.ts";
@@ -105,7 +107,18 @@ import {
 	type RepairResult,
 } from "./repair_agent.ts";
 import { ensureLoopStateDir, loadLoopDecisions } from "./state.ts";
-import { markPlanPublished, parkOnClarifyQuestion, readWorkItem, releaseClarifyWait } from "./work_items.ts";
+import {
+	drivingInitiativeSlug,
+	environmentBlockOf,
+	markPlanPublished,
+	parkOnClarifyQuestion,
+	readWorkItem,
+	releaseClarifyWait,
+	setEnvironmentBlock,
+	takeResumeExemption,
+	workItemGate,
+	writeWorkItem,
+} from "./work_items.ts";
 import type { NormalizedLoopEvent, ObservationInput, RawComment, RawPR } from "./types.ts";
 
 /** The plan one Issue's planning chain recorded; published by the handler that owns the write. */
@@ -166,6 +179,24 @@ export interface AgentDriveRequest {
 	confirmation_source?: "tracker_approval" | "policy_auto";
 	base_head: string;
 	now: string;
+	/** D4.3: the first advance after a resume observes first and exempts one stall judgment. */
+	stall_exempt?: boolean;
+}
+
+/** Drive one Initiative-shaped WorkItem as a single v3 batch (ULS Spec D2). */
+export interface AgentDriveInitiativeRequest {
+	root: string;
+	slug: string;
+	/** Slice tasks in carrier order; every one must already be enrolled. */
+	task_ids: string[];
+	/** `WorkItem.binding.batch_id`: the batch to advance; null starts one, or adopts an orphaned active batch. */
+	batch_id: string | null;
+	plan_digest: string;
+	confirmation_ref: string;
+	base_head: string;
+	now: string;
+	/** D4.3: the first advance after a resume observes first and exempts one stall judgment. */
+	stall_exempt?: boolean;
 }
 
 /** One enrollable child plan entry, in the Kernel authorization registry's own shape. */
@@ -210,6 +241,10 @@ export interface AgentDriveResult {
 	hold_for_dialog?: { task_id: string; batch_id: string; detail: string } | null;
 	/** The child is parked `needs_human`; only a literal-user confirmation resumes it. */
 	parked?: { task_id: string; reason: string } | null;
+	/** An Initiative drive's batch record, or null when none exists; absent leaves the binding as it is. */
+	batch_id?: string | null;
+	/** D4.3: the item is paused, so no advance ran; the job waits without spending its deadlines. */
+	paused?: boolean;
 }
 
 export type AgentHandlerOutcome = "executed" | "failed" | "requires_standing_daemon";
@@ -239,6 +274,8 @@ export interface AgentHandlerPort {
 
 export interface AgentHandlerDeps {
 	sessionProvider: AgentSessionProvider;
+	/** The resolved config, so a session takes its limits from its catalog role (Spec loop-leader D1.6). */
+	loop_config?: LoopSessionConfig;
 	/** The daemon's own GitHub credential, the only one a session receives. */
 	session_credential: string | null;
 	/** Create a daemon-owned worktree (`branch: null` is detached) and return its path. */
@@ -254,6 +291,8 @@ export interface AgentHandlerDeps {
 	readComment(input: { root: string; issue_number: number; comment_id: number }): Promise<AgentApprovalComment | null>;
 	enroll(input: AgentEnrollRequest): Promise<{ record_revision: string }>;
 	drive(input: AgentDriveRequest): Promise<AgentDriveResult>;
+	/** The Initiative entry: starts or advances the WorkItem's one v3 batch (ULS Spec D2). */
+	driveInitiative(input: AgentDriveInitiativeRequest): Promise<AgentDriveResult>;
 	runVerification(input: {
 		root: string;
 		worktree_path: string;
@@ -432,6 +471,15 @@ export function writePlanPublication(stateDir: string, plan: LoopPlanPublication
 	} catch {}
 }
 
+/**
+ * Remove one Issue's publication record. Idempotent: an absent record is
+ * already removed. The record is rebuildable orchestration state, so a replan
+ * deleting it leaves no digest for a stale approval or a work-item rebuild.
+ */
+export function removePlanPublication(stateDir: string, issueNumber: number): void {
+	rmSync(planPath(stateDir, issueNumber), { force: true });
+}
+
 /** The approval digest a `/approve <digest>` or `@imm-loop approve <digest>` comment names. */
 export function parseApprovalDigest(body: string): string | null {
 	const match = (body ?? "").match(/(?:\/approve|@imm-loop\s+approve)\s+([0-9a-f]{64})\b/i);
@@ -468,6 +516,15 @@ function issueOf(context: AgentHandlerContext): IssueFacts | null {
 /** The work item this decision moves, in the store's own target vocabulary. */
 function workItemTargetOf(context: AgentHandlerContext): string {
 	return `${context.decision.target.kind}-${context.decision.target.id}`;
+}
+
+/**
+ * ULS D5.3: a drive refused for want of a Lane session provider is an environment
+ * fact of the item, shown in status; any other drive result clears it. Neither
+ * touches the item's refusals, revision or replan rounds.
+ */
+function noteDriveEnvironment(context: AgentHandlerContext, reason: string, at: string): void {
+	setEnvironmentBlock(context.stateDir, workItemTargetOf(context), environmentBlockOf(reason), at);
 }
 
 function taskIdOfEvent(context: AgentHandlerContext): string | null {
@@ -517,7 +574,12 @@ async function escalateOnce(
 	const key = escalationKey({ kind, target, detail });
 	const targetNumber = Number.parseInt(target.replace(/^[a-z]+-/, ""), 10);
 	const existing = Number.isFinite(targetNumber) ? existingCommentsOf(context, targetNumber) : [];
-	const plan = planEscalation(existing, { key, message });
+	// ULS D5.2: a Lane dialog is asked once, here; the leader annotates this comment instead of posting another.
+	const plan = planEscalation(existing, {
+		key,
+		message,
+		...(kind === "lane_entry_blocked" && Number.isFinite(targetNumber) ? { label: "lane_entry_blocked" as const, issue_number: targetNumber } : {}),
+	});
 	if (plan.action === "post" && Number.isFinite(targetNumber)) {
 		const posted = await context.gitHubPort.postComment(targetNumber, plan.body);
 		existing.push({
@@ -561,8 +623,9 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 			evidence?: AgentSessionEvidence;
 		},
 	): Promise<AgentSessionRecord> {
-		// The role owns the budget: one per-role table, never a caller's default (Spec D2).
-		const limits = ROLE_SESSION_LIMITS[sessionRole(input.kind)];
+		// The role owns the budget: its catalog role's limits, else the built-in per-role table (D1.6).
+		const role = sessionRole(input.kind);
+		const limits = deps.loop_config ? loopSessionLimits(deps.loop_config, role) : ROLE_SESSION_LIMITS[role];
 		return runAgentSession(
 			{
 				kind: input.kind,
@@ -1100,6 +1163,21 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 		const baseHead = deps.head({ root: context.root, cwd: context.root });
 		if (!baseHead) return { outcome: "failed", detail: "enroll_and_drive could not read the repository HEAD" };
 
+		// D3.3: an Initiative-shaped WorkItem drives its carrier as one batch
+		// through `observeInitiative`, never as one single-task Lane per slice.
+		const initiativeSlug = drivingInitiativeSlug(readWorkItem(context.stateDir, workItemTargetOf(context)));
+		if (initiativeSlug !== null)
+			return driveInitiativeJob(context, {
+				issue,
+				plan,
+				taskIds,
+				baseHead,
+				initiativeSlug,
+				confirmationSource,
+				recordRevision,
+				confirmationRef: confirmationRefs.get(taskIds[0]!) ?? `resume:${taskIds[0]}`,
+			});
+
 		// D6: the drive runs as a background job that holds its lease until the
 		// record is terminal; the tick returns here and `open_pr` runs on E13.
 		const job = startLoopJob(
@@ -1133,6 +1211,11 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 					const intent = deps.readIntent(candidateTaskId);
 				if (!intent)
 					return { outcome: "failed" as const, detail: `task intent disappeared: ${candidateTaskId}`, exit: firstExit };
+				const driveStep = async (): Promise<AgentDriveResult> => {
+					const gate = driveGate(context.stateDir, workItemTargetOf(context), now());
+					if (!gate.run) return gate.result;
+					return deps.drive({ ...driveInput(), ...(gate.stall_exempt ? { stall_exempt: true } : {}) });
+				};
 				const driveInput = () => ({
 					root: context.root,
 					task_id: candidateTaskId,
@@ -1145,7 +1228,8 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 					base_head: baseHead,
 					now: now(),
 				});
-				let driven = await deps.drive(driveInput());
+				let driven = await driveStep();
+				noteDriveEnvironment(context, driven.reason, now());
 				// A startup or mid-run dialog holds the Lane open without failing the
 				// job: post the Issue escalation once per distinct detail, then re-drive
 				// every retry interval until the user answers the dialog in Herdr; the
@@ -1154,10 +1238,19 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 				// A Lane that is merely running is advanced again at the same interval
 				// (D15) until it settles or the job's runtime limit is reached.
 				let escalatedDetail: string | null = null;
-				const holdDeadline = Date.now() + envMs(process.env.IMM_LOOP_DIALOG_HOLD_MAX_MS, LANE_DIALOG_HOLD_MAX_MS);
-				const driveDeadline = Date.now() + envMs(process.env.IMM_LOOP_DRIVE_MAX_MS, LANE_DRIVE_MAX_MS);
-				const retry = () => new Promise((resolve) => setTimeout(resolve, envMs(process.env.IMM_LOOP_DIALOG_RETRY_MS, LANE_DIALOG_RETRY_MS)));
+				let holdDeadline = Date.now() + envMs(process.env.IMM_LOOP_DIALOG_HOLD_MAX_MS, LANE_DIALOG_HOLD_MAX_MS);
+				let driveDeadline = Date.now() + envMs(process.env.IMM_LOOP_DRIVE_MAX_MS, LANE_DRIVE_MAX_MS);
+				const retryMs = envMs(process.env.IMM_LOOP_DIALOG_RETRY_MS, LANE_DIALOG_RETRY_MS);
+				const retry = () => new Promise((resolve) => setTimeout(resolve, retryMs));
 				while (!driven.settled) {
+					if (driven.paused) {
+						// A paused item advances nothing and spends no deadline.
+						holdDeadline += retryMs;
+						driveDeadline += retryMs;
+						await retry();
+						driven = await driveStep();
+						continue;
+					}
 					// A parked child is a human decision: escalate once and stop retrying.
 					if (driven.parked) {
 						const detail = `Lane ${candidateTaskId} is parked needs_human (${driven.parked.reason}); a literal-user confirmation must resume it`;
@@ -1195,7 +1288,8 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 							exit: driven.exit,
 						};
 					await retry();
-					driven = await deps.drive(driveInput());
+					driven = await driveStep();
+					noteDriveEnvironment(context, driven.reason, now());
 				}
 				const exit = driven.exit;
 				firstExit ??= exit ?? null;
@@ -1225,6 +1319,128 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 		return {
 			outcome: "executed",
 			detail: `started drive job ${job.job_id} for ${taskIds.join(", ")} (${confirmationSource ?? "resume"}, record ${recordRevision}); the PR opens when the lane settles`,
+		};
+	}
+
+	/**
+	 * The Initiative drive job (ULS Spec D2): the whole carrier is one v3 batch.
+	 * Every pass re-enters the batch recorded on `WorkItem.binding.batch_id`, so a
+	 * later pass advances it and never mints a second; the job records the batch's
+	 * completion once, so the reconciler emits one E13 for the batch.
+	 */
+	async function driveInitiativeJob(
+		context: AgentHandlerContext,
+		input: {
+			issue: { number: number };
+			plan: LoopPlanPublication;
+			taskIds: string[];
+			baseHead: string;
+			initiativeSlug: string;
+			confirmationSource: string | null;
+			recordRevision: string;
+			confirmationRef: string;
+		},
+	): Promise<AgentHandlerResult> {
+		const job = startLoopJob(
+			context.stateDir,
+			{
+				kind: "drive",
+				target_id: `issue-${input.issue.number}`,
+				task_id: input.taskIds[0]!,
+				issue_number: input.issue.number,
+				plan_digest: input.plan.digest,
+				task_ids: input.taskIds,
+				expected_output: "executor_exit_record",
+				now: now(),
+			},
+			async () => {
+				const jobTarget = `issue-${input.issue.number}`;
+				const workTarget = workItemTargetOf(context);
+				const prior = readLoopJob(context.stateDir, jobTarget)?.settled_lanes ?? [];
+				if (prior.length > 0)
+					return { outcome: "settled" as const, detail: `initiative ${input.initiativeSlug} batch already settled`, exit: prior[0]!.exit };
+				const step = async (): Promise<AgentDriveResult> => {
+					const gate = driveGate(context.stateDir, workTarget, now());
+					if (!gate.run) return gate.result;
+					const recorded = readWorkItem(context.stateDir, workTarget)?.binding.batch_id ?? null;
+					const driven = await deps.driveInitiative({
+						...(gate.stall_exempt ? { stall_exempt: true } : {}),
+						root: context.root,
+						slug: input.initiativeSlug,
+						task_ids: input.taskIds,
+						batch_id: recorded,
+						plan_digest: input.plan.digest,
+						confirmation_ref: input.confirmationRef,
+						base_head: input.baseHead,
+						now: now(),
+					});
+					const item = readWorkItem(context.stateDir, workTarget);
+					if (item && driven.batch_id !== undefined && (item.binding.batch_id ?? null) !== driven.batch_id)
+						writeWorkItem(context.stateDir, { ...item, binding: { ...item.binding, batch_id: driven.batch_id } });
+					noteDriveEnvironment(context, driven.reason, now());
+					return driven;
+				};
+				let driven = await step();
+				let escalatedDetail: string | null = null;
+				let holdDeadline = Date.now() + envMs(process.env.IMM_LOOP_DIALOG_HOLD_MAX_MS, LANE_DIALOG_HOLD_MAX_MS);
+				let driveDeadline = Date.now() + envMs(process.env.IMM_LOOP_DRIVE_MAX_MS, LANE_DRIVE_MAX_MS);
+				const retryMs = envMs(process.env.IMM_LOOP_DIALOG_RETRY_MS, LANE_DIALOG_RETRY_MS);
+				const retry = () => new Promise((resolve) => setTimeout(resolve, retryMs));
+				while (!driven.settled) {
+					if (driven.paused) {
+						// A paused item advances nothing and spends no deadline.
+						holdDeadline += retryMs;
+						driveDeadline += retryMs;
+						await retry();
+						driven = await step();
+						continue;
+					}
+					if (driven.parked) {
+						const detail = `Lane ${driven.parked.task_id} of initiative ${input.initiativeSlug} is parked needs_human (${driven.parked.reason}); a literal-user confirmation must resume it`;
+						await escalateOnce(context, "lane_entry_blocked", jobTarget, driven.parked.task_id, detail);
+						return { outcome: "failed" as const, detail, exit: driven.exit };
+					}
+					if (driven.hold_for_dialog) {
+						if (escalatedDetail !== driven.hold_for_dialog.detail) {
+							escalatedDetail = driven.hold_for_dialog.detail;
+							await escalateOnce(
+								context,
+								"lane_entry_blocked",
+								jobTarget,
+								driven.hold_for_dialog.task_id,
+								`Lane ${driven.hold_for_dialog.task_id} waits on a dialog the daemon cannot answer (${escalatedDetail}); answer it in Herdr, and the drive resumes batch ${driven.hold_for_dialog.batch_id}`,
+							);
+						}
+						if (Date.now() >= holdDeadline)
+							return { outcome: "failed" as const, detail: `initiative ${input.initiativeSlug} still waits on a dialog: ${driven.hold_for_dialog.detail}`, exit: driven.exit };
+					} else if (driven.reason !== "lane running" && driven.reason !== "lane started")
+						// A refusal is permanent. Only a batch that is actually running is advanced again.
+						return { outcome: "failed" as const, detail: `initiative ${input.initiativeSlug} did not settle: ${driven.reason}`, exit: driven.exit };
+					else if (Date.now() >= driveDeadline)
+						return { outcome: "failed" as const, detail: `initiative ${input.initiativeSlug} did not settle inside the drive limit: ${driven.reason}`, exit: driven.exit };
+					await retry();
+					driven = await step();
+				}
+				const exit = driven.exit;
+				const settled = exit?.state === "exited" && exit.exit_code === 0 && Boolean(exit.verification_evidence_digest);
+				if (!settled)
+					return {
+						outcome: "failed" as const,
+						detail: `initiative ${input.initiativeSlug} did not settle: ${driven.reason}${exit ? ` (state=${exit.state} exit_code=${exit.exit_code})` : " (no exit recorded)"}`,
+						exit,
+					};
+				recordSettledLane(context.stateDir, jobTarget, { task_id: input.taskIds[0]!, exit: exit ?? null });
+				return {
+					outcome: "settled" as const,
+					detail: `initiative ${input.initiativeSlug} batch settled ${input.taskIds.length} slice(s) (commit ${exit?.final_commit_sha ?? "unknown"}, digest ${exit?.verification_evidence_digest})`,
+					exit,
+				};
+			},
+		);
+
+		return {
+			outcome: "executed",
+			detail: `started initiative drive job ${job.job_id} for ${input.initiativeSlug} (${input.taskIds.join(", ")}) (${input.confirmationSource ?? "resume"}, record ${input.recordRevision}); the PR opens when the batch settles`,
 		};
 	}
 
@@ -1620,7 +1836,7 @@ export function createDefaultAgentHandlerDeps(
 	const config = resolveConfig(root);
 	// Each session runs on the profile bound to its own loop role; the Lane it may
 	// drive runs on the executor role. Neither reads a `lanes` leaf any more (D2).
-	const executor: { host: ExecutorHost; model?: string | null; effort?: string | null } = loopRoleProfile(config.agents, "executor");
+	const executor: { host: ExecutorHost; model?: string | null; effort?: string | null } = loopRoleProfile(config, "executor");
 	const pluginRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 	const createWorktree: AgentHandlerDeps["createWorktree"] = ({ root: repository, branch, name }) => {
@@ -1680,9 +1896,11 @@ export function createDefaultAgentHandlerDeps(
 
 	return {
 		sessionProvider: createCliAgentSessionProvider({
-			profileFor: (role) => loopRoleProfile(config.agents, role),
+			profileFor: (role) => loopRoleProfile(config, role),
+			instructions_root: root,
 			log_dir: join(stateDir, "sessions"),
 		}),
+		loop_config: config,
 		session_credential: credential,
 		createWorktree,
 		prWorktree,
@@ -1752,6 +1970,7 @@ export function createDefaultAgentHandlerDeps(
 			return { record_revision: readTaskRecordRaw(input.root, input.task_id).revision };
 		},
 		drive: async (input) => driveSingleTaskLane(input, { stateDir, profile: executor, pluginRoot }),
+		driveInitiative: async (input) => driveInitiativeLane(input, { stateDir, profile: executor, pluginRoot }),
 		runVerification: async ({ root: repository, worktree_path, task_id }) => {
 			if (!task_id) return { exit_code: 1, stdout: "", stderr: "verification_needs_task: no TaskIntent is bound to this PR" };
 			let intent: ReturnType<typeof observeEnrollmentTaskIntent>;
@@ -1819,6 +2038,23 @@ export function createDefaultAgentHandlerDeps(
  * `advanceTask` reads the Kernel projection instead of claiming a Host verdict
  * the daemon has none of.
  */
+/**
+ * ULS D4.3: what one drive pass may do for this WorkItem right now. A paused item
+ * is skipped (sessions stay as they are), an abandoned one is refused so the
+ * tick's discard owns the batch, and the first pass after a resume carries the
+ * one-shot stall exemption (consumed here, once).
+ */
+export function driveGate(stateDir: string, target: string, at: string):
+	| { run: true; stall_exempt: boolean }
+	| { run: false; result: AgentDriveResult } {
+	const item = readWorkItem(stateDir, target);
+	const gate = workItemGate(item);
+	const batch_id = item?.binding.batch_id ?? null;
+	if (gate === "work_item_paused") return { run: false, result: { settled: false, exit: null, reason: "lane running", batch_id, paused: true } };
+	if (gate === "work_item_abandoned") return { run: false, result: { settled: false, exit: null, reason: "work_item_abandoned: the owner abandoned this item; the loop daemon discards its batch", batch_id } };
+	return { run: true, stall_exempt: takeResumeExemption(stateDir, target, at) };
+}
+
 async function driveSingleTaskLane(
 	input: AgentDriveRequest,
 	context: { stateDir: string; profile: { host: ExecutorHost; model?: string | null; effort?: string | null }; pluginRoot: string },
@@ -1886,6 +2122,7 @@ async function driveSingleTaskLane(
 			kernel,
 			git: createDefaultBatchGitPort(),
 			max_parallel: 1,
+			...(input.stall_exempt ? { stall_exempt: true } : {}),
 			supervision: {
 				parent_host: context.profile.host,
 				...(context.profile.model || context.profile.effort
@@ -1905,4 +2142,123 @@ async function driveSingleTaskLane(
 			...(result.hold_for_dialog ? { hold_for_dialog: result.hold_for_dialog } : {}),
 			...(result.parked ? { parked: result.parked } : {}),
 		};
+}
+
+/**
+ * Compose one Initiative as a single v3 batch through `dispatchLoopDrive` (ULS
+ * Spec D2.2). Children come from `prepareBatchPreflight` over the Local carrier
+ * via `observeInitiative`; the batch keeps `retain_branch` and `parent_relayed`,
+ * takes `max_parallel` from the Lane preferences, and requires the project's
+ * configured final verification commands (D2.3), refusing before any write when
+ * a new batch has none. A recorded or orphaned active batch is advanced, never
+ * duplicated (D2.4).
+ */
+export async function driveInitiativeLane(
+	input: AgentDriveInitiativeRequest,
+	context: { stateDir: string; profile: { host: ExecutorHost; model?: string | null; effort?: string | null }; pluginRoot: string },
+): Promise<AgentDriveResult> {
+	let resolved: ReturnType<typeof resolveInitiativeBatchId>;
+	try {
+		resolved = resolveInitiativeBatchId(input.root, input.slug, input.batch_id, input.task_ids);
+	} catch (error) {
+		return { settled: false, exit: null, reason: `drive_preflight_failed: ${error instanceof Error ? error.message : String(error)}` };
+	}
+	const batchId = resolved.batch_id;
+	const completed = completedInitiativeBatch(input.root, batchId, input.task_ids);
+	if (completed) return completed;
+
+	const config = resolveConfig(input.root);
+	const commandsValue = (config.batch.final_verification as { value?: unknown }).value;
+	const finalVerification = Array.isArray(commandsValue) ? (commandsValue as string[]) : [];
+	if (resolved.origin === "fresh" && finalVerification.length === 0)
+		return {
+			settled: false,
+			exit: null,
+			batch_id: null,
+			reason: "final_verification_required: an Initiative batch needs the project's batch final verification commands; configure batch.final_verification in .imm/config.json",
+		};
+	const maxParallel = config.batch.max_parallel.value as number;
+
+	const preflight = await prepareBatchPreflight({
+		root: input.root,
+		initiative_slug: input.slug,
+		readInitiative: observeInitiative,
+		max_parallel: maxParallel,
+		now: input.now,
+	});
+	if (!preflight.ok) return { settled: false, exit: null, reason: `drive_preflight_failed: ${preflight.reason}` };
+	const projection = preflight.projection;
+
+	const registry = createBatchAuthorityRegistry();
+	const binding: BatchAuthorizationBinding = {
+		batch_id: batchId,
+		initiative_slug: input.slug,
+		plan_digest: projection.plan_digest,
+		branch: projection.batch_branch,
+		base_head: projection.base_head,
+		budget: projection.budget,
+		actor_id: LOOP_DAEMON_ACTOR_ID,
+		confirmation_ref: input.confirmation_ref,
+		nonce: randomUUID(),
+	};
+	const authorityChildren = projection.recovery_children.map(authorityChild);
+	const capability = registry.issue(binding, authorityChildren, input.now);
+	const parent = await observeInitiative(input.root, input.slug);
+	const kernel = createBatchKernelPort({
+		root: input.root,
+		parent,
+		enrollmentRegistry: createEnrollmentAuthorityRegistry(),
+		registry,
+		capability,
+		binding,
+		advanceTask: daemonAdvanceTask,
+		resume: {
+			isResuming: projection.is_resuming,
+			existingBatch: projection.existing_batch,
+			batchBranch: projection.batch_branch,
+		},
+	});
+
+	const result = await dispatchLoopDrive({
+		kind: "initiative",
+		root: input.root,
+		slug: input.slug,
+		batch_id: batchId,
+		registry,
+		capability,
+		children: authorityChildren,
+		plan_digest: projection.plan_digest,
+		base_head: binding.base_head,
+		confirmation: {
+			source: input.confirmation_ref.startsWith("policy_auto") ? "policy_auto" : "tracker_approval",
+			ref: input.confirmation_ref,
+		},
+		confirmation_time: input.now,
+		budget: projection.budget,
+		now: input.now,
+		kernel,
+		git: createDefaultBatchGitPort(),
+		max_parallel: maxParallel,
+		final_verification: finalVerification,
+		...(input.stall_exempt ? { stall_exempt: true } : {}),
+		supervision: {
+			parent_host: context.profile.host,
+			...(context.profile.model || context.profile.effort
+				? {
+						request: {
+							...(context.profile.model ? { model: context.profile.model } : {}),
+							...(context.profile.effort ? { effort: context.profile.effort } : {}),
+						},
+					}
+				: {}),
+		},
+	});
+	return {
+		settled: result.settled,
+		exit: result.exit,
+		reason: result.reason,
+		batch_id: result.batch_id,
+		...(result.hold_for_dialog ? { hold_for_dialog: result.hold_for_dialog } : {}),
+		...(result.parked ? { parked: result.parked } : {}),
+	};
 }

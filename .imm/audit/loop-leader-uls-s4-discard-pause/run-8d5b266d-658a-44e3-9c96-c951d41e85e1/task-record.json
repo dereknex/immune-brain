@@ -1,0 +1,187 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "loop-leader-uls-s4-discard-pause",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "loop-leader-uls-s4-discard-pause",
+    "goal": "Make loop steering act on the item's ULS batch: abandon runs discardLanes (gated stop, closeWithProof, per-child Lane and imm-lane removal, imm/<slug> deletion once every Lane is removed, terminal discarded record, batch_lane_retained with a named condition and retry otherwise), pause skips advanceLanes for the item's batch, and resume observes first and exempts one stall judgment, per D4 of docs/specs/loop-leader-uls-alignment.spec.md.",
+    "acceptance": [
+      {
+        "id": "S4-AC1",
+        "assertion": "Source BR-DEC-A4, BR-SCN-A3; meet D4.1-D4.2 in docs/specs/loop-leader-uls-alignment.spec.md. Agreed seam: tests/loop-leader-steering.test.ts, tests/session-lane-cleanup.test.ts. Done looks like: abandoning an item with an active two-child batch stops and proof-closes both fake sessions, removes both imm-lane/ branches and their worktrees and imm/<slug>, marks the record discarded with a report, and imm-loop status shows the item abandoned. Negative: a session whose [imm:<session_key>] ownership does not match is not closed and its Lane and imm/<slug> are retained with batch_lane_retained naming the condition; a dirty child worktree is retained; the next tick retries only the retained parts; Host retire_stale_batch is unchanged.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/loop-leader-steering.test.ts tests/session-lane-cleanup.test.ts && bun scripts/sync-dist-docs.ts --check && bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "S4-AC2",
+        "assertion": "Source BR-DEC-A4; meet D4.3 in docs/specs/loop-leader-uls-alignment.spec.md. Agreed seam: tests/loop-leader-steering.test.ts. Done looks like: while the item is paused, ticks call no advanceLanes for its batch and the child session generation and no_progress are unchanged; after resume, an idle session at the unchanged baseline is not closed or rotated on the first tick and is judged by the normal parent_relayed rule on the second. Negative: an exited session observed on the first tick after resume is still handled as exited.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/loop-leader-steering.test.ts && bun scripts/sync-dist-docs.ts --check && bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/loop-leader-uls-s4-discard-pause.md",
+      "docs/plans/loop-leader-uls-s4-discard-pause.intent.json",
+      "docs/specs/loop-leader-uls-alignment.spec.md",
+      "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+      "plugins/immune-brain-antigravity/runtime/lane_sessions/index.ts",
+      "plugins/immune-brain-antigravity/runtime/loop_daemon/cli.ts",
+      "plugins/immune-brain-antigravity/runtime/loop_daemon/drive_dispatcher.ts",
+      "plugins/immune-brain-antigravity/runtime/loop_daemon/steering.ts",
+      "plugins/immune-brain-antigravity/runtime/loop_daemon/work_items.ts",
+      "plugins/immune-brain-antigravity/runtime/unattended/batch_lanes.ts",
+      "plugins/immune-brain-antigravity/runtime/unattended/batch_state.ts",
+      "plugins/immune-brain-antigravity/runtime/unattended/lane_cleanup.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/lane_sessions/index.ts",
+      "plugins/immune-brain/runtime/loop_daemon/cli.ts",
+      "plugins/immune-brain/runtime/loop_daemon/drive_dispatcher.ts",
+      "plugins/immune-brain/runtime/loop_daemon/steering.ts",
+      "plugins/immune-brain/runtime/loop_daemon/work_items.ts",
+      "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+      "plugins/immune-brain/runtime/unattended/batch_state.ts",
+      "plugins/immune-brain/runtime/unattended/lane_cleanup.ts",
+      "tests/loop-leader-steering.test.ts",
+      "tests/session-lane-cleanup.test.ts"
+    ],
+    "scope_size_reason": "discardLanes, the discarded record state and the steering hook that triggers it must land together so an abandoned item never leaves a running batch; pause and resume share the same per-tick advance gate.",
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/loop-leader-uls-s4-discard-pause.intent.json",
+    "content_hash": "sha256:3560320e6c9347f0313e3becf78042e0c7d3f13f314964fffd78a6ab69479951"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:3560320e6c9347f0313e3becf78042e0c7d3f13f314964fffd78a6ab69479951",
+  "git_base_head": "1e9d9f6c34d785dcabf5d617079832f66df8ef06",
+  "attestations": [
+    {
+      "id": "approval-qa-dafeacec",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:3560320e6c9347f0313e3becf78042e0c7d3f13f314964fffd78a6ab69479951",
+      "diff_hash": "sha256:24a8207024bcc2d511010442d4dc5a9c4a704a86ff17280a22fc01d2e412ac55",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:68fd674c3dd04433756007493be68185f5c78df2aa85c0f07448f056cd614a17",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S4-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:68fd674c3dd04433756007493be68185f5c78df2aa85c0f07448f056cd614a17"
+        },
+        {
+          "acceptance_id": "S4-AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:68fd674c3dd04433756007493be68185f5c78df2aa85c0f07448f056cd614a17"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-5d44a2dd",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:3560320e6c9347f0313e3becf78042e0c7d3f13f314964fffd78a6ab69479951",
+      "diff_hash": "sha256:24a8207024bcc2d511010442d4dc5a9c4a704a86ff17280a22fc01d2e412ac55",
+      "actor_id": "cli:claude-code:2426de73-9202-4f06-973f-9349ffca94be",
+      "summary": "S4-AC1: discardAbandonedBatches/discardBatchLanes stop+closeWithProof each child, retain not_owned/unusable-provider/dirty Lanes with batch_lane_retained, delete imm/<slug> only after every Lane is gone, write discarded report, leave terminal records untouched; S4-AC2: driveGate skips paused items without spending deadlines, relayed advance skips paused, resume_pending yields one stall exemption that holds idle/done but not exited sessions; antigravity runtime tree proven identical to source. Blast radius medium: batch_state.ts persisted shape (new discarding/discarded states, discard field), batch_lanes.ts, child_session_reconciler.ts, loop_daemon tick.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "1e9d9f6c34d785dcabf5d617079832f66df8ef06",
+        "review_commit": "5546bd892004e0a4a0ef64e497951b59b03f1f0f"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-74c24b57a7d6-1-review-1",
+          "acceptance_id": "S4-AC1",
+          "summary": "An in-flight drive advance that passed driveGate before abandon can write the batch record back after discardBatchLanes set discarding, dropping the discard progress; the next tick then re-calls closeWithProof on already-closed handles of removed children, which a provider may refuse and retain indefinitely.",
+          "anchor": "sha256:e663bf1c7f7d7b86d1c98b83cbb56fc50a681ab1f34a9ae85cfa433a0123d654",
+          "evidence": {
+            "trigger": "standing daemon: drive job advanceLanes running while the tick's discardAbandonedBatches writes batch_state discarding → advance persists its in-memory record (running, no discard) → next tick revisits removed children and calls closeWithProof on closed handles → possible permanent batch_lane_retained",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/loop_daemon/cli.ts",
+              "plugins/immune-brain/runtime/loop_daemon/discard.ts:discardAbandonedBatches",
+              "plugins/immune-brain/runtime/unattended/batch_lanes.ts:discardBatchLanes",
+              "plugins/immune-brain/runtime/lane_sessions/index.ts:advanceLanes"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S4-AC1"
+            }
+          }
+        },
+        {
+          "id": "review-74c24b57a7d6-2-review-2",
+          "acceptance_id": "S4-AC1",
+          "summary": "A child session with a key but no handle whose find returns not_found is removed with proof null (treated as never holding a session); no test pins this path.",
+          "anchor": "sha256:342a7c8cf9d0d6cb5dd9329ecec95cf24911ab050699580d5bd3e50007051b00",
+          "evidence": {
+            "trigger": "child.session.key set, handle null, port.find → {ok:true,not_found:true} → cleanupDiscardedChildLane runs with proof null and removes the Lane without an exit proof",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/unattended/batch_lanes.ts:discardBatchLanes",
+              "plugins/immune-brain/runtime/unattended/lane_cleanup.ts:cleanupDiscardedChildLane"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S4-AC1"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:1398fd2fb7164f53c26058a6f51033f90ba1487855ced5e11070a2f37df6cebc"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:loop-leader-uls-s4-discard-pause:2026-11-20T21:40:00.752Z",
+      "at": "2026-11-20T21:40:00.752Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-leader-uls-s4-discard-pause.intent.json"
+    },
+    {
+      "id": "record_approval:loop-leader-uls-s4-discard-pause:2026-11-20T21:40:28.961Z",
+      "at": "2026-11-20T21:40:28.961Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-dafeacec\naction_v2_sha256:21cc61650a94a047b56cb42ad667830d9de84bc7d4a3ff96fafec0a4b991d0f7",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-11-20T21:40:28.961Z"
+      }
+    },
+    {
+      "id": "record_approval:loop-leader-uls-s4-discard-pause:2026-11-20T21:46:59.201Z",
+      "at": "2026-11-20T21:46:59.201Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-5d44a2dd\naction_v2_sha256:c79846af0d3829b5ed282879ecd07829777032bdedc37c49eba285db343701b9",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:2426de73-9202-4f06-973f-9349ffca94be",
+        "confirmation_ref": "claude:cli:claude-code:2426de73-9202-4f06-973f-9349ffca94be",
+        "issued_at": "2026-11-20T21:46:59.201Z"
+      },
+      "review_started_at": "2026-11-20T21:45:09.314Z",
+      "review_submitted_at": "2026-11-20T21:46:57.595Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:loop-leader-uls-s4-discard-pause:2026-11-20T21:47:04.090Z",
+      "at": "2026-11-20T21:47:04.090Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:0ee0cfcbe3941728307d046a012f42b0f0b4dfbcdcbc7d7dc8bcd2535b93e8a4"
+    }
+  ]
+}

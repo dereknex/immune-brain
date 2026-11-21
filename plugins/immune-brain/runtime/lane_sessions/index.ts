@@ -13,9 +13,10 @@
 // Verification: `bun test tests/lane-sessions.test.ts`.
 import { resolveSessionProvider, SESSION_PROVIDER_REGISTRY, type SessionProviderDescriptor } from "../session/provider_registry";
 import type { ExecutorHostKind, SupervisedSessionPort } from "../session/supervised_session_port";
+import { runtimeClaudePluginDir } from "../plugin_source_skew";
 import { laneExecutorChoice } from "../unattended/agent_profiles";
 import type { ExecutorPreferences } from "../unattended/agent_profiles";
-import { runLaneBatch as advanceBatch } from "../unattended/batch_lanes";
+import { discardBatchLanes, runLaneBatch as advanceBatch, type DiscardBatchResult } from "../unattended/batch_lanes";
 import type { BatchRunnerKernelPort, BatchTrackerPort } from "../unattended/batch_kernel_port";
 import type { BatchRunnerGitPort } from "../unattended/batch_git";
 import {
@@ -23,6 +24,7 @@ import {
 	isTerminalBatchState,
 	readAnyBatchRunState,
 	type AnyBatchRunStateRecord,
+	type BatchEntryKind,
 	type BatchLaneRunStateRecord,
 } from "../unattended/batch_state";
 import type { BatchAgreement } from "../unattended/batch_agreement";
@@ -67,7 +69,7 @@ export interface LaneSessionsDeps {
 	providerRegistry?: readonly SessionProviderDescriptor[];
 	createPort?: (provider: string, env: Record<string, string | undefined>) => SupervisedSessionPort;
 	/** Entry kind the batch was authorized under; new records persist it so re-entry matches. Carried opaquely: this composition root never interprets it. */
-	entry_kind?: "single_task";
+	entry_kind?: BatchEntryKind;
 	hostArgs?: string[] | ((taskId: string) => string[]);
 	/** The requested Executor profile; sessions open with the effective choice, never the Parent Host by default. */
 	executor?: ExecutorPreferences;
@@ -83,6 +85,10 @@ export interface LaneSessionsDeps {
 	review_profile?: unknown;
 	final_verification?: string[];
 	topology_digest?: string;
+	/** Test seam: the Claude plugin root a claude-code Executor loads; defaults to the runtime's own. */
+	claudePluginDir?: () => string | null;
+	/** One advance only (loop-leader-uls-alignment D4.3): hold idle sessions instead of judging them stalled. */
+	stall_exempt?: boolean;
 }
 
 export interface ObserveLanesDeps {
@@ -92,6 +98,8 @@ export interface ObserveLanesDeps {
 	createPort?: (provider: string, env: Record<string, string | undefined>) => SupervisedSessionPort;
 	host: ExecutorHostKind;
 	hostArgs?: string[] | ((taskId: string) => string[]);
+	/** Test seam: the Claude plugin root a claude-code Executor loads; defaults to the runtime's own. */
+	claudePluginDir?: () => string | null;
 }
 
 function hostArgsFor(deps: { hostArgs?: string[] | ((taskId: string) => string[]) }, taskId: string): string[] {
@@ -122,7 +130,15 @@ function resumeChildren(record: BatchLaneRunStateRecord): Array<{ task_id: strin
  * no `--print` flag is included; model and effort use the same flags the
  * supervisor and Review sessions use (`--thinking` for pi effort).
  */
-export function executorSessionTarget(input: { root: string; executor?: ExecutorPreferences; host: ExecutorHostKind }): {
+function claudePluginDirOrNull(resolve: (() => string | null) | undefined): string | null {
+	try {
+		return (resolve ?? runtimeClaudePluginDir)() ?? null;
+	} catch {
+		return null;
+	}
+}
+
+export function executorSessionTarget(input: { root: string; executor?: ExecutorPreferences; host: ExecutorHostKind; pluginDir?: () => string | null }): {
 	host: ExecutorHostKind;
 	hostArgs: string[];
 } {
@@ -130,6 +146,12 @@ export function executorSessionTarget(input: { root: string; executor?: Executor
 	const hostArgs: string[] = [];
 	if (choice.model) hostArgs.push("--model", choice.model);
 	if (choice.effort) hostArgs.push(choice.host === "pi" ? "--thinking" : "--effort", choice.effort);
+	// A claude-code Executor loads the plugin build this runtime came from, as the
+	// Review sessions do, so its drive entry resolves without a Parent relaunch.
+	if (choice.host === "claude-code") {
+		const pluginDir = claudePluginDirOrNull(input.pluginDir);
+		if (pluginDir) hostArgs.push("--plugin-dir", pluginDir);
+	}
 	return { host: choice.host as ExecutorHostKind, hostArgs };
 }
 
@@ -166,6 +188,7 @@ export function openBatchSessionPort(input: {
 	host: ExecutorHostKind;
 	executor?: ExecutorPreferences;
 	hostArgs?: string[];
+	claudePluginDir?: () => string | null;
 	providerRegistry?: readonly SessionProviderDescriptor[];
 	createPort?: (provider: string, env: Record<string, string | undefined>) => SupervisedSessionPort;
 }): { ok: true; port: BatchSessionPort } | { ok: false; reason: string; recovery: string } {
@@ -181,7 +204,7 @@ export function openBatchSessionPort(input: {
 	const raw = portFor(input.provider, input.env, registry, input.createPort);
 	if (!raw)
 		return { ok: false, reason: "lane_session_unavailable: provider factory failed", recovery: "retry inside Herdr" };
-	const target = executorSessionTarget({ root: input.root, executor: input.executor, host: input.host });
+	const target = executorSessionTarget({ root: input.root, executor: input.executor, host: input.host, pluginDir: input.claudePluginDir });
 	return { ok: true, port: new SessionPortAdapter(raw, target.host, input.hostArgs ?? target.hostArgs) };
 }
 
@@ -246,7 +269,7 @@ export async function startLanes(
 	deps: LaneSessionsDeps,
 ): Promise<Record<string, unknown> | LaneSessionRefusal> {
 	const registry = deps.providerRegistry ?? SESSION_PROVIDER_REGISTRY;
-	const target = executorSessionTarget({ root: deps.root, executor: deps.executor, host: deps.host });
+	const target = executorSessionTarget({ root: deps.root, executor: deps.executor, host: deps.host, pluginDir: deps.claudePluginDir });
 	const resolved = resolveSessionProvider({ role: "executor", providers: deps.providers, host: target.host, env: deps.env, registry });
 	if (!resolved.ok) return refusalFromReasons(resolved.reasons);
 	const raw = portFor(resolved.provider, deps.env, registry, deps.createPort);
@@ -274,6 +297,9 @@ export async function advanceLanes(
 	if (!persisted || !isLaneBatchRecord(persisted)) {
 		return { ok: false, code: "lane_session_unavailable", reason: `lane_session_unavailable: no active v3 batch ${batchId}`, recovery: "start a fresh batch" };
 	}
+	// A batch being discarded is torn down, never advanced (loop-leader-uls-alignment D4.1).
+	if (persisted.batch_state === "discarding")
+		return { ok: false, code: "lane_session_unavailable", reason: `lane_session_unavailable: batch ${batchId} is being discarded`, recovery: "the loop daemon retries the discard on its next tick" };
 	const recordedProvider = (persisted as { session_provider?: string | null }).session_provider ?? null;
 	const registry = deps.providerRegistry ?? SESSION_PROVIDER_REGISTRY;
 	if (recordedProvider) {
@@ -289,7 +315,7 @@ export async function advanceLanes(
 		if (!raw) return refusalFromReasons([{ provider: recordedProvider, reason: "provider factory failed", recovery: "retry inside Herdr" }]);
 		// Resume honors the record's frozen Executor profile, falling back to the request.
 		const resumeTarget = executorSessionTarget({ root: deps.root,
-			executor: (persisted as { executor_preferences?: ExecutorPreferences }).executor_preferences ?? deps.executor, host: deps.host });
+			executor: (persisted as { executor_preferences?: ExecutorPreferences }).executor_preferences ?? deps.executor, host: deps.host, pluginDir: deps.claudePluginDir });
 		const adapter = new SessionPortAdapter(raw, resumeTarget.host, (deps.hostArgs?.length ? hostArgsFor(deps, batchId) : resumeTarget.hostArgs));
 		const now = deps.now ?? new Date().toISOString();
 		const input = {
@@ -318,6 +344,7 @@ export async function advanceLanes(
 			...(deps.lane_session_close !== undefined ? { lane_session_close: deps.lane_session_close } : {}),
 			...(deps.lane_offers !== undefined ? { lane_offers: deps.lane_offers } : {}),
 			...(deps.review_profile !== undefined ? { review_profile: deps.review_profile } : {}),
+			...(deps.stall_exempt ? { stall_exempt: true } : {}),
 			sessions: adapter,
 		};
 		const rawAdv = await advanceBatch(input as never, persisted);
@@ -325,7 +352,7 @@ export async function advanceLanes(
 		if (Array.isArray(advReport.handoffs)) advReport.handoffs = advReport.handoffs.filter((h) => h.role !== "executor");
 		return advReport as unknown as Record<string, unknown>;
 	}
-	const target = executorSessionTarget({ root: deps.root, executor: deps.executor, host: deps.host });
+	const target = executorSessionTarget({ root: deps.root, executor: deps.executor, host: deps.host, pluginDir: deps.claudePluginDir });
 	const resolved = resolveSessionProvider({ role: "executor", providers: deps.providers, host: target.host, env: deps.env, registry });
 	if (!resolved.ok) return refusalFromReasons(resolved.reasons);
 	const raw = portFor(resolved.provider, deps.env, registry, deps.createPort);
@@ -354,12 +381,56 @@ export async function advanceLanes(
 		...(deps.lane_session_close !== undefined ? { lane_session_close: deps.lane_session_close } : {}),
 		...(deps.lane_offers !== undefined ? { lane_offers: deps.lane_offers } : {}),
 		...(deps.review_profile !== undefined ? { review_profile: deps.review_profile } : {}),
+		...(deps.stall_exempt ? { stall_exempt: true } : {}),
 		sessions: adapter,
 	};
 	const raw2 = await advanceBatch(input as never, persisted);
 	const report2 = raw2 as unknown as { handoffs?: Array<{ role?: string }> };
 	if (Array.isArray(report2.handoffs)) report2.handoffs = report2.handoffs.filter((h) => h.role !== "executor");
 	return report2 as unknown as Record<string, unknown>;
+}
+
+export interface DiscardLanesDeps {
+	env: Record<string, string | undefined>;
+	host: ExecutorHostKind;
+	providerRegistry?: readonly SessionProviderDescriptor[];
+	createPort?: (provider: string, env: Record<string, string | undefined>) => SupervisedSessionPort;
+	now?: string;
+}
+
+/**
+ * Discard one non-terminal batch for the loop daemon's abandon (Spec
+ * loop-leader-uls-alignment D4.1): resolve the session port from the record's
+ * provider, then stop and prove-close each child's session, remove proven Lanes,
+ * and delete `imm/<slug>` once every Lane is gone. An unusable provider retains
+ * every session-bearing Lane with the named condition instead of guessing.
+ * Re-callable: a `discarding` record is retried and removed children are skipped.
+ */
+export async function discardLanes(root: string, batchId: string, deps: DiscardLanesDeps): Promise<DiscardBatchResult | { ok: false; code: "batch_not_discardable"; reason: string }> {
+	let record: AnyBatchRunStateRecord | null = null;
+	try {
+		record = readAnyBatchRunState(root, batchId);
+	} catch {
+		return { ok: false, code: "batch_not_discardable", reason: `batch_not_discardable: unreadable batch ${batchId}` };
+	}
+	if (!record || !isLaneBatchRecord(record))
+		return { ok: false, code: "batch_not_discardable", reason: `batch_not_discardable: no v3 Lane batch ${batchId}` };
+	const opened = openBatchSessionPort({
+		root,
+		provider: record.session_provider,
+		env: deps.env,
+		host: deps.host,
+		executor: record.executor_preferences,
+		...(deps.providerRegistry ? { providerRegistry: deps.providerRegistry } : {}),
+		...(deps.createPort ? { createPort: deps.createPort } : {}),
+	});
+	return discardBatchLanes({
+		root,
+		batch_id: batchId,
+		sessions: opened.ok ? opened.port : null,
+		...(opened.ok ? {} : { sessions_unavailable: `${opened.reason}; ${opened.recovery}` }),
+		now: deps.now ?? new Date().toISOString(),
+	});
 }
 
 async function snapshotChildren(

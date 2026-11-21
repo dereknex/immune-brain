@@ -263,6 +263,8 @@ describe("claude host package", () => {
       "answer_loop_interaction",
       // Spec review-receipt-mcp-submission D4: appended after every pre-existing Tool.
       "submit_session_result",
+      // Spec loop-leader D5.2: the privileged local steering Tool.
+      "steer_loop_work_item",
     ]);
     const init = await handleJsonRpc({ jsonrpc: "2.0", id: 1, method: "initialize" });
     expect(init?.result).toMatchObject({

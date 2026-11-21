@@ -23,6 +23,7 @@ import {
 	type LocalInteractionRecord,
 } from "../loop_daemon/interaction/local_channel.ts";
 import { ANSWER_LOOP_INTERACTION_TOOL } from "../loop_daemon/interaction/local_channel.ts";
+import type { InteractionContext } from "../loop_daemon/interaction/protocol.ts";
 
 export { ANSWER_LOOP_INTERACTION_TOOL };
 
@@ -38,6 +39,8 @@ export interface LoopInteractionView {
 	binding: LocalInteractionRecord["binding"];
 	prompt: string;
 	options?: string[];
+	/** D4.4: the same context pack the GitHub channel renders on the subject. */
+	context?: InteractionContext;
 	/** The answer form the request asked for. */
 	answer: LocalInteractionRecord["answer"];
 	/** Whether `answer_loop_interaction` may answer this request at all. */
@@ -78,6 +81,7 @@ export function listPendingLoopInteractions(root: string, taskId?: string) {
 				binding: request.binding,
 				prompt: request.prompt,
 				...(request.options && request.options.length > 0 ? { options: [...request.options] } : {}),
+				...(request.context === undefined ? {} : { context: request.context }),
 				answer: request.answer,
 				answerable,
 				...(answerable ? {} : { local_action: LOCAL_ACTION[request.kind] ?? "" }),

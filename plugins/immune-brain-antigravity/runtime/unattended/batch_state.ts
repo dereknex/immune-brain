@@ -109,7 +109,15 @@ export type BatchRunState =
 	 * children, its commits and its branch stay as evidence, and the retired
 	 * authorization is never reused for the revised plan.
 	 */
-	| "superseded";
+	| "superseded"
+	/**
+	 * The loop daemon's abandon is tearing the batch down (ULS Spec
+	 * loop-leader-uls-alignment D4.1): sessions are being closed with proof and
+	 * Lanes removed. Not terminal: the next tick retries whatever is retained.
+	 */
+	| "discarding"
+	/** Every Lane and the batch branch were removed; terminal, with its report kept. */
+	| "discarded";
 
 export type BatchChildRunState =
 	| "pending"
@@ -384,11 +392,25 @@ export interface BatchLaneRunStateRecord {
 	reseals?: Array<{ at: string; task_id: string; from_digest: string; to_digest: string; intent_revision: number; intent_content_hash: string; intent_authority_hash?: string }>;
 	/** Each single-task `plan_digest` rebind from a Parent literal-user revision decision. */
 	lane_rebinds?: LaneRebind[];
+	/**
+	 * The loop daemon's discard progress (D4.1): children whose Lane worktree and
+	 * `imm-lane/` branch are gone, and each resource still retained with its named
+	 * condition. Absent until a discard starts.
+	 */
+	discard?: BatchDiscardProgress;
 	created_at: string;
 	updated_at: string;
 }
 
 export type AnyBatchRunStateRecord = BatchRunStateRecord | BatchLaneRunStateRecord;
+
+export interface BatchDiscardProgress {
+	removed: string[];
+	/** Each retained resource with its `batch_lane_retained` report text. */
+	retained: Array<{ task_id: string; condition: string; reason: string }>;
+	parent_branch_removed: boolean;
+	parent_branch_condition: string | null;
+}
 
 export function isLaneBatchRecord(record: AnyBatchRunStateRecord): record is BatchLaneRunStateRecord {
 	return record.contract === "assurance_kernel/batch_run_state/v3" || (record as { contract?: unknown }).contract === "assurance_kernel/batch_run_state/v2";
@@ -404,16 +426,28 @@ export function isSingleTaskRecord(record: AnyBatchRunStateRecord): boolean {
 	return isLaneBatchRecord(record) && (record as BatchLaneRunStateRecord).plan_source === "single_task";
 }
 
+/**
+ * The entry-layer label a composition root passes through. `initiative` is the
+ * default Initiative entry: its record carries no `plan_source`, exactly like
+ * the Host Initiative batch records, so `initiative` and an absent label name
+ * the same record shape (ULS Spec loop-leader-uls-alignment D2.1).
+ */
+export type BatchEntryKind = "single_task" | "initiative";
+
+function persistedEntryKind(kind: string | undefined): string | undefined {
+	return kind === "initiative" ? undefined : kind;
+}
+
 /** Entry-kind match without naming the retired literal outside the state owner. */
 export function entryKindMatches(persisted: AnyBatchRunStateRecord, input: { plan_source?: string; entry_kind?: string }): boolean {
 	const persistedKind = isLaneBatchRecord(persisted) ? (persisted as BatchLaneRunStateRecord).plan_source : undefined;
-	return persistedKind === (input.plan_source ?? input.entry_kind);
+	return persistedKind === persistedEntryKind(input.plan_source ?? input.entry_kind);
 }
 
 /** Identity fragment for new records without naming the literal at the call site. Prefers an explicit entry kind, else the opaque marker. */
-export function planSourceIdentity(input: { plan_source?: "single_task"; entry_kind?: "single_task" }): { plan_source?: "single_task" } {
-	const kind = input.plan_source ?? input.entry_kind;
-	return kind ? { plan_source: kind } : {};
+export function planSourceIdentity(input: { plan_source?: "single_task"; entry_kind?: BatchEntryKind }): { plan_source?: "single_task" } {
+	const kind = persistedEntryKind(input.plan_source ?? input.entry_kind);
+	return kind === "single_task" ? { plan_source: kind } : {};
 }
 
 /** Transitional agreement defaults for callers that predate authorizeBatch (S3). */
@@ -474,6 +508,8 @@ export const BATCH_RUN_STATES: ReadonlySet<string> = new Set([
 	"failed",
 	"rejected",
 	"superseded",
+	"discarding",
+	"discarded",
 ]);
 
 const ISO_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
@@ -1161,7 +1197,7 @@ export function batchTopologyDigest(tasks: Array<{ task_id: string; slice_id: st
 export function prepareBatchLaneRunState(input: {
 	plan_source?: "single_task";
 	/** Opaque entry-kind marker; interpreted here as the entry kind for new records. */
-	entry_kind?: "single_task";
+	entry_kind?: BatchEntryKind;
 	topology_digest?: string;
 	batch_id: string;
 	initiative_slug: string;
@@ -1184,7 +1220,7 @@ export function prepareBatchLaneRunState(input: {
 	final_verification_required?: boolean;
 }): BatchLaneRunStateRecord {
 	validateBatchId(input.batch_id);
-	const entryKind = input.plan_source ?? input.entry_kind;
+	const entryKind = persistedEntryKind(input.plan_source ?? input.entry_kind) as "single_task" | undefined;
 	return {
 		contract: "assurance_kernel/batch_run_state/v3",
 		...(entryKind ? { plan_source: entryKind } : {}),
@@ -1627,7 +1663,8 @@ export function writeBatchRunReport<T extends PersistableReport>(root: string, r
 				throw new Error(`batch run report ${report.batch_id} has an unknown contract`);
 			const prior = original as T;
 			if (canonicalReportBytes(prior) === canonicalReportBytes(report)) return prior;
-			if (prior.batch_state !== "needs_human") return prior;
+			// A discard is the batch's final word: it replaces any earlier running report.
+			if (prior.batch_state !== "needs_human" && !(report.batch_state === "discarded" && prior.batch_state !== "discarded")) return prior;
 		}
 		ensureSecureDirectory(root, join(".imm", "state", "batches"));
 		writeFileAtomically(root, relative, canonicalReportBytes(report));
@@ -1646,6 +1683,7 @@ export function isTerminalBatchState(state: BatchRunState): boolean {
 		state === "budget_stopped" ||
 		state === "failed" ||
 		state === "rejected" ||
-		state === "superseded"
+		state === "superseded" ||
+		state === "discarded"
 	);
 }

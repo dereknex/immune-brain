@@ -1,0 +1,28 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "loop-leader-uls-s3-initiative-pr-gate",
+  "owner": "user",
+  "goal": "Open exactly one PR from retained imm/<slug> for a completed daemon Initiative batch whose final verification passed, gated on the batch commit and every child's .imm/audit/ evidence digest through batchDeliveryEvidence, idempotent on repeated E13, with single-task delivery unchanged and the ULS Spec D13 amendment recorded in the new Spec, per D3 of docs/specs/loop-leader-uls-alignment.spec.md.",
+  "acceptance": [
+    {
+      "id": "S3-AC1",
+      "assertion": "Source BR-DEC-A1, BR-SCN-A1; meet D3.1-D3.3 in docs/specs/loop-leader-uls-alignment.spec.md. Agreed seam: tests/loop-daemon-drive-pr.test.ts. Done looks like: a completed Initiative batch with passing final verification opens one PR whose head is imm/<slug> and whose body lists every child's acceptance IDs and audit digest; imm-loop status shows the item in review. Negative: a child without audit evidence, a failed or missing final verification result, or a batch not in completed state opens no PR and records the named reason; a repeated E13 for the same batch opens no second PR; single-task PR creation from refs/heads/imm/<task_id> is unchanged.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/loop-daemon-drive-pr.test.ts && bun scripts/sync-dist-docs.ts --check && bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/loop-leader-uls-s3-initiative-pr-gate.md",
+    "docs/plans/loop-leader-uls-s3-initiative-pr-gate.intent.json",
+    "docs/specs/loop-leader-uls-alignment.spec.md",
+    "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+    "plugins/immune-brain-antigravity/runtime/loop_daemon/dispatch.ts",
+    "plugins/immune-brain-antigravity/runtime/unattended/batch_preflight.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/loop_daemon/dispatch.ts",
+    "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+    "tests/loop-daemon-drive-pr.test.ts"
+  ],
+  "scope_size_reason": "The aggregated delivery evidence and the open_pr branch that consumes it are one gate; neither is observable alone.",
+  "risk": "material",
+  "revision": 1
+}

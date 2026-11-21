@@ -41,6 +41,190 @@ export interface InteractionBinding {
 	issue_revision?: string;
 }
 
+/**
+ * The context pack a question carries (D4.4): why the daemon asks, what it
+ * already tried, the options with their consequences and the evidence links.
+ * Optional, so every request written before it existed still reads unchanged.
+ */
+export interface InteractionContextOption {
+	id: string;
+	label: string;
+	consequence: string;
+}
+
+export interface InteractionContextEvidence {
+	label: string;
+	ref: string;
+}
+
+export interface InteractionContext {
+	blocked_on: string;
+	tried: string[];
+	options: InteractionContextOption[];
+	evidence: InteractionContextEvidence[];
+}
+
+/** The rendered context pack never exceeds 8 KiB (D4.4). */
+export const CONTEXT_MAX_BYTES = 8 * 1024;
+export const CONTEXT_SECTION_START = "<!-- immune-brain:context -->";
+export const CONTEXT_SECTION_END = "<!-- immune-brain:context-end -->";
+export const CONTEXT_TRUNCATED_MARKER = "_Context truncated to 8 KiB._";
+
+const HTML_COMMENT = /<!--[\s\S]*?-->/g;
+
+/**
+ * Threat model: leader-authored text reaches GitHub, so HTML comments are
+ * stripped (no `immune-brain:` marker can be forged) and `@name` is
+ * neutralized with a zero-width space (the daemon never notifies a third party).
+ *
+ * Stripping repeats until nothing changes, because removing an inner comment can
+ * join `<!` and `-->` into a new one, and the two delimiters are then removed
+ * themselves: an unterminated `<!--` would otherwise hide the rest of the pack
+ * on GitHub, and a nested one could still spell our context markers.
+ */
+export function sanitizeContextText(text: string): string {
+	let stripped = text;
+	let previous: string;
+	do {
+		previous = stripped;
+		stripped = stripped.replace(HTML_COMMENT, "");
+	} while (stripped !== previous);
+	return stripped
+		.replace(/<!--/g, "")
+		.replace(/-->/g, "")
+		.replace(/@(?=[A-Za-z0-9_])/g, "@\u200b")
+		.trim();
+}
+
+export function sanitizeInteractionContext(context: InteractionContext): InteractionContext {
+	return {
+		blocked_on: sanitizeContextText(context.blocked_on),
+		tried: context.tried.map(sanitizeContextText).filter((entry) => entry.length > 0),
+		options: context.options.map((option) => ({
+			id: sanitizeContextText(option.id),
+			label: sanitizeContextText(option.label),
+			consequence: sanitizeContextText(option.consequence),
+		})),
+		evidence: context.evidence.map((entry) => ({ label: sanitizeContextText(entry.label), ref: sanitizeContextText(entry.ref) })),
+	};
+}
+
+function contextBody(context: InteractionContext): string {
+	const list = (entries: readonly string[]) => (entries.length > 0 ? entries.map((entry) => `- ${entry}`).join("\n") : "- none");
+	const options =
+		context.options.length > 0
+			? context.options
+					.map((option, index) => `${index + 1}. **${option.label}** (\`${option.id}\`) — ${option.consequence}`)
+					.join("\n")
+			: "- none";
+	const evidence =
+		context.evidence.length > 0
+			? context.evidence.map((entry) => `- [${entry.label}](${entry.ref})`).join("\n")
+			: "- none";
+	return [
+		"### Blocked on",
+		"",
+		context.blocked_on,
+		"",
+		"### Tried",
+		"",
+		list(context.tried),
+		"",
+		"### Options",
+		"",
+		options,
+		"",
+		"### Evidence",
+		"",
+		evidence,
+	].join("\n");
+}
+
+/**
+ * Drop trailing entries until the rendered pack fits 8 KiB. Structured trimming
+ * keeps the pack readable; a single over-long `blocked_on` is cut by bytes.
+ */
+export function fitInteractionContext(context: InteractionContext): { context: InteractionContext; truncated: boolean } {
+	const next: InteractionContext = {
+		blocked_on: context.blocked_on,
+		tried: [...context.tried],
+		options: [...context.options],
+		evidence: [...context.evidence],
+	};
+	const bytes = () => Buffer.byteLength(contextBody(next), "utf8");
+	let truncated = false;
+	while (bytes() > CONTEXT_MAX_BYTES) {
+		truncated = true;
+		if (next.evidence.length > 0) next.evidence.pop();
+		else if (next.options.length > 0) next.options.pop();
+		else if (next.tried.length > 0) next.tried.pop();
+		else {
+			// Last resort: the question itself is longer than the cap. Cut the
+			// byte excess in one step, backed up to a UTF-8 code-point boundary
+			// so the kept text is a valid prefix of the original.
+			const excess = bytes() - CONTEXT_MAX_BYTES;
+			const raw = Buffer.from(next.blocked_on, "utf8");
+			let keep = Math.max(0, raw.length - excess);
+			while (keep > 0 && (raw[keep]! & 0xc0) === 0x80) keep -= 1;
+			next.blocked_on = raw.subarray(0, keep).toString("utf8");
+			break;
+		}
+	}
+	return { context: next, truncated };
+}
+
+/** The one context section a request renders: markers delimit it so `annotate` can replace it in place. */
+export function renderInteractionContext(context: InteractionContext): string {
+	const fitted = fitInteractionContext(sanitizeInteractionContext(context));
+	return [
+		CONTEXT_SECTION_START,
+		contextBody(fitted.context),
+		...(fitted.truncated ? ["", CONTEXT_TRUNCATED_MARKER] : []),
+		CONTEXT_SECTION_END,
+	].join("\n");
+}
+
+/** Replace a body's context section, or append one when it carries none yet. */
+export function replaceContextSection(body: string, context: InteractionContext): string {
+	const section = renderInteractionContext(context);
+	const start = body.indexOf(CONTEXT_SECTION_START);
+	const end = body.indexOf(CONTEXT_SECTION_END);
+	if (start >= 0 && end > start) {
+		return `${body.slice(0, start)}${section}${body.slice(end + CONTEXT_SECTION_END.length)}`;
+	}
+	return `${body.trimEnd()}\n\n${section}\n`;
+}
+
+/**
+ * Same subject: the request is asked in the same place. Identifiers both sides
+ * name must agree; a request that carries extra binding identifiers (a Lane task
+ * and run on an Issue) still belongs to that Issue.
+ */
+export function subjectsMatch(left: InteractionSubject, right: InteractionSubject): boolean {
+	const pairs: Array<[number | string | undefined, number | string | undefined]> = [
+		[left.issue, right.issue],
+		[left.pr, right.pr],
+		[left.task_id, right.task_id],
+		[left.run_id, right.run_id],
+	];
+	let shared = false;
+	for (const [a, b] of pairs) {
+		if (a === undefined || b === undefined) continue;
+		if (a !== b) return false;
+		shared = true;
+	}
+	return shared;
+}
+
+export function bindingsMatch(left: InteractionBinding, right: InteractionBinding): boolean {
+	return changedBindingFields(left, right) === "";
+}
+
+/** D4.5: the advisory kinds one new request supersedes; a literal_user request never is. */
+export function isAdvisoryKind(kind: InteractionKind): boolean {
+	return kind === "clarify_question" || kind === "escalation";
+}
+
 export interface InteractionRequest {
 	contract: "immune_brain/interaction_request/v1";
 	/** Idempotency key: one marker comment per interaction_id. */
@@ -50,6 +234,8 @@ export interface InteractionRequest {
 	binding: InteractionBinding;
 	prompt: string;
 	options?: string[];
+	/** D4.4: explanation only; it never widens what a reply may effect. */
+	context?: InteractionContext;
 	answer: InteractionAnswer;
 	authority: InteractionAuthority;
 }
@@ -67,6 +253,14 @@ export interface InteractionChannel {
 	post(req: InteractionRequest): Promise<"posted" | "already_posted" | "notice_only">;
 	poll(interaction_id: string): Promise<InteractionPollResult>;
 	withdraw(interaction_id: string): Promise<void>;
+	/**
+	 * D4.5: attach a context pack to a pending `literal_user` request in place,
+	 * keeping its `interaction_id`, kind, binding and answer semantics. `absent`
+	 * means the channel holds no such request, so the caller posts a new one.
+	 */
+	annotate(interaction_id: string, context: InteractionContext): Promise<"annotated" | "absent">;
+	/** D4.6: the pointer the status projection shows, or null when the channel names none. */
+	link(interaction_id: string, subject: InteractionSubject): string | null;
 }
 
 /** D3 authority table: only the two literal-user decisions carry an answer that is applied. */
@@ -116,6 +310,40 @@ export function localOnlyNotice(input: {
 		]
 			.filter(Boolean)
 			.join("\n\n"),
+		answer: "none",
+		authority: interactionAuthority("notice"),
+	};
+}
+
+/**
+ * BR-DEC-11: the local action each GitHub-only owner command names. The daemon
+ * posts exactly this one `notice` and changes neither the WorkItem nor
+ * `state.paused`.
+ */
+export const GITHUB_LOCAL_ONLY_OWNER_COMMANDS = {
+	pause: "run `imm-loop pause` in your local checkout to pause every target",
+	resume: "run `imm-loop resume` in your local checkout to resume every target",
+	abandon: "run `steer_loop_work_item` with `action: abandon` in your local Host session to abandon one item",
+} as const;
+
+export type GithubLocalOnlyOwnerCommand = keyof typeof GITHUB_LOCAL_ONLY_OWNER_COMMANDS;
+
+/** One notice naming the local action for a GitHub `pause`/`resume`/`abandon` command. */
+export function ownerCommandNotice(input: {
+	interaction_id: string;
+	command: GithubLocalOnlyOwnerCommand;
+	subject: InteractionSubject;
+}): InteractionRequest {
+	return {
+		contract: INTERACTION_REQUEST_CONTRACT,
+		interaction_id: input.interaction_id,
+		kind: "notice",
+		subject: input.subject,
+		binding: {},
+		prompt: [
+			`\`@imm-loop ${input.command}\` changes nothing from GitHub: ${GITHUB_LOCAL_ONLY_OWNER_COMMANDS[input.command]}.`,
+			"This GitHub comment is a notice only; a reply here is never applied.",
+		].join("\n\n"),
 		answer: "none",
 		authority: interactionAuthority("notice"),
 	};

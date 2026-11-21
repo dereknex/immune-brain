@@ -1,0 +1,318 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "loop-leader-uls-s5-resolve-alignment",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "loop-leader-uls-s5-resolve-alignment",
+    "goal": "Align leader resolve with ULS: resume applies only to WorkItem escalated without a batch blocker while needs_human batches and lane_executor_no_progress children admit only ask_owner (the recorded amendment of loop-leader D4 and S4-AC1); a Lane dialog is asked once by planEscalation and a leader ask_owner on it annotates in place; lane_session_unavailable never counts as a refusal or replan round nor changes the briefing fingerprint and shows as environment_blocked in status; batch lookup uses findActiveLaneBatchForTask and briefing batches carry v3 session facts, per D5 of docs/specs/loop-leader-uls-alignment.spec.md.",
+    "acceptance": [
+      {
+        "id": "S5-AC1",
+        "assertion": "Source BR-DEC-A2, BR-REQ-A1; meet D5.1 and D5.4 in docs/specs/loop-leader-uls-alignment.spec.md. Agreed seam: tests/loop-leader-replan.test.ts, tests/loop-leader-briefing.test.ts. Done looks like: resume on an escalated item with no batch blocker is accepted; briefing batches carry each child's session generation, no_progress and attention. Negative: resume on a needs_human batch or a lane_executor_no_progress child is rejected and only ask_owner is accepted; two active batch records for one task make the batch lookup refuse instead of taking the first file.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/loop-leader-replan.test.ts tests/loop-leader-briefing.test.ts && bun scripts/sync-dist-docs.ts --check && bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "S5-AC2",
+        "assertion": "Source BR-DEC-A3, BR-SCN-A2; meet D5.2 in docs/specs/loop-leader-uls-alignment.spec.md. Agreed seam: tests/loop-leader-replan.test.ts, tests/loop-sched-interaction-github.test.ts. Done looks like: a child blocked on a startup dialog yields exactly one lane_entry_blocked comment on the Issue and appears in the briefing as a pending interaction. Negative: a leader ask_owner on the same subject annotates that request in place and posts no second comment.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/loop-leader-replan.test.ts tests/loop-sched-interaction-github.test.ts && bun scripts/sync-dist-docs.ts --check && bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "S5-AC3",
+        "assertion": "Source BR-DEC-A6, BR-SCN-A4; meet D5.3 in docs/specs/loop-leader-uls-alignment.spec.md. Agreed seam: tests/loop-leader-briefing.test.ts, tests/loop-leader-replan.test.ts. Done looks like: five ticks refused lane_session_unavailable leave refused_transitions, replan_rounds, the briefing fingerprint and the leader wake count unchanged, and imm-loop status --json shows environment_blocked lane_session_unavailable on the item. Negative: a different refusal reason still counts toward the three-refusal trigger.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/loop-leader-briefing.test.ts tests/loop-leader-replan.test.ts && bun scripts/sync-dist-docs.ts --check && bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/loop-leader-uls-s5-resolve-alignment.md",
+      "docs/plans/loop-leader-uls-s5-resolve-alignment.intent.json",
+      "docs/specs/loop-leader-uls-alignment.spec.md",
+      "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+      "plugins/immune-brain-antigravity/runtime/loop_daemon/cli.ts",
+      "plugins/immune-brain-antigravity/runtime/loop_daemon/escalation.ts",
+      "plugins/immune-brain-antigravity/runtime/loop_daemon/leader_agent.ts",
+      "plugins/immune-brain-antigravity/runtime/loop_daemon/leader_briefing.ts",
+      "plugins/immune-brain-antigravity/runtime/loop_daemon/leader_dispatch.ts",
+      "plugins/immune-brain-antigravity/runtime/loop_daemon/replan.ts",
+      "plugins/immune-brain-antigravity/runtime/loop_daemon/work_items.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/loop_daemon/cli.ts",
+      "plugins/immune-brain/runtime/loop_daemon/escalation.ts",
+      "plugins/immune-brain/runtime/loop_daemon/leader_agent.ts",
+      "plugins/immune-brain/runtime/loop_daemon/leader_briefing.ts",
+      "plugins/immune-brain/runtime/loop_daemon/leader_dispatch.ts",
+      "plugins/immune-brain/runtime/loop_daemon/replan.ts",
+      "plugins/immune-brain/runtime/loop_daemon/work_items.ts",
+      "tests/loop-leader-briefing.test.ts",
+      "tests/loop-leader-replan.test.ts",
+      "tests/loop-sched-interaction-github.test.ts"
+    ],
+    "scope_size_reason": "The resume rule, the single-question rule and the refusal exclusion all change what the leader may do with a blocked batch and share the briefing and replan code; together they are one resolve contract.",
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/loop-leader-uls-s5-resolve-alignment.intent.json",
+    "content_hash": "sha256:d9a08830455b865c8f9f534b75e208aa1c9780961f14b9bed9f408630b83eb25"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:d9a08830455b865c8f9f534b75e208aa1c9780961f14b9bed9f408630b83eb25",
+  "git_base_head": "64b90c569511ddff3723ea8ae6f842195c7de2ba",
+  "attestations": [
+    {
+      "id": "approval-qa-1ed5abb4",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:d9a08830455b865c8f9f534b75e208aa1c9780961f14b9bed9f408630b83eb25",
+      "diff_hash": "sha256:dc91765f5d8b29f543f8d15f6eff7800dd271b295714da6ccced283b2112deab",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:e32a74406fe2f6cbf1db52d4a0c97aaf385b95eaa7d16d382299bd82aa8532d8",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S5-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:e32a74406fe2f6cbf1db52d4a0c97aaf385b95eaa7d16d382299bd82aa8532d8"
+        },
+        {
+          "acceptance_id": "S5-AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:e32a74406fe2f6cbf1db52d4a0c97aaf385b95eaa7d16d382299bd82aa8532d8"
+        },
+        {
+          "acceptance_id": "S5-AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:e32a74406fe2f6cbf1db52d4a0c97aaf385b95eaa7d16d382299bd82aa8532d8"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-f4a10063",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:d9a08830455b865c8f9f534b75e208aa1c9780961f14b9bed9f408630b83eb25",
+      "diff_hash": "sha256:dd295e6620a5ed9e98cd741757676cbe29951d0e0e94f99a4928e2802c317c1d",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:4bf50a0317f8f750826ec7248f1084b3c62a83b1fc7cd03aafa8f286e52ef1ae",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S5-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:4bf50a0317f8f750826ec7248f1084b3c62a83b1fc7cd03aafa8f286e52ef1ae"
+        },
+        {
+          "acceptance_id": "S5-AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:4bf50a0317f8f750826ec7248f1084b3c62a83b1fc7cd03aafa8f286e52ef1ae"
+        },
+        {
+          "acceptance_id": "S5-AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:4bf50a0317f8f750826ec7248f1084b3c62a83b1fc7cd03aafa8f286e52ef1ae"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-e2511f7f",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:d9a08830455b865c8f9f534b75e208aa1c9780961f14b9bed9f408630b83eb25",
+      "diff_hash": "sha256:dd295e6620a5ed9e98cd741757676cbe29951d0e0e94f99a4928e2802c317c1d",
+      "actor_id": "cli:claude-code:3e12b831-8c34-4462-b2fa-36d4e034557c",
+      "summary": "S5-AC1..3 met: resume gated on needs_human/no_progress blockers with batch lookup via findActiveLaneBatchForTask (ambiguity throws, dispatch rejects as resolve_facts_unavailable), briefing children carry generation/no_progress/attention, labelled lane_entry_blocked escalation annotated in place and listed as pending interaction, lane_session_unavailable kept out of refusals/revision/fingerprint and surfaced as environment_blocked_items; antigravity mirror byte-identical; blast radius medium (loop_daemon replan/leader_agent/cli, optional WorkItem.environment_blocked persisted field).",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "64b90c569511ddff3723ea8ae6f842195c7de2ba",
+        "review_commit": "7b84fc3d48188e3ca1f069fe9774df8addc9bc23"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-e4a28bbb80f1-1-review-1",
+          "acceptance_id": "S5-AC2",
+          "summary": "isChildHeldForOwner treats every needs_human child (e.g. lane_executor_no_progress) as held, so an already-answered lane_entry_blocked comment stays pending and listed in the briefing while that child is parked for an unrelated reason.",
+          "anchor": "sha256:bbb35c7c5ba17e6a95b7b192890c416c46a0e215c7595e80809f10a98864762b",
+          "evidence": {
+            "trigger": "lane_entry_blocked comment on Issue 42 whose dialog was answered, then the same child parked needs_human with reason lane_executor_no_progress → pending_lane_entry_blocked non-empty and a lane-entry-blocked interaction still in the briefing",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/loop_daemon/cli.ts:heldChildren",
+              "plugins/immune-brain/runtime/loop_daemon/leader_agent.ts:readBatchSummaries",
+              "plugins/immune-brain/runtime/loop_daemon/leader_agent.ts:isChildHeldForOwner",
+              "plugins/immune-brain/runtime/loop_daemon/replan.ts:collectResolveFacts"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S5-AC2"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:548909e1a9fb2cbc1cf6b6e56dcc63cf4f611d7765452113eaf27126d473a04a"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-90f5c16d7af6-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S5-AC1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "A lane_entry_blocked escalation comment is never withdrawn, so pendingLaneEntryBlocked treats an already-answered Lane dialog as pending forever: resume, release and replan on that Issue are refused permanently, and a later ask_owner annotates the stale dialog comment instead of asking the new question.",
+      "anchor": "sha256:72d9c65617a3d6add833867946a7ecee6ad112cb71d4c94d15f67b69265fca47",
+      "evidence": {
+        "trigger": "Issue 42 gets a lane_entry_blocked escalation comment (agent_handlers escalateOnce, label lane_entry_blocked). The owner answers the dialog in Herdr and the Lane continues; the batch child is no longer blocked, but nothing in escalation.ts, agent_handlers.ts or cli.ts withdraws the comment. Later the item escalates for another reason with no batch blocker. collectResolveFacts -> pendingLaneEntryBlocked still returns escalation:lane_entry_blocked:<key> from the observed comments, so resolveBlockers adds pending_lane_entry_blocked and resume is rejected (the S5-AC1 Done case says resume should be accepted), and askOwnerQuestion picks deps.pending_lane_entry_blocked[0] and annotates the old dialog comment with unrelated context. The briefing reads blocked state from the live batch child, so it disagrees with the resolve facts. Fix: derive the pending dialog from the live v3 child state (or withdraw the comment once the child leaves the blocked or unsubmitted state), and add a test where an answered dialog's comment no longer blocks resume.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts:escalateOnce",
+          "plugins/immune-brain/runtime/loop_daemon/escalation.ts:escalationInteractionRequest",
+          "plugins/immune-brain/runtime/loop_daemon/cli.ts:resolveFacts",
+          "plugins/immune-brain/runtime/loop_daemon/replan.ts:collectResolveFacts",
+          "plugins/immune-brain/runtime/loop_daemon/replan.ts:pendingLaneEntryBlocked",
+          "plugins/immune-brain/runtime/loop_daemon/replan.ts:resolveBlockers",
+          "plugins/immune-brain/runtime/loop_daemon/replan.ts:askOwnerQuestion"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S5-AC1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-90f5c16d7af6-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S5-AC2",
+      "source": "review",
+      "review_round": 1,
+      "summary": "No test covers the S5-AC2 Done clause 'appears in the briefing as a pending interaction': readBatchSummaries' blocked_children path and the lane_entry_blocked interaction it adds to collectLeaderBriefingInput are never exercised. The predicate also flags every enrolled child whose entry is not yet submitted, not only a child blocked on a dialog.",
+      "anchor": "sha256:37cc5113ba070e77fef4132b1ff141149d539e95f52572e8018ed98b3d3ed756",
+      "evidence": {
+        "trigger": "A v3 batch child in state enrolled with session.attention 'blocked' is bound to a work item, and collectLeaderBriefingInput runs. No test in tests/loop-leader-briefing.test.ts, tests/loop-leader-replan.test.ts or tests/loop-sched-interaction-github.test.ts asserts an interaction of kind lane_entry_blocked in the briefing; the only briefing seed uses entry_submitted true and attention stalled. So a regression that drops or mislabels the interaction passes QA. Separately, a healthy child that is still starting (entry_submitted false, no dialog) is reported as a pending owner question and changes the fingerprint. Fix: add a briefing test for a dialog-blocked child, a negative test for a normally starting child, and narrow the predicate to the dialog state.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/leader_agent.ts:readBatchSummaries",
+          "plugins/immune-brain/runtime/loop_daemon/leader_agent.ts:collectLeaderBriefingInput",
+          "plugins/immune-brain/runtime/loop_daemon/leader_agent.ts:runLeaderTick",
+          "tests/loop-leader-briefing.test.ts"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S5-AC2"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:loop-leader-uls-s5-resolve-alignment:2026-11-20T15:55:29.852Z",
+      "at": "2026-11-20T15:55:29.852Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-leader-uls-s5-resolve-alignment.intent.json"
+    },
+    {
+      "id": "record_approval:loop-leader-uls-s5-resolve-alignment:2026-11-20T15:55:50.464Z",
+      "at": "2026-11-20T15:55:50.464Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-1ed5abb4\naction_v2_sha256:f4eadde08b8ac5026ec6a64b3debb9cb19e86a3766751e3c4820ae10a4e13077",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-11-20T15:55:50.464Z"
+      }
+    },
+    {
+      "id": "request_rework:loop-leader-uls-s5-resolve-alignment:2026-11-20T15:57:37.997Z",
+      "at": "2026-11-20T15:57:37.997Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:01eff54e57213c4e1a19e2e2cfafceba1e33e6374d348c1dee42dbe091ec38b4",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:0de3c243-3cb2-46b7-b47b-b6e82d5346c3",
+        "confirmation_ref": "claude:cli:claude-code:0de3c243-3cb2-46b7-b47b-b6e82d5346c3",
+        "issued_at": "2026-11-20T15:57:37.998Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "64b90c569511ddff3723ea8ae6f842195c7de2ba",
+        "review_commit": "dd4bf576f9d2a79ea2bf7b0c3ab2b15f2a56d8f8"
+      },
+      "review_started_at": "2026-11-20T15:55:54.659Z",
+      "review_submitted_at": "2026-11-20T15:57:36.898Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "resolve_finding:loop-leader-uls-s5-resolve-alignment:2026-11-20T15:59:14.049Z",
+      "at": "2026-11-20T15:59:14.049Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-90f5c16d7af6-1-review-1\naction_v2_sha256:b24633e38fd85e219e75e82b028e810a7ed6db1c0992edeb93b9ee81f9154470"
+    },
+    {
+      "id": "resolve_finding:loop-leader-uls-s5-resolve-alignment:2026-11-20T15:59:16.437Z",
+      "at": "2026-11-20T15:59:16.437Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-90f5c16d7af6-2-review-2\naction_v2_sha256:93462019aab279f4c304c4e7bc6af6c2ba8c0dceb49680d51f64563a017bb674"
+    },
+    {
+      "id": "freeze_artifacts:loop-leader-uls-s5-resolve-alignment:2026-11-20T15:59:20.103Z",
+      "at": "2026-11-20T15:59:20.103Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-leader-uls-s5-resolve-alignment.intent.json"
+    },
+    {
+      "id": "record_approval:loop-leader-uls-s5-resolve-alignment:2026-11-20T15:59:40.581Z",
+      "at": "2026-11-20T15:59:40.581Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-f4a10063\naction_v2_sha256:6070597d9125ae10ae90e368d0c5b2b1edc4e79b8eeb8efcd298fb3a923eef2a",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-11-20T15:59:40.581Z"
+      }
+    },
+    {
+      "id": "record_approval:loop-leader-uls-s5-resolve-alignment:2026-11-20T16:02:45.146Z",
+      "at": "2026-11-20T16:02:45.146Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-e2511f7f\naction_v2_sha256:15ed5df1dcab1e35db8a8f26ff1be6bf254d01452ad2632d8930023684b9bd8a",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:3e12b831-8c34-4462-b2fa-36d4e034557c",
+        "confirmation_ref": "claude:cli:claude-code:3e12b831-8c34-4462-b2fa-36d4e034557c",
+        "issued_at": "2026-11-20T16:02:45.146Z"
+      },
+      "review_started_at": "2026-11-20T15:59:45.335Z",
+      "review_submitted_at": "2026-11-20T16:02:44.077Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:loop-leader-uls-s5-resolve-alignment:2026-11-20T16:02:48.319Z",
+      "at": "2026-11-20T16:02:48.319Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:bbc22f9c7b45e227f7d567eb52c46d7f70ea6292849d0ff14cf49ad8446afcb5"
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "loop-leader-review-fixes",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:loop-leader-review-fixes:2026-11-21T13:36:33.370Z",
+  "final_record_hash": "sha256:418213ca4b38c3f49dd0cc7260a4dd3193c77577d498e91e478760d779902db5",
+  "terminalized_at": "2026-11-21T13:36:33.370Z"
+}

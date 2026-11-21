@@ -1423,7 +1423,7 @@ export default function (
 	// Spec loop-agent-scheduling D4: the local Interaction channel's two Host
 	// tools. They read and answer the daemon's own request files; neither
 	// invents a request, and only the second one writes anything.
-	for (const tool of loopInteractionToolDefinitions(runtime)) {
+	for (const tool of [...loopInteractionToolDefinitions(runtime), steerLoopWorkItemToolDefinition(runtime)]) {
 		pi.registerTool(tool as Parameters<ExtensionAPI["registerTool"]>[0]);
 	}
 }
@@ -1438,6 +1438,7 @@ export interface LoopInteractionHost {
 	runtime: {
 		listLoopInteractions(taskId?: string): Promise<unknown>;
 		answerLoopInteraction(interactionId: string, answer: string, meta: ToolMeta): Promise<unknown>;
+		steerLoopWorkItem(target: string, action: string, reason: string | null, meta: ToolMeta): Promise<unknown>;
 	};
 }
 
@@ -1504,6 +1505,51 @@ export function loopInteractionToolDefinitions(host: LoopInteractionHost) {
 			},
 		},
 	];
+}
+
+/**
+ * Spec loop-leader D5.2: one privileged steering Tool. Pausing, resuming or
+ * abandoning one work item is a literal-user act, so the body only forwards to
+ * the shared runtime, which owns the native confirmation and the request file.
+ */
+export function steerLoopWorkItemToolDefinition(host: LoopInteractionHost) {
+	return {
+		name: "steer_loop_work_item",
+		label: "Pause, resume or abandon one Loop work item",
+		description:
+			"Pause, resume or abandon one Loop work item. The Host's native confirmation shows the target and the action, and only a confirmed request is written for the daemon's next tick.",
+		promptGuidelines: [
+			"Use this Tool for one item; a GitHub `@imm-loop pause` comment is a notice only and changes nothing.",
+			"`abandon` is terminal and leaves a running Kernel run untouched; do not repeat a requested action.",
+		],
+		parameters: Type.Object({
+			target: Type.String({ description: "One WorkItem target, e.g. issue-42 or pr-17." }),
+			action: Type.Union([Type.Literal("pause"), Type.Literal("resume"), Type.Literal("abandon")]),
+			reason: Type.Optional(Type.String()),
+			task_id: Type.Optional(Type.String()),
+		}),
+		execute: async (
+			toolCallId: string,
+			params: { target: string; action: string; reason?: string; task_id?: string },
+			signal: AbortSignal | undefined,
+			_onUpdate: unknown,
+			ctx: ExtensionContext,
+		) => {
+			host.bindWorkspace(ctx.cwd);
+			if (ctx.mode !== "tui")
+				throw new Error("steer_loop_work_item needs the Host's native confirmation, which this session cannot show");
+			const effectiveSignal = signal && ctx.signal ? AbortSignal.any([signal, ctx.signal]) : (signal ?? ctx.signal);
+			const result = await host.runtime.steerLoopWorkItem(params.target, params.action, params.reason ?? null, {
+				sessionId: piSessionId(ctx),
+				toolCallId,
+				workspace: ctx.cwd,
+				taskId: params.task_id ?? "",
+				interactive: true,
+				signal: effectiveSignal,
+			});
+			return toolResult(JSON.stringify(result, null, 2), { state: "steering_requested" });
+		},
+	};
 }
 
 // ---------------------------------------------------------------------------

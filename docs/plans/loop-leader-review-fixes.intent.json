@@ -1,0 +1,72 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "loop-leader-review-fixes",
+  "owner": "user",
+  "goal": "Fix the nine PR #574 review findings per docs/specs/loop-leader-review-fixes.spec.md. resolve{replan} starts no plan-role session; it invalidates the item's plan (binding, publication record, unchanged daemon-authored drafts) and returns it to triage, so the existing planning path produces a new digest (loop-leader D4.2 amended). A leader Initiative shape maps slice-id blocked_by to task ids in the Local carrier and rejects unknown or self references. A refused shape leaves the checkout byte-identical. ask_owner annotating an existing request records its waiting pointer. Cleanups: the checked discard host type, one-cut UTF-8 truncation of blocked_on, a deprecated_config_source diagnostic for agents.triage, the resumeBatch dependency renamed to a batch-state check, and a D3.4 comment at leaderEventFor.",
+  "acceptance": [
+    {
+      "id": "RF-AC1",
+      "assertion": "Source BR-REQ-1, BR-REQ-2, BR-DEC-1, BR-SCN-4; meet D1 and the D4.2 amendment in docs/specs/loop-leader-review-fixes.spec.md. Agreed seam: tests/loop-leader-replan.test.ts (applyLeaderProposal with a recording session provider). Done looks like: an accepted resolve{replan} on an escalated item with a published plan starts no role session (listRoleSessions empty, startSession never called), leaves the daily dispatch count unchanged, removes <stateDir>/plans/<issue>.json, clears binding.plan_digest, task_ids and initiative_slug, and moves the item to triage with replan_rounds + 1; a following shape that reuses the same task ids is accepted. Negative cases: a nonterminal batch for the item -> rejected replan_batch_active; a prior daemon-authored draft whose bytes no longer match its recorded content hash -> rejected replan_draft_changed; a pending material approval -> rejected, only ask_owner accepted; each rejection leaves binding, publication record and files unchanged. Bound: the fourth replan on one item -> replan_cap_reached.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/loop-leader-replan.test.ts && bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "RF-AC2",
+      "assertion": "Source BR-REQ-3, BR-DEC-2, BR-SCN-1; meet D2 in docs/specs/loop-leader-review-fixes.spec.md. Agreed seam: tests/loop-leader-dispatch.test.ts (shape: initiative through applyLeaderProposal, then the real carrier reader). Done looks like: slice s2 with blocked_by [\"s1\"] writes \"Blocked by: task-a\" in docs/initiatives/<slug>.md, and that written carrier parses through observeInitiative and projectBatchPlan without \"depends on unknown Task\"; initiativePlanPrompt states that blocked_by lists earlier slices' slice_id values. Negative cases: blocked_by naming an unknown slice id, its own slice id, or a task id that is not a slice id, and duplicate slice ids, each -> shape rejected with no carrier, no TaskIntent file and no binding.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/loop-leader-dispatch.test.ts && bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "RF-AC3",
+      "assertion": "Source BR-REQ-4, BR-SCN-2; meet D3 in docs/specs/loop-leader-review-fixes.spec.md. Agreed seam: tests/loop-leader-dispatch.test.ts (fake runKernel that writes the destination, as the real Kernel does). Done looks like: when the third slice's Kernel author fails, docs/plans/ and docs/initiatives/ match their pre-shape file list and bytes, and the work item has no new binding. Negative cases: a carrier write failure after every intent was authored -> the authored intents are removed; a pre-existing file at a slice destination is neither overwritten nor removed by the rollback.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/loop-leader-dispatch.test.ts && bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "RF-AC4",
+      "assertion": "Source BR-REQ-5, BR-SCN-3; meet D4 in docs/specs/loop-leader-review-fixes.spec.md. Agreed seams: tests/loop-sched-interaction-github.test.ts and tests/loop-sched-interaction-local.test.ts (askOwnerQuestion with the real channels, then listWaitingStatus). Done looks like: ask_owner on a subject with a pending plan_approval annotates it in place and listWaitingStatus lists that interaction_id with its link (the GitHub comment URL; the local link). Negative cases: a channel whose link returns null records no pointer; an annotate that does not return \"annotated\" falls through to posting as today; other pointers for the same target are still cleared.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/loop-sched-interaction-github.test.ts tests/loop-sched-interaction-local.test.ts && bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "RF-AC5",
+      "assertion": "Source BR-REQ-7; meet D5 (truncation) in docs/specs/loop-leader-review-fixes.spec.md. Agreed seam: tests/loop-sched-interaction-github.test.ts (renderInteractionContext / fitInteractionContext). Done looks like: a 256 KiB multi-byte blocked_on renders within CONTEXT_MAX_BYTES with the truncation marker, and the kept blocked_on is a valid UTF-8 prefix of the original. Negative cases: a context exactly at the cap is not truncated and carries no marker; evidence, options and tried are still trimmed before blocked_on is cut.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/loop-sched-interaction-github.test.ts && bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "RF-AC6",
+      "assertion": "Source BR-REQ-8, BR-SCN-5; meet D5 (config diagnostic) in docs/specs/loop-leader-review-fixes.spec.md. Agreed seams: tests/layered-config.test.ts and tests/agent-roles-config.test.ts. Done looks like: a project .imm/config.json binding agents.triage yields exactly one deprecated_config_source warning at key path agents.triage, and agents.valid stays true. Negative cases: a config with no agents.triage emits no such diagnostic; the executor and reviewer roles resolve to the same host, model and effort as without the triage binding.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/layered-config.test.ts tests/agent-roles-config.test.ts && bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "RF-AC7",
+      "assertion": "Source BR-REQ-6, BR-REQ-9; meet D5 (host type, rename, D3.4 comment) in docs/specs/loop-leader-review-fixes.spec.md. Agreed seams: bun run typecheck and tests/loop-leader-replan.test.ts. Done looks like: typecheck passes with no \"as never\" cast on the discard host in plugins/immune-brain/runtime/loop_daemon/cli.ts; the batch-check dependency of LeaderDispatchDeps no longer carries the name resumeBatch and the replan tests pass against the renamed dependency; leader_dispatch.ts cites loop-leader D3.4 at leaderEventFor. Negative case: rg finds no resumeBatch identifier under plugins/immune-brain/runtime/loop_daemon/.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"! rg -n 'as never' plugins/immune-brain/runtime/loop_daemon/cli.ts && ! rg -n 'resumeBatch' plugins/immune-brain/runtime/loop_daemon && rg -n 'D3\\\\.4' plugins/immune-brain/runtime/loop_daemon/leader_dispatch.ts && bun test tests/loop-leader-replan.test.ts && bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/loop-leader-review-fixes.md",
+    "docs/plans/loop-leader-review-fixes.intent.json",
+    "docs/specs/loop-leader-review-fixes.spec.md",
+    "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+    "plugins/immune-brain-antigravity/runtime/config/agent_roles.ts",
+    "plugins/immune-brain-antigravity/runtime/config/layered_config.ts",
+    "plugins/immune-brain-antigravity/runtime/loop_daemon/agent_handlers.ts",
+    "plugins/immune-brain-antigravity/runtime/loop_daemon/cli.ts",
+    "plugins/immune-brain-antigravity/runtime/loop_daemon/interaction/protocol.ts",
+    "plugins/immune-brain-antigravity/runtime/loop_daemon/leader_dispatch.ts",
+    "plugins/immune-brain-antigravity/runtime/loop_daemon/replan.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/config/agent_roles.ts",
+    "plugins/immune-brain/runtime/config/layered_config.ts",
+    "plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts",
+    "plugins/immune-brain/runtime/loop_daemon/cli.ts",
+    "plugins/immune-brain/runtime/loop_daemon/interaction/protocol.ts",
+    "plugins/immune-brain/runtime/loop_daemon/leader_dispatch.ts",
+    "plugins/immune-brain/runtime/loop_daemon/replan.ts",
+    "tests/agent-roles-config.test.ts",
+    "tests/layered-config.test.ts",
+    "tests/loop-leader-dispatch.test.ts",
+    "tests/loop-leader-replan.test.ts",
+    "tests/loop-sched-interaction-github.test.ts",
+    "tests/loop-sched-interaction-local.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

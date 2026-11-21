@@ -6,6 +6,8 @@
  * - Positive Control: guards G1-G10, rule matchers, and the decision-model
  *   points a14/a15/a18/a19/a20 select expected handlers from the 15-handler
  *   catalogue and emit assurance_kernel/loop_decision_record/v1 records.
+ *   Tier 3 applies the D12 point baselines with no judging session (Spec
+ *   loop-leader D3.4).
  */
 
 import { afterEach, describe, expect, it } from "bun:test";
@@ -541,8 +543,8 @@ describe("Tier 2: decision-model points", () => {
 	});
 });
 
-describe("Tier 3: escalation fallback and baseline behaviour", () => {
-	it("escalates a classification below the point threshold when no judging agent is present", async () => {
+describe("Tier 3: escalation fallback and baseline behaviour (no judging session)", () => {
+	it("escalates a classification below the point threshold, with no Tier-3 session", async () => {
 		const classifier = fakeClassifier({
 			a18_event_prefilter: { choice: "actionable", confidence: 0.9 },
 			a19_owner_comment_intent: { choice: "request_plan_revision", confidence: 0.55 },
@@ -552,7 +554,7 @@ describe("Tier 3: escalation fallback and baseline behaviour", () => {
 		expect(judgement.handler).toBe("escalate");
 	});
 
-	it("keeps the D12 baseline behaviour when the decision model and judging agent are unavailable", async () => {
+	it("keeps the D12 baseline behaviour when the decision model is unavailable", async () => {
 		const unavailable = fakeClassifier({});
 		const reviewComment = await judgeEvent(reviewCommentEvent(), { facts: REVIEWER_FACTS, classify: unavailable.classify });
 		expect(reviewComment.tier).toBe(3);

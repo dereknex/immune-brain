@@ -23,13 +23,15 @@ import {
 import { join } from "node:path";
 import { observeEnrollmentTaskIntent } from "../kernel/intent.ts";
 import { readPlanPublication } from "./agent_handlers.ts";
+import { observeInitiative, observeSingleTask } from "../unattended/batch_plan.ts";
+import type { InitiativeObservationReader } from "../unattended/types.ts";
 import { eventTarget } from "./guards.ts";
 import type { LoopHandler } from "./handlers.ts";
 import type { NormalizedLoopEvent, ObservationInput } from "./types.ts";
 
 export const LOOP_WORK_ITEM_CONTRACT = "assurance_kernel/loop_work_item/v1" as const;
 
-/** The D5 state machine. */
+/** The D5 state machine. `abandoned` is the S5 terminal state a steer request writes. */
 export type WorkItemState =
 	| "triage"
 	| "clarifying"
@@ -41,7 +43,8 @@ export type WorkItemState =
 	| "repairing"
 	| "ready_for_merge"
 	| "closed"
-	| "escalated";
+	| "escalated"
+	| "abandoned";
 
 export const WORK_ITEM_TRANSITIONS: Readonly<Record<WorkItemState, readonly WorkItemState[]>> = {
 	triage: ["clarifying", "planning", "escalated"],
@@ -56,7 +59,11 @@ export const WORK_ITEM_TRANSITIONS: Readonly<Record<WorkItemState, readonly Work
 	repairing: ["pr_open", "escalated"],
 	ready_for_merge: ["closed"],
 	closed: [],
-	escalated: ["triage"],
+	// D4.2: an accepted `resume` returns a transiently escalated item to its
+	// still-running batch, so the next tick observes it again.
+	escalated: ["triage", "driving"],
+	// S5/D5.2: only a steer request abandons an item, and nothing leaves that state.
+	abandoned: [],
 };
 
 /** The state one handler moves its target to; `null` handlers move nothing. */
@@ -99,16 +106,62 @@ export interface WorkItem {
 		task_ids: string[];
 		run_id: string | null;
 		pr: number | null;
+		/** D3.3: set when the leader shaped this target as an Initiative. */
+		initiative_slug?: string | null;
+		/** ULS D2.4: the v3 batch an Initiative drive started; absent or null reads as no batch yet. */
+		batch_id?: string | null;
 	};
 	pending_interactions: string[];
 	jobs: string[];
 	/** Per judged key: level-event fingerprints and edge-event ids. */
 	last_judged: Record<string, string>;
 	refused_transitions: WorkItemRefusal[];
+	/** D3.1: the leader's tie-break inside one schedule class, never across classes. */
+	leader_rank?: number;
+	/** D4.3: accepted `resume`/`release`/`replan` rounds; the cap forces `ask_owner`. */
+	replan_rounds?: number;
+	/** D5.2: a natively confirmed `pause` holds every dispatch path, not the state machine. */
+	paused?: boolean;
+	/**
+	 * ULS D4.3: set by `resume` on an item with a batch. The next advance of that
+	 * batch observes first and exempts one stall judgment, then clears this.
+	 */
+	resume_pending?: boolean;
+	/**
+	 * ULS D5.3: the environment fact holding this item (no usable Lane session
+	 * provider). It is shown in status and never enters the briefing, a refusal
+	 * count or a replan round, so waiting on the environment burns no leader budget.
+	 */
+	environment_blocked?: EnvironmentBlock | null;
 	updated_at: string;
 }
 
 const MAX_REFUSALS = 20;
+
+/** ULS D5.3 (BR-DEC-A6): refusal reasons that describe the environment, not the work. */
+export type EnvironmentBlock = "lane_session_unavailable";
+
+/** The environment block a refusal or drive reason names, or null for an ordinary reason. */
+export function environmentBlockOf(reason: string | null | undefined): EnvironmentBlock | null {
+	return typeof reason === "string" && reason.includes("lane_session_unavailable") ? "lane_session_unavailable" : null;
+}
+
+/** ULS D5.3: the refusals that count toward the leader's three-refusal trigger. */
+export function countedRefusals(item: Pick<WorkItem, "refused_transitions">): WorkItemRefusal[] {
+	return item.refused_transitions.filter((refusal) => environmentBlockOf(refusal.reason) === null);
+}
+
+/**
+ * ULS D5.3: record or clear the environment block on one item. A no-op write is
+ * skipped, and `revision` never moves, so repeated ticks leave the briefing
+ * fingerprint and the leader wake count exactly as they were.
+ */
+export function setEnvironmentBlock(stateDir: string, target: string, block: EnvironmentBlock | null, now: string): void {
+	const item = readWorkItem(stateDir, target);
+	if (!item || (item.environment_blocked ?? null) === block) return;
+	const { environment_blocked: _cleared, ...rest } = item;
+	writeWorkItem(stateDir, block === null ? { ...rest, updated_at: now } : { ...rest, environment_blocked: block, updated_at: now });
+}
 
 export function workItemsDir(stateDir: string): string {
 	return join(stateDir, "work_items");
@@ -182,6 +235,40 @@ export function isLegalWorkItemTransition(from: WorkItemState, to: WorkItemState
 	return from === to || WORK_ITEM_TRANSITIONS[from].includes(to);
 }
 
+/** The reason a steer request holds one target out of every dispatch path (D5.2). */
+export type WorkItemGate = "work_item_paused" | "work_item_abandoned";
+
+export function isWorkItemGate(value: unknown): value is WorkItemGate {
+	return value === "work_item_paused" || value === "work_item_abandoned";
+}
+
+/**
+ * The one dispatch gate: a paused or abandoned item yields no candidate from
+ * Tier-1/2 dispatch, leader dispatch or scheduler admission.
+ */
+export function workItemGate(item: WorkItem | null | undefined): WorkItemGate | null {
+	if (!item) return null;
+	if (item.state === "abandoned") return "work_item_abandoned";
+	return item.paused === true ? "work_item_paused" : null;
+}
+
+/**
+ * ULS D4.3: consume the one-shot stall exemption a `resume` left on this item.
+ * Returns true exactly once per resume; a paused or abandoned item keeps it.
+ */
+export function takeResumeExemption(stateDir: string, target: string, now: string): boolean {
+	const item = readWorkItem(stateDir, target);
+	if (!item || item.resume_pending !== true || workItemGate(item) !== null) return false;
+	writeWorkItem(stateDir, { ...item, resume_pending: false, revision: item.revision + 1, updated_at: now });
+	return true;
+}
+
+/** The WorkItem whose batch or bound task this is, so a relayed advance honours its pause. */
+export function workItemOfBatch(stateDir: string, batchId: string, taskId: string | null): WorkItem | null {
+	return listWorkItems(stateDir).find(item =>
+		item.binding.batch_id === batchId || (taskId !== null && item.binding.task_ids.includes(taskId))) ?? null;
+}
+
 /** Move one item; an illegal transition is recorded and refused, leaving the state unchanged. */
 export function advanceWorkItem(
 	item: WorkItem,
@@ -189,10 +276,17 @@ export function advanceWorkItem(
 	options: { handler?: LoopHandler | null; reason?: string; now: string },
 ): { item: WorkItem; refused: boolean } {
 	if (isLegalWorkItemTransition(item.state, to)) {
+		const { environment_blocked: _cleared, ...rest } = item;
 		return {
-			item: { ...item, state: to, revision: item.revision + 1, updated_at: options.now },
+			item: { ...rest, state: to, revision: item.revision + 1, updated_at: options.now },
 			refused: false,
 		};
+	}
+	// ULS D5.3: an environment refusal is a status fact, not a refusal: it adds no
+	// entry, moves no revision and so never changes what the leader is shown.
+	const environment = environmentBlockOf(options.reason);
+	if (environment !== null) {
+		return { item: { ...item, environment_blocked: environment, updated_at: options.now }, refused: true };
 	}
 	const refusal: WorkItemRefusal = {
 		from: item.state,
@@ -317,8 +411,17 @@ export function markPlanPublished(
 ): WorkItem {
 	const item = readWorkItem(stateDir, target) ?? newWorkItem(target, "planning", now);
 	let next: WorkItem = { ...item, binding: { ...item.binding, plan_digest: planDigest } };
+	// D5 has no direct edge from `triage`, `clarifying` or `awaiting_input` to
+	// `plan_published`, so a plan published from an early state passes `planning`
+	// first; refusing the final move would orphan the carrier written before it.
 	if (next.state === "awaiting_input") {
 		next = advanceWorkItem(next, "clarifying", { reason: "clarify answer applied", now }).item;
+	}
+	if (next.state === "triage" || next.state === "clarifying") {
+		next = advanceWorkItem(next, "planning", { reason: "plan drafted", now }).item;
+	}
+	if (next.state !== "planning" && next.state !== "plan_published") {
+		throw new Error(`plan publication is unreachable from work item state ${next.state}`);
 	}
 	next = advanceWorkItem(next, "plan_published", { reason: `plan ${planDigest.slice(0, 12)} published`, now }).item;
 	writeWorkItem(stateDir, next);
@@ -364,6 +467,21 @@ function intentPathScopeHint(path: string): string[] {
 	} catch {
 		return [];
 	}
+}
+
+/** D3.3: `driving` reads the carrier when the leader shaped an Initiative, else the task. */
+export function drivingObserver(item: WorkItem | null): InitiativeObservationReader {
+	return item?.binding.initiative_slug ? observeInitiative : observeSingleTask;
+}
+
+/** D3.3: the plan source a `driving` WorkItem runs as. */
+export function drivingPlanSource(item: WorkItem | null): "single_task" | "initiative" {
+	return item?.binding.initiative_slug ? "initiative" : "single_task";
+}
+
+/** D3.3: the Initiative slug a `driving` WorkItem runs, or null for a single task. */
+export function drivingInitiativeSlug(item: WorkItem | null): string | null {
+	return item?.binding.initiative_slug ?? null;
 }
 
 const LEVEL_EVENT_KINDS: ReadonlySet<NormalizedLoopEvent["kind"]> = new Set([

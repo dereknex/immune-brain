@@ -28,8 +28,14 @@ import {
 	INTERACTION_REQUEST_CONTRACT,
 	changedBindingFields,
 	interactionAuthority,
+	isAdvisoryKind,
+	bindingsMatch,
+	renderInteractionContext,
+	replaceContextSection,
+	subjectsMatch,
 	type InteractionBinding,
 	type InteractionChannel,
+	type InteractionContext,
 	type InteractionKind,
 	type InteractionPollResult,
 	type InteractionRequest,
@@ -55,6 +61,7 @@ function markerLine(marker: InteractionMarker): string {
 		["kind", marker.kind],
 		["authority", marker.authority],
 		["issue", marker.subject.issue === undefined ? undefined : String(marker.subject.issue)],
+		["pr", marker.subject.pr === undefined ? undefined : String(marker.subject.pr)],
 		["plan_digest", marker.binding.plan_digest],
 		["record_revision", marker.binding.record_revision],
 		["issue_revision", marker.binding.issue_revision],
@@ -101,11 +108,15 @@ export function parseInteractionMarker(body: string): InteractionMarker | null {
 	const kind = fields.get("kind") as InteractionKind | undefined;
 	if (!kind) return null;
 	const issue = fields.get("issue");
+	const pr = fields.get("pr");
 	return {
 		interaction_id: match[1]!,
 		kind,
 		authority: (fields.get("authority") as InteractionMarker["authority"] | undefined) ?? interactionAuthority(kind),
-		subject: issue === undefined ? {} : { issue: Number.parseInt(issue, 10) },
+		subject: {
+			...(issue === undefined ? {} : { issue: Number.parseInt(issue, 10) }),
+			...(pr === undefined ? {} : { pr: Number.parseInt(pr, 10) }),
+		},
 		binding: {
 			plan_digest: fields.get("plan_digest"),
 			record_revision: fields.get("record_revision"),
@@ -121,19 +132,23 @@ export function isWithdrawn(body: string): boolean {
 /** The comment body one request is posted as. */
 export function renderInteractionBody(req: InteractionRequest): string {
 	const marker = interactionMarker(req);
+	// D4.4: the context pack renders on the request's own comment, after the question.
+	const withContext = (body: string) => (req.context ? `${body}\n\n${renderInteractionContext(req.context)}` : body);
 	if (req.kind === "lane_decision") {
 		// The Lane question format stays the one decision_relay.ts already renders and parses.
-		return [
-			marker,
-			renderLaneDecisionQuestion({
-				task_id: req.subject.task_id ?? req.interaction_id,
-				run_id: req.subject.run_id ?? "",
-				record_revision: req.binding.record_revision ?? "",
-				question: req.prompt,
-				options: (req.options ?? []).map((id) => ({ id, label: id })),
-				issue_number: req.subject.issue,
-			}),
-		].join("\n");
+		return withContext(
+			[
+				marker,
+				renderLaneDecisionQuestion({
+					task_id: req.subject.task_id ?? req.interaction_id,
+					run_id: req.subject.run_id ?? "",
+					record_revision: req.binding.record_revision ?? "",
+					question: req.prompt,
+					options: (req.options ?? []).map((id) => ({ id, label: id })),
+					issue_number: req.subject.issue,
+				}),
+			].join("\n"),
+		);
 	}
 
 	const lines = [marker];
@@ -170,7 +185,7 @@ export function renderInteractionBody(req: InteractionRequest): string {
 			}
 			lines.push("Reply with your answer; a reply from a configured owner is the clarification the daemon asked for.");
 	}
-	return lines.join("\n");
+	return withContext(lines.join("\n"));
 }
 
 export function renderWithdrawnNotice(marker: InteractionMarker, reason: string): string {
@@ -186,7 +201,7 @@ export function renderWithdrawnNotice(marker: InteractionMarker, reason: string)
 }
 
 export interface GithubInteractionPort {
-	postComment(issueNumber: number, body: string): Promise<{ id: number }>;
+	postComment(issueNumber: number, body: string): Promise<{ id: number; url?: string }>;
 	editComment(commentId: number, body: string): Promise<unknown>;
 }
 
@@ -198,6 +213,8 @@ export interface GithubInteractionChannelDeps {
 	/** The binding that holds now; a change retires the request. */
 	binding: () => InteractionBinding;
 	guardFacts: GuardFacts;
+	/** D4.6: told when a request stops waiting on the owner, so its pointer goes with it. */
+	onRetired?: (interactionId: string) => void;
 }
 
 /** A request this channel may apply an answer to, in the shape the answer arrives in. */
@@ -335,12 +352,34 @@ function pollPlanApproval(
  * returns `notice_only`, and is never answered.
  */
 export function createGithubInteractionChannel(deps: GithubInteractionChannelDeps): InteractionChannel {
+	/** D4.6: the comment each request was posted as, so status can link to it. */
+	const postedLinks = new Map<string, string>();
 	const find = (interactionId: string): { comment: RawComment; marker: InteractionMarker } | null => {
 		for (const comment of deps.comments()) {
 			const marker = parseInteractionMarker(comment.body);
 			if (marker && marker.interaction_id === interactionId) return { comment, marker };
 		}
 		return null;
+	};
+
+	/**
+	 * D4.5: one pending advisory question per subject and binding. A new advisory
+	 * request retires the older one in place instead of asking twice; a
+	 * `literal_user` request is never touched here.
+	 */
+	const supersedeAdvisory = async (req: InteractionRequest): Promise<void> => {
+		if (!isAdvisoryKind(req.kind)) return;
+		for (const comment of deps.comments()) {
+			const marker = parseInteractionMarker(comment.body);
+			if (!marker || marker.interaction_id === req.interaction_id) continue;
+			if (!isAdvisoryKind(marker.kind) || isWithdrawn(comment.body)) continue;
+			if (!subjectsMatch(marker.subject, req.subject) || !bindingsMatch(marker.binding, req.binding)) continue;
+			await deps.port.editComment(
+				comment.id,
+				renderWithdrawnNotice(marker, `Superseded by \`${req.interaction_id}\`, the question this subject waits on now.`),
+			);
+			deps.onRetired?.(marker.interaction_id);
+		}
 	};
 
 	return {
@@ -363,10 +402,14 @@ export function createGithubInteractionChannel(deps: GithubInteractionChannelDep
 				);
 			}
 			if (find(req.interaction_id)) return "already_posted";
-			if (req.subject.issue === undefined) {
-				throw new Error(`interaction_subject_issue_required: ${req.interaction_id} has no issue to post on`);
+			// D4.4: the question lives on its own subject, Issue or PR.
+			const subjectNumber = req.subject.issue ?? req.subject.pr;
+			if (subjectNumber === undefined) {
+				throw new Error(`interaction_subject_required: ${req.interaction_id} has no issue or PR to post on`);
 			}
-			await deps.port.postComment(req.subject.issue, renderInteractionBody(req));
+			await supersedeAdvisory(req);
+			const written = await deps.port.postComment(subjectNumber, renderInteractionBody(req));
+			if (written.url) postedLinks.set(req.interaction_id, written.url);
 			return answerable(req) ? "posted" : "notice_only";
 		},
 
@@ -384,6 +427,7 @@ export function createGithubInteractionChannel(deps: GithubInteractionChannelDep
 						`The request was bound to a ${changed} that has since changed, so any answer it collected cannot be applied.`,
 					),
 				);
+				deps.onRetired?.(interactionId);
 				return { state: "stale" };
 			}
 			if (found.marker.kind === "clarify_question") {
@@ -411,6 +455,18 @@ export function createGithubInteractionChannel(deps: GithubInteractionChannelDep
 						: `The request was bound to a ${changed} that has since changed, so any answer it collected cannot be applied.`,
 				),
 			);
+			deps.onRetired?.(interactionId);
+		},
+
+		async annotate(interactionId: string, context: InteractionContext): Promise<"annotated" | "absent"> {
+			const found = find(interactionId);
+			if (!found || isWithdrawn(found.comment.body)) return "absent";
+			await deps.port.editComment(found.comment.id, replaceContextSection(found.comment.body, context));
+			return "annotated";
+		},
+
+		link(interactionId: string): string | null {
+			return postedLinks.get(interactionId) ?? null;
 		},
 	};
 }

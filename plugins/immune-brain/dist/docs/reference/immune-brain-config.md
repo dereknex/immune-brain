@@ -90,6 +90,11 @@ file:
   `.imm/state/loop/interactions/`, your own Host session lists them with `loop_interactions` and answers one
   through `answer_loop_interaction`, and the daemon applies the confirmed answer on its next tick. A
   `plan_approval` is still answered by your own `drive` entry. Any other value is `config_invalid`.
+- `loop.budget` caps the daemon's day: `max_ticks_per_day` and
+  `max_dispatches_per_day` are positive integers or `null` (unlimited), and
+  `max_leader_wakes_per_day` is an integer in 0..500 (default 48) bounding how
+  many changed briefings may wake the read-only leader; `0` disables the leader.
+  A wake counts once against both the leader and the dispatch budget.
 - `.imm/risk-floor.json` and `.imm/routine-classes.json` stay separate, tracked
   files (see [Risk Floor](#risk-floor)).
 
@@ -113,7 +118,7 @@ none of those sources; remove them once the result is right.
 | `executor` | every Lane Executor, and the Loop's `repair` work (`pr-fix`, `test-fixer`) |
 | `reviewer` | Authority Review, its findings verification, and advisory reviewers |
 | `planner` | the Loop's `clarify` and `plan` steps |
-| `triage` | the Loop's judging of new issues, PRs and comments |
+| `triage` | reserved; no Loop session reads it since `S3` retired judging |
 
 A role value is one of:
 
@@ -175,8 +180,9 @@ The status Tool on both Hosts carries the same object as `config` and adds every
 `error` diagnostic to its warnings as `config_invalid`.
 
 Each diagnostic is `{ code, severity, file, key_path, message }` with code
-`config_invalid`, `unknown_profile` or `retired_key` (`retired_key` is always a
-non-blocking warning). Messages never contain a configured
+`config_invalid`, `unknown_profile`, `retired_key` (`retired_key` is always a
+non-blocking warning), `deprecated_config_source` or one of the loop role
+codes below. Messages never contain a configured
 `*_env` value or any environment variable's value. An invalid value counts as
 unset, so the next layer or the default applies, and its diagnostic stays an
 error:
@@ -188,6 +194,75 @@ error:
   reports `review_config_invalid` naming the file and key path;
 - `git_integration` invalid: `manual`;
 - `initiative_carrier` invalid: none, and the Planner asks.
+
+## Loop Role Catalog
+
+`loop.roles` names the roles one repository's Loop runs as. It exists only in
+the project file, because it describes this repository's work:
+
+```json
+{
+  "contract": "immune_brain/project_config/v2",
+  "loop": {
+    "roles": {
+      "planner": { "base": "plan", "host": "pi", "model": "<model id>", "effort": "high" },
+      "security-analyst": {
+        "base": "analyze",
+        "when": "changes touch authentication or authorization",
+        "instructions": "docs/agents/security.md",
+        "limits": { "turn_budget": 60, "timeout_s": 1200, "max_parallel": 2 }
+      }
+    }
+  }
+}
+```
+
+A role name matches `^[a-z][a-z0-9-]{0,31}$`. `base` is required and closed to
+`leader`, `clarify`, `plan`, `execute`, `repair` and `analyze`; the base fixes
+what a role may do, and configuration can never widen it. `host` is
+`claude-code`, `pi` or `antigravity` and defaults to `claude-code`; `model` and
+`effort` are optional. `when` is an advisory one-paragraph selection hint of at
+most 500 characters. `instructions` is a repository-relative path to an existing
+file inside the repository; its content is appended to the role's entry prompt
+under *Advisory project instructions* and never changes tools, permission flags
+or the output contract.
+
+`limits` holds `turn_budget` (1..200, default 40), `timeout_s` (60..3600, default
+900) and `max_parallel` (1..8, default 1). The Loop's `clarify`, `plan` and
+`repair` sessions take Host, model, effort, turn budget and timeout from their
+base's role.
+
+Every base always has exactly one role: with no `loop.roles`, or for a base no
+role binds, the built-in role named after the base runs on `claude-code` with
+the default limits. Exactly one role may claim `leader`. `imm-kernel config
+--json` lists the resolved catalog under `loop.value.roles` with `name`, `base`,
+`host`, `model`, `effort`, `when`, `instructions`, `limits` and `source`
+(`project` or `default`).
+
+A role is refused whole — absent from the catalog, one `error` diagnostic — for:
+
+| Code | Cause |
+|---|---|
+| `role_base_unknown` | `base` missing or not one of the six |
+| `role_name_invalid` | the role name does not match the pattern |
+| `role_host_unknown` | `host` is not one of the three |
+| `role_limit_out_of_range` | a limit outside its range |
+| `role_instructions_outside_repo` | `instructions` is absolute or leaves the repository |
+| `role_instructions_missing` | `instructions` names no file |
+| `leader_role_duplicate` | two or more roles claim base `leader` |
+
+A refused role never stops the daemon: `loop.valid` ignores `loop.roles` errors,
+so the rest of the Loop keeps running while `imm-kernel config --json` keeps
+exiting 1 until the role is fixed. A read-only base on a Host without a verified
+read-only mode still fails closed at spawn (`role_readonly_unsupported`), and a
+configured Host whose executable is not on `PATH` fails that session
+(`role_host_unavailable`) instead of falling back to another Host.
+
+`agents.planner` and `agents.executor` no longer choose a Loop role: the Loop's
+`clarify` and `plan` sessions run on the `clarify` and `plan` base role, and its
+`repair` session on the `repair` base role. Each affected role reports one
+`deprecated_config_source` warning naming the ignored binding and `loop.roles`.
+`agents.executor` still selects the Lane Executor's Host, and `agents.triage` binds nothing in the Loop since `S3` retired judging. A retired `roles.judging` preset binding is ignored with one `deprecated_config_source` warning and never makes `agents` invalid.
 
 ## Initiative Carrier
 

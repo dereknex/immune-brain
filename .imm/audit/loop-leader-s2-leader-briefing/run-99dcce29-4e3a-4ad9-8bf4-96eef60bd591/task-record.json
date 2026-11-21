@@ -1,0 +1,380 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "loop-leader-s2-leader-briefing",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "loop-leader-s2-leader-briefing",
+    "goal": "Compile a deterministic local leader briefing every imm-loop tick, wake a read-only catalog leader session only on a changed briefing fingerprint within loop.budget.max_leader_wakes_per_day, strictly parse loop_leader_proposal/v1, and journal wakes and proposals under .imm/state/loop/leader/ without executing them, per D2 of docs/specs/loop-leader.spec.md. No user-visible change: proposals are parsed and journaled only; nothing executes until S3.",
+    "acceptance": [
+      {
+        "id": "S2-AC1",
+        "assertion": "Source BR-REQ-2, BR-DEC-3, BR-OUT-5; meet D2.1-D2.3 in docs/specs/loop-leader.spec.md. Agreed seam: tests/loop-leader-briefing.test.ts. Done looks like: a tick whose briefing fingerprint differs from the last journaled wake starts exactly one read-only leader session from the catalog leader role in a disposable worktree holding only .imm-loop/briefing.json and .imm-loop/journal-tail.jsonl, journals wake and proposal entries, and counts once against max_leader_wakes_per_day and max_dispatches_per_day. Negative: an unchanged fingerprint starts zero sessions; after one wake, two further ticks with no new external or local fact start zero sessions because leader wake counts, the leader's own journal entries and exact budget counters are excluded from the fingerprint; max_leader_wakes_per_day 0 or an exhausted max_dispatches_per_day starts zero sessions; --dry-run and loop.mode observe start zero sessions; the leader modules import nothing from github_port.ts; the session environment carries no GitHub token. Bound: a briefing over 64 KiB drops oldest outcomes first and never drops a work item; derived-output checks and typecheck pass.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/loop-leader-briefing.test.ts tests/layered-config.test.ts && bun scripts/sync-dist-docs.ts --check && bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "S2-AC2",
+        "assertion": "Source BR-REQ-2, BR-REQ-3, BR-DEC-3; meet D2.4-D2.6 in docs/specs/loop-leader.spec.md. Agreed seam: tests/loop-leader-briefing.test.ts. Done looks like: a valid loop_leader_proposal/v1 parses into typed next, priority, shape, dispatch, resolve and note items that are journaled while no WorkItem, interaction or GitHub write occurs. Negative: prose output, a wrong contract or a briefing_fingerprint mismatch rejects the whole proposal; an unknown target, unknown handler, unknown role, a brief over 16 KiB, or ask_owner without context rejects only that item and journals a rejected entry. Bound: deleting .imm/state/loop/leader/ yields an empty journal and the next tick wakes once; journal rotation at 2 MiB keeps one previous file.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-leader-briefing.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/loop-leader-s2-leader-briefing.md",
+      "docs/agents/derived-files.json",
+      "docs/plans/loop-leader-s2-leader-briefing.intent.json",
+      "docs/reference/immune-brain-config.md",
+      "docs/specs/loop-leader.spec.md",
+      "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+      "plugins/immune-brain-antigravity/dist/docs/reference/immune-brain-config.md",
+      "plugins/immune-brain-antigravity/runtime/config/layered_config.ts",
+      "plugins/immune-brain-antigravity/runtime/loop_daemon/agent_runner.ts",
+      "plugins/immune-brain-antigravity/runtime/loop_daemon/cli.ts",
+      "plugins/immune-brain-antigravity/runtime/loop_daemon/dispatch.ts",
+      "plugins/immune-brain-antigravity/runtime/loop_daemon/leader_agent.ts",
+      "plugins/immune-brain-antigravity/runtime/loop_daemon/leader_briefing.ts",
+      "plugins/immune-brain-antigravity/runtime/loop_daemon/leader_journal.ts",
+      "plugins/immune-brain-antigravity/runtime/loop_daemon/leader_proposal.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/docs/reference/immune-brain-config.md",
+      "plugins/immune-brain/runtime/config/layered_config.ts",
+      "plugins/immune-brain/runtime/loop_daemon/agent_runner.ts",
+      "plugins/immune-brain/runtime/loop_daemon/cli.ts",
+      "plugins/immune-brain/runtime/loop_daemon/dispatch.ts",
+      "plugins/immune-brain/runtime/loop_daemon/leader_agent.ts",
+      "plugins/immune-brain/runtime/loop_daemon/leader_briefing.ts",
+      "plugins/immune-brain/runtime/loop_daemon/leader_journal.ts",
+      "plugins/immune-brain/runtime/loop_daemon/leader_proposal.ts",
+      "tests/layered-config.test.ts",
+      "tests/loop-leader-briefing.test.ts"
+    ],
+    "scope_size_reason": "Four of the counted paths are generated Antigravity mirrors of the four new leader modules, which only become declared derived outputs once this Slice adds them to docs/agents/derived-files.json; the source change itself is 13 paths.",
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/loop-leader-s2-leader-briefing.intent.json",
+    "content_hash": "sha256:4186d9176f6e6c5aa4ccdf4b31913d0cd031d8fa91209818aa062e2614511d8e"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:4186d9176f6e6c5aa4ccdf4b31913d0cd031d8fa91209818aa062e2614511d8e",
+  "git_base_head": "ceffcccc748b0a5a40c2dde7d4b2b392486fcff3",
+  "attestations": [
+    {
+      "id": "approval-qa-12e112c1",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:4186d9176f6e6c5aa4ccdf4b31913d0cd031d8fa91209818aa062e2614511d8e",
+      "diff_hash": "sha256:249631a68b224541dfea8848d0f67b66641d00c0b8c4bebfb69ecdc2b5b7badb",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:1fdfb1dfae5714249394cc81ff845444dc3843a5f72705272c03c9377603bb38",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S2-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:1fdfb1dfae5714249394cc81ff845444dc3843a5f72705272c03c9377603bb38"
+        },
+        {
+          "acceptance_id": "S2-AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:1fdfb1dfae5714249394cc81ff845444dc3843a5f72705272c03c9377603bb38"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-e9efb5d9",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:4186d9176f6e6c5aa4ccdf4b31913d0cd031d8fa91209818aa062e2614511d8e",
+      "diff_hash": "sha256:f2e0178becd3e1e6b865e2206c58c9afcdb72ee6b6f4552fd546477241481f25",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:68c57c51ef935f8983241381cf6bbde7bdc1e0c1a3e9a1d8d2883d8a07aff79d",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S2-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:68c57c51ef935f8983241381cf6bbde7bdc1e0c1a3e9a1d8d2883d8a07aff79d"
+        },
+        {
+          "acceptance_id": "S2-AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:68c57c51ef935f8983241381cf6bbde7bdc1e0c1a3e9a1d8d2883d8a07aff79d"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-5bc852df",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:4186d9176f6e6c5aa4ccdf4b31913d0cd031d8fa91209818aa062e2614511d8e",
+      "diff_hash": "sha256:72663e280ab82ee14b731e75f233e1a427b52ab07a8d881ca853899421c3a71e",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:5b61bf20ae2261c50786c0ca0166f196b0aecddfb2575b08afb11bcebcb15a2a",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S2-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:5b61bf20ae2261c50786c0ca0166f196b0aecddfb2575b08afb11bcebcb15a2a"
+        },
+        {
+          "acceptance_id": "S2-AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:5b61bf20ae2261c50786c0ca0166f196b0aecddfb2575b08afb11bcebcb15a2a"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-ba0358b4",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:4186d9176f6e6c5aa4ccdf4b31913d0cd031d8fa91209818aa062e2614511d8e",
+      "diff_hash": "sha256:72663e280ab82ee14b731e75f233e1a427b52ab07a8d881ca853899421c3a71e",
+      "actor_id": "cli:claude-code:ec5a6116-dbd1-42e0-85f0-342e7fc59332",
+      "summary": "Round-3 delta routes the leader wake count through a shared recordLeaderWake (leader+dispatch counters once) and the observe roll through rollDailyStats (leader_wakes_today now resets), mirrored in both plugins and pinned by a real runLoopDaemonCli tick test showing one wake counted once and no re-wake; blast radius medium: loop_daemon/cli.ts tick path, leader_agent.ts, persisted loop state stats.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "ceffcccc748b0a5a40c2dde7d4b2b392486fcff3",
+        "review_commit": "6d7fbd5b500244c6c6e475e3f846dae227044c6a"
+      },
+      "reviewer_verdict_sha256": "sha256:171972df1a48790a3ca32b1c060bb643e30a74305071d47955712294189684fb"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-4997ca3d4d0e-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S2-AC1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "The production leader wake runs in a full repository checkout. The acceptance requires a disposable worktree that holds only .imm-loop/briefing.json and .imm-loop/journal-tail.jsonl. The test seam only proves this with a fake empty-directory createWorktree.",
+      "anchor": "sha256:234aedb1134bd22264c7aa9c81e086fed67fe4ec47d15fb0901d3c6750652374",
+      "evidence": {
+        "trigger": "A live `imm-loop tick` with a changed briefing fingerprint goes through runLoopDaemonExecutable. That passes handlerDeps.createWorktree (agent_handlers.ts:1559-1580, read because the changed cli.ts:1534 wires it into runLeaderTick) into runLeaderTick. That function runs `git worktree add --detach <loop-worktrees>/leader HEAD`, and on later wakes it reuses the same path with `checkout --detach HEAD`. Result: the leader session's worktree holds every tracked repository file at HEAD next to .imm-loop/. So the session can read inputs outside the briefing and the journal tail, and its decision is no longer a function of the fingerprint. The worktree is also reused rather than disposable. tests/loop-leader-briefing.test.ts deps() substitutes an empty mkdir directory and lists only the .imm-loop directory, so the production path is never pinned. Fix: give the leader a dedicated factory that creates a fresh empty directory holding only the two inputs (or an equivalent isolation). Add a test at the agreed seam showing that the worktree the session receives holds nothing beyond .imm-loop/briefing.json and .imm-loop/journal-tail.jsonl, and that the production wiring uses that factory.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/cli.ts:runLoopDaemonExecutable",
+          "plugins/immune-brain/runtime/loop_daemon/cli.ts:runLoopDaemonCli",
+          "plugins/immune-brain/runtime/loop_daemon/leader_agent.ts:runLeaderTick",
+          "plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts:createDefaultAgentHandlerDeps.createWorktree"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S2-AC1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-8cadff3a5a2c-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S2-AC1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "The agreed seam never asserts that a wake counts exactly once against leader_wakes_today and dispatches_today, nor that the fingerprint stays unchanged after those counters advance; every test passes a constant budget to runLeaderTick and no test drives the cli.ts increment.",
+      "anchor": "sha256:598939f003189e298e1e5e5f3d9d8569cf224227c7cecb105e6d825969eebc57",
+      "evidence": {
+        "trigger": "Two regressions both leave tests/loop-leader-briefing.test.ts green. (1) compileLeaderBriefing puts the exact wakes_today or dispatches_today counter into the briefing: the 'starts zero sessions when the fingerprint is unchanged, twice over' test passes the same budget {wakes_today:0, dispatches_today:0} on every tick, so it cannot see the fingerprint change after a real wake. (2) The cli.ts counted_wake block drops one increment or adds a second one: no test runs runLeaderTick through runLoopDaemonCli or checks state.stats. Either way a wake re-triggers the next wake, or counts zero or two times, and the S2-AC1 'counts once' and 'two further ticks start zero sessions because ... exact budget counters are excluded' clauses go unpinned. Fix: add a seam test that feeds the counters as they stand after a real wake (or runs the tick through the CLI with a fake leader provider) and asserts leader_wakes_today and dispatches_today each go up by exactly 1 and the next two ticks start zero sessions.",
+        "caller_chain": [
+          "tests/loop-leader-briefing.test.ts",
+          "plugins/immune-brain/runtime/loop_daemon/cli.ts:runLoopDaemonCli",
+          "plugins/immune-brain/runtime/loop_daemon/leader_agent.ts:runLeaderTick",
+          "plugins/immune-brain/runtime/loop_daemon/leader_briefing.ts:compileLeaderBriefing"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S2-AC1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-8cadff3a5a2c-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S2-AC1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "The revision deletes the D1.7 paragraph of docs/specs/loop-leader.spec.md that S1 (ceffcccc74) added to record that ADR 0041 retired agents.presets. This S2 slice may only change D2, and no acceptance authorizes the deletion.",
+      "anchor": "sha256:39f2d4c2c2e7d90902c3a3ebe21c9f7ff9da65d5d3b80f4dae335a1a1bd9d18e",
+      "evidence": {
+        "trigger": "git diff base..review on docs/specs/loop-leader.spec.md removes 8 lines under D1.7, from 'ADR 0041 retired presets before this Slice landed' through 'agents.triage keeps running judging'. After merge, D1.7 again says agents.presets bindings drive the loop-role deprecation diagnostic. S1's shipped behaviour (deprecated_config_source naming agents.planner and agents.executor) is no longer described anywhere in the Spec, so a prior Slice's delivered contract text is silently reverted.",
+        "caller_chain": [
+          "docs/specs/loop-leader.spec.md#D1.7",
+          "docs/specs/loop-leader.spec.md#D2"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S2-AC1"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:loop-leader-s2-leader-briefing:2026-11-17T09:51:41.353Z",
+      "at": "2026-11-17T09:51:41.353Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-leader-s2-leader-briefing.intent.json"
+    },
+    {
+      "id": "record_approval:loop-leader-s2-leader-briefing:2026-11-17T09:52:08.957Z",
+      "at": "2026-11-17T09:52:08.957Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-12e112c1\naction_v2_sha256:4e06527b58d5bb6068e285d71bcf5b37080f9f72f723584de64575bc5291b82b",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-17T09:52:08.957Z"
+      }
+    },
+    {
+      "id": "request_rework:loop-leader-s2-leader-briefing:2026-11-17T10:47:06.829Z",
+      "at": "2026-11-17T10:47:06.829Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:7ed761ec670e19846e0257048a517409ccd89435d28f7358caf605263a841895",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:761bf0b8-1656-4045-97bc-89210b84ee64",
+        "confirmation_ref": "pi:cli:claude-code:761bf0b8-1656-4045-97bc-89210b84ee64",
+        "issued_at": "2026-11-17T10:47:06.829Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "ceffcccc748b0a5a40c2dde7d4b2b392486fcff3",
+        "review_commit": "ac01b7c49d2d68362f6504efd62fe8a0aa2754c3"
+      },
+      "review_started_at": "2026-11-17T10:45:10.850Z",
+      "review_submitted_at": "2026-11-17T10:47:05.333Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "resolve_finding:loop-leader-s2-leader-briefing:2026-11-17T10:50:33.314Z",
+      "at": "2026-11-17T10:50:33.314Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-4997ca3d4d0e-1-review-1\naction_v2_sha256:7fa1c9ded095390a236b457cc77a1d113ae1f9b97026ec0364e9d3208d3799eb"
+    },
+    {
+      "id": "freeze_artifacts:loop-leader-s2-leader-briefing:2026-11-17T10:50:45.490Z",
+      "at": "2026-11-17T10:50:45.490Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-leader-s2-leader-briefing.intent.json"
+    },
+    {
+      "id": "record_approval:loop-leader-s2-leader-briefing:2026-11-17T10:51:11.975Z",
+      "at": "2026-11-17T10:51:11.975Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-e9efb5d9\naction_v2_sha256:584c4081da2c41ec86ddca7c35dbe1d04e657a5356a65ad99e80c104e02f3ec1",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-17T10:51:11.975Z"
+      }
+    },
+    {
+      "id": "request_rework:loop-leader-s2-leader-briefing:2026-11-17T10:53:39.729Z",
+      "at": "2026-11-17T10:53:39.729Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:d523c8496166484cc784d91fba52cd02e106a4725f67548672a5d7b3b2c22d0c",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:85f628db-e168-4c11-ba7b-84d91600f294",
+        "confirmation_ref": "pi:cli:claude-code:85f628db-e168-4c11-ba7b-84d91600f294",
+        "issued_at": "2026-11-17T10:53:39.729Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "ceffcccc748b0a5a40c2dde7d4b2b392486fcff3",
+        "review_commit": "71949f30edf8c29d8c86aa43781e7e2938fc3e81"
+      },
+      "review_started_at": "2026-11-17T10:51:18.774Z",
+      "review_submitted_at": "2026-11-17T10:53:38.338Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "resolve_finding:loop-leader-s2-leader-briefing:2026-11-17T10:56:58.186Z",
+      "at": "2026-11-17T10:56:58.186Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-8cadff3a5a2c-1-review-1\naction_v2_sha256:1fe1276c035ea59a39f8b3f35c0271e4aa17cfdb20528a889aa5862fa7408e2f"
+    },
+    {
+      "id": "resolve_finding:loop-leader-s2-leader-briefing:2026-11-17T10:57:11.253Z",
+      "at": "2026-11-17T10:57:11.253Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-8cadff3a5a2c-2-review-2\naction_v2_sha256:61921fdb3b532f166c4112ba329f2859505a7055e33e5fe6bcf9b443b89bcb1b"
+    },
+    {
+      "id": "freeze_artifacts:loop-leader-s2-leader-briefing:2026-11-17T10:57:26.027Z",
+      "at": "2026-11-17T10:57:26.027Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-leader-s2-leader-briefing.intent.json"
+    },
+    {
+      "id": "record_approval:loop-leader-s2-leader-briefing:2026-11-17T10:57:54.304Z",
+      "at": "2026-11-17T10:57:54.304Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-5bc852df\naction_v2_sha256:7bf7a7dea13d788456212416b060ecbca22628a845ecf031412a169c316a9f45",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-17T10:57:54.304Z"
+      }
+    },
+    {
+      "id": "record_approval:loop-leader-s2-leader-briefing:2026-11-17T10:59:11.496Z",
+      "at": "2026-11-17T10:59:11.496Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-ba0358b4\naction_v2_sha256:e3cb68278ab994e49e89b55a21a698f7f54431dd4feef2231d095f8e2e713f92",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:ec5a6116-dbd1-42e0-85f0-342e7fc59332",
+        "confirmation_ref": "pi:cli:claude-code:ec5a6116-dbd1-42e0-85f0-342e7fc59332",
+        "issued_at": "2026-11-17T10:59:11.496Z"
+      },
+      "review_started_at": "2026-11-17T10:58:01.048Z",
+      "review_submitted_at": "2026-11-17T10:59:09.832Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:loop-leader-s2-leader-briefing:2026-11-17T10:59:16.907Z",
+      "at": "2026-11-17T10:59:16.907Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:f67f36f94b6edd03a8b063f37f69b9d3b1bba74d245b51f752d7badf1ad6af54"
+    }
+  ]
+}

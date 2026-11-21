@@ -57,6 +57,8 @@ export const LANE_EXECUTOR_ENV = "LANE_EXECUTOR_ENV";
 
 export interface BatchSessionPort {
 	readonly provider: string;
+	/** The Executor Host this port starts sessions for; absent on a port that does not say. */
+	readonly host?: string;
 	open(input: BatchSessionOpenInput): Promise<OpenResult>;
 	resume(handle: string, entry: string): Promise<ResumeResult>;
 	find(key: string): Promise<FindResult>;

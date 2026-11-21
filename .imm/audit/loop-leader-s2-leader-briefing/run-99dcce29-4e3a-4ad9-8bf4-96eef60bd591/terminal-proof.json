@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "loop-leader-s2-leader-briefing",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:loop-leader-s2-leader-briefing:2026-11-17T10:59:16.907Z",
+  "final_record_hash": "sha256:7fd797dfea6266020eb4710f06c938a48bada01c5198559f9c387edcb34bcb57",
+  "terminalized_at": "2026-11-17T10:59:16.907Z"
+}
