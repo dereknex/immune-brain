@@ -135,6 +135,7 @@ function fakeKernel(revisions: Map<string, string>): BatchRunnerKernelPort {
 
 class MemPort implements BatchSessionPort {
 	readonly provider: string;
+	host: string | undefined;
 	opens: BatchSessionOpenInput[] = [];
 	openHandles: string[] = [];
 	finds: string[] = [];
@@ -877,5 +878,33 @@ describe("review rework: adoption, attention, refusals and exited corrections", 
 		} finally {
 			fx.cleanup();
 		}
+	});
+});
+
+describe("LEL-AC2: the claude-code Executor entry is the slash command", () => {
+	async function openThenReenter(host: string | undefined, batchId: string) {
+		const fx = mkRepo(["task-a"]);
+		try {
+			const port = new MemPort(`mem-${batchId}`);
+			port.host = host;
+			const kernel = fakeKernel(new Map([["task-a", "r1"]]));
+			const input = laneInput(fx.repo, fx.base, batchId, [child("task-a")], kernel, port);
+			await advanceBatch(input, null);
+			const stored = readAnyBatchRunState(fx.repo, batchId) as BatchLaneRunStateRecord;
+			// The entry did not land: the next tick re-enters it through the resume path.
+			const { writeBatchLaneRunState } = await import("../plugins/immune-brain/runtime/unattended/batch_state");
+			writeBatchLaneRunState(fx.repo, { ...stored, children: stored.children.map((c) => ({ ...c, session: { ...c.session!, entry_submitted: false } })) } as BatchLaneRunStateRecord);
+			await advanceBatch(input, readAnyBatchRunState(fx.repo, batchId));
+			return { opened: port.opens.map((o) => o.entry), resumed: port.resumes.map((r) => r.entry) };
+		} finally {
+			fx.cleanup();
+		}
+	}
+	test("claude-code create and resume both submit /immune-brain:drive <task_id>", async () => {
+		expect(await openThenReenter("claude-code", "batch-lel-cc")).toEqual({ opened: ["/immune-brain:drive task-a"], resumed: ["/immune-brain:drive task-a"] });
+	});
+	test("a pi Executor and a port that names no host keep the plain drive entry", async () => {
+		expect(await openThenReenter("pi", "batch-lel-pi")).toEqual({ opened: ["drive task-a"], resumed: ["drive task-a"] });
+		expect(await openThenReenter(undefined, "batch-lel-none")).toEqual({ opened: ["drive task-a"], resumed: ["drive task-a"] });
 	});
 });

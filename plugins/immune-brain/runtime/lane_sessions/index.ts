@@ -13,6 +13,7 @@
 // Verification: `bun test tests/lane-sessions.test.ts`.
 import { resolveSessionProvider, SESSION_PROVIDER_REGISTRY, type SessionProviderDescriptor } from "../session/provider_registry";
 import type { ExecutorHostKind, SupervisedSessionPort } from "../session/supervised_session_port";
+import { runtimeClaudePluginDir } from "../plugin_source_skew";
 import { laneExecutorChoice } from "../unattended/agent_profiles";
 import type { ExecutorPreferences } from "../unattended/agent_profiles";
 import { discardBatchLanes, runLaneBatch as advanceBatch, type DiscardBatchResult } from "../unattended/batch_lanes";
@@ -84,6 +85,8 @@ export interface LaneSessionsDeps {
 	review_profile?: unknown;
 	final_verification?: string[];
 	topology_digest?: string;
+	/** Test seam: the Claude plugin root a claude-code Executor loads; defaults to the runtime's own. */
+	claudePluginDir?: () => string | null;
 	/** One advance only (loop-leader-uls-alignment D4.3): hold idle sessions instead of judging them stalled. */
 	stall_exempt?: boolean;
 }
@@ -95,6 +98,8 @@ export interface ObserveLanesDeps {
 	createPort?: (provider: string, env: Record<string, string | undefined>) => SupervisedSessionPort;
 	host: ExecutorHostKind;
 	hostArgs?: string[] | ((taskId: string) => string[]);
+	/** Test seam: the Claude plugin root a claude-code Executor loads; defaults to the runtime's own. */
+	claudePluginDir?: () => string | null;
 }
 
 function hostArgsFor(deps: { hostArgs?: string[] | ((taskId: string) => string[]) }, taskId: string): string[] {
@@ -125,7 +130,15 @@ function resumeChildren(record: BatchLaneRunStateRecord): Array<{ task_id: strin
  * no `--print` flag is included; model and effort use the same flags the
  * supervisor and Review sessions use (`--thinking` for pi effort).
  */
-export function executorSessionTarget(input: { root: string; executor?: ExecutorPreferences; host: ExecutorHostKind }): {
+function claudePluginDirOrNull(resolve: (() => string | null) | undefined): string | null {
+	try {
+		return (resolve ?? runtimeClaudePluginDir)() ?? null;
+	} catch {
+		return null;
+	}
+}
+
+export function executorSessionTarget(input: { root: string; executor?: ExecutorPreferences; host: ExecutorHostKind; pluginDir?: () => string | null }): {
 	host: ExecutorHostKind;
 	hostArgs: string[];
 } {
@@ -133,6 +146,12 @@ export function executorSessionTarget(input: { root: string; executor?: Executor
 	const hostArgs: string[] = [];
 	if (choice.model) hostArgs.push("--model", choice.model);
 	if (choice.effort) hostArgs.push(choice.host === "pi" ? "--thinking" : "--effort", choice.effort);
+	// A claude-code Executor loads the plugin build this runtime came from, as the
+	// Review sessions do, so its drive entry resolves without a Parent relaunch.
+	if (choice.host === "claude-code") {
+		const pluginDir = claudePluginDirOrNull(input.pluginDir);
+		if (pluginDir) hostArgs.push("--plugin-dir", pluginDir);
+	}
 	return { host: choice.host as ExecutorHostKind, hostArgs };
 }
 
@@ -169,6 +188,7 @@ export function openBatchSessionPort(input: {
 	host: ExecutorHostKind;
 	executor?: ExecutorPreferences;
 	hostArgs?: string[];
+	claudePluginDir?: () => string | null;
 	providerRegistry?: readonly SessionProviderDescriptor[];
 	createPort?: (provider: string, env: Record<string, string | undefined>) => SupervisedSessionPort;
 }): { ok: true; port: BatchSessionPort } | { ok: false; reason: string; recovery: string } {
@@ -184,7 +204,7 @@ export function openBatchSessionPort(input: {
 	const raw = portFor(input.provider, input.env, registry, input.createPort);
 	if (!raw)
 		return { ok: false, reason: "lane_session_unavailable: provider factory failed", recovery: "retry inside Herdr" };
-	const target = executorSessionTarget({ root: input.root, executor: input.executor, host: input.host });
+	const target = executorSessionTarget({ root: input.root, executor: input.executor, host: input.host, pluginDir: input.claudePluginDir });
 	return { ok: true, port: new SessionPortAdapter(raw, target.host, input.hostArgs ?? target.hostArgs) };
 }
 
@@ -249,7 +269,7 @@ export async function startLanes(
 	deps: LaneSessionsDeps,
 ): Promise<Record<string, unknown> | LaneSessionRefusal> {
 	const registry = deps.providerRegistry ?? SESSION_PROVIDER_REGISTRY;
-	const target = executorSessionTarget({ root: deps.root, executor: deps.executor, host: deps.host });
+	const target = executorSessionTarget({ root: deps.root, executor: deps.executor, host: deps.host, pluginDir: deps.claudePluginDir });
 	const resolved = resolveSessionProvider({ role: "executor", providers: deps.providers, host: target.host, env: deps.env, registry });
 	if (!resolved.ok) return refusalFromReasons(resolved.reasons);
 	const raw = portFor(resolved.provider, deps.env, registry, deps.createPort);
@@ -295,7 +315,7 @@ export async function advanceLanes(
 		if (!raw) return refusalFromReasons([{ provider: recordedProvider, reason: "provider factory failed", recovery: "retry inside Herdr" }]);
 		// Resume honors the record's frozen Executor profile, falling back to the request.
 		const resumeTarget = executorSessionTarget({ root: deps.root,
-			executor: (persisted as { executor_preferences?: ExecutorPreferences }).executor_preferences ?? deps.executor, host: deps.host });
+			executor: (persisted as { executor_preferences?: ExecutorPreferences }).executor_preferences ?? deps.executor, host: deps.host, pluginDir: deps.claudePluginDir });
 		const adapter = new SessionPortAdapter(raw, resumeTarget.host, (deps.hostArgs?.length ? hostArgsFor(deps, batchId) : resumeTarget.hostArgs));
 		const now = deps.now ?? new Date().toISOString();
 		const input = {
@@ -332,7 +352,7 @@ export async function advanceLanes(
 		if (Array.isArray(advReport.handoffs)) advReport.handoffs = advReport.handoffs.filter((h) => h.role !== "executor");
 		return advReport as unknown as Record<string, unknown>;
 	}
-	const target = executorSessionTarget({ root: deps.root, executor: deps.executor, host: deps.host });
+	const target = executorSessionTarget({ root: deps.root, executor: deps.executor, host: deps.host, pluginDir: deps.claudePluginDir });
 	const resolved = resolveSessionProvider({ role: "executor", providers: deps.providers, host: target.host, env: deps.env, registry });
 	if (!resolved.ok) return refusalFromReasons(resolved.reasons);
 	const raw = portFor(resolved.provider, deps.env, registry, deps.createPort);

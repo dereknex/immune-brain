@@ -266,6 +266,17 @@ describe("single-task Lane contract text (Spec drive-always-lanes S6)", () => {
 		expect(flatText(BATCH_CONTRACT)).not.toContain("A standalone task id uses single-task Enrollment");
 	});
 
+	it("states that a single-task start resolves final_verification by the lane-batch order (LEL-AC3)", () => {
+		const batch = flatText(BATCH_CONTRACT);
+		for (const claim of [
+			"A new single-task start (`start_unattended_batch` with `task_id`) resolves its `final_verification` by this same 1-4 order",
+			"the Host fills step 2 from the layered `batch.final_verification` before the gate",
+			"commands the caller passes win over config",
+			"an invalid `batch.final_verification` refuses `lane_config_invalid`",
+			"completes with `final verification not run`",
+		]) expect(batch).toContain(claim);
+	});
+
 	it("drives single-task Lanes through the session port on every Host", () => {
 		const lane = flatText(section(BATCH_CONTRACT, "### Single-Task Lane"));
 		for (const claim of [

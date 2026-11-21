@@ -20056,7 +20056,7 @@ async function runLaneBatchEngine(input, persisted) {
         session: child.session ?? null,
         kernel: kernelFacts,
         interactionMode: mode,
-        entry: `drive ${child.task_id}`,
+        entry: sessionPort.host === "claude-code" ? `/immune-brain:drive ${child.task_id}` : `drive ${child.task_id}`,
         laneCwd: child.lane.path,
         pendingInstruction: lastInstruction ? { text: lastInstruction.text, digest: lastInstruction.text_digest } : null,
         pendingCorrection: lastCorrection ? { text: lastCorrection.text, digest: lastCorrection.text_digest } : null,
@@ -22096,6 +22096,7 @@ function resolveSessionProvider(options) {
 }
 
 // plugins/immune-brain/runtime/lane_sessions/index.ts
+init_plugin_source_skew();
 init_batch_state();
 
 // plugins/immune-brain/runtime/lane_sessions/session_port_adapter.ts
@@ -22225,6 +22226,13 @@ function resumeChildren(record) {
     };
   });
 }
+function claudePluginDirOrNull(resolve) {
+  try {
+    return (resolve ?? runtimeClaudePluginDir)() ?? null;
+  } catch {
+    return null;
+  }
+}
 function executorSessionTarget(input) {
   const choice = laneExecutorChoice(input.root, input.executor, input.host) ?? { host: input.host };
   const hostArgs = [];
@@ -22232,6 +22240,11 @@ function executorSessionTarget(input) {
     hostArgs.push("--model", choice.model);
   if (choice.effort)
     hostArgs.push(choice.host === "pi" ? "--thinking" : "--effort", choice.effort);
+  if (choice.host === "claude-code") {
+    const pluginDir = claudePluginDirOrNull(input.pluginDir);
+    if (pluginDir)
+      hostArgs.push("--plugin-dir", pluginDir);
+  }
   return { host: choice.host, hostArgs };
 }
 function portFor(provider, env, registry, createPort) {
@@ -22260,7 +22273,7 @@ function openBatchSessionPort(input) {
   const raw = portFor(input.provider, input.env, registry, input.createPort);
   if (!raw)
     return { ok: false, reason: "lane_session_unavailable: provider factory failed", recovery: "retry inside Herdr" };
-  const target = executorSessionTarget({ root: input.root, executor: input.executor, host: input.host });
+  const target = executorSessionTarget({ root: input.root, executor: input.executor, host: input.host, pluginDir: input.claudePluginDir });
   return { ok: true, port: new SessionPortAdapter(raw, target.host, input.hostArgs ?? target.hostArgs) };
 }
 function refusalFromReasons(reasons) {
@@ -22311,7 +22324,7 @@ function toBatchInput(agreement, deps, now, sessions) {
 }
 async function startLanes(agreement, deps) {
   const registry = deps.providerRegistry ?? SESSION_PROVIDER_REGISTRY;
-  const target = executorSessionTarget({ root: deps.root, executor: deps.executor, host: deps.host });
+  const target = executorSessionTarget({ root: deps.root, executor: deps.executor, host: deps.host, pluginDir: deps.claudePluginDir });
   const resolved = resolveSessionProvider({ role: "executor", providers: deps.providers, host: target.host, env: deps.env, registry });
   if (!resolved.ok)
     return refusalFromReasons(resolved.reasons);
@@ -22356,7 +22369,8 @@ async function advanceLanes(root, batchId, deps) {
     const resumeTarget = executorSessionTarget({
       root: deps.root,
       executor: persisted.executor_preferences ?? deps.executor,
-      host: deps.host
+      host: deps.host,
+      pluginDir: deps.claudePluginDir
     });
     const adapter = new SessionPortAdapter(raw, resumeTarget.host, deps.hostArgs?.length ? hostArgsFor(deps, batchId) : resumeTarget.hostArgs);
     const now = deps.now ?? new Date().toISOString();
@@ -22395,7 +22409,7 @@ async function advanceLanes(root, batchId, deps) {
       advReport.handoffs = advReport.handoffs.filter((h) => h.role !== "executor");
     return advReport;
   }
-  const target = executorSessionTarget({ root: deps.root, executor: deps.executor, host: deps.host });
+  const target = executorSessionTarget({ root: deps.root, executor: deps.executor, host: deps.host, pluginDir: deps.claudePluginDir });
   const resolved = resolveSessionProvider({ role: "executor", providers: deps.providers, host: target.host, env: deps.env, registry });
   if (!resolved.ok)
     return refusalFromReasons(resolved.reasons);
@@ -26345,6 +26359,11 @@ class HostRuntime {
       };
     }
     const isResuming = preflight.projection.is_resuming;
+    if (options.plan_source === "single_task" && !isResuming && !options.final_verification?.length) {
+      const configured = resolveConfig(this.cwd).batch.final_verification.value;
+      if (Array.isArray(configured) && configured.length > 0)
+        options = { ...options, final_verification: configured.map(String) };
+    }
     if (!isResuming && !options.plan_source && !options.final_verification?.length)
       return {
         state: "rejected",

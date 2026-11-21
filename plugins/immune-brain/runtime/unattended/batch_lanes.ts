@@ -1786,7 +1786,7 @@ async function runLaneBatchEngine(
 				session: child.session ?? null,
 				kernel: kernelFacts,
 				interactionMode: mode,
-				entry: `drive ${child.task_id}`,
+				entry: sessionPort.host === "claude-code" ? `/immune-brain:drive ${child.task_id}` : `drive ${child.task_id}`,
 				laneCwd: child.lane.path,
 				pendingInstruction: lastInstruction ? { text: lastInstruction.text, digest: lastInstruction.text_digest } : null,
 				pendingCorrection: lastCorrection ? { text: lastCorrection.text, digest: lastCorrection.text_digest } : null,

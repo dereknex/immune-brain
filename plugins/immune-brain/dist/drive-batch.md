@@ -290,6 +290,14 @@ them from:
 The Parent never invents a command the repository does not name unless the
 request or project config supplies it.
 
+A new single-task start (`start_unattended_batch` with `task_id`) resolves its
+`final_verification` by this same 1-4 order and passes the result. When it passes
+none, the Host fills step 2 from the layered `batch.final_verification` before the
+gate, so the native confirmation lists them and the batch records them; commands
+the caller passes win over config, an invalid `batch.final_verification` refuses
+`lane_config_invalid`, and with neither the single-task batch still starts and
+completes with `final verification not run`. Resuming keeps its recorded commands.
+
 #### Lane Executor Supervision
 
 The runtime owns every Lane session through `runtime/lane_sessions/`; the

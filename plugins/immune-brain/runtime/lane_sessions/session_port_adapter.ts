@@ -30,7 +30,7 @@ function isPaneNotFound(reason: string): boolean {
 export class SessionPortAdapter implements BatchSessionPort {
 	readonly provider: string;
 	private readonly port: SupervisedSessionPort;
-	private readonly host: ExecutorHostKind;
+	readonly host: ExecutorHostKind;
 	private readonly hostArgs: string[];
 
 	constructor(port: SupervisedSessionPort, host: ExecutorHostKind, hostArgs: string[] = []) {
