@@ -350,6 +350,7 @@ test("config migrate rewrites v1 user and project files as v2: dry run writes no
 		["deprecated_config_source", "loop.roles"],
 		["deprecated_config_source", "loop.roles"],
 		["deprecated_config_source", "loop.roles"],
+		["deprecated_config_source", "agents.triage"],
 	]);
 	expect(c.agents.roles.executor).toEqual({ host: "claude-code", model: "opus-5-5", effort: "medium", source: "project" });
 	expect(c.decision_models.bindings[other]).toEqual({ value: "off", source: "project" });

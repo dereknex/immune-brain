@@ -152,7 +152,7 @@ function leaderDeps(input: { root: string; stateDir: string }, overrides: Partia
 			batch_state: null,
 			authority_blockers: [],
 		}) as never,
-		resumeBatch: () => ({ resumed: false, reason: "batch_unknown" }),
+		checkBatchResumable: () => ({ resumed: false, reason: "batch_unknown" }),
 		askOwner: async () => ({ action: "posted", interaction_id: "i-1" }) as never,
 		...overrides,
 	};

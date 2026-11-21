@@ -531,6 +531,10 @@ describe("local interaction context and waiting pointers (S4-AC2)", () => {
 		);
 		expect(asked.action).toBe("annotated");
 		expect(asked.interaction_id).toBe(request.interaction_id);
+		// RF-AC4: the annotated request is what the target now waits on.
+		expect(listWaitingStatus(stateDir)).toEqual([
+			{ target: `lane-${TASK}`, kind: "lane_decision", channel: "local", link: expect.stringContaining(request.interaction_id) },
+		]);
 
 		// The rewrite keeps the request's identity and answer semantics.
 		const stored = readLocalRequest(stateDir, request.interaction_id)!;

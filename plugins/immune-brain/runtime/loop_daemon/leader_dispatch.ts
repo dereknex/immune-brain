@@ -14,13 +14,20 @@
  * its outcome from the session record, never from what the session printed.
  */
 
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, rmdirSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { dirname, join } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 
+import { canonicalIntentHash } from "../kernel/intent.ts";
 import { localInitiativePath } from "../local_initiative.ts";
 import { planBranchName, renderPlanSummary, type PlanIntentSummary } from "./plan_drafter.ts";
-import { LOOP_PLAN_PUBLICATION_CONTRACT, writePlanPublication, type LoopPlanPublication } from "./agent_handlers.ts";
+import {
+	LOOP_PLAN_PUBLICATION_CONTRACT,
+	readPlanPublication,
+	removePlanPublication,
+	writePlanPublication,
+	type LoopPlanPublication,
+} from "./agent_handlers.ts";
 import type { KernelIntentResult } from "./plan_drafter.ts";
 import { buildDecisionRecord, type LoopDecisionRecord } from "./decision_record.ts";
 import type { LoopDispatchRecord } from "./dispatch.ts";
@@ -77,6 +84,7 @@ export interface InitiativeSlice {
 	path: string;
 	/** The candidate TaskIntent bytes. */
 	intent: unknown;
+	/** `slice_id`s of other slices in the same plan (BR-DEC-2); the carrier maps them to task ids. */
 	blocked_by?: string[];
 }
 
@@ -126,8 +134,12 @@ export interface LeaderDispatchDeps {
 	}) => Promise<{ completed: boolean; reason: string }>;
 	/** D4.2: the target's authority gates, read from local requests and the Kernel. */
 	resolveFacts: (input: { target: string; work_item: WorkItem }) => Promise<ResolveFacts>;
-	/** D4.2: resume the target's still-running batch; a parked batch refuses. */
-	resumeBatch: (input: { target: string; work_item: WorkItem }) => { resumed: boolean; reason: string };
+	/**
+	 * D4.2: read-only check that the target's batch lets a `resume` through; a
+	 * parked batch refuses. It changes no batch state: the item itself moves to
+	 * `driving` and the batch advances on its own tick.
+	 */
+	checkBatchResumable: (input: { target: string; work_item: WorkItem }) => { resumed: boolean; reason: string };
 	/** D4.5: post or annotate the owner question of an accepted `ask_owner`. */
 	askOwner: (input: {
 		target: string;
@@ -182,13 +194,56 @@ export function parseInitiativePlan(bytes: string): InitiativePlan | null {
 				...(entry.blocked_by ? { blocked_by: entry.blocked_by as string[] } : {}),
 			});
 		}
-		return { slug: value.slug, slices };
+		const plan: InitiativePlan = { slug: value.slug, slices };
+		return validateInitiativePlan(plan) === null ? plan : null;
 	} catch {
 		return null;
 	}
 }
 
-/** The event a `next` acts on: its reconcile candidate's own event, else its target's latest. */
+function intentTaskId(intent: unknown): string | null {
+	if (!intent || typeof intent !== "object" || Array.isArray(intent)) return null;
+	const taskId = (intent as Record<string, unknown>).task_id;
+	return typeof taskId === "string" && ID_PATTERN.test(taskId) ? taskId : null;
+}
+
+/**
+ * D2: the plan is one namespace of slice ids. `blocked_by` names slices of the
+ * same plan; an unknown id (a task id included), a self reference or a repeat
+ * rejects the whole plan, as do duplicate slice ids and duplicate intent task
+ * ids. Cycles stay with `batch_plan.ts`. Returns the reason, or null when the
+ * plan is consistent. It runs before the first write.
+ */
+export function validateInitiativePlan(plan: InitiativePlan): string | null {
+	const sliceIds = new Set<string>();
+	const taskIds = new Set<string>();
+	for (const slice of plan.slices) {
+		if (sliceIds.has(slice.slice_id)) return `duplicate slice_id ${slice.slice_id}`;
+		sliceIds.add(slice.slice_id);
+		const taskId = intentTaskId(slice.intent);
+		if (taskId === null) return `slice ${slice.slice_id} intent carries no valid task_id`;
+		if (taskIds.has(taskId)) return `duplicate intent task_id ${taskId}`;
+		taskIds.add(taskId);
+		if (slice.path !== `docs/plans/${taskId}.intent.json`) return `slice ${slice.slice_id} path is not docs/plans/${taskId}.intent.json`;
+	}
+	for (const slice of plan.slices) {
+		const seen = new Set<string>();
+		for (const id of slice.blocked_by ?? []) {
+			if (id === slice.slice_id) return `slice ${slice.slice_id} is blocked by itself`;
+			if (seen.has(id)) return `slice ${slice.slice_id} repeats blocked_by ${id}`;
+			seen.add(id);
+			if (!sliceIds.has(id)) return `slice ${slice.slice_id} is blocked by unknown slice_id ${id}`;
+		}
+	}
+	return null;
+}
+
+/**
+ * The event a `next` acts on: its reconcile candidate's own event, else its target's latest.
+ * Repeat dispatch of the same event is not deduplicated per tick (loop-leader D3.4):
+ * `WORK_ITEM_TRANSITIONS` refuses an illegal re-run and the Tier-0 guards refuse a
+ * blocked one, so a second `next` for an unchanged item is rejected by them.
+ */
 export function leaderEventFor(
 	target: string,
 	events: readonly NormalizedLoopEvent[],
@@ -211,7 +266,11 @@ function shortDigest(value: string): string {
 	return createHash("sha256").update(value).digest("hex");
 }
 
-/** The carrier bytes: one `## <slice>: <result>` section, one Task, optional `Blocked by:`. */
+/**
+ * The carrier bytes: one `## <slice>: <result>` section, one Task, optional
+ * `Blocked by:`. `blocked_by` here already holds task ids, the namespace
+ * `local_initiative.ts` and `batch_plan.ts` read.
+ */
 export function renderLocalInitiativeCarrier(plan: { slug: string; slices: Array<{ slice_id: string; result: string; task_id: string; blocked_by?: string[] }> }): string {
 	const lines = [`# Initiative: ${plan.slug}`, ""];
 	for (const slice of plan.slices) {
@@ -221,56 +280,115 @@ export function renderLocalInitiativeCarrier(plan: { slug: string; slices: Array
 	return `${lines.join("\n").trimEnd()}\n`;
 }
 
+/** The topmost ancestor directory of `path` that does not exist yet, deepest last. */
+function missingAncestors(path: string): string[] {
+	const missing: string[] = [];
+	let dir = dirname(path);
+	while (!existsSync(dir) && dirname(dir) !== dir) {
+		missing.unshift(dir);
+		dir = dirname(dir);
+	}
+	return missing;
+}
+
 /**
  * Author every slice's TaskIntent through the Kernel and write the Local carrier.
  * The digest covers the carrier and every authored intent, so re-shaping any of
  * them changes the identity a later approval would name.
+ *
+ * D3: all-or-nothing. The plan is validated before the first write; after that
+ * every file this call creates (intents, carrier, new directories) is recorded and
+ * removed again when any later step refuses, and a carrier it overwrote is
+ * restored. A destination that already existed is never removed: the Kernel
+ * refuses it with `destination_exists` and it is not recorded as created.
  */
 export function shapeInitiative(
 	plan: InitiativePlan,
 	deps: { root: string; now: string; runKernel: LeaderDispatchDeps["runKernel"] },
 ): ShapedInitiative {
-	const authored: Array<{ slice_id: string; result: string; blocked_by?: string[]; path: string; task_id: string; content_hash: string; risk: string }> = [];
-	for (const slice of plan.slices) {
-		const result = deps.runKernel({
-			argv: ["intent", "author", slice.path, "--stdin", "--json"],
-			cwd: deps.root,
-			stdin: `${JSON.stringify(slice.intent, null, 2)}\n`,
-		});
-		const verdict = result.json ?? {};
-		if (result.exit_code !== 0 || verdict.valid !== true)
-			throw new Error(`intent_validation_failed: ${slice.path}: ${verdict.reason ?? verdict.code ?? `exit ${result.exit_code}`}`);
-		if (typeof verdict.task_id !== "string" || typeof verdict.content_hash !== "string")
-			throw new Error(`intent_validation_failed: ${slice.path}: kernel result carries no task_id and content_hash`);
-		authored.push({
-			slice_id: slice.slice_id,
-			result: slice.result,
-			...(slice.blocked_by ? { blocked_by: slice.blocked_by } : {}),
-			path: slice.path,
-			task_id: verdict.task_id,
-			content_hash: verdict.content_hash,
-			risk: typeof verdict.risk === "string" ? verdict.risk : "unknown",
-		});
-	}
-	const carrier = renderLocalInitiativeCarrier({
-		slug: plan.slug,
-		slices: authored.map((slice) => ({ slice_id: slice.slice_id, result: slice.result, task_id: slice.task_id, ...(slice.blocked_by ? { blocked_by: slice.blocked_by } : {}) })),
-	});
-	const carrierPath = localInitiativePath(plan.slug);
-	const path = join(deps.root, carrierPath);
-	mkdirSync(dirname(path), { recursive: true });
-	writeFileSync(path, carrier, { mode: 0o644 });
-	const intents: PlanIntentSummary[] = authored
-		.map(({ path: intentPath, task_id, content_hash, risk }) => ({ path: intentPath, task_id, content_hash, risk }))
-		.sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0));
-	return {
-		slug: plan.slug,
-		carrier_path: carrierPath,
-		// Sorted, so the same carrier and intents always yield the same digest.
-		plan_digest: shortDigest(JSON.stringify({ slug: plan.slug, carrier, intents })),
-		task_ids: authored.map((slice) => slice.task_id),
-		intents,
+	const invalid = validateInitiativePlan(plan);
+	if (invalid !== null) throw new Error(`shape_plan_failed: ${invalid}`);
+	const createdFiles: string[] = [];
+	const createdDirectories: string[] = [];
+	let carrierBackup: { path: string; bytes: Buffer } | null = null;
+	const rollback = (): void => {
+		for (const file of createdFiles.reverse()) rmSync(file, { force: true });
+		if (carrierBackup) writeFileSync(carrierBackup.path, carrierBackup.bytes, { mode: 0o644 });
+		// Deepest first; a directory that still holds anything is not ours to remove.
+		for (const directory of createdDirectories.reverse()) {
+			try {
+				rmdirSync(directory);
+			} catch {}
+		}
 	};
+	const noteCreated = (path: string, existedBefore: boolean, missing: string[]): void => {
+		if (existedBefore || !existsSync(path)) return;
+		createdFiles.push(path);
+		createdDirectories.push(...missing.filter((directory) => !createdDirectories.includes(directory)));
+	};
+	try {
+		const authored: Array<{ slice_id: string; result: string; blocked_by?: string[]; path: string; task_id: string; content_hash: string; risk: string }> = [];
+		for (const slice of plan.slices) {
+			const absolute = join(deps.root, slice.path);
+			const existedBefore = existsSync(absolute);
+			const missing = missingAncestors(absolute);
+			const result = deps.runKernel({
+				argv: ["intent", "author", slice.path, "--stdin", "--json"],
+				cwd: deps.root,
+				stdin: `${JSON.stringify(slice.intent, null, 2)}\n`,
+			});
+			noteCreated(absolute, existedBefore, missing);
+			const verdict = result.json ?? {};
+			if (result.exit_code !== 0 || verdict.valid !== true)
+				throw new Error(`intent_validation_failed: ${slice.path}: ${verdict.reason ?? verdict.code ?? `exit ${result.exit_code}`}`);
+			if (typeof verdict.task_id !== "string" || typeof verdict.content_hash !== "string")
+				throw new Error(`intent_validation_failed: ${slice.path}: kernel result carries no task_id and content_hash`);
+			authored.push({
+				slice_id: slice.slice_id,
+				result: slice.result,
+				...(slice.blocked_by ? { blocked_by: slice.blocked_by } : {}),
+				path: slice.path,
+				task_id: verdict.task_id,
+				content_hash: verdict.content_hash,
+				risk: typeof verdict.risk === "string" ? verdict.risk : "unknown",
+			});
+		}
+		// D2: the leader names predecessors by slice id; the carrier's `Blocked by:`
+		// line, which the drive and the batch plan read, names task ids.
+		const taskIdBySlice = new Map(authored.map((slice) => [slice.slice_id, slice.task_id]));
+		const carrier = renderLocalInitiativeCarrier({
+			slug: plan.slug,
+			slices: authored.map((slice) => ({
+				slice_id: slice.slice_id,
+				result: slice.result,
+				task_id: slice.task_id,
+				...(slice.blocked_by ? { blocked_by: slice.blocked_by.map((id) => taskIdBySlice.get(id) ?? id) } : {}),
+			})),
+		});
+		const carrierPath = localInitiativePath(plan.slug);
+		const path = join(deps.root, carrierPath);
+		const carrierExisted = existsSync(path);
+		if (carrierExisted) carrierBackup = { path, bytes: readFileSync(path) };
+		const carrierMissing = missingAncestors(path);
+		mkdirSync(dirname(path), { recursive: true });
+		createdDirectories.push(...carrierMissing.filter((directory) => !createdDirectories.includes(directory)));
+		writeFileSync(path, carrier, { mode: 0o644 });
+		if (!carrierExisted) createdFiles.push(path);
+		const intents: PlanIntentSummary[] = authored
+			.map(({ path: intentPath, task_id, content_hash, risk }) => ({ path: intentPath, task_id, content_hash, risk }))
+			.sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0));
+		return {
+			slug: plan.slug,
+			carrier_path: carrierPath,
+			// Sorted, so the same carrier and intents always yield the same digest.
+			plan_digest: shortDigest(JSON.stringify({ slug: plan.slug, carrier, intents })),
+			task_ids: authored.map((slice) => slice.task_id),
+			intents,
+		};
+	} catch (error) {
+		rollback();
+		throw error;
+	}
 }
 
 /**
@@ -338,7 +456,7 @@ async function applyItem(
 	// contract (S4) and is guarded by the target's authority gates.
 	switch (item.action) {
 		case "resolve":
-			return applyResolve(index, item, deps, dispatchesToday, countDispatch);
+			return applyResolve(index, item, deps);
 		case "next":
 			return applyNext(index, item, deps);
 		case "priority":
@@ -369,8 +487,6 @@ async function applyResolve(
 	index: number,
 	item: Extract<LeaderProposalItem, { action: "resolve" }>,
 	deps: LeaderDispatchDeps,
-	dispatchesToday: () => number,
-	countDispatch: () => void,
 ): Promise<LeaderItemResult> {
 	const workItem = readWorkItem(deps.stateDir, item.target);
 	if (!workItem) return reject(index, item, "work_item_unknown");
@@ -412,7 +528,7 @@ async function applyResolve(
 		return reject(index, item, `authority_gated: ${blockers.join(", ")}; only ask_owner is accepted`);
 
 	if (item.kind === "resume") {
-		const resumed = deps.resumeBatch({ target: item.target, work_item: workItem });
+		const resumed = deps.checkBatchResumable({ target: item.target, work_item: workItem });
 		if (!resumed.resumed) return reject(index, item, `batch_resume_refused: ${resumed.reason}`);
 		if (deps.dry_run)
 			return { index, target: item.target, action: "resolve", outcome: "accepted", reason: "dry_run", handler: null, session_id: null };
@@ -424,60 +540,76 @@ async function applyResolve(
 		return countResolveRound(index, item, deps, workItem, "triage", rounds, "released to triage");
 	}
 
-	// D4.2: `replan` runs a fresh plan session; its published plan is a new digest
-	// (and, for an Initiative, a new plan approval) through the existing plan path.
-	const role = deps.roles.find((entry) => entry.base === "plan");
-	if (!role) return reject(index, item, "plan_role_missing");
-	const running = runningRoleSessions(deps.stateDir);
-	if (running.filter((session) => session.role === role.name).length >= role.limits.max_parallel)
-		return reject(index, item, "role_max_parallel");
-	if (running.length >= deps.max_concurrent) return reject(index, item, "max_concurrent");
-	// D3.5: a replan session is a catalog session too, so it reads and moves the
-	// same per-proposal budget counter a `dispatch` item does.
-	if (deps.max_dispatches_per_day !== null && dispatchesToday() >= deps.max_dispatches_per_day)
-		return reject(index, item, "dispatch_budget_exhausted");
+	// D4.2 (amended by loop-leader-review-fixes D1): `replan` starts no session. It
+	// invalidates the item's plan and returns it to triage, so the existing plan
+	// path produces the new plan, digest and (where required) approval.
+	// Guards first, each refusing with zero side effects.
+	if (facts.batch_state !== null) return reject(index, item, `replan_batch_active: ${facts.batch_state}`);
+	const issueMatch = /^issue-(\d+)$/.exec(item.target);
+	const issueNumber = issueMatch ? Number(issueMatch[1]) : null;
+	const publication = issueNumber === null ? null : readPlanPublication(deps.stateDir, issueNumber);
+	const drafts = inspectPlanDrafts(deps.root, workItem, publication);
+	if (drafts.changed !== null) return reject(index, item, `replan_draft_changed: ${drafts.changed}`);
 	if (deps.dry_run)
 		return { index, target: item.target, action: "resolve", outcome: "accepted", reason: "dry_run", handler: null, session_id: null };
-	const session = startRoleSession(deps.stateDir, {
-		target: item.target,
-		role: role.name,
-		base: role.base,
-		started_at: deps.now,
-	});
-	countDispatch();
-	let outcome: { completed: boolean; reason: string };
 	try {
-		outcome = await deps.startSession({
-			role,
-			target: item.target,
-			subject: item.target,
-			brief: item.context?.blocked_on ?? `replan ${item.target}`,
-			session_id: session.session_id,
-		});
+		// Drafts and the publication record go first and the work item last, so a
+		// failure leaves the item escalated with its binding intact; every removal
+		// is idempotent, so the next accepted replan retries it.
+		for (const file of drafts.files) rmSync(file, { force: true });
+		if (issueNumber !== null) removePlanPublication(deps.stateDir, issueNumber);
 	} catch (error) {
-		outcome = { completed: false, reason: `session_provider_error: ${error instanceof Error ? error.message : String(error)}` };
+		return reject(index, item, `replan_invalidation_failed: ${error instanceof Error ? error.message : String(error)}`);
 	}
-	finishRoleSession(deps.stateDir, session, {
-		status: outcome.completed ? "completed" : "failed",
-		reason: outcome.reason,
-		at: deps.now,
-	});
-	if (!outcome.completed) {
-		const failed = reject(index, item, `session_failed: ${outcome.reason}`);
-		failed.session_started = true;
-		return failed;
+	const invalidated: WorkItem = {
+		...workItem,
+		binding: { ...workItem.binding, plan_digest: null, task_ids: [], initiative_slug: null },
+	};
+	return countResolveRound(index, item, deps, invalidated, "triage", rounds, "plan invalidated; re-planning from triage");
+}
+
+/**
+ * D1.2(c): the daemon-authored drafts of the prior plan. Each intent the
+ * publication records, and the Initiative carrier a shape wrote, is listed for
+ * removal only while it still matches what the daemon recorded; one that changed
+ * is a user's or another session's edit and refuses the replan. An absent file
+ * is already removed. A carrier with no publication to verify it against is
+ * treated as changed.
+ */
+function inspectPlanDrafts(
+	root: string,
+	workItem: WorkItem,
+	publication: LoopPlanPublication | null,
+): { files: string[]; changed: string | null } {
+	const files: string[] = [];
+	if (publication) {
+		const base = resolve(publication.worktree_path);
+		for (const intent of publication.intents) {
+			const absolute = resolve(base, intent.path);
+			const escaped = relative(base, absolute).startsWith("..");
+			if (escaped) return { files: [], changed: intent.path };
+			if (!existsSync(absolute)) continue;
+			let current: string | null = null;
+			try {
+				current = canonicalIntentHash(JSON.parse(readFileSync(absolute, "utf8")));
+			} catch {}
+			if (current !== intent.content_hash) return { files: [], changed: intent.path };
+			files.push(absolute);
+		}
 	}
-	const accepted = countResolveRound(
-		index,
-		item,
-		deps,
-		workItem,
-		"triage",
-		rounds,
-		`replan session ${session.session_id}: ${outcome.reason}`,
-	);
-	accepted.session_started = true;
-	return accepted;
+	const slug = workItem.binding.initiative_slug;
+	if (slug) {
+		const carrierPath = localInitiativePath(slug);
+		const absolute = join(root, carrierPath);
+		if (existsSync(absolute)) {
+			const digest = publication
+				? shortDigest(JSON.stringify({ slug, carrier: readFileSync(absolute, "utf8"), intents: publication.intents }))
+				: null;
+			if (digest === null || digest !== publication!.digest) return { files: [], changed: carrierPath };
+			files.push(absolute);
+		}
+	}
+	return { files, changed: null };
 }
 
 /** D4.3: an accepted round moves the item and increments `replan_rounds`. */
@@ -582,6 +714,8 @@ async function applyShape(
 		return reject(index, item, `shape_plan_failed: ${error instanceof Error ? error.message : String(error)}`);
 	}
 	if (plan === null || plan.slices.length === 0) return reject(index, item, "shape_plan_missing");
+	const inconsistent = validateInitiativePlan(plan);
+	if (inconsistent !== null) return reject(index, item, `shape_plan_failed: ${inconsistent}`);
 	let shaped: ShapedInitiative;
 	try {
 		shaped = shapeInitiative(plan, { root: deps.root, now: deps.now, runKernel: deps.runKernel });

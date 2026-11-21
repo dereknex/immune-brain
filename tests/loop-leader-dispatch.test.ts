@@ -43,7 +43,8 @@ import { readLeaderJournal } from "../plugins/immune-brain/runtime/loop_daemon/l
 import { collectLeaderBriefingInput } from "../plugins/immune-brain/runtime/loop_daemon/leader_agent.ts";
 import { compileLeaderBriefing } from "../plugins/immune-brain/runtime/loop_daemon/leader_briefing.ts";
 import { LOOP_LEADER_PROPOSAL_CONTRACT } from "../plugins/immune-brain/runtime/loop_daemon/leader_proposal.ts";
-import { observeInitiative, observeSingleTask } from "../plugins/immune-brain/runtime/unattended/batch_plan.ts";
+import { observeInitiative, observeSingleTask, projectBatchPlan } from "../plugins/immune-brain/runtime/unattended/batch_plan.ts";
+import { canonicalIntentHash } from "../plugins/immune-brain/runtime/kernel/intent.ts";
 import { reconcileCandidates, reconcileSkippedDecisions } from "../plugins/immune-brain/runtime/loop_daemon/reconcile.ts";
 import { defaultLoopRole, resolveLoopRoles, type ResolvedLoopRole } from "../plugins/immune-brain/runtime/loop_daemon/role_catalog.ts";
 import { listRoleSessions, runningRoleSessions, startRoleSession } from "../plugins/immune-brain/runtime/loop_daemon/role_sessions.ts";
@@ -194,6 +195,67 @@ function seedItem(ws: { stateDir: string }, state: "triage" | "planning" | "plan
 	return readWorkItem(ws.stateDir, "issue-42")!;
 }
 
+/** A complete TaskIntent, so a shaped carrier can be projected into a batch plan. */
+function fullIntent(taskId: string, scope: string) {
+	return {
+		contract: "assurance_kernel/task_intent/v1",
+		task_id: taskId,
+		goal: `Deliver ${taskId}`,
+		acceptance: [{ id: `acc-${taskId}`, assertion: `Deliver ${taskId}`, verification: "{}" }],
+		scope_hint: [scope],
+		risk: "material",
+		revision: 1,
+		owner: "user",
+	};
+}
+
+/** Behaves like `intent author`: an exclusive create that refuses an existing destination. */
+function exclusiveKernel(root: string, failOn: string[] = []): LeaderDispatchDeps["runKernel"] {
+	return ({ argv, stdin }) => {
+		const path = join(root, argv[2]!);
+		if (failOn.includes(argv[2]!)) return { exit_code: 1, json: { valid: false, reason: "intent_invalid" } };
+		if (existsSync(path)) return { exit_code: 1, json: { valid: false, reason: "destination_exists" } };
+		const intent = JSON.parse(stdin ?? "{}") as { task_id: string; risk?: string };
+		mkdirSync(dirname(path), { recursive: true });
+		writeFileSync(path, stdin ?? "");
+		return { exit_code: 0, json: { valid: true, task_id: intent.task_id, content_hash: canonicalIntentHash(intent), risk: intent.risk ?? "routine" } };
+	};
+}
+
+/** Every path and byte under `root` that a shape could touch, for a before/after comparison. */
+function snapshot(root: string): Record<string, string> {
+	const out: Record<string, string> = {};
+	const walk = (dir: string): void => {
+		for (const entry of readdirSync(dir, { withFileTypes: true })) {
+			if (dir === root && (entry.name === ".git" || entry.name === ".imm")) continue;
+			const path = join(dir, entry.name);
+			if (entry.isDirectory()) {
+				out[path.slice(root.length)] = "<dir>";
+				walk(path);
+			} else out[path.slice(root.length)] = readFileSync(path, "utf8");
+		}
+	};
+	walk(root);
+	return out;
+}
+
+function twoSlicePlan(overrides: { s2_blocked_by?: string[]; s2_slice_id?: string; s2_task_id?: string } = {}) {
+	const taskB = overrides.s2_task_id ?? "task-b";
+	return {
+		slug: "widget-initiative",
+		slices: [
+			{ slice_id: "s1", result: "schema first", path: "docs/plans/task-a.intent.json", intent: fullIntent("task-a", "a/**") },
+			{
+				slice_id: overrides.s2_slice_id ?? "s2",
+				result: "then the widget",
+				path: `docs/plans/${taskB}.intent.json`,
+				intent: fullIntent(taskB, "b/**"),
+				blocked_by: overrides.s2_blocked_by ?? ["s1"],
+			},
+		],
+	};
+}
+
 function itemFile(ws: { stateDir: string }): string {
 	return readFileSync(join(ws.stateDir, "work_items", "issue-42.json"), "utf8");
 }
@@ -269,7 +331,9 @@ describe("Loop Leader: guarded dispatch (S3-AC1)", () => {
 		expect(carrier).toContain("## s1: schema first");
 		expect(carrier).toContain("Tasks:");
 		expect(carrier).toContain("- task-a");
-		expect(carrier).toContain("Blocked by: s1");
+		// D2: the leader names s1, the carrier names its task, the namespace the drive reads.
+		expect(carrier).toContain("Blocked by: task-a");
+		expect(carrier).not.toContain("Blocked by: s1");
 
 		const shaped = readWorkItem(ws.stateDir, "issue-42")!;
 		expect(shaped.binding.initiative_slug).toBe("widget-initiative");
@@ -313,6 +377,130 @@ describe("Loop Leader: guarded dispatch (S3-AC1)", () => {
 		expect(renderLocalInitiativeCarrier({ slug: "x", slices: [{ slice_id: "s1", result: "r", task_id: "t" }] })).toBe(
 			"# Initiative: x\n\n## s1: r\n\nTasks:\n\n- t\n",
 		);
+	});
+
+	// RF-AC2 / BR-SCN-1: dependencies live in the slice namespace and reach the carrier as task ids.
+	it("writes the predecessor's task id into the carrier and projects the shaped plan without an unknown-Task error", async () => {
+		const ws = workspace();
+		seedItem(ws, "planning");
+		const results = await applyLeaderProposal([{ target: "issue-42", action: "shape", plan: "initiative", reason: "two slices" }], {
+			...deps(ws),
+			planInitiative: async () => twoSlicePlan(),
+			runKernel: exclusiveKernel(ws.root),
+		});
+		expect(results[0]).toMatchObject({ action: "shape", outcome: "accepted" });
+
+		expect(readFileSync(join(ws.root, "docs/initiatives/widget-initiative.md"), "utf8")).toContain("Blocked by: task-a");
+		execFileSync("git", ["add", "docs/plans"], { cwd: ws.root });
+		const observed = await observeInitiative(ws.root, "widget-initiative");
+		expect(observed.tasks.map((task) => [task.task_id, task.blocked_by])).toEqual([["task-a", []], ["task-b", ["task-a"]]]);
+		const plan = await projectBatchPlan(ws.root, "widget-initiative", { confirmation_time: "2099-01-01T00:00:00.000Z" });
+		expect(plan.children.map((child) => [child.task_id, child.blocked_by])).toEqual([["task-a", []], ["task-b", ["task-a"]]]);
+	});
+
+	it.each([
+		["an unknown slice id", { s2_blocked_by: ["s9"] }, "unknown slice_id s9"],
+		["its own slice id", { s2_blocked_by: ["s2"] }, "blocked by itself"],
+		["a task id instead of a slice id", { s2_blocked_by: ["task-a"] }, "unknown slice_id task-a"],
+		["a repeated predecessor", { s2_blocked_by: ["s1", "s1"] }, "repeats blocked_by s1"],
+		["a duplicate slice id", { s2_slice_id: "s1", s2_blocked_by: [] }, "duplicate slice_id s1"],
+		["a duplicate task id", { s2_task_id: "task-a", s2_blocked_by: [] }, "duplicate intent task_id task-a"],
+	])("rejects a plan with %s and leaves no carrier, intent or binding", async (_name, overrides, reason) => {
+		const ws = workspace();
+		seedItem(ws, "planning");
+		const before = snapshot(ws.root);
+		const results = await applyLeaderProposal([{ target: "issue-42", action: "shape", plan: "initiative", reason: "inconsistent" }], {
+			...deps(ws),
+			planInitiative: async () => twoSlicePlan(overrides),
+			runKernel: exclusiveKernel(ws.root),
+		});
+		expect(results[0]).toMatchObject({ action: "shape", outcome: "rejected" });
+		expect(results[0]!.reason).toContain("shape_plan_failed");
+		expect(results[0]!.reason).toContain(reason);
+		expect(snapshot(ws.root)).toEqual(before);
+		const stored = readWorkItem(ws.stateDir, "issue-42")!;
+		expect(stored.binding.initiative_slug ?? null).toBeNull();
+		expect(stored.binding.plan_digest ?? null).toBeNull();
+		expect(readLeaderJournal(ws.stateDir).map((entry) => entry.kind)).toContain("rejected");
+	});
+
+	it("refuses to parse the same inconsistencies from the plan role's JSON", () => {
+		const json = (blockedBy: string[]) =>
+			JSON.stringify({
+				contract: "immune_brain/loop_initiative_plan/v1",
+				slug: "widget-initiative",
+				slices: [
+					{ slice_id: "s1", result: "r1", path: "docs/plans/task-a.intent.json", intent: { task_id: "task-a" } },
+					{ slice_id: "s2", result: "r2", path: "docs/plans/task-b.intent.json", intent: { task_id: "task-b" }, blocked_by: blockedBy },
+				],
+			});
+		expect(parseInitiativePlan(json(["s1"]))).not.toBeNull();
+		expect(parseInitiativePlan(json(["task-a"]))).toBeNull();
+		expect(parseInitiativePlan(json(["s2"]))).toBeNull();
+	});
+
+	// RF-AC3 / BR-SCN-2: a refused shape leaves the checkout byte-identical.
+	it("leaves docs/plans and docs/initiatives untouched when a later slice's Kernel author fails", async () => {
+		const ws = workspace();
+		seedItem(ws, "planning");
+		mkdirSync(join(ws.root, "docs/plans"), { recursive: true });
+		writeFileSync(join(ws.root, "docs/plans/keep.md"), "unrelated\n");
+		const plan = twoSlicePlan();
+		plan.slices.push({ slice_id: "s3", result: "third", path: "docs/plans/task-c.intent.json", intent: fullIntent("task-c", "c/**"), blocked_by: ["s2"] });
+		const before = snapshot(ws.root);
+
+		const results = await applyLeaderProposal([{ target: "issue-42", action: "shape", plan: "initiative", reason: "three slices" }], {
+			...deps(ws),
+			planInitiative: async () => plan,
+			runKernel: exclusiveKernel(ws.root, ["docs/plans/task-c.intent.json"]),
+		});
+
+		expect(results[0]).toMatchObject({ outcome: "rejected" });
+		expect(results[0]!.reason).toContain("intent_validation_failed: docs/plans/task-c.intent.json");
+		expect(snapshot(ws.root)).toEqual(before);
+		expect(readWorkItem(ws.stateDir, "issue-42")!.binding.plan_digest ?? null).toBeNull();
+		expect(readLeaderJournal(ws.stateDir).map((entry) => entry.kind)).toContain("rejected");
+	});
+
+	it("neither overwrites nor removes a file that already sat at a slice path", async () => {
+		const ws = workspace();
+		seedItem(ws, "planning");
+		mkdirSync(join(ws.root, "docs/plans"), { recursive: true });
+		const theirs = `${JSON.stringify(fullIntent("task-b", "mine/**"), null, 2)}\n`;
+		writeFileSync(join(ws.root, "docs/plans/task-b.intent.json"), theirs);
+		const before = snapshot(ws.root);
+
+		const results = await applyLeaderProposal([{ target: "issue-42", action: "shape", plan: "initiative", reason: "collision" }], {
+			...deps(ws),
+			planInitiative: async () => twoSlicePlan(),
+			runKernel: exclusiveKernel(ws.root),
+		});
+
+		expect(results[0]).toMatchObject({ outcome: "rejected" });
+		expect(results[0]!.reason).toContain("destination_exists");
+		// task-a was authored first and is rolled back; task-b is the user's and stays as it was.
+		expect(snapshot(ws.root)).toEqual(before);
+		expect(readFileSync(join(ws.root, "docs/plans/task-b.intent.json"), "utf8")).toBe(theirs);
+	});
+
+	it("removes every authored intent and the directories it created when the carrier write fails", async () => {
+		const ws = workspace();
+		seedItem(ws, "planning");
+		// A regular file where the carrier directory belongs makes the carrier write fail after all intents exist.
+		mkdirSync(join(ws.root, "docs"), { recursive: true });
+		writeFileSync(join(ws.root, "docs/initiatives"), "not a directory\n");
+		const before = snapshot(ws.root);
+
+		const results = await applyLeaderProposal([{ target: "issue-42", action: "shape", plan: "initiative", reason: "carrier fails" }], {
+			...deps(ws),
+			planInitiative: async () => twoSlicePlan(),
+			runKernel: exclusiveKernel(ws.root),
+		});
+
+		expect(results[0]).toMatchObject({ outcome: "rejected" });
+		expect(existsSync(join(ws.root, "docs/plans"))).toBe(false);
+		expect(snapshot(ws.root)).toEqual(before);
+		expect(readWorkItem(ws.stateDir, "issue-42")!.binding.plan_digest ?? null).toBeNull();
 	});
 
 	it("lists model-skipped decisions as briefing reconcile candidates and gates a leader next through Tier-0", async () => {

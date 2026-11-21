@@ -26,7 +26,7 @@
 
 import { createHash, randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -469,6 +469,15 @@ export function writePlanPublication(stateDir: string, plan: LoopPlanPublication
 	try {
 		chmodSync(path, 0o600);
 	} catch {}
+}
+
+/**
+ * Remove one Issue's publication record. Idempotent: an absent record is
+ * already removed. The record is rebuildable orchestration state, so a replan
+ * deleting it leaves no digest for a stale approval or a work-item rebuild.
+ */
+export function removePlanPublication(stateDir: string, issueNumber: number): void {
+	rmSync(planPath(stateDir, issueNumber), { force: true });
 }
 
 /** The approval digest a `/approve <digest>` or `@imm-loop approve <digest>` comment names. */

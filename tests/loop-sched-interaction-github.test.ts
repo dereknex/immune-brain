@@ -38,12 +38,14 @@ import {
 	CONTEXT_SECTION_END,
 	CONTEXT_SECTION_START,
 	CONTEXT_TRUNCATED_MARKER,
+	fitInteractionContext,
+	renderInteractionContext,
 	sanitizeContextText,
 	type InteractionBinding,
 	type InteractionRequest,
 } from "../plugins/immune-brain/runtime/loop_daemon/interaction/protocol.ts";
 import { askOwnerQuestion, ownerQuestionRequest, pendingLaneEntryBlocked } from "../plugins/immune-brain/runtime/loop_daemon/replan.ts";
-import { clearWaitingPointer, listWaitingStatus } from "../plugins/immune-brain/runtime/loop_daemon/waiting.ts";
+import { clearWaitingPointer, listWaitingStatus, recordWaitingPointer } from "../plugins/immune-brain/runtime/loop_daemon/waiting.ts";
 import type { GuardFacts } from "../plugins/immune-brain/runtime/loop_daemon/guards.ts";
 import type { RawComment } from "../plugins/immune-brain/runtime/loop_daemon/types.ts";
 
@@ -447,6 +449,122 @@ describe("interaction context pack and in-place questions (S4-AC2)", () => {
 			{ target: "issue-42", kind: "escalation", channel: "github", link: expect.any(String) },
 		]);
 		expect(JSON.stringify(listWaitingStatus(stateDir))).not.toContain(CONTEXT.blocked_on);
+	});
+
+	// RF-AC4 / BR-SCN-3: annotating a pending plan_approval makes the target wait on that comment.
+	it("annotates a pending plan_approval in place and records its waiting pointer", async () => {
+		const port = fakePort();
+		const read = reader(port);
+		const stateDir = waitingStateDir();
+		const channel = channelFor(port, read, { plan_digest: PLAN_DIGEST });
+		const approval = approvalRequest({ plan_digest: PLAN_DIGEST });
+		expect(await channel.post(approval)).toBe("posted");
+		// A stale pointer the target recorded for an older request is still cleared.
+		recordWaitingPointer(stateDir, {
+			interaction_id: "escalation:old",
+			target: "issue-42",
+			kind: "escalation",
+			channel: "github",
+			link: "https://github.com/example/repo/issues/42#issuecomment-1",
+			recorded_at: TS,
+		});
+
+		const result = await askOwnerQuestion(
+			{
+				stateDir,
+				now: TS,
+				target: "issue-42",
+				channel,
+				pending_literal_user: [{ interaction_id: approval.interaction_id, kind: "plan_approval" }],
+			},
+			{ subject: { issue: ISSUE }, context: CONTEXT },
+		);
+
+		expect(result).toMatchObject({ action: "annotated", interaction_id: approval.interaction_id });
+		expect(port.comments).toHaveLength(1);
+		expect(port.comments[0]!.body).toContain(CONTEXT.blocked_on);
+		expect(listWaitingStatus(stateDir)).toEqual([
+			{
+				target: "issue-42",
+				kind: "plan_approval",
+				channel: "github",
+				link: `https://github.com/example/repo/issues/${ISSUE}#issuecomment-${port.comments[0]!.id}`,
+			},
+		]);
+		expect(JSON.stringify(listWaitingStatus(stateDir))).not.toContain(CONTEXT.blocked_on);
+	});
+
+	it("records no pointer when the channel has no link for an annotated request", async () => {
+		const port = fakePort();
+		const read = reader(port);
+		const stateDir = waitingStateDir();
+		const channel = { ...channelFor(port, read, { plan_digest: PLAN_DIGEST }), link: () => null };
+		const approval = approvalRequest({ plan_digest: PLAN_DIGEST });
+		await channel.post(approval);
+
+		const result = await askOwnerQuestion(
+			{ stateDir, now: TS, target: "issue-42", channel, pending_literal_user: [{ interaction_id: approval.interaction_id, kind: "plan_approval" }] },
+			{ subject: { issue: ISSUE }, context: CONTEXT },
+		);
+
+		expect(result.action).toBe("annotated");
+		expect(listWaitingStatus(stateDir)).toEqual([]);
+	});
+
+	it("falls through to posting when the annotate finds no request", async () => {
+		const port = fakePort();
+		const read = reader(port);
+		const stateDir = waitingStateDir();
+
+		const result = await askOwnerQuestion(
+			{ stateDir, now: TS, target: "issue-42", channel: channelFor(port, read), pending_literal_user: [{ interaction_id: "plan-approval:gone", kind: "plan_approval" }] },
+			{ subject: { issue: ISSUE }, context: CONTEXT },
+		);
+
+		expect(result.action).toBe("posted");
+		expect(listWaitingStatus(stateDir)).toHaveLength(1);
+	});
+
+	// RF-AC5 / BR-REQ-7: one byte cut, a valid UTF-8 prefix, within the cap.
+	it("cuts a 256 KiB multi-byte blocked_on to the cap as a valid prefix of the original, marker rendered", () => {
+		const unit = "阻塞原因：";
+		const original = unit.repeat(Math.ceil((256 * 1024) / Buffer.byteLength(unit)));
+		const pack = { blocked_on: original, tried: [], options: [], evidence: [] };
+
+		const fitted = fitInteractionContext(pack);
+		const rendered = renderInteractionContext(pack);
+
+		expect(fitted.truncated).toBe(true);
+		expect(fitted.context.blocked_on.length).toBeGreaterThan(0);
+		expect(original.startsWith(fitted.context.blocked_on)).toBe(true);
+		expect(fitted.context.blocked_on).not.toContain(String.fromCodePoint(0xfffd));
+		expect(Buffer.byteLength(fitted.context.blocked_on, "utf8")).toBeLessThan(CONTEXT_MAX_BYTES);
+		expect(Buffer.byteLength(rendered, "utf8")).toBeLessThan(CONTEXT_MAX_BYTES + 1024);
+		expect(rendered).toContain(CONTEXT_TRUNCATED_MARKER);
+	});
+
+	it("truncates a blocked_on only past the cap, never at or under it", () => {
+		const fit = (n: number) => fitInteractionContext({ blocked_on: "x".repeat(n), tried: [], options: [], evidence: [] });
+		let low = 0;
+		let high = CONTEXT_MAX_BYTES;
+		while (low < high) {
+			const mid = Math.ceil((low + high) / 2);
+			if (fit(mid).truncated) high = mid - 1;
+			else low = mid;
+		}
+		// `low` is the longest question that still fits: kept whole at the cap, cut one byte past it.
+		expect(fit(low)).toEqual({ context: { blocked_on: "x".repeat(low), tried: [], options: [], evidence: [] }, truncated: false });
+		const over = fit(low + 1);
+		expect(over.truncated).toBe(true);
+		expect(over.context.blocked_on).toBe("x".repeat(low));
+	});
+
+	it("trims evidence before cutting blocked_on", () => {
+		const evidence = Array.from({ length: 400 }, (_, i) => ({ label: `e${i}`, ref: `https://example.test/${"p".repeat(60)}/${i}` }));
+		const fitted = fitInteractionContext({ blocked_on: "short question", tried: ["t"], options: [], evidence });
+		expect(fitted.truncated).toBe(true);
+		expect(fitted.context.blocked_on).toBe("short question");
+		expect(fitted.context.evidence.length).toBeLessThan(evidence.length);
 	});
 
 	it("asks on the request's own PR subject too", async () => {

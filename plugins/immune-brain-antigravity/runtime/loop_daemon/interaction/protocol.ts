@@ -159,10 +159,14 @@ export function fitInteractionContext(context: InteractionContext): { context: I
 		else if (next.options.length > 0) next.options.pop();
 		else if (next.tried.length > 0) next.tried.pop();
 		else {
-			// Last resort: the question itself is longer than the cap.
-			let cut = next.blocked_on;
-			while (cut.length > 0 && bytes() > CONTEXT_MAX_BYTES) cut = cut.slice(0, -1);
-			next.blocked_on = cut;
+			// Last resort: the question itself is longer than the cap. Cut the
+			// byte excess in one step, backed up to a UTF-8 code-point boundary
+			// so the kept text is a valid prefix of the original.
+			const excess = bytes() - CONTEXT_MAX_BYTES;
+			const raw = Buffer.from(next.blocked_on, "utf8");
+			let keep = Math.max(0, raw.length - excess);
+			while (keep > 0 && (raw[keep]! & 0xc0) === 0x80) keep -= 1;
+			next.blocked_on = raw.subarray(0, keep).toString("utf8");
 			break;
 		}
 	}

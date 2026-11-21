@@ -7985,11 +7985,14 @@ function resolveAgents(layers) {
       }
   }
   const roles = {};
+  const triageBindings = [];
   for (const role of AGENT_ROLES) {
     roles[role] = null;
     for (const [layer, values, file] of [["project", project, layers.files.project], ["user", user, layers.files.user]]) {
       if (values[role] === undefined)
         continue;
+      if (role === "triage")
+        triageBindings.push({ file, key_path: "agents.triage" });
       const parsed = parseAgentValue(values[role], profiles);
       if (!parsed.ok) {
         err(parsed.code, file, `agents.${role}`, parsed.message);
@@ -7998,7 +8001,7 @@ function resolveAgents(layers) {
       roles[role] ??= { host: parsed.profile.host, model: parsed.profile.model ?? null, effort: parsed.profile.effort ?? null, source: layer };
     }
   }
-  return { agents: { valid: errors.length === 0, profiles: { value: profiles, source: user.profiles !== undefined ? "user" : "default" }, roles }, errors, preset_judging: presetJudging };
+  return { agents: { valid: errors.length === 0, profiles: { value: profiles, source: user.profiles !== undefined ? "user" : "default" }, roles }, errors, preset_judging: presetJudging, triage_bindings: triageBindings };
 }
 function agentRole(agents, role) {
   return agents.roles[role] ?? null;
@@ -8636,6 +8639,8 @@ function resolveConfig(root, options = {}) {
     for (const base of bases)
       diag("deprecated_config_source", "warning", bound.source === "project" ? projectPath : userPath, "loop.roles", `${key} no longer chooses the loop ${base} role; bind a base ${base} role under loop.roles in .imm/config.json`);
   }
+  for (const binding of agentLayers.triage_bindings)
+    diag("deprecated_config_source", "warning", binding.file, binding.key_path, "triage judging is retired: nothing reads agents.triage, so this binding selects nothing");
   for (const binding of agentLayers.preset_judging)
     diag("deprecated_config_source", "warning", binding.file, binding.key_path, "judging is retired: the leader replaces the Tier-3 judging session, so this binding selects nothing");
   for (const [layer, o, file] of layers)

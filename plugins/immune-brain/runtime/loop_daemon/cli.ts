@@ -25,6 +25,7 @@ import { DEFAULT_LOOP_CONFIG, LOOP_LEADER_WAKES_BOUNDS, type LoopConfig, resolve
 import { createGhTransport, type GhTransport } from "../github_issue_tracker.ts";
 import { readTaskRecordRaw } from "../kernel/storage.ts";
 import { projectAssurance } from "../kernel/assurance_projection.ts";
+import type { LaneSessionsDeps } from "../lane_sessions/index.ts";
 import { readNoTouch } from "../no_touch.ts";
 import { findLaneRelayTarget, type relayLaneDecision } from "../unattended/lane_decision.ts";
 import { POINT_REGISTRY } from "../decision_model/thresholds.ts";
@@ -328,14 +329,30 @@ export function createRoleSessionRunner(input: {
 	};
 }
 
+/**
+ * The Host a discarded Lane's session port is resolved for: the configured
+ * executor Host, else claude-code. A value outside the Executor Hosts is refused
+ * here rather than cast through the discard dependency's type.
+ */
+type LaneExecutorHost = LaneSessionsDeps["host"];
+const LANE_EXECUTOR_HOSTS = ["claude-code", "pi", "antigravity"] as const satisfies readonly LaneExecutorHost[];
+
+function laneExecutorHost(host: string | null | undefined): LaneExecutorHost {
+	if (host === undefined || host === null) return "claude-code";
+	const known = LANE_EXECUTOR_HOSTS.find((candidate) => candidate === host);
+	if (known) return known;
+	throw new Error(`executor host ${host} is not one of ${LANE_EXECUTOR_HOSTS.join(", ")}`);
+}
+
 /** The one reply the plan role returns for an Initiative shape (D3.3). */
 function initiativePlanPrompt(target: string, reason: string): string {
 	return [
 		"You are the Loop's plan role. Split one piece of work into ordered slices.",
 		"Read nothing outside this directory. Decide, then print exactly one JSON object and nothing else:",
-		`{"contract": "immune_brain/loop_initiative_plan/v1", "slug": "<initiative-slug>", "slices": [{"slice_id": "<id>", "result": "<what the slice delivers>", "path": "docs/plans/<task-id>.intent.json", "intent": {...}, "blocked_by": ["<id>"]}]}`,
+		`{"contract": "immune_brain/loop_initiative_plan/v1", "slug": "<initiative-slug>", "slices": [{"slice_id": "<id>", "result": "<what the slice delivers>", "path": "docs/plans/<task-id>.intent.json", "intent": {...}, "blocked_by": ["<slice_id>"]}]}`,
 		"Each `intent` is one complete TaskIntent the Kernel can author, with its own `task_id`.",
 		"Each slice's `path` must be exactly `docs/plans/<task-id>.intent.json` for that intent's `task_id`: the drive reads every slice back through that path.",
+		"`blocked_by` lists the `slice_id`s of earlier slices of this same plan, never a `task_id`; an unknown or self-referencing id rejects the whole plan.",
 		"Leave `blocked_by` out when the slice has no predecessor.",
 		"",
 		`Target: ${target}`,
@@ -1245,7 +1262,7 @@ Options:
 					root: absoluteRoot,
 					stateDir,
 					now: recordedAt,
-					host: (resolved.agents?.roles?.executor?.host ?? "claude-code") as never,
+					host: laneExecutorHost(resolved.agents?.roles?.executor?.host),
 					...(options?.createPort ? { createPort: options.createPort } : {}),
 				});
 			}
@@ -1455,7 +1472,7 @@ Options:
 							// D4.2 / ULS D5.1: a parked batch leaves `needs_human` only through a fresh Batch
 							// Authorization and a stalled Executor only through a fresh drive entry, so `resume`
 							// applies to an item with no batch blocker.
-							resumeBatch: ({ work_item }) => {
+							checkBatchResumable: ({ work_item }) => {
 								const subject = resolveSubject(work_item.target);
 								let batch: ReturnType<typeof batchStateForTarget>;
 								try {

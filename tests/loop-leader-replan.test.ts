@@ -15,11 +15,13 @@
 
 import { afterEach, describe, expect, it } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { applyLeaderProposal, type LeaderDispatchDeps } from "../plugins/immune-brain/runtime/loop_daemon/leader_dispatch.ts";
+import { readPlanPublication } from "../plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts";
+import { canonicalIntentHash } from "../plugins/immune-brain/runtime/kernel/intent.ts";
 import { readLeaderJournal } from "../plugins/immune-brain/runtime/loop_daemon/leader_journal.ts";
 import type { LeaderProposalItem } from "../plugins/immune-brain/runtime/loop_daemon/leader_proposal.ts";
 import { seedLaneBatch } from "./helpers/loop-leader-batch.ts";
@@ -101,7 +103,7 @@ function deps(
 		runKernel: () => ({ exit_code: 1, json: { reason: "kernel_unavailable" } }),
 		startSession: async () => ({ completed: true, reason: "completed: plan drafted" }),
 		resolveFacts: async () => NO_FACTS,
-		resumeBatch: ({ target }) => {
+		checkBatchResumable: ({ target }) => {
 			recorded.resumed.push(target);
 			return { resumed: true, reason: "batch s4-batch is running" };
 		},
@@ -131,6 +133,69 @@ function resolveItem(target: string, kind: "resume" | "release" | "replan" | "as
 	return kind === "ask_owner"
 		? { target, action: "resolve", kind, context: CONTEXT }
 		: { target, action: "resolve", kind };
+}
+
+function fullIntent(taskId: string, scope: string) {
+	return {
+		contract: "assurance_kernel/task_intent/v1",
+		task_id: taskId,
+		goal: `Deliver ${taskId}`,
+		acceptance: [{ id: `acc-${taskId}`, assertion: `Deliver ${taskId}`, verification: "{}" }],
+		scope_hint: [scope],
+		risk: "routine",
+		revision: 1,
+		owner: "user",
+	};
+}
+
+function twoSlicePlan() {
+	return {
+		slug: "widget-initiative",
+		slices: [
+			{ slice_id: "s1", result: "schema first", path: "docs/plans/task-a.intent.json", intent: fullIntent("task-a", "a/**") },
+			{ slice_id: "s2", result: "then the widget", path: "docs/plans/task-b.intent.json", intent: fullIntent("task-b", "b/**"), blocked_by: ["s1"] },
+		],
+	};
+}
+
+/** Behaves like `intent author`: an exclusive create that refuses an existing destination. */
+function exclusiveKernel(root: string): LeaderDispatchDeps["runKernel"] {
+	return ({ argv, stdin }) => {
+		const path = join(root, argv[2]!);
+		if (existsSync(path)) return { exit_code: 1, json: { valid: false, reason: "destination_exists" } };
+		const intent = JSON.parse(stdin ?? "{}") as { task_id: string; risk?: string };
+		mkdirSync(dirname(path), { recursive: true });
+		writeFileSync(path, stdin ?? "");
+		return { exit_code: 0, json: { valid: true, task_id: intent.task_id, content_hash: canonicalIntentHash(intent), risk: intent.risk ?? "routine" } };
+	};
+}
+
+/** Publish an Initiative through the real shape path, then escalate the item with its binding intact. */
+async function shapeAndEscalate(ws: { root: string; stateDir: string }, target: string, overrides: { replan_rounds?: number } = {}) {
+	writeWorkItem(ws.stateDir, newWorkItem(target, "planning", NOW));
+	const recorded: Recorded = { ask_owner: [], resumed: [] };
+	const [shaped] = await applyLeaderProposal([{ target, action: "shape", plan: "initiative", reason: "two slices" }], {
+		...deps(ws, recorded),
+		planInitiative: async () => twoSlicePlan(),
+		runKernel: exclusiveKernel(ws.root),
+	});
+	if (shaped?.outcome !== "accepted") throw new Error(`shape was not accepted: ${shaped?.reason}`);
+	const published = readWorkItem(ws.stateDir, target)!;
+	writeWorkItem(ws.stateDir, { ...published, state: "escalated", ...(overrides.replan_rounds === undefined ? {} : { replan_rounds: overrides.replan_rounds }) });
+	return { plan_digest: published.binding.plan_digest! };
+}
+
+function planFiles(root: string): Record<string, string> {
+	const out: Record<string, string> = {};
+	for (const dir of ["docs/plans", "docs/initiatives"]) {
+		if (!existsSync(join(root, dir))) continue;
+		for (const name of readdirSync(join(root, dir)).sort()) out[`${dir}/${name}`] = readFileSync(join(root, dir, name), "utf8");
+	}
+	return out;
+}
+
+function itemJson(stateDir: string, target: string): string {
+	return readFileSync(join(stateDir, "work_items", `${target}.json`), "utf8");
 }
 
 describe("Loop Leader: replanning (S4-AC1)", () => {
@@ -167,19 +232,114 @@ describe("Loop Leader: replanning (S4-AC1)", () => {
 		expect(recorded.ask_owner).toEqual([]);
 	});
 
-	it("runs a fresh plan session for a replan and counts the round", async () => {
+	// RF-AC1 / BR-SCN-4 (loop-leader-review-fixes D1): a replan starts no session; it invalidates the plan.
+	it("invalidates the published plan on a replan: no session, no budget read, binding and publication cleared, round counted", async () => {
+		const ws = workspace();
+		const target = "issue-42";
+		const shaped = await shapeAndEscalate(ws, target);
+		const recorded: Recorded = { ask_owner: [], resumed: [] };
+		const started: string[] = [];
+		// A budget of zero would refuse any session dispatch; the replan must not read it.
+		const replanning = deps(ws, recorded, {
+			max_dispatches_per_day: 0,
+			startSession: async ({ role }) => {
+				started.push(role.name);
+				return { completed: true, reason: "completed: unexpected session" };
+			},
+			planInitiative: async () => twoSlicePlan(),
+			runKernel: exclusiveKernel(ws.root),
+		});
+		expect(readPlanPublication(ws.stateDir, 42)?.digest).toBe(shaped.plan_digest);
+
+		const [result] = await applyLeaderProposal([resolveItem(target, "replan")], replanning);
+
+		expect(result).toMatchObject({ action: "resolve", outcome: "accepted", session_id: null });
+		expect(started).toEqual([]);
+		expect(listRoleSessions(ws.stateDir)).toEqual([]);
+		const item = readWorkItem(ws.stateDir, target)!;
+		expect(item.state).toBe("triage");
+		expect(item.replan_rounds).toBe(1);
+		expect(item.binding.plan_digest ?? null).toBeNull();
+		expect(item.binding.task_ids).toEqual([]);
+		expect(item.binding.initiative_slug ?? null).toBeNull();
+		// Nothing the daemon reads still names the old digest.
+		expect(readPlanPublication(ws.stateDir, 42)).toBeNull();
+		expect(existsSync(join(ws.root, "docs/initiatives/widget-initiative.md"))).toBe(false);
+		expect(existsSync(join(ws.root, "docs/plans/task-a.intent.json"))).toBe(false);
+
+		// The existing plan path re-plans with the same task ids: no `destination_exists`.
+		const [reshaped] = await applyLeaderProposal([{ target, action: "shape", plan: "initiative", reason: "again" }], replanning);
+		expect(reshaped).toMatchObject({ action: "shape", outcome: "accepted" });
+		expect(readWorkItem(ws.stateDir, target)!.binding.plan_digest).toMatch(/^[0-9a-f]{64}$/);
+	});
+
+	it("replans an escalated item that never published a plan", async () => {
 		const ws = workspace();
 		const target = "issue-42";
 		escalated(ws, target);
 		const recorded: Recorded = { ask_owner: [], resumed: [] };
 
-		const results = await applyLeaderProposal([resolveItem(target, "replan")], deps(ws, recorded));
+		const [result] = await applyLeaderProposal([resolveItem(target, "replan")], deps(ws, recorded));
 
-		expect(results[0]).toMatchObject({ action: "resolve", outcome: "accepted" });
-		expect(listRoleSessions(ws.stateDir).map((session) => [session.role, session.status])).toEqual([["plan", "completed"]]);
-		const item = readWorkItem(ws.stateDir, target)!;
-		expect(item.state).toBe("triage");
-		expect(item.replan_rounds).toBe(1);
+		expect(result).toMatchObject({ action: "resolve", outcome: "accepted" });
+		expect(listRoleSessions(ws.stateDir)).toEqual([]);
+		expect(readWorkItem(ws.stateDir, target)).toMatchObject({ state: "triage", replan_rounds: 1 });
+	});
+
+	it.each([
+		[
+			"a nonterminal batch",
+			"replan_batch_active: running",
+			(_ws: { root: string; stateDir: string }) => ({ resolveFacts: async () => ({ ...NO_FACTS, batch_state: "running" as const }) }),
+		],
+		[
+			"a draft edited since the plan was published",
+			"replan_draft_changed: docs/plans/task-a.intent.json",
+			(ws: { root: string; stateDir: string }) => {
+				const path = join(ws.root, "docs/plans/task-a.intent.json");
+				writeFileSync(path, `${JSON.stringify({ ...JSON.parse(readFileSync(path, "utf8")), goal: "edited by the owner" }, null, 2)}\n`);
+				return {};
+			},
+		],
+		[
+			"an edited Initiative carrier",
+			"replan_draft_changed: docs/initiatives/widget-initiative.md",
+			(ws: { root: string; stateDir: string }) => {
+				writeFileSync(join(ws.root, "docs/initiatives/widget-initiative.md"), "# Initiative: widget-initiative\n\nedited by the owner\n");
+				return {};
+			},
+		],
+	])("refuses a replan over %s and changes nothing", async (_name, reason, arrange) => {
+		const ws = workspace();
+		const target = "issue-42";
+		const shaped = await shapeAndEscalate(ws, target);
+		const recorded: Recorded = { ask_owner: [], resumed: [] };
+		const overrides = arrange(ws);
+		const filesBefore = planFiles(ws.root);
+		const itemBefore = itemJson(ws.stateDir, target);
+		const publicationBefore = readFileSync(join(ws.stateDir, "plans", "42.json"), "utf8");
+
+		const [result] = await applyLeaderProposal([resolveItem(target, "replan")], deps(ws, recorded, overrides));
+
+		expect(result).toMatchObject({ action: "resolve", outcome: "rejected", reason });
+		expect(planFiles(ws.root)).toEqual(filesBefore);
+		expect(itemJson(ws.stateDir, target)).toBe(itemBefore);
+		expect(readFileSync(join(ws.stateDir, "plans", "42.json"), "utf8")).toBe(publicationBefore);
+		expect(readPlanPublication(ws.stateDir, 42)?.digest).toBe(shaped.plan_digest);
+		expect(listRoleSessions(ws.stateDir)).toEqual([]);
+	});
+
+	it("refuses a fourth replan with replan_cap_reached and keeps the plan", async () => {
+		const ws = workspace();
+		const target = "issue-42";
+		await shapeAndEscalate(ws, target, { replan_rounds: REPLAN_CAP });
+		const recorded: Recorded = { ask_owner: [], resumed: [] };
+
+		const [result] = await applyLeaderProposal([resolveItem(target, "replan")], deps(ws, recorded));
+
+		expect(result).toMatchObject({ outcome: "rejected", reason: "replan_cap_reached" });
+		expect(readPlanPublication(ws.stateDir, 42)).not.toBeNull();
+		expect(readWorkItem(ws.stateDir, target)!.binding.plan_digest).toMatch(/^[0-9a-f]{64}$/);
 	});
 
 	it("rejects resume, release and replan on an authority-gated target and accepts only ask_owner", async () => {
@@ -303,35 +463,6 @@ describe("Loop Leader: replanning (S4-AC1)", () => {
 		const [asked] = await applyLeaderProposal([resolveItem(target, "ask_owner")], working);
 		expect(asked).toMatchObject({ outcome: "accepted" });
 		expect(readLeaderJournal(ws.stateDir).map((entry) => entry.kind)).toContain("rejected");
-	});
-
-	it("counts a replan session against the same per-proposal dispatch budget", async () => {
-		const ws = workspace();
-		const target = "issue-42";
-		escalated(ws, target);
-		const recorded: Recorded = { ask_owner: [], resumed: [] };
-		const started: string[] = [];
-		const budgeted = deps(ws, recorded, {
-			max_dispatches_per_day: 1,
-			startSession: async ({ role }) => {
-				started.push(role.name);
-				return { completed: true, reason: "completed: session ran" };
-			},
-		});
-
-		const results = await applyLeaderProposal(
-			[
-				{ target, action: "dispatch", role: "plan", subject: "issue 42", brief: "draft the plan" },
-				resolveItem(target, "replan"),
-			],
-			budgeted,
-		);
-
-		// The first session spent the one dispatch; the replan may not start another.
-		expect(results[0]).toMatchObject({ action: "dispatch", outcome: "accepted", session_started: true });
-		expect(results[1]).toMatchObject({ action: "resolve", outcome: "rejected", reason: "dispatch_budget_exhausted" });
-		expect(started).toHaveLength(1);
-		expect(listRoleSessions(ws.stateDir)).toHaveLength(1);
 	});
 
 	it("requires an escalated target and known work item", async () => {

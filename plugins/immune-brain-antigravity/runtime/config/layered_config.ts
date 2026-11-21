@@ -250,6 +250,16 @@ export function resolveConfig(root: string, options: { userConfigPath?: string; 
 			diag("deprecated_config_source", "warning", bound.source === "project" ? projectPath : userPath, "loop.roles",
 				`${key} no longer chooses the loop ${base} role; bind a base ${base} role under loop.roles in .imm/config.json`);
 	}
+	// Loop judging is retired and nothing reads `roles.triage`: each layer that
+	// still binds `agents.triage` is told once. The binding stays parseable.
+	for (const binding of agentLayers.triage_bindings)
+		diag(
+			"deprecated_config_source",
+			"warning",
+			binding.file,
+			binding.key_path,
+			"triage judging is retired: nothing reads agents.triage, so this binding selects nothing",
+		);
 	// Spec loop-leader D3.4: judging is retired, so a retired preset binding is
 	// tolerated and reported once instead of invalidating the agents table.
 	for (const binding of agentLayers.preset_judging)

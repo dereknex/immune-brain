@@ -289,6 +289,11 @@ export interface AskOwnerResult {
 	reason?: string;
 }
 
+/** The kind of the pending request an annotation targets: a Lane dialog escalation unless a literal_user entry names it. */
+function pendingKind(deps: AskOwnerDeps, interactionId: string): InteractionKind {
+	return deps.pending_literal_user.find((entry) => entry.interaction_id === interactionId)?.kind ?? "escalation";
+}
+
 /**
  * D4.5: annotate a pending `literal_user` request in place, else post one
  * advisory question carrying the pack. A failed post is reported, never thrown:
@@ -306,7 +311,27 @@ export async function askOwnerQuestion(
 	clearWaitingPointersForTarget(deps.stateDir, deps.target, pending?.interaction_id);
 	if (pending) {
 		const annotated = await deps.channel.annotate(pending.interaction_id, input.context);
-		if (annotated === "annotated") return { action: "annotated", interaction_id: pending.interaction_id };
+		if (annotated === "annotated") {
+			// The annotated request is the owner's question now, so the target waits on
+			// it: record its pointer exactly as the post branch does (a null link
+			// records nothing).
+			const annotatedLink = deps.channel.link(pending.interaction_id, input.subject);
+			if (annotatedLink !== null) {
+				recordWaitingPointer(deps.stateDir, {
+					interaction_id: pending.interaction_id,
+					target: deps.target,
+					kind: pendingKind(deps, pending.interaction_id),
+					channel: deps.channel.id,
+					link: annotatedLink,
+					recorded_at: deps.now,
+				});
+			}
+			return {
+				action: "annotated",
+				interaction_id: pending.interaction_id,
+				...(annotatedLink === null ? {} : { link: annotatedLink }),
+			};
+		}
 	}
 	const request = ownerQuestionRequest({ target: deps.target, subject: input.subject, context: input.context });
 	try {

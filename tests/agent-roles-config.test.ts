@@ -70,7 +70,32 @@ test("each role takes a profile name, shorthand or inline object, and a profile 
 		["deprecated_config_source", "warning", "loop.roles"],
 		["deprecated_config_source", "warning", "loop.roles"],
 		["deprecated_config_source", "warning", "loop.roles"],
+		// RF-AC6: `agents.triage` is bound here too, and nothing reads it.
+		["deprecated_config_source", "warning", "agents.triage"],
 	]);
+});
+
+// RF-AC6 / BR-SCN-5: a bound `agents.triage` is one deprecation notice per layer that binds it; the
+// binding still parses, so `agents.valid` and the other roles are unchanged.
+test("agents.triage is reported once per binding layer and never invalidates the agents table", () => {
+	const f = fixture();
+	f.project({ agents: { executor: "pi", triage: "pi" } });
+	const bound = f.read();
+	expect(bound.agents.valid).toBe(true);
+	expect(bound.diagnostics.filter((d) => d.key_path === "agents.triage").map((d) => [d.code, d.severity, d.file])).toEqual([
+		["deprecated_config_source", "warning", f.projectPath],
+	]);
+	expect(bound.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+
+	f.user({ agents: { profiles: PROFILES, triage: "pi" } });
+	expect(f.read().diagnostics.filter((d) => d.key_path === "agents.triage").map((d) => d.file).sort()).toEqual([f.projectPath, f.userPath].sort());
+
+	const unbound = fixture();
+	unbound.project({ agents: { executor: "pi", reviewer: "pi" } });
+	const c = unbound.read();
+	expect(c.diagnostics.filter((d) => d.key_path === "agents.triage")).toEqual([]);
+	expect(c.agents.roles.executor).toMatchObject({ host: "pi", source: "project" });
+	expect(c.agents.roles.reviewer).toMatchObject({ host: "pi", source: "project" });
 });
 
 test("roles merge per role: the project value wins whole, never mixing a host and a model from two layers", () => {
