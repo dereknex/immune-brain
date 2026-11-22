@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { computeBatchPlanDigest, createBatchAuthorityRegistry } from "../plugins/immune-brain/runtime/kernel/batch_authority";
 import { createEnrollmentAuthorityRegistry } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
 import { readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
@@ -103,16 +103,19 @@ const mergedCheck = "const fs=require('node:fs'); process.exit(fs.existsSync('a.
 
 describe("Parent merge queue", () => {
 	test("no-touch integration parks the child without a redo or Parent advance", async () => {
-		const fx = fixture({ a: pass });
-		await fx.tick();
-		mkdirSync(join(fx.laneOf("a"), ".github/workflows"), { recursive: true });
-		writeFileSync(join(fx.laneOf("a"), ".github/workflows/ci.yml"), "changed\n");
-		fx.settle("a");
-		const report = await fx.tick();
-		expect(report.children[0]!.state).toBe("needs_human");
-		expect(report.children[0]!.reason).toContain("no_touch_path_changed: .github/workflows/ci.yml");
-		expect(report.children[0]!.redo_grants ?? 0).toBe(0);
-		expect(git(fx.root, "rev-parse", "refs/heads/imm/queue")).toBe(fx.base);
+		for (const path of [".imm/state/x", ".imm/state/loop/state.json"]) {
+			const fx = fixture({ a: pass });
+			await fx.tick();
+			mkdirSync(dirname(join(fx.laneOf("a"), path)), { recursive: true });
+			writeFileSync(join(fx.laneOf("a"), path), "changed\n");
+			git(fx.laneOf("a"), "add", "-f", "--", path);
+			fx.settle("a");
+			const report = await fx.tick();
+			expect(report.children[0]!.state).toBe("needs_human");
+			expect(report.children[0]!.reason).toContain(`no_touch_path_changed: ${path}`);
+			expect(report.children[0]!.redo_grants ?? 0).toBe(0);
+			expect(git(fx.root, "rev-parse", "refs/heads/imm/queue")).toBe(fx.base);
+		}
 	}, 30000);
 	test("derived outputs regenerate from both settled children without spending a redo", async () => {
 		const fx = fixture({ a: pass, b: pass }, {}, root => {

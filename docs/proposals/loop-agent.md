@@ -472,7 +472,7 @@ routine 任务规划完成后不等所有者批准，由守护进程直接发起
 1. 仓库配置声明了免批准的风险等级，且只含 `routine`（§11 的 `auto_start_risk`）。该配置是已跟踪文件，所有者提交它即是授权行为。
 2. 任务的风险经 Kernel 结合项目 risk floor 判定后仍为 routine。risk floor 由已跟踪的 `.imm/risk-floor.json` 声明，声明不可信时所有任务按 critical 处理（`docs/adr/0023-project-declared-risk-floor.md` Decision 2、4）。agent 在 TaskIntent 里自报的风险只能被提升，不能据此降低。本仓库的 risk floor 把 `docs/specs` 与 `docs/plans` 列为会提升风险的改动路径（`.imm/risk-floor.json:15-18`），但任务自己的 TaskIntent 与绑定的 Spec 不计入改动路径（`plugins/immune-brain/runtime/kernel/completion.ts:27-38`、`:50-66`），所以免批准在本仓库可以生效；改动其他任务的计划文件仍会被提升。
 3. Issue 作者是所有者或在允许名单内（与 §6.4 的规划条件相同）。
-4. 范围不触碰 no-touch 路径（`docs/agents/no-touch.json`）。
+4. 范围不触碰 Kernel 权威状态 `.imm/state`（唯一的 no-touch 路径，ADR 0028 Decision 4）。
 5. batch 计划的每个 Child 都满足以上条件；否则整个计划走 §10.1。
 
 运行中的规则：

@@ -186,12 +186,7 @@ export function makeWorkspace(options?: {
 		...options?.loopConfig,
 	};
 
-	// Write no-touch declaration
 	mkdirSync(join(root, "docs/agents"), { recursive: true });
-	writeFileSync(
-		join(root, "docs/agents/no-touch.json"),
-		JSON.stringify({ contract: "immune_brain/no_touch/v1", paths: [] }, null, 2),
-	);
 
 	// Write tracked project config
 	mkdirSync(join(root, ".imm"), { recursive: true });
@@ -226,7 +221,7 @@ export function makeWorkspace(options?: {
 			2,
 		),
 	);
-	execFileSync("git", ["add", ".imm/config.json", "docs/agents/no-touch.json"], { cwd: root });
+	execFileSync("git", ["add", ".imm/config.json"], { cwd: root });
 
 	const stateDir = join(root, ".imm/state/loop");
 	mkdirSync(stateDir, { recursive: true });

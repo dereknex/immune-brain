@@ -9,7 +9,6 @@ import { readTrackedDeclaration } from "./tracked_declaration";
 import type { TaskIntentV1, TaskRisk } from "./types";
 
 export const RISK_FLOOR_DECLARATION_PATH = ".imm/risk-floor.json";
-const NO_TOUCH_DECLARATION_PATH = "docs/agents/no-touch.json";
 export const RISK_FLOOR_CONTRACT = "assurance_kernel/risk_floor/v1";
 export const RISK_FLOOR_MAX_BYTES = 64 * 1024;
 
@@ -222,7 +221,7 @@ export function scopeRiskFloor(scopeHint: readonly string[], floor: RiskFloor): 
 export function changedPathRiskFloor(changedPaths: readonly string[], floor: RiskFloor): TaskRisk | null {
 	if (floor.invalid !== null) return "critical";
 	if (changedPaths.some((path) =>
-		pathBeneath(path, [...SELF_CRITICAL_DECLARATIONS, NO_TOUCH_DECLARATION_PATH, ...floor.critical.paths, ...floor.critical.changed_only])))
+		pathBeneath(path, [...SELF_CRITICAL_DECLARATIONS, ...floor.critical.paths, ...floor.critical.changed_only])))
 		return "critical";
 	if (changedPaths.some((path) => pathBeneath(path, [...floor.material.paths, ...floor.material.changed_only])))
 		return "material";

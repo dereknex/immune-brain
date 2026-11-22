@@ -324,7 +324,7 @@ describe("Tier 0: deterministic code guards G1-G10", () => {
 	const cases: Array<{ guard: GuardId; event: ReturnType<typeof issueEvent> | ReturnType<typeof readyEvent> | ReturnType<typeof approvalEvent> | ReturnType<typeof checkFailedEvent>; facts: GuardFacts }> = [
 		{ guard: "G1", event: issueEvent(), facts: { paused: true } },
 		{ guard: "G2", event: issueEvent(), facts: { budget_exhausted: true } },
-		{ guard: "G3", event: issueEvent(), facts: { target_paths: ["docs/agents/no-touch.json"] } },
+		{ guard: "G3", event: issueEvent(), facts: { target_paths: [".imm/state/loop/state.json"] } },
 		{ guard: "G4", event: readyEvent({ issue_number: 42 }), facts: { active_leases: { "issue-42": lease("issue-42") } } },
 		{
 			guard: "G5",

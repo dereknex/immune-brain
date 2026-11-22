@@ -23,7 +23,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { chmodSync, existsSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join, posix } from "node:path";
 
-import { NO_TOUCH_PATH, noTouchPaths, readNoTouch } from "../no_touch.ts";
+import { noTouchPaths } from "../no_touch.ts";
 import { pathMatchesScope } from "../workspace_scope.ts";
 import { escalationKey } from "./escalation.ts";
 import { DEFAULT_REPAIR_RETRY_CAP, repairKey } from "./guards.ts";
@@ -137,13 +137,11 @@ export function normalizeRepoPath(raw: string): string {
  * Enforces scope_hint and guard G3 (no_touch / authority paths).
  * - Empty scope_hint ([]) is enforced as zero-file scope (no files permitted).
  * - Directory prefixes and glob patterns in scope_hint are matched via pathMatchesScope.
- * - Reads declared no-touch paths from docs/agents/no-touch.json under worktreePath fail-closed.
  * - Normalizes repo-relative paths before checking authority/no-touch boundaries.
  */
 export function validatePathsInScope(
 	paths: readonly string[],
 	scopeHint: readonly string[] | undefined,
-	worktreePath?: string,
 ): { valid: boolean; reason?: string } {
 	// Normalize paths and reject illegal traversal or invalid components
 	const normalizedPaths: string[] = [];
@@ -163,22 +161,8 @@ export function validatePathsInScope(
 		normalizedPaths.push(norm);
 	}
 
-	// Read declared no-touch declarations fail-closed
-	let declaredNoTouch: string[] = [];
-	if (worktreePath) {
-		try {
-			declaredNoTouch = readNoTouch(worktreePath);
-		} catch (error: any) {
-			return {
-				valid: false,
-				reason: `unreadable no-touch declaration: ${error?.message || String(error)}`,
-			};
-		}
-	}
-
-	// Guard G3: Check for forbidden authority/no-touch paths (including declared no-touch)
-	const additions = [NO_TOUCH_PATH, ...declaredNoTouch];
-	const forbidden = noTouchPaths(normalizedPaths, additions);
+	// Guard G3: Check for forbidden authority/no-touch paths
+	const forbidden = noTouchPaths(normalizedPaths);
 	if (forbidden.length > 0) {
 		return { valid: false, reason: `authority/no-touch path targeted: ${forbidden.join(", ")}` };
 	}
@@ -312,7 +296,7 @@ async function precommitScopeViolation(
 	if (!pendingCommitPaths) return null;
 	const pending = await pendingCommitPaths(context.worktree_path);
 	if (pending === null) return "the changes about to be committed could not be read";
-	const check = validatePathsInScope(pending, context.scope_hint, context.worktree_path);
+	const check = validatePathsInScope(pending, context.scope_hint);
 	return check.valid ? null : `changes about to be committed leave the task scope: ${check.reason}`;
 }
 
@@ -468,7 +452,6 @@ export async function repairPrCi(input: RepairCiInput): Promise<RepairResult> {
 	const scopeCheck = validatePathsInScope(
 		fixResult.modified_paths,
 		input.context.scope_hint,
-		input.context.worktree_path,
 	);
 	if (!scopeCheck.valid) {
 		const newAttempts = stateDir
@@ -607,7 +590,6 @@ export async function repairPrConflict(input: RepairConflictInput): Promise<Repa
 		const scopeCheck = validatePathsInScope(
 			conflictingPaths,
 			input.context.scope_hint,
-			input.context.worktree_path,
 		);
 		if (!scopeCheck.valid) {
 			return {
@@ -647,7 +629,6 @@ export async function repairPrConflict(input: RepairConflictInput): Promise<Repa
 		const resolvedScope = validatePathsInScope(
 			resolution.modified_paths,
 			input.context.scope_hint,
-			input.context.worktree_path,
 		);
 		if (!resolvedScope.valid) {
 			return {
@@ -805,7 +786,6 @@ export async function addressPrReview(input: AddressReviewInput): Promise<Repair
 			const scopeCheck = validatePathsInScope(
 				[comment.path],
 				input.context.scope_hint,
-				input.context.worktree_path,
 			);
 			if (!scopeCheck.valid) {
 				return {
@@ -855,7 +835,6 @@ export async function addressPrReview(input: AddressReviewInput): Promise<Repair
 	const modifiedScopeCheck = validatePathsInScope(
 		fixResult.modified_paths,
 		input.context.scope_hint,
-		input.context.worktree_path,
 	);
 	if (!modifiedScopeCheck.valid) {
 		return {

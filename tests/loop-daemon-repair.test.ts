@@ -508,13 +508,13 @@ describe("Suite 5: Scope Enforcement and Authority/No-Touch Rejection (review-2)
 	});
 
 	it("strictly rejects authority and no-touch paths in validatePathsInScope", () => {
-		const noTouchFile = validatePathsInScope(["docs/agents/no-touch.json"], undefined);
-		expect(noTouchFile.valid).toBe(false);
-		expect(noTouchFile.reason).toContain("authority/no-touch path targeted");
+		const authorityState = validatePathsInScope([".imm/state/loop/state.json"], undefined);
+		expect(authorityState.valid).toBe(false);
+		expect(authorityState.reason).toContain("authority/no-touch path targeted");
 
-		const workflowFile = validatePathsInScope([".github/workflows/ci.yml"], undefined);
-		expect(workflowFile.valid).toBe(false);
-		expect(workflowFile.reason).toContain("authority/no-touch path targeted");
+		expect(validatePathsInScope([".github/workflows/ci.yml"], undefined).valid).toBe(true);
+		expect(validatePathsInScope(["deploy.pem"], undefined).valid).toBe(true);
+		expect(validatePathsInScope(["docs/agents/no-touch.json"], undefined).valid).toBe(true);
 	});
 
 	it("repairPrCi rejects applyFix touching authority path even when scope_hint is undefined", async () => {
@@ -531,7 +531,7 @@ describe("Suite 5: Scope Enforcement and Authority/No-Touch Rejection (review-2)
 				runVerification: async () => ({ exit_code: 1, stdout: "", stderr: "failed" }),
 				applyFix: async () => ({
 					success: true,
-					modified_paths: [".github/workflows/ci.yml"],
+					modified_paths: [".imm/state/loop/state.json"],
 				}),
 				gitCommitAndPush: async () => ({ commit_sha: "dummy" }),
 			},
@@ -549,7 +549,7 @@ describe("Suite 5: Scope Enforcement and Authority/No-Touch Rejection (review-2)
 			deps: {
 				rebaseOrMerge: async () => ({
 					success: false,
-					conflicting_paths: [".github/workflows/release.yml"],
+					conflicting_paths: [".imm/state/loop/state.json"],
 				}),
 				runVerification: async () => ({ exit_code: 0, stdout: "", stderr: "" }),
 				gitCommitAndPush: async () => ({ commit_sha: "dummy" }),
@@ -578,7 +578,7 @@ describe("Suite 5: Scope Enforcement and Authority/No-Touch Rejection (review-2)
 		const pr = daemonPr();
 		const resultNoTouch = await addressPrReview({
 			pr,
-			comments: [{ id: 1, body: "update", path: "docs/agents/no-touch.json" }],
+			comments: [{ id: 1, body: "update", path: ".imm/state/loop/state.json" }],
 			context: { worktree_path: "/worktree", task_id: "task-42" },
 			deps: {
 				applyReviewFix: async () => ({ success: true, modified_paths: [] }),
@@ -604,7 +604,7 @@ describe("Suite 5: Scope Enforcement and Authority/No-Touch Rejection (review-2)
 	});
 
 	it("normalizes repo-relative paths and rejects traversal", () => {
-		const res1 = validatePathsInScope(["./.github/workflows/ci.yml"], undefined);
+		const res1 = validatePathsInScope(["./.imm/state/loop/state.json"], undefined);
 		expect(res1.valid).toBe(false);
 		expect(res1.reason).toContain("authority/no-touch path targeted");
 
@@ -613,11 +613,11 @@ describe("Suite 5: Scope Enforcement and Authority/No-Touch Rejection (review-2)
 		expect(res2.reason).toContain("illegal repository path or traversal");
 
 		// Review Round 3 variants: internal '.', empty '//', leading '/./', '.GIT', empty/'.'
-		const resInternalDot = validatePathsInScope(["docs//agents/no-touch.json"], undefined);
+		const resInternalDot = validatePathsInScope([".imm//state/loop/state.json"], undefined);
 		expect(resInternalDot.valid).toBe(false);
 		expect(resInternalDot.reason).toContain("authority/no-touch path targeted");
 
-		const resLeadingSlashDot = validatePathsInScope(["/./.github/workflows/ci.yml"], undefined);
+		const resLeadingSlashDot = validatePathsInScope(["/./.imm/state/loop/state.json"], undefined);
 		expect(resLeadingSlashDot.valid).toBe(false);
 		expect(resLeadingSlashDot.reason).toContain("authority/no-touch path targeted");
 
@@ -634,42 +634,6 @@ describe("Suite 5: Scope Enforcement and Authority/No-Touch Rejection (review-2)
 		expect(resDot.reason).toContain("illegal repository path or traversal");
 	});
 
-	it("reads declared protected prefixes from docs/agents/no-touch.json via worktree_path", () => {
-		const tempWorktree = tempRoot("no-touch-wt-");
-		write(
-			tempWorktree,
-			"docs/agents/no-touch.json",
-			JSON.stringify({
-				contract: "immune_brain/no_touch/v1",
-				paths: ["src/protected", "config/secrets.json"],
-			}),
-		);
-
-		const resAllowed = validatePathsInScope(["src/public/index.ts"], undefined, tempWorktree);
-		expect(resAllowed.valid).toBe(true);
-
-		const resBlockedPrefix = validatePathsInScope(["src/protected/internal.ts"], undefined, tempWorktree);
-		expect(resBlockedPrefix.valid).toBe(false);
-		expect(resBlockedPrefix.reason).toContain("authority/no-touch path targeted");
-
-		// Review Round 3: internal '.' normalization before no-touch check
-		const resInternalDotProtected = validatePathsInScope(["src/./protected/secret.ts"], ["src"], tempWorktree);
-		expect(resInternalDotProtected.valid).toBe(false);
-		expect(resInternalDotProtected.reason).toContain("authority/no-touch path targeted");
-
-		const resBlockedFile = validatePathsInScope(["config/secrets.json"], undefined, tempWorktree);
-		expect(resBlockedFile.valid).toBe(false);
-		expect(resBlockedFile.reason).toContain("authority/no-touch path targeted");
-	});
-
-	it("fails closed when docs/agents/no-touch.json in worktree is unreadable or invalid", () => {
-		const tempWorktree = tempRoot("bad-no-touch-wt-");
-		write(tempWorktree, "docs/agents/no-touch.json", "{ invalid json");
-
-		const res = validatePathsInScope(["src/index.ts"], undefined, tempWorktree);
-		expect(res.valid).toBe(false);
-		expect(res.reason).toContain("unreadable no-touch declaration");
-	});
 
 	it("matches TaskIntent directory prefixes and glob patterns in scope_hint", () => {
 		const scopeHint = ["src/module", "tests/*.test.ts", "README.md"];

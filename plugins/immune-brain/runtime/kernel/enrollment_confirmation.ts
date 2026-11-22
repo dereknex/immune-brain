@@ -10,7 +10,7 @@
  * surface: enrollment code and tests read the confirmation contract there.
  */
 
-import { NO_TOUCH_PATH, noTouchPaths, readNoTouch } from "../no_touch";
+import { noTouchPaths } from "../no_touch";
 import { raiseRisk, readRiskFloor, scopeRiskFloor } from "./risk_floor";
 import type { EnrollmentConfirmationSource, TaskRisk } from "./types";
 
@@ -139,19 +139,15 @@ export function verifyPolicyAuto(
 }
 
 /**
- * The scope entries that reach a no-touch path: the path itself, a descendant,
- * or an ancestor directory that would swallow it. A declaration edit is itself
- * no-touch, because a task that can rewrite the no-touch list is not protected
- * by it.
+ * The scope entries that reach the Kernel's no-touch root: the path itself
+ * or a descendant.
  */
-function noTouchScopeMatches(scopeHint: readonly string[], declared: readonly string[]): string[] {
-	const forbidden = [NO_TOUCH_PATH, ...declared];
+function noTouchScopeMatches(scopeHint: readonly string[]): string[] {
 	const literal = (entry: string) => entry.replace(/\/\*\*$/, "").replace(/\/\*$/, "").replace(/\/$/, "");
 	return scopeHint.filter((entry) => {
 		const path = literal(entry);
 		if (path === "" || !entry) return false;
-		if (noTouchPaths([path], forbidden).length > 0) return true;
-		return forbidden.some((declaration) => declaration.startsWith(`${path}/`));
+		return noTouchPaths([path]).length > 0;
 	});
 }
 
@@ -175,18 +171,10 @@ export function verifyEnrollmentConfirmation(
 		return refuse(`unknown_confirmation_source: ${String(input.source)}`);
 	if (!input.policy_auto)
 		return refuse("policy_auto_missing_policy: policy_auto needs loop.mode, the risk cap and the identity posture");
-	let declaredNoTouch: string[];
-	try {
-		declaredNoTouch = readNoTouch(root);
-	} catch (error) {
-		return refuse(
-			`policy_auto_no_touch_unreadable: ${error instanceof Error ? error.message : String(error)}`,
-		);
-	}
 	const elevated = raiseRisk(intent.risk, scopeRiskFloor(intent.scope_hint, readRiskFloor(root)));
 	const verdict = verifyPolicyAuto(input.policy_auto, { declared: intent.risk, elevated });
 	if (!verdict.ok) return verdict;
-	const touched = noTouchScopeMatches(intent.scope_hint, declaredNoTouch);
+	const touched = noTouchScopeMatches(intent.scope_hint);
 	if (touched.length > 0) return refuse(`policy_auto_touches_no_touch: ${touched.join(", ")}`);
 	return ok;
 }

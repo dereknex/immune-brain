@@ -100,10 +100,6 @@ function makeWorkspace(): { root: string; stateDir: string } {
 	mkdirSync(join(root, "src"), { recursive: true });
 	mkdirSync(join(root, "docs/agents"), { recursive: true });
 	writeFileSync(join(root, "src/seed.ts"), "export const seed = 1;\n");
-	writeFileSync(
-		join(root, "docs/agents/no-touch.json"),
-		JSON.stringify({ contract: "immune_brain/no_touch/v1", paths: [] }, null, 2),
-	);
 	git(root, ["add", "-A"]);
 	git(root, ["commit", "-q", "-m", "fixture: initial tree"]);
 	git(root, ["branch", "-m", BRANCH]);

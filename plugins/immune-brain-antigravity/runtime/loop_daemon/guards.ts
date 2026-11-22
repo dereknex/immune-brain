@@ -11,7 +11,7 @@
  * G10 same-UID `degraded` capability.
  */
 
-import { NO_TOUCH_PATH, noTouchPaths } from "../no_touch.ts";
+import { noTouchPaths } from "../no_touch.ts";
 import type { LoopHandler } from "./handlers.ts";
 import type { LoopLease, NormalizedLoopEvent } from "./types.ts";
 
@@ -30,8 +30,6 @@ export interface GuardFacts {
 	paused?: boolean;
 	shutdown_requested?: boolean;
 	budget_exhausted?: boolean;
-	/** Extra protected prefixes, e.g. the `paths` of `docs/agents/no-touch.json`. */
-	no_touch_paths?: string[];
 	/** Paths the pending action would write. */
 	target_paths?: string[];
 	active_leases?: Record<string, LoopLease>;
@@ -188,7 +186,7 @@ export function evaluateGuards(event: NormalizedLoopEvent, facts: GuardFacts = {
 	verdict("G2", facts.budget_exhausted === true, facts.budget_exhausted === true ? "daily dispatch budget exhausted" : "budget available");
 
 	const targetPaths = facts.target_paths ?? [];
-	const forbidden = noTouchPaths(targetPaths, [...(facts.no_touch_paths ?? []), NO_TOUCH_PATH]);
+	const forbidden = noTouchPaths(targetPaths);
 	verdict(
 		"G3",
 		forbidden.length > 0,

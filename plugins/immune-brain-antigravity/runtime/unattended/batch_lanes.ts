@@ -142,7 +142,7 @@ import {
 } from "./batch_state";
 import { createDefaultBatchGitPort, type BatchRunnerGitPort } from "./batch_git";
 import { LANE_EXECUTOR_HOSTS } from "../role_prompt_bridge";
-import { parentRuntimeSkew, pluginSourceSkewWarning } from "../plugin_source_skew";
+import { parentRuntimeSkew } from "../plugin_source_skew";
 import type { BatchSessionPort } from "./batch_session_port";
 import { reconcileChildSession } from "./child_session_reconciler";
 
@@ -361,13 +361,12 @@ function laneRuntimeDir(root: string, explicit: string | undefined): string | nu
  * use the same contract identifiers. The comparison is on those identifiers,
  * never on a plugin version number. A refusal names both sources; a match
  * returns null and adds nothing, no confirmation included.
+ *
+ * A loaded build that merely differs byte-wise from the workspace plugin is
+ * non-blocking status evidence, never a refusal (Spec lane-runtime-contract-check
+ * D1/D2); `loadedFrom` is kept for callers and no longer affects the result.
  */
 export function laneRuntimeContractRefusal(root: string, executorRuntime?: string, loadedFrom?: string): string | null {
-	// Lane Executors on this Host load the coordinator's plugin build, so a build
-	// that differs from the workspace plugin would run every Lane on stale
-	// runtime code (Spec branch-boundary D4).
-	const skew = pluginSourceSkewWarning(root, loadedFrom);
-	if (skew) return `${RUNTIME_CONTRACT_MISMATCH}: ${skew.message}`;
 	const dir = laneRuntimeDir(root, executorRuntime);
 	if (!dir) return null;
 	let lane: ReturnType<typeof readRuntimeContracts>;

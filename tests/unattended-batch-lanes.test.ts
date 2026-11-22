@@ -3095,7 +3095,7 @@ describe("Lane batch authority subject", () => {
 	}, 30000);
 });
 
-describe("loaded plugin build preflight (Spec branch-boundary D4)", () => {
+describe("loaded plugin build preflight (Spec branch-boundary D4, lane-runtime-contract-check D1/D2)", () => {
 	// This test process loads the repository's own plugin, so a fixture holding a
 	// workspace plugin with another bundle is a coordinator on a differing build.
 	const loadedPlugin = realpathSync(join(import.meta.dir, "..", "plugins", "immune-brain"));
@@ -3104,31 +3104,27 @@ describe("loaded plugin build preflight (Spec branch-boundary D4)", () => {
 		const plugin = join(fx.repo, "plugins", "immune-brain");
 		mkdirSync(join(plugin, ".claude-plugin"), { recursive: true });
 		mkdirSync(join(plugin, "dist", "claude"), { recursive: true });
+		mkdirSync(join(plugin, "runtime", "kernel"), { recursive: true });
 		writeFileSync(join(plugin, ".claude-plugin", "plugin.json"), "{\"name\":\"immune-brain\"}\n");
 		writeFileSync(join(plugin, "dist", "claude", "mcp-server.mjs"), bundle);
+		// Matching contract identifiers: only the build bytes differ.
+		writeFileSync(join(plugin, "runtime", "kernel", "runtime_contracts.json"),
+			readFileSync(join(loadedPlugin, "runtime", "kernel", "runtime_contracts.json")));
 		git(fx.repo, "add", "-A");
 		git(fx.repo, "commit", "-q", "-m", "workspace plugin");
 		return { ...fx, base: git(fx.repo, "rev-parse", "HEAD") };
 	}
 
-	it("refuses a Lane-mode start on a differing loaded build, naming both plugin paths and a reload action", async () => {
-		// L1: the refusal is the pure plugin-source skew check; the
-		// startBatch call keeps the entry-point wiring.
+	it("starts a Lane-mode batch on a differing loaded build: byte skew is a warning, never a refusal", async () => {
 		const fx = withWorkspacePlugin(fixture(), "// another build\n");
 		try {
-			const refusal = laneRuntimeContractRefusal(fx.repo);
-			expect(refusal).toStartWith("batch_runtime_contract_mismatch:");
-			expect(refusal).toContain(loadedPlugin);
-			expect(refusal).toContain(realpathSync(join(fx.repo, "plugins", "immune-brain")));
-			expect(refusal).toContain("reload the Host with the workspace plugin");
+			const workspacePlugin = join(fx.repo, "plugins", "immune-brain");
+			expect(laneRuntimeContractRefusal(fx.repo)).toBeNull();
+			// The contract identifiers the workspace plugin ships are equal, so the
+			// build bytes are the only difference and they do not refuse.
+			expect(laneRuntimeContractRefusal(fx.repo, workspacePlugin)).toBeNull();
 			const report = lanes(await startBatch(request(fx, [child("task-a", "S1")], laneKernel())));
-			expect(report.batch_state).toBe("rejected");
-			expect(report.reason).toStartWith("batch_runtime_contract_mismatch:");
-			expect(report.reason).toContain(loadedPlugin);
-			expect(report.reason).toContain(realpathSync(join(fx.repo, "plugins", "immune-brain")));
-			expect(report.reason).toContain("reload the Host with the workspace plugin");
-			expect(report.handoffs).toEqual([]);
-			expect(readAnyBatchRunState(fx.repo, BATCH_ID)).toBeNull();
+			expect(report.batch_state).toBe("running");
 		} finally {
 			fx.cleanup();
 		}

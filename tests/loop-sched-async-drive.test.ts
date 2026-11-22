@@ -89,17 +89,13 @@ function makeWorkspace(loop: Record<string, unknown> = {}): { root: string; stat
 	writeFileSync(join(root, "src/widget.ts"), "export const widget = 1;\n");
 	writeFileSync(join(root, ".gitignore"), ".imm/state/\n");
 	writeFileSync(
-		join(root, "docs/agents/no-touch.json"),
-		`${JSON.stringify({ contract: "immune_brain/no_touch/v1", paths: ["docs/agents/no-touch.json"] })}\n`,
-	);
-	writeFileSync(
 		join(root, ".imm/config.json"),
 		`${JSON.stringify({
 			contract: "immune_brain/project_config/v2",
 			loop: { mode: "assist", allowed_actors: ["owner"], allowed_associations: ["OWNER"], ...loop },
 		})}\n`,
 	);
-	execFileSync("git", ["add", ".gitignore", ".imm/config.json", "docs/agents/no-touch.json", "src/widget.ts"], {
+	execFileSync("git", ["add", ".gitignore", ".imm/config.json", "src/widget.ts"], {
 		cwd: root,
 	});
 	execFileSync("git", ["commit", "-qm", "fixture"], { cwd: root, stdio: ["ignore", "pipe", "pipe"] });

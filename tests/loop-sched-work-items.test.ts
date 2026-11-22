@@ -59,17 +59,13 @@ function makeWorkspace() {
 	mkdirSync(join(root, ".imm/state/loop"), { recursive: true });
 	mkdirSync(join(root, "docs/agents"), { recursive: true });
 	writeFileSync(
-		join(root, "docs/agents/no-touch.json"),
-		`${JSON.stringify({ contract: "immune_brain/no_touch/v1", paths: ["docs/agents/no-touch.json"] })}\n`,
-	);
-	writeFileSync(
 		join(root, ".imm/config.json"),
 		`${JSON.stringify({
 			contract: "immune_brain/project_config/v2",
 			loop: { mode: "assist", allowed_actors: ["owner"], allowed_associations: ["OWNER"] },
 		})}\n`,
 	);
-	execFileSync("git", ["add", ".imm/config.json", "docs/agents/no-touch.json"], { cwd: root });
+	execFileSync("git", ["add", ".imm/config.json"], { cwd: root });
 
 	return { root, stateDir: join(root, ".imm/state/loop") };
 }

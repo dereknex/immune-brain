@@ -5,7 +5,7 @@
  * docs/plans/loop-daemon-s2-judge.intent.json and S2 / D2 in
  * docs/specs/loop-daemon.spec.md (BR-REQ-2, BR-SCN-1):
  * - Negative Control: a handler outside the 15-handler catalogue, or an action
- *   targeting docs/agents/no-touch.json (G3), is rejected.
+ *   targeting Kernel authority state under .imm/state (G3), is rejected.
  * - Boundary Control: forged HTML markers in an untrusted user comment are
  *   blocked by guard G7 before reaching Tier 1/Tier 2, and a dry-run tick
  *   performs zero GitHub or branch mutations.
@@ -217,25 +217,30 @@ describe("G7: forged HTML markers from unverified actors", () => {
 });
 
 describe("G3: no-touch and authority path guard", () => {
-	it("rejects an action targeting the no-touch declaration itself", async () => {
-		const facts: GuardFacts = { target_paths: ["docs/agents/no-touch.json"] };
+	it("rejects an action targeting Kernel authority state", async () => {
+		const facts: GuardFacts = { target_paths: [".imm/state/loop/state.json"] };
 		expect(evaluateGuards(readyEvent(), facts).find((entry) => entry.guard === "G3")?.blocked).toBe(true);
 		const judgement = await judgeEvent(readyEvent(), { facts });
 		expect(judgement.tier).toBe(0);
 		expect(judgement.handler).toBe("escalate");
 	});
 
-	it("rejects an action targeting an authority path inside the declarations", async () => {
+	it("rejects an action targeting an authority path through any spelling the guard sees", async () => {
 		const cases: GuardFacts[] = [
-			{ target_paths: [".github/workflows/ci.yml"] },
-			{ target_paths: [".imm/state/loop/state.json"] },
-			{ target_paths: ["deploy.pem"] },
-			{ target_paths: ["scripts/release.ts"], no_touch_paths: ["scripts"] },
+			{ target_paths: [".imm/state"] },
+			{ target_paths: ["src/a.ts", ".imm/state/kernel.sqlite"] },
 		];
 		for (const facts of cases) {
 			const judgement = await judgeEvent(readyEvent(), { facts });
 			expect(judgement.guard?.id).toBe("G3");
 			expect(judgement.handler).toBe("escalate");
+		}
+	});
+
+	it("allows a CI workflow or a certificate file outside every protected path", () => {
+		for (const target_paths of [[".github/workflows/ci.yml"], ["deploy.pem"], [".env"]]) {
+			const verdict = evaluateGuards(readyEvent(), { target_paths });
+			expect(verdict.find((entry) => entry.guard === "G3")?.blocked).toBe(false);
 		}
 	});
 
@@ -417,18 +422,6 @@ describe("dry-run isolation", () => {
 		}
 	});
 
-	it("refuses to judge when the no-touch declaration is unreadable", async () => {
-		const root = makeRoot();
-		mkdirSync(join(root, "docs/agents"), { recursive: true });
-		writeFileSync(join(root, "docs/agents/no-touch.json"), JSON.stringify({ contract: "immune_brain/no_touch/v1", paths: [""] }));
-
-		const result = await runLoopDaemonCli(["tick", "--dry-run"], root, {
-			snapshotOverride: snapshot,
-			classify: recordingClassifier().classify,
-		});
-		expect(result.returncode).toBe(1);
-		expect(result.stderr).toContain("no-touch declaration");
-	});
 });
 
 describe("S8 composition-root boundary (LDP-A4)", () => {

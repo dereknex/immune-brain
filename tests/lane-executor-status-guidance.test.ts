@@ -49,7 +49,9 @@ test("Lane skew is non-blocking; ordinary source and coordinator preflight retai
  git(ordinary, "init", "-q");
  plugin(join(ordinary, "plugins/immune-brain"), "workspace");
  expect(pluginSourceSkewWarning(ordinary, loaded)?.message).toContain("reload the Host with the workspace plugin");
- expect(laneRuntimeContractRefusal(ordinary, undefined, loaded)).toStartWith("batch_runtime_contract_mismatch:");
+ // The warning is status evidence only; it no longer refuses a batch start
+ // (Spec lane-runtime-contract-check D1/D2).
+ expect(laneRuntimeContractRefusal(ordinary, undefined, loaded)).toBeNull();
  expect(pluginSourceSkewWarning(lane, plugin(temp(), "workspace"))).toBeNull();
 });
 
