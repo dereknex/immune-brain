@@ -43,7 +43,6 @@ export interface LoopDecisionRecord {
 	guard: { id: GuardId; detail: string } | null;
 	classification: JudgementClassification | null;
 	kept_for_reconciliation?: boolean;
-	judging_agent_used?: boolean;
 	/** True when a Tier-2 `needs_judging` outcome applied its point baseline (Spec loop-leader D3.4). */
 	needs_judging?: boolean;
 	escalation_key?: string;
@@ -61,7 +60,6 @@ export interface Judgement {
 	guard: { id: GuardId; detail: string } | null;
 	classification: JudgementClassification | null;
 	kept_for_reconciliation?: boolean;
-	judging_agent_used?: boolean;
 	needs_judging?: boolean;
 	escalation_key?: string;
 	corrected_option?: string;
@@ -94,7 +92,6 @@ export function buildDecisionRecord(
 		guard: judgement.guard,
 		classification: judgement.classification,
 		...(judgement.kept_for_reconciliation ? { kept_for_reconciliation: true } : {}),
-		...(judgement.judging_agent_used ? { judging_agent_used: true } : {}),
 		...(judgement.needs_judging ? { needs_judging: true } : {}),
 		...(judgement.escalation_key ? { escalation_key: judgement.escalation_key } : {}),
 		...(judgement.corrected_option ? { corrected_option: judgement.corrected_option } : {}),

@@ -1,6 +1,7 @@
 # Leader plus catalog replace the judging agent
 
-Status: accepted; amends [ADR 0039](0039-loop-daemon.md) Decisions 2, 6 and 7.
+Status: accepted; amends [ADR 0039](0039-loop-daemon.md) Decisions 2, 6 and 7,
+and amends [ADR 0041](0041-simplified-configuration.md) Decisions 1, 3 and 7.
 Numbered 0041 until Slice `S1` of `docs/specs/loop-leader-uls-alignment.spec.md`
 renumbered it: [ADR 0041](0041-simplified-configuration.md) already held that number.
 Slice `S3` of `docs/specs/loop-leader.spec.md` (`loop-leader-s3-guarded-dispatch`).
@@ -37,6 +38,23 @@ re-checks is a session the leader could propose a `next` for instead.
    Initiative shape writes the Local carrier plus one Kernel-authored
    TaskIntent per slice; completion comes from session records, never from
    session text.
+5. **Project-only role catalog and leader configuration (amends ADR 0041
+   Decisions 1, 3 and 7).**
+   - `loop.roles` is defined only in the project file (`.imm/config.json`); a
+     user-file `loop.roles` key is rejected with an error diagnostic.
+   - `loop.budget.max_leader_wakes_per_day` (integer 0–500, default 48; 0
+     disables wakes) bounds daily leader sessions.
+   - Loop `clarify`, `plan` and `repair` sessions resolve from `loop.roles`
+     rather than `agents.planner` / `agents.executor`; legacy bindings on
+     `agents.planner`, `agents.executor`, `agents.triage` and preset
+     `roles.judging` stay parseable and emit `deprecated_config_source`
+     warnings.
+   - A rejected `loop.roles.*` entry is excluded from the catalog (falling back
+     to the built-in default role when no other role covers that base) and
+     emits an error diagnostic without turning `loop.valid` to `false`. Because
+     the daemon keeps running, `imm-loop status` (both text and `--json`
+     `role_catalog_diagnostics`) must surface `loop.roles` diagnostics
+     explicitly alongside `imm-kernel config --json`.
 
 ## Consequences
 

@@ -545,6 +545,16 @@ Options:
 		const leaderJournal = readLeaderJournal(stateDir);
 		const lastWake = [...leaderJournal].reverse().find((entry) => entry.kind === "wake") ?? null;
 		const lastProposal = [...leaderJournal].reverse().find((entry) => entry.kind === "proposal") ?? null;
+		// Loop role catalog errors never flip `loop.valid` to false (ADR 0042), so
+		// status surfaces them explicitly instead of falling back to defaults silently.
+		const roleCatalogDiagnostics = resolved.diagnostics
+			.filter((diag) => diag.key_path === "loop.roles" || diag.key_path.startsWith("loop.roles."))
+			.map((diag) => ({
+				code: diag.code,
+				severity: diag.severity,
+				key_path: diag.key_path,
+				message: diag.message,
+			}));
 		const projection = {
 			daemon_running: snapshot.daemon_running,
 			lock: snapshot.lock,
@@ -565,6 +575,7 @@ Options:
 					? ((lastProposal!.payload as { items: unknown[] }).items.length)
 					: 0,
 			},
+			role_catalog_diagnostics: roleCatalogDiagnostics,
 			watermarks,
 			active_leases: snapshot.active_leases,
 			// D3.5: the catalog role sessions still running, with what they run for.
@@ -585,13 +596,20 @@ Options:
 			return { stdout: jsonOutput(projection), stderr: "", returncode: 0 };
 		}
 
+		const roleDiagnosticLines =
+			roleCatalogDiagnostics.length === 0
+				? ""
+				: `  Role Catalog Diagnostics:\n${roleCatalogDiagnostics
+						.map((diag) => `    [${diag.severity}] ${diag.key_path} (${diag.code}): ${diag.message}`)
+						.join("\n")}\n`;
+
 		const text = `Loop Daemon Status:
   Daemon Running: ${snapshot.daemon_running ? `YES (PID: ${snapshot.pid})` : "NO"}
   Mode: ${mode}
   Paused: ${snapshot.paused ? `YES (${snapshot.pause_reason || "no reason"})` : "NO"}
   Active Leases: ${snapshot.active_leases_count}
   Running Sessions: ${projection.sessions.length === 0 ? "none" : projection.sessions.map((session) => `${session.role} (${session.base}) on ${session.target}`).join(", ")}
-  Log: ${snapshot.log_path}
+${roleDiagnosticLines}  Log: ${snapshot.log_path}
   Watermarks:
     Issues: ${watermarks.issues_updated_at || "none"}
     Comments: ${watermarks.comments_updated_at || "none"}
@@ -1447,20 +1465,19 @@ Options:
 									subject,
 									task_ids: taskIds,
 									project: async (taskId) => {
-										try {
-											const projected = await projectAssurance(absoluteRoot, taskId);
-											if (projected.error !== null) return null;
-											return {
-												risk: projected.projection.risk,
-												open_user_decision_count: projected.projection.open_user_decision_count,
-												unresolved_user_decision_ids: [...projected.projection.unresolved_user_decision_ids],
-												replan_required_ids: [...projected.projection.replan_required_ids],
-												authorization: { state: projected.projection.authorization.state },
-												next_obligation: projected.projection.next_obligation,
-											};
-										} catch {
-											return null;
-										}
+										const projected = await projectAssurance(absoluteRoot, taskId);
+										// Fail closed: an unowned task returns `error: null` with an empty
+										// projection, whereas a non-null error means Kernel state is
+										// unreadable or conflicting and must block non-`ask_owner` resolves.
+										if (projected.error !== null) throw new Error(projected.error);
+										return {
+											risk: projected.projection.risk,
+											open_user_decision_count: projected.projection.open_user_decision_count,
+											unresolved_user_decision_ids: [...projected.projection.unresolved_user_decision_ids],
+											replan_required_ids: [...projected.projection.replan_required_ids],
+											authorization: { state: projected.projection.authorization.state },
+											next_obligation: projected.projection.next_obligation,
+										};
 									},
 									// ULS D5.4: an ambiguous or unreadable batch throws, and the leader dispatch refuses the item as unresolved.
 									batchState: () => ownedBatch()?.batch_state ?? null,
@@ -1502,6 +1519,7 @@ Options:
 												comments: () => obs.snapshot.issues.flatMap((issue) => issue.comments ?? []),
 												binding: () => ({}),
 												guardFacts: facts,
+												stateDir,
 												// D4.6: a withdrawn request is no longer a waiting pointer.
 												onRetired: (interactionId) => clearWaitingPointer(stateDir, interactionId),
 											});

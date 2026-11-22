@@ -247,7 +247,11 @@ export function createFakeLoopGitHubPort(): FakeLoopGitHubPort {
 			} else {
 				comments.set(commentId, { id: commentId, issueNumber: 0, body });
 			}
-			return { id: commentId, url: `https://github.com/example/repo/issues/comments/${commentId}` };
+			const url =
+				existing && existing.issueNumber > 0
+					? `https://github.com/example/repo/issues/${existing.issueNumber}#issuecomment-${commentId}`
+					: `https://github.com/example/repo/issues/comments/${commentId}`;
+			return { id: commentId, url };
 		},
 
 		async createIssue(title: string, body: string): Promise<IssueWriteResult> {

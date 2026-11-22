@@ -126,6 +126,9 @@ function parseRawIssues(items: any[]): RawIssue[] {
 				? item.comments.map((c: any) => ({
 						id: c.id,
 						body: c.body || "",
+						...(typeof (c.url || c.html_url) === "string" && (c.url || c.html_url).length > 0
+							? { url: c.url || c.html_url }
+							: {}),
 						user: c.author || c.user || { login: "unknown" },
 						author_association: c.authorAssociation || c.author_association || "NONE",
 						created_at: c.createdAt || c.created_at || new Date().toISOString(),
@@ -325,6 +328,9 @@ export async function pollPRsFromGithub(
 			? item.comments.map((c: any) => ({
 					id: c.id,
 					body: c.body || "",
+					...(typeof (c.url || c.html_url) === "string" && (c.url || c.html_url).length > 0
+						? { url: c.url || c.html_url }
+						: {}),
 					user: c.author || c.user || { login: "unknown" },
 					author_association: c.authorAssociation || c.author_association || "NONE",
 					created_at: c.createdAt || c.created_at || new Date().toISOString(),

@@ -259,6 +259,7 @@ export interface RawIssue {
 export interface RawComment {
 	id: number;
 	body: string;
+	url?: string;
 	user: { login: string };
 	author_association: string;
 	created_at: string;

@@ -603,6 +603,7 @@ export async function dispatchDecisions(
 							comments: () => snapshot.issues.find((issue) => issue.number === event.issue_number)?.comments ?? [],
 							binding: () => ({}),
 							guardFacts,
+							...(stateDir ? { stateDir } : {}),
 						}).post(
 							ownerCommandNotice({
 								interaction_id: `owner-command:${event.comment_id}:${resolved.command}`,
@@ -876,6 +877,7 @@ export async function dispatchDecisions(
 						comments: () => existingComments,
 						binding: () => ({ record_revision: event.record_revision }),
 						guardFacts,
+						...(stateDir ? { stateDir } : {}),
 					}).post(
 						localOnlyNotice({
 							interaction_id: `${request.interaction_id}:local-only`,

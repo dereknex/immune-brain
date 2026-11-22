@@ -16,8 +16,9 @@
  *
  * Interface: `REPLAN_CAP`, `resolveBlockers`, `collectResolveFacts`,
  * `askOwnerQuestion`, `ownerQuestionRequest`, `pendingLiteralUserRequests`.
- * Invariants: no reply effect changes (ADR 0040 Decision 4); a projection failure
- * never blocks a local transition.
+ * Invariants: no reply effect changes (ADR 0040 Decision 4); an unreadable
+ * Kernel projection fails closed as an authority blocker (only `ask_owner` is
+ * accepted), while a failed owner-question post never blocks a local transition.
  * Side Effects: one interaction request and one waiting pointer.
  * Verification: `bun test tests/loop-leader-replan.test.ts`.
  */
@@ -69,6 +70,8 @@ export interface ResolveFacts {
 	/** Pending `literal_user` requests on the subject, with the id `annotate` names. */
 	pending_literal_user: Array<{ interaction_id: string; kind: InteractionKind }>;
 	task_records: ResolveTaskFacts[];
+	/** Bound tasks whose Kernel projection failed to read; treated fail-closed as blockers. */
+	unreadable_task_projections?: Array<{ task_id: string; reason: string }>;
 }
 
 /**
@@ -84,6 +87,9 @@ export function resolveBlockers(facts: ResolveFacts): string[] {
 	for (const taskId of facts.no_progress_children ?? []) blockers.push(`lane_executor_no_progress:${taskId}`);
 	// ULS D5.2: an unanswered Lane dialog is the owner's question already.
 	if ((facts.pending_lane_entry_blocked ?? []).length > 0) blockers.push("pending_lane_entry_blocked");
+	for (const unreadable of facts.unreadable_task_projections ?? []) {
+		blockers.push(`kernel_projection_unreadable:${unreadable.task_id}`);
+	}
 	for (const record of facts.task_records) {
 		if (record.open_user_decision_count > 0) blockers.push(`open_user_decision:${record.task_id}`);
 		if (record.unresolved_user_decision_ids.length > 0) blockers.push(`unresolved_user_decision:${record.task_id}`);
@@ -130,13 +136,19 @@ export interface ResolveFactSources {
 /** D4.2: read the target's gates from local requests, observed comments and the Kernel. */
 export async function collectResolveFacts(sources: ResolveFactSources): Promise<ResolveFacts> {
 	const task_records: ResolveTaskFacts[] = [];
+	const unreadable_task_projections: Array<{ task_id: string; reason: string }> = [];
 	for (const taskId of sources.task_ids) {
 		let projection: ResolveProjection | null = null;
 		try {
 			projection = await sources.project(taskId);
-		} catch {
-			// An unreadable projection proves nothing: it leaves no blocker and no pass.
-			projection = null;
+		} catch (error) {
+			// Fail closed: an unreadable Kernel projection cannot clear authority gates,
+			// so only `ask_owner` remains admissible until the projection is readable.
+			unreadable_task_projections.push({
+				task_id: taskId,
+				reason: error instanceof Error ? error.message : String(error),
+			});
+			continue;
 		}
 		if (!projection) continue;
 		task_records.push({
@@ -162,6 +174,7 @@ export async function collectResolveFacts(sources: ResolveFactSources): Promise<
 				? []
 				: pendingLaneEntryBlocked({ subject: sources.subject, comments: sources.comments ?? [] }),
 		task_records,
+		...(unreadable_task_projections.length > 0 ? { unreadable_task_projections } : {}),
 	};
 }
 
