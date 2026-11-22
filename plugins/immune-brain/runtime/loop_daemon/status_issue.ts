@@ -25,6 +25,8 @@ export interface LoopStatusSnapshot {
 	budget_usage: { ticks_today: number; dispatches_today: number };
 	/** Escalation keys already raised, most recent first. */
 	recent_escalations: readonly string[];
+	/** D4.6: where the owner is awaited — a target and a link, never the question. */
+	waiting?: ReadonlyArray<{ target: string; kind: string; link: string }>;
 	updated_at: string;
 }
 
@@ -36,6 +38,7 @@ export function renderStatusIssueBody(snapshot: LoopStatusSnapshot): string {
 	const escalations = snapshot.recent_escalations.length
 		? snapshot.recent_escalations.map((key) => `- \`${key}\``).join("\n")
 		: "- none";
+	const waiting = snapshot.waiting ?? [];
 	return [
 		LOOP_STATUS_MARKER,
 		"## Loop daemon status",
@@ -50,6 +53,9 @@ export function renderStatusIssueBody(snapshot: LoopStatusSnapshot): string {
 		"",
 		"### Recent escalations",
 		escalations,
+		"",
+		"### Waiting on owner",
+		waiting.length ? waiting.map((entry) => `- [${entry.target}](${entry.link})`).join("\n") : "- none",
 		"",
 	].join("\n");
 }

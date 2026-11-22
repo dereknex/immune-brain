@@ -29,7 +29,8 @@ import { diffSnapshotOf, type HostRuntimeOptions, type ToolMeta } from "../host-
 import { projectAssurance } from "../kernel/assurance_projection.ts";
 import { relayLaneDecision, type LaneRelayTarget } from "../unattended/lane_decision.ts";
 import type { ExecutorHost } from "../unattended/agent_profiles.ts";
-import { findActiveLaneBatchForTask, laneDeliveryEvidence } from "../unattended/batch_preflight.ts";
+import { batchDeliveryEvidence, findActiveLaneBatchForTask, laneDeliveryEvidence } from "../unattended/batch_preflight.ts";
+import { isLaneBatchRecord, readAnyBatchRunState } from "../unattended/batch_state.ts";
 import type { BatchSessionPort } from "../unattended/batch_session_port.ts";
 import { openBatchSessionPort } from "../lane_sessions/index.ts";
 import { advanceDaemonLanes } from "./drive_dispatcher.ts";
@@ -57,6 +58,7 @@ import {
 	GITHUB_LOCAL_ONLY_LANE_OPERATIONS,
 	isGithubLocalOnlyLaneOperation,
 	localOnlyNotice,
+	ownerCommandNotice,
 } from "./interaction/protocol.ts";
 export type { RelayInputFactory };
 import {
@@ -65,11 +67,11 @@ import {
 } from "./escalation.ts";
 import { type GuardFacts, eventTarget } from "./guards.ts";
 import type { LoopHandler } from "./handlers.ts";
-import type { JudgingAgentFn } from "./judging_agent.ts";
 import { activeLoopJob } from "./jobs.ts";
 import { appendLoopLabel, loadLoopLabels } from "./labels.ts";
 import { acquireLoopLease, releaseLoopLease } from "./leases.ts";
-import { resolveOwnerCommand } from "./owner_commands.ts";
+import { appendLeaderJournal } from "./leader_journal.ts";
+import { isLocalOnlyOwnerCommand, ownerHintText, resolveOwnerCommand } from "./owner_commands.ts";
 import {
 	openLoopPullRequest,
 	type LoopPullRequestRequest,
@@ -91,13 +93,15 @@ import {
 	listLeases,
 	loadLease,
 	loadLoopDecisions,
+	rollDailyStats,
 	saveLoopState,
 } from "./state.ts";
-import { plannedWorkItemCount, workItemScopeHint } from "./work_items.ts";
+import { isWorkItemGate, plannedWorkItemCount, readWorkItem, takeResumeExemption, workItemGate, workItemOfBatch, workItemScopeHint } from "./work_items.ts";
 import {
 	planStatusIssue,
 	type LoopStatusSnapshot,
 } from "./status_issue.ts";
+import { listWaitingStatus } from "./waiting.ts";
 import type {
 	LoopDaemonState,
 	LoopLease,
@@ -111,6 +115,7 @@ export const LOOP_DISPATCH_RECORD_CONTRACT = "assurance_kernel/loop_dispatch_rec
 
 export type LoopDispatchOutcome =
 	| "executed"
+	| "skipped"
 	| "skipped_mode"
 	| "held"
 	| "agent_port_unavailable"
@@ -191,6 +196,8 @@ export function createDefaultRelayInputFactory(
 		meta?: ToolMeta;
 		laneRuntime: LaneRuntimeFactory;
 		createPort?: (provider: string, env: Record<string, string | undefined>) => never;
+		/** The loop state directory, so a relayed advance honours its WorkItem's pause (ULS D4.3). */
+		stateDir?: string;
 	},
 ): RelayInputFactory<unknown> {
 	const config = resolveConfig(root);
@@ -261,11 +268,18 @@ export function createDefaultRelayInputFactory(
 		...(sessions ? { sessions } : {}),
 		// The answered decision resumes through the daemon's own advance: the
 		// composition root re-issues the batch binding from the v3 record.
-		advance: async (batchId: string) =>
-			advanceDaemonLanes(root, batchId, {
+		advance: async (batchId: string) => {
+			// D4.3: a paused item's batch is skipped; the decision is already relayed and
+			// the advance happens on the first pass after resume.
+			const item = options.stateDir ? workItemOfBatch(options.stateDir, batchId, taskId) : null;
+			if (workItemGate(item) !== null) return { ok: true, skipped: workItemGate(item), batch_id: batchId };
+			const stallExempt = options.stateDir && item ? takeResumeExemption(options.stateDir, item.target, new Date().toISOString()) : false;
+			return advanceDaemonLanes(root, batchId, {
 				parent_host: parentHost,
+				...(stallExempt ? { stall_exempt: true } : {}),
 				...(options.createPort ? { createPort: options.createPort } : {}),
-			}),
+			});
+		},
 		extra: { chosen_option: choice.option_id },
 	});
 }
@@ -286,7 +300,6 @@ export interface DispatchDecisionsOptions {
 	agentPort?: AgentHandlerPort;
 	/** True only inside the standing `imm-loop run` process, which drives Lanes through the session port. */
 	standingDaemon?: boolean;
-	judgingAgent?: JudgingAgentFn;
 	relayDecision?: typeof relayLaneDecision;
 	relayInputFactory?: RelayInputFactory<unknown>;
 	/**
@@ -409,6 +422,31 @@ function githubLocalOnlyGate(input: {
 	};
 }
 
+/** The Initiative batch a WorkItem recorded, or null when it has none or the record is a single-task batch. */
+function initiativeBatchOf(root: string, batchId: string | null): { batch_id: string; initiative_slug: string } | null {
+	if (!batchId) return null;
+	try {
+		const record = readAnyBatchRunState(root, batchId);
+		if (!record || !isLaneBatchRecord(record) || record.plan_source === "single_task") return null;
+		return { batch_id: record.batch_id, initiative_slug: record.initiative_slug };
+	} catch {
+		return null;
+	}
+}
+
+/** A child's TaskIntent as delivered at the batch commit, else as published in the working tree. */
+function readChildIntent(root: string, commit: string, taskId: string): any | null {
+	const path = `docs/plans/${taskId}.intent.json`;
+	const shown = spawnSync("git", ["-C", root, "show", `${commit}:${path}`], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+	try {
+		if (shown.status === 0) return JSON.parse(shown.stdout);
+		const local = join(root, path);
+		return existsSync(local) ? JSON.parse(readFileSync(local, "utf8")) : null;
+	} catch {
+		return null;
+	}
+}
+
 export async function dispatchDecisions(
 	options: DispatchDecisionsOptions,
 ): Promise<DispatchDecisionsResult> {
@@ -446,12 +484,7 @@ export async function dispatchDecisions(
 		if (!dryRun) {
 			appendLoopDispatch(stateDir, record);
 			if (outcome === "executed") {
-				const today = now.slice(0, 10);
-				if (state.stats.today_date !== today) {
-					state.stats.today_date = today;
-					state.stats.ticks_today = 0;
-					state.stats.dispatches_today = 0;
-				}
+				rollDailyStats(state, now.slice(0, 10));
 				state.stats.dispatches_today = (state.stats.dispatches_today ?? 0) + 1;
 				state.stats.dispatches_total = (state.stats.dispatches_total ?? 0) + 1;
 				state.updated_at = now;
@@ -499,6 +532,8 @@ export async function dispatchDecisions(
 				dispatches_today: state.stats.dispatches_today ?? 0,
 			},
 			recent_escalations: [],
+			// D4.6: the Status Issue links where the owner is awaited, never the question.
+			waiting: listWaitingStatus(stateDir),
 			updated_at: now,
 		};
 
@@ -559,20 +594,44 @@ export async function dispatchDecisions(
 					guardFacts,
 				);
 				if (resolved.accepted && resolved.command) {
-					if (resolved.command === "pause") {
-						state.paused = true;
-						state.pause_reason = "owner pause";
-						state.updated_at = now;
-						saveLoopState(stateDir, state);
-						emitDispatch(decision.decision_id, decision.handler, "executed", "daemon paused by owner command");
+					// BR-DEC-11: a GitHub pause/resume/abandon is one notice naming the local
+					// action; it changes neither the WorkItem nor `state.paused`.
+					if (isLocalOnlyOwnerCommand(resolved.command)) {
+						const event = evt as Extract<NormalizedLoopEvent, { kind: "E3_OWNER_COMMENT" }>;
+						const posted = await createGithubInteractionChannel({
+							port: gitHubPort,
+							comments: () => snapshot.issues.find((issue) => issue.number === event.issue_number)?.comments ?? [],
+							binding: () => ({}),
+							guardFacts,
+						}).post(
+							ownerCommandNotice({
+								interaction_id: `owner-command:${event.comment_id}:${resolved.command}`,
+								command: resolved.command,
+								subject: { issue: event.issue_number },
+							}),
+						);
+						emitDispatch(
+							decision.decision_id,
+							decision.handler,
+							"executed",
+							`notice posted for local @imm-loop ${resolved.command} (${posted})`,
+						);
 						continue;
 					}
-					if (resolved.command === "resume") {
-						state.paused = false;
-						state.pause_reason = null;
-						state.updated_at = now;
-						saveLoopState(stateDir, state);
-						emitDispatch(decision.decision_id, decision.handler, "executed", "daemon resumed by owner command");
+					// D5.1: an advisory hint lands in the journal the next briefing reads,
+					// and moves no WorkItem state.
+					const hint = ownerHintText(resolved.command, resolved.argument);
+					if (hint !== null) {
+						const event = evt as Extract<NormalizedLoopEvent, { kind: "E3_OWNER_COMMENT" }>;
+						appendLeaderJournal(stateDir, [
+							{
+								at: now,
+								kind: "owner_hint",
+								fingerprint: null,
+								payload: { text: hint, command: resolved.command, issue: event.issue_number, comment_id: event.comment_id },
+							},
+						]);
+						emitDispatch(decision.decision_id, decision.handler, "executed", `recorded ${resolved.command} owner hint`);
 						continue;
 					}
 					if (resolved.command === "retry") {
@@ -598,6 +657,10 @@ export async function dispatchDecisions(
 			event_kind: evt?.kind,
 			// D7: the scope the work item's TaskIntents cover, never an event field.
 			scope_hint: workItemScopeHint(root, stateDir, targetId),
+			// D5.2: a paused or abandoned item yields no candidate from this path either.
+			work_item_gate: workItemGate(readWorkItem(stateDir, targetId)),
+			// Spec loop-leader D3.1: the leader's rank only breaks ties inside one class.
+			leader_rank: readWorkItem(stateDir, targetId)?.leader_rank ?? null,
 			candidate_id: candidateId,
 		};
 
@@ -641,7 +704,8 @@ export async function dispatchDecisions(
 		const { decision, event, candidate } = mapping;
 
 		if (entry.action === "hold") {
-			emitDispatch(decision.decision_id, decision.handler, "held", entry.reason);
+			// D5.2: a steer gate is a skip, not a pass that ran out of room.
+			emitDispatch(decision.decision_id, decision.handler, isWorkItemGate(entry.reason) ? "skipped" : "held", entry.reason);
 			continue;
 		}
 
@@ -901,6 +965,7 @@ export async function dispatchDecisions(
 								? createDefaultRelayInputFactory(options.root, taskId, {
 										commentId: event.comment_id,
 										laneRuntime: options.laneRuntime,
+										stateDir: options.stateDir,
 									})
 								: undefined),
 					);
@@ -959,30 +1024,6 @@ export async function dispatchDecisions(
 						resolvedOption = parsedBody.selected_option;
 					}
 				}
-				if (!resolvedOption && options.judgingAgent) {
-					try {
-						const judged = await options.judgingAgent({
-							point: "a19_owner_comment_intent",
-							escalation_reason: "unparsed lane decision reply requires option resolution",
-							event,
-							...(decision.classification?.choice
-								? { model_choice: decision.classification.choice }
-								: {}),
-							...(decision.classification?.confidence !== undefined
-								? { model_confidence: decision.classification.confidence }
-								: {}),
-							offered_options: offeredOptions,
-						});
-						const candidateOption = judged?.lane_option ?? judged?.corrected_option;
-						if (candidateOption) {
-							const matched =
-								offeredOptions.length > 0
-									? matchOfferedOption(candidateOption, offeredOptions)
-									: null;
-							resolvedOption = matched ? matched.id : candidateOption;
-						}
-					} catch {}
-				}
 
 				const outcome = await handleLaneDecisionReply(
 					{
@@ -1025,6 +1066,7 @@ export async function dispatchDecisions(
 							? createDefaultRelayInputFactory(options.root, taskId, {
 									commentId: event.comment_id,
 									laneRuntime: options.laneRuntime,
+									stateDir: options.stateDir,
 								})
 							: undefined),
 				);
@@ -1063,6 +1105,65 @@ export async function dispatchDecisions(
 						);
 						continue;
 					}
+				}
+
+				// ULS D3: a settled Initiative batch opens one PR from imm/<slug> with
+				// every child's audit digest; single-task delivery stays on the path below.
+				const initiative = initiativeBatchOf(options.root, readWorkItem(stateDir, `issue-${issueNum}`)?.binding.batch_id ?? null);
+				if (initiative) {
+					const evidence = batchDeliveryEvidence(options.root, initiative.batch_id);
+					if (!evidence.ok) {
+						emitDispatch(
+							decision.decision_id,
+							decision.handler,
+							"failed",
+							`no delivery evidence for initiative ${initiative.initiative_slug} (batch ${initiative.batch_id}): ${evidence.reason}`,
+						);
+						continue;
+					}
+					const children = evidence.children.map((child) => ({
+						...child,
+						intent: readChildIntent(options.root, evidence.commit, child.task_id),
+					}));
+					const missing = children.find((child) => !child.intent);
+					if (missing) {
+						emitDispatch(
+							decision.decision_id,
+							decision.handler,
+							"failed",
+							`no task intent for ${missing.task_id} of initiative ${initiative.initiative_slug} at ${evidence.commit.slice(0, 12)}`,
+						);
+						continue;
+					}
+					const baseBranch = detectBaseBranch(options.root);
+					const risk = children.map((child) => child.intent?.risk).find((value) => value && value !== "routine") ?? "routine";
+					const prReq: LoopPullRequestRequest = {
+						slug: evidence.slug,
+						task_id: evidence.slug,
+						issue_number: parseInt(issueNum, 10),
+						risk,
+						base: baseBranch,
+						title: `imm(${evidence.slug}): deliver initiative (${children.length} slice${children.length === 1 ? "" : "s"})`,
+						verification_summary: [
+							`Batch: \`${evidence.batch_id}\``,
+							`Initiative evidence digest: \`${evidence.digest}\``,
+							`Commit SHA: \`${evidence.commit}\``,
+							"",
+							"### Slices",
+							...children.map(
+								(child) =>
+									`- \`${child.task_id}\` — ${(child.intent?.acceptance ?? []).map((ac: any) => ac.id).join(", ") || "no acceptance"} — audit digest \`${child.digest}\``,
+							),
+						].join("\n"),
+					};
+					const opened = await openLoopPullRequest(prReq, gitHubPort);
+					emitDispatch(
+						decision.decision_id,
+						decision.handler,
+						"executed",
+						`${opened.created ? "opened" : "found existing"} PR #${opened.number} for initiative ${evidence.slug} (head: ${opened.branch}, base: ${baseBranch}, commit: ${evidence.commit}, digest: ${evidence.digest})`,
+					);
+					continue;
 				}
 
 				// 1. Resolve TaskIntent

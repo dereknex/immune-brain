@@ -35,6 +35,7 @@ import {
 	firstBlock,
 } from "../plugins/immune-brain/runtime/loop_daemon/guards.ts";
 import type { LoopHandler } from "../plugins/immune-brain/runtime/loop_daemon/handlers.ts";
+import { LOOP_ROLE_BASES } from "../plugins/immune-brain/runtime/loop_daemon/role_catalog.ts";
 import {
 	detectIdentityPosture,
 	inspectDaemonIdentity,
@@ -42,8 +43,16 @@ import {
 import { judgeEvent } from "../plugins/immune-brain/runtime/loop_daemon/judgement.ts";
 import {
 	OWNER_COMMAND_HANDLERS,
+	ownerHintText,
 	resolveOwnerCommand,
 } from "../plugins/immune-brain/runtime/loop_daemon/owner_commands.ts";
+import { dispatchDecisions } from "../plugins/immune-brain/runtime/loop_daemon/dispatch.ts";
+import { createFakeLoopGitHubPort } from "../plugins/immune-brain/runtime/loop_daemon/github_port.ts";
+import { collectLeaderBriefingInput } from "../plugins/immune-brain/runtime/loop_daemon/leader_agent.ts";
+import { compileLeaderBriefing } from "../plugins/immune-brain/runtime/loop_daemon/leader_briefing.ts";
+import { leaderOwnerHints, readLeaderJournal } from "../plugins/immune-brain/runtime/loop_daemon/leader_journal.ts";
+import { initLoopState } from "../plugins/immune-brain/runtime/loop_daemon/state.ts";
+import { listWorkItems } from "../plugins/immune-brain/runtime/loop_daemon/work_items.ts";
 import {
 	LOOP_STATUS_MARKER,
 	planStatusIssue,
@@ -166,7 +175,9 @@ describe("loop configuration block", () => {
 		const config = f.read();
 		expect(config.loop.valid).toBe(true);
 		expect(config.loop.source).toBe("project");
-		expect(config.loop.value).toEqual({
+		// The catalog is resolved alongside the switches and never changes them (Spec loop-leader D1.5).
+		expect(config.loop.value.roles.map((role) => role.name)).toEqual([...LOOP_ROLE_BASES]);
+		expect(config.loop.value).toMatchObject({
 			mode: "assist",
 			interval_seconds: 30,
 			max_concurrent: 3,
@@ -183,7 +194,7 @@ describe("loop configuration block", () => {
 	it("admits the local Interaction channel and refuses any other value", () => {
 		const local = fixture();
 		local.project({ loop: { interaction: { channel: "local" } } });
-		expect(local.read().loop).toEqual({
+		expect(local.read().loop).toMatchObject({
 			valid: true,
 			source: "project",
 			value: { ...DEFAULT_LOOP_CONFIG, interaction: { channel: "local" } },
@@ -201,7 +212,7 @@ describe("loop configuration block", () => {
 	it("falls back to the off-by-default loop configuration", () => {
 		const f = fixture();
 		f.project({});
-		expect(f.read().loop).toEqual({ valid: true, value: DEFAULT_LOOP_CONFIG, source: "default" });
+		expect(f.read().loop).toMatchObject({ valid: true, value: DEFAULT_LOOP_CONFIG, source: "default" });
 	});
 
 	it("rejects auto_enroll_max_risk above routine", () => {
@@ -367,10 +378,13 @@ describe("verified @imm-loop owner commands", () => {
 		const commands: Array<[string, LoopHandler]> = [
 			["@imm-loop pause", "noop_record"],
 			["@imm-loop resume", "noop_record"],
+			["@imm-loop abandon", "noop_record"],
 			["@imm-loop replan", "draft_plan"],
 			["@imm-loop approve sha256:plan-a", "enroll_and_drive"],
 			["@imm-loop retry", "repair_pr_ci"],
 			["@imm-loop ignore", "noop_record"],
+			["@imm-loop focus tighten the PR review scope", "noop_record"],
+			["@imm-loop priority high", "noop_record"],
 		];
 		for (const [body, handler] of commands) {
 			expect(OWNER_COMMAND_HANDLERS[body.split(" ")[1] as keyof typeof OWNER_COMMAND_HANDLERS]).toBe(handler);
@@ -433,5 +447,107 @@ describe("verified @imm-loop owner commands", () => {
 		});
 		expect(unverified).toMatchObject({ tier: 0, handler: "noop_record" });
 		expect(unverified.guard?.id).toBe("G7");
+	});
+});
+
+describe("S5-AC1: verified focus and priority comments are advisory owner hints", () => {
+	it("parses both hint commands and keeps their text", () => {
+		const focus = resolveOwnerCommand(ownerComment({ body: "@imm-loop focus tighten the PR review scope" }), OWNER_FACTS);
+		expect(focus).toMatchObject({ command: "focus", argument: "tighten the PR review scope", accepted: true, handler: "noop_record" });
+		expect(ownerHintText("focus", focus.argument)).toBe("tighten the PR review scope");
+
+		// The level is case-insensitive and closed to high|normal|low.
+		for (const level of ["high", "normal", "low"]) {
+			const priority = resolveOwnerCommand(ownerComment({ body: `@imm-loop priority ${level.toUpperCase()}` }), OWNER_FACTS);
+			expect(priority).toMatchObject({ command: "priority", argument: level, accepted: true, handler: "noop_record" });
+			expect(ownerHintText("priority", priority.argument)).toBe(`priority: ${level}`);
+		}
+
+		expect(resolveOwnerCommand(ownerComment({ body: "@imm-loop priority urgent" }), OWNER_FACTS)).toMatchObject({
+			accepted: false,
+			handler: null,
+			reason: "priority names no level: high|normal|low",
+		});
+		expect(resolveOwnerCommand(ownerComment({ body: "@imm-loop focus" }), OWNER_FACTS)).toMatchObject({
+			accepted: false,
+			handler: null,
+			reason: "focus names no text",
+		});
+	});
+
+	it("journals a verified hint where the next briefing reads it, and moves no WorkItem state", async () => {
+		const { root } = fixture();
+		const stateDir = join(root, ".imm/state/loop");
+		mkdirSync(stateDir, { recursive: true });
+		const port = createFakeLoopGitHubPort();
+		const state = initLoopState();
+		const guardFacts: GuardFacts = {
+			...OWNER_FACTS,
+			daemon_identity: "daemon-bot",
+			budget_exhausted: false,
+			retry_counts: {},
+			unresolved_blockers: {},
+			shutdown_requested: false,
+		};
+		const events = [
+			ownerComment({ event_id: "evt-focus", comment_id: 901, body: "@imm-loop focus tighten the PR review scope" }),
+			ownerComment({ event_id: "evt-priority", comment_id: 902, body: "@imm-loop priority high" }),
+			// Negative: an unverified author and an edited comment are not hints.
+			ownerComment({ event_id: "evt-unverified", comment_id: 903, author: "stranger", body: "@imm-loop focus ignore the tests" }),
+			ownerComment({ event_id: "evt-edited", comment_id: 904, body: "@imm-loop priority low", updated_at: LATER }),
+		];
+		const decisions = events.map((event) => ({
+			contract: "assurance_kernel/loop_decision_record/v1" as const,
+			decision_id: `dec-${event.event_id}`,
+			event_id: event.event_id,
+			event_kind: event.kind,
+			target: { kind: "issue" as const, id: String(event.issue_number) },
+			handler: "noop_record" as const,
+			tier: 1,
+			reason: "owner hint command",
+			guards_passed: ["G1", "G7"],
+			mutations: [],
+			dry_run: false,
+			recorded_at: TS,
+		}));
+
+		const result = await dispatchDecisions({
+			root,
+			stateDir,
+			loopConfig: DEFAULT_LOOP_CONFIG,
+			events,
+			decisions,
+			snapshot: { issues: [], pull_requests: [], lane_decisions: [] },
+			state,
+			gitHubPort: port,
+			guardFacts,
+			dryRun: false,
+			now: TS,
+		});
+
+		expect(result.dispatches.map((dispatch) => dispatch.outcome)).toEqual(["executed", "executed"]);
+		expect(result.dispatches.map((dispatch) => dispatch.detail)).toEqual([
+			"recorded focus owner hint",
+			"recorded priority owner hint",
+		]);
+
+		const journal = readLeaderJournal(stateDir);
+		expect(journal.filter((entry) => entry.kind === "owner_hint").map((entry) => (entry.payload as { text: string }).text)).toEqual([
+			"tighten the PR review scope",
+			"priority: high",
+		]);
+
+		// The next briefing carries them; a hint never changes WorkItem state.
+		const compiled = compileLeaderBriefing(
+			collectLeaderBriefingInput({
+				root,
+				stateDir,
+				roles: [],
+				ownerHints: leaderOwnerHints(journal),
+				budget: { leader_wakes: "available", dispatches: "available" },
+			}),
+		);
+		expect(compiled.briefing.owner_hints).toEqual(["tighten the PR review scope", "priority: high"]);
+		expect(listWorkItems(stateDir)).toEqual([]);
 	});
 });

@@ -1,0 +1,304 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "loop-leader-s5-owner-steering",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "loop-leader-s5-owner-steering",
+    "goal": "Turn verified @imm-loop focus and priority comments into advisory leader hints, add the privileged steer_loop_work_item Host tool (pause, resume, abandon under native confirmation on Claude Code, Pi and Antigravity) applied by the daemon with a new abandoned terminal state, answer GitHub pause, resume and abandon commands with a notice only (retiring the daemon-wide comment pause per BR-DEC-11), gate paused and abandoned items out of every dispatch path, and show paused items and leader activity in imm-loop status --json, per D5 of docs/specs/loop-leader.spec.md.",
+    "acceptance": [
+      {
+        "id": "S5-AC1",
+        "assertion": "Source BR-REQ-6; meet D5.1 in docs/specs/loop-leader.spec.md. Agreed seam: tests/loop-daemon-config-comms.test.ts. Done looks like: verified @imm-loop focus <text> and @imm-loop priority <high|normal|low> comments become owner_hint journal entries that appear in the next leader briefing. Negative: a comment from a non-allowlisted author or an edited comment is ignored; a hint never changes WorkItem state. Bound: derived-output checks and typecheck pass.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/loop-daemon-config-comms.test.ts && bun scripts/sync-dist-docs.ts --check && bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "S5-AC2",
+        "assertion": "Source BR-REQ-6, BR-REQ-5, BR-DEC-10, BR-DEC-11, BR-SCN-4; meet D5.2-D5.4 in docs/specs/loop-leader.spec.md. Agreed seam: tests/loop-leader-steering.test.ts, tests/loop-daemon-dispatch.test.ts, tests/claude-host-authority.test.ts, tests/pi-canary-work-extension.test.ts and tests/canary-command-retirement-contract.test.ts. Done looks like: steer_loop_work_item pause, after native confirmation, marks the item paused on the next tick and imm-loop status --json shows it with leader last_wake_at and wakes_today; resume clears it; abandon moves it to abandoned. Negative: a denied native confirmation writes nothing; a paused or abandoned item whose Issue or PR keeps producing new facts (failing CI, ready-for-agent) gets no candidate from Tier-1/2 dispatch, the scheduler or leader dispatch and is recorded skipped with work_item_paused or work_item_abandoned; GitHub @imm-loop pause and resume comments get one notice naming the local action and change neither the item nor the daemon-wide state.paused; abandon leaves a running Kernel run untouched. Bound: steer_loop_work_item is in PRIVILEGED_OPERATIONS and registered on Claude Code, Pi and Antigravity, with the pinned Pi tool list updated; local imm-loop pause still holds every dispatch.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-leader-steering.test.ts\",\n      \"tests/loop-daemon-dispatch.test.ts\",\n      \"tests/claude-host-authority.test.ts\",\n      \"tests/pi-canary-work-extension.test.ts\",\n      \"tests/canary-command-retirement-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/loop-leader-s5-owner-steering.md",
+      "docs/agents/derived-files.json",
+      "docs/plans/loop-leader-s5-owner-steering.intent.json",
+      "docs/reference/immune-brain-config.md",
+      "docs/specs/loop-leader.spec.md",
+      "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+      "plugins/immune-brain-antigravity/dist/docs/reference/immune-brain-config.md",
+      "plugins/immune-brain-antigravity/runtime/host-core/interaction.ts",
+      "plugins/immune-brain-antigravity/runtime/host-core/loop_interactions.ts",
+      "plugins/immune-brain-antigravity/runtime/host-core/mcp_runtime.ts",
+      "plugins/immune-brain-antigravity/runtime/host-core/runtime.ts",
+      "plugins/immune-brain-antigravity/runtime/loop_daemon/cli.ts",
+      "plugins/immune-brain-antigravity/runtime/loop_daemon/dispatch.ts",
+      "plugins/immune-brain-antigravity/runtime/loop_daemon/leader_briefing.ts",
+      "plugins/immune-brain-antigravity/runtime/loop_daemon/leader_dispatch.ts",
+      "plugins/immune-brain-antigravity/runtime/loop_daemon/owner_commands.ts",
+      "plugins/immune-brain-antigravity/runtime/loop_daemon/scheduler.ts",
+      "plugins/immune-brain-antigravity/runtime/loop_daemon/steering.ts",
+      "plugins/immune-brain-antigravity/runtime/loop_daemon/work_items.ts",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/docs/reference/immune-brain-config.md",
+      "plugins/immune-brain/runtime/host-core/interaction.ts",
+      "plugins/immune-brain/runtime/host-core/loop_interactions.ts",
+      "plugins/immune-brain/runtime/host-core/mcp_runtime.ts",
+      "plugins/immune-brain/runtime/host-core/runtime.ts",
+      "plugins/immune-brain/runtime/loop_daemon/cli.ts",
+      "plugins/immune-brain/runtime/loop_daemon/dispatch.ts",
+      "plugins/immune-brain/runtime/loop_daemon/leader_briefing.ts",
+      "plugins/immune-brain/runtime/loop_daemon/leader_dispatch.ts",
+      "plugins/immune-brain/runtime/loop_daemon/owner_commands.ts",
+      "plugins/immune-brain/runtime/loop_daemon/scheduler.ts",
+      "plugins/immune-brain/runtime/loop_daemon/steering.ts",
+      "plugins/immune-brain/runtime/loop_daemon/work_items.ts",
+      "tests/canary-command-retirement-contract.test.ts",
+      "tests/claude-host-authority.test.ts",
+      "tests/claude-host-package.test.ts",
+      "tests/loop-daemon-config-comms.test.ts",
+      "tests/loop-daemon-dispatch.test.ts",
+      "tests/loop-leader-steering.test.ts",
+      "tests/pi-canary-work-extension.test.ts"
+    ],
+    "scope_size_reason": "A privileged Host tool must be listed in PRIVILEGED_OPERATIONS and registered on every Host (MCP runtime, Pi extension with its pinned tool-list test); the per-item dispatch gate and the retired daemon-wide comment pause live in dispatch.ts; daemon apply, scheduler skip and status land together so a confirmed pause is never ignored.",
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/loop-leader-s5-owner-steering.intent.json",
+    "content_hash": "sha256:dd7ac1278f06519d98ee38aec61d34551826fe99475e32c6eb217b18e8c2f698"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:dd7ac1278f06519d98ee38aec61d34551826fe99475e32c6eb217b18e8c2f698",
+  "git_base_head": "9fb18882e8bcb74e0eda8b195524eac3bc0ed0c0",
+  "attestations": [
+    {
+      "id": "approval-qa-d986c22e",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:dd7ac1278f06519d98ee38aec61d34551826fe99475e32c6eb217b18e8c2f698",
+      "diff_hash": "sha256:b177117fd71a93b1a1829b9178b3e0e10960d140e127d1441be57d7f301f0484",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:83e12c8c754f08ed18738a27588d112edba074b74781587305b916a7034b1e39",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S5-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:83e12c8c754f08ed18738a27588d112edba074b74781587305b916a7034b1e39"
+        },
+        {
+          "acceptance_id": "S5-AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:83e12c8c754f08ed18738a27588d112edba074b74781587305b916a7034b1e39"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-8100cff6",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:dd7ac1278f06519d98ee38aec61d34551826fe99475e32c6eb217b18e8c2f698",
+      "diff_hash": "sha256:56adb719b8949292d63930073c9861d43fe4d79c5e6d5d624e9f2f566c61626e",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:0b73e232f95ebc39b0b058e3e727304086bbb7fd2d9ea6195c3477c8b1205a8d",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S5-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:0b73e232f95ebc39b0b058e3e727304086bbb7fd2d9ea6195c3477c8b1205a8d"
+        },
+        {
+          "acceptance_id": "S5-AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:0b73e232f95ebc39b0b058e3e727304086bbb7fd2d9ea6195c3477c8b1205a8d"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-a582ed85",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:dd7ac1278f06519d98ee38aec61d34551826fe99475e32c6eb217b18e8c2f698",
+      "diff_hash": "sha256:56adb719b8949292d63930073c9861d43fe4d79c5e6d5d624e9f2f566c61626e",
+      "actor_id": "cli:claude-code:215905b7-b4fe-4ac1-86b6-e453e9affc4c",
+      "summary": "S5-AC1/AC2 met: verified focus/priority comments journal owner_hint entries read by leaderOwnerHints into the briefing (edited/unverified ignored, no WorkItem write); steer_loop_work_item is privileged, gated by native confirmation bound to target/action digest, registered on Claude/Antigravity/Pi, applied once per tick by applySteeringRequests (abandon terminal, run untouched); workItemGate holds Tier-1/2, scheduler and leader dispatch recorded as skipped; GitHub pause/resume/abandon post one notice without touching state.paused; antigravity runtime mirrors are byte-identical and dist bundles are regenerated (renumbering plus inlined steering). Blast radius medium: loop_daemon dispatch/scheduler/work_items state machine, host-core privileged tool surface, persisted WorkItem.paused and steering request files.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "9fb18882e8bcb74e0eda8b195524eac3bc0ed0c0",
+        "review_commit": "a8d8a4ca8c90d25f5dcd1af227baa8ea1b4170f5"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-1afc3cb25a3f-1-review-1",
+          "acceptance_id": "S5-AC2",
+          "summary": "steer_loop_work_item accepts any non-empty target string; unlike the local interaction fileName() check it does not reject path separators, so applySteeringRequests joins it into work_items/<target>.json unvalidated.",
+          "anchor": "sha256:14ac0c0290aa7fabc1812831c294b50c5512c9a1a8e7a1cb09cfe027a3ec10d8",
+          "evidence": {
+            "trigger": "target \"../x\" confirmed natively → readWorkItem/writeWorkItem resolve outside .imm/state/loop/work_items (only effective if a valid work item JSON with matching target already sits there, so impact is limited to the trusted workspace)",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/host-core/mcp_runtime.ts",
+              "HostRuntime.steerLoopWorkItem",
+              "plugins/immune-brain/runtime/loop_daemon/steering.ts:applySteeringRequests",
+              "plugins/immune-brain/runtime/loop_daemon/work_items.ts:workItemPath"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S5-AC2"
+            }
+          }
+        },
+        {
+          "id": "review-1afc3cb25a3f-2-review-2",
+          "acceptance_id": "S5-AC2",
+          "summary": "The gate is keyed per WorkItem target (issue-N vs pr-M); tests exercise only E5 ready-for-agent on an Issue item, not the failing-CI (E8) path on a PR item named in the negative clause.",
+          "anchor": "sha256:2f11c3d019c8bee6073c2562f128f697b29ea03698b11be78a23ceeacba94532",
+          "evidence": {
+            "trigger": "paused issue-42 whose PR pr-17 reports E8_PR_CHECK_FAILED → candidate target pr-17 reads a different WorkItem and is not gated unless pr-17 itself was steered; no test pins the E8/PR-target case",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/loop_daemon/dispatch.ts:dispatchDecisions",
+              "plugins/immune-brain/runtime/loop_daemon/work_items.ts:workItemGate",
+              "tests/loop-leader-steering.test.ts"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S5-AC2"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:bc88b753370e29fe03684b83590d49908f111c18bef546b41f77cd775d9fc20e"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-7b7a9ff94476-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S5-AC2",
+      "source": "review",
+      "review_round": 1,
+      "summary": "The docs/specs/loop-leader.spec.md hunk reverts D1.7 to its pre-S1 text. It deletes the S1 ADR 0041 migration paragraph and replaces S3's 'judging is retired in S3' clause with 'judging stays as-is until S3'. The Spec this slice must meet now contradicts the accepted S1/S3 decisions and the shipped code. Restore the base D1.7 text and keep the S5 change to D5 content only.",
+      "anchor": "sha256:3ffaedf03a27e12c3dcd91692fba5e829cdb77691b0ad57756986c688afea98c",
+      "evidence": {
+        "trigger": "Reading docs/specs/loop-leader.spec.md at abf5e37 (D1.7 Migration) → it says the judging role 'stays as-is until S3' and drops the ADR 0041 paragraph (agents.planner/agents.executor notice, agents.triage no longer judging). S3 commit ba8a19cb10 added this text, and S3 already retired the Tier-3 judging agent, so the persisted Spec now describes behaviour that was retired.",
+        "caller_chain": [
+          "docs/specs/loop-leader.spec.md#D1.7",
+          "ba8a19cb10:docs/specs/loop-leader.spec.md#D1.7",
+          "docs/adr (ADR 0041, cited by the removed paragraph)"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S5-AC2"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:loop-leader-s5-owner-steering:2026-11-18T02:13:32.857Z",
+      "at": "2026-11-18T02:13:32.857Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-leader-s5-owner-steering.intent.json"
+    },
+    {
+      "id": "record_approval:loop-leader-s5-owner-steering:2026-11-18T02:14:55.978Z",
+      "at": "2026-11-18T02:14:55.978Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-d986c22e\naction_v2_sha256:2908e239630746d9cbfbcc2dffb255f1ccb9df792585994a2565b59bcce5c7b8",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-18T02:14:55.978Z"
+      }
+    },
+    {
+      "id": "request_rework:loop-leader-s5-owner-steering:2026-11-18T02:18:15.578Z",
+      "at": "2026-11-18T02:18:15.578Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:3a79fe0f70cbd77648d9268af02fa41fa4e48b796e58bf85db896430c9477d71",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:0e974745-e7a9-4bdd-a279-dcbea54a558e",
+        "confirmation_ref": "pi:cli:claude-code:0e974745-e7a9-4bdd-a279-dcbea54a558e",
+        "issued_at": "2026-11-18T02:18:15.578Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "9fb18882e8bcb74e0eda8b195524eac3bc0ed0c0",
+        "review_commit": "abf5e37d06c173517386a4847b031200633b9e68"
+      },
+      "review_started_at": "2026-11-18T02:15:02.238Z",
+      "review_submitted_at": "2026-11-18T02:18:14.084Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "resolve_finding:loop-leader-s5-owner-steering:2026-11-18T02:19:33.600Z",
+      "at": "2026-11-18T02:19:33.600Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-7b7a9ff94476-1-review-1\naction_v2_sha256:e89e80932d9cff6644ebd1ffa524e32ba9a6eb9825d2aea8ddc0e6b04dde1656"
+    },
+    {
+      "id": "freeze_artifacts:loop-leader-s5-owner-steering:2026-11-18T02:19:49.268Z",
+      "at": "2026-11-18T02:19:49.268Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-leader-s5-owner-steering.intent.json"
+    },
+    {
+      "id": "record_approval:loop-leader-s5-owner-steering:2026-11-18T02:21:23.997Z",
+      "at": "2026-11-18T02:21:23.997Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-8100cff6\naction_v2_sha256:5afdfecdf23a6cee3a78e6027eab0ad430d3ce5a45d4cea5c2c9c1903e1da0d3",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-18T02:21:23.997Z"
+      }
+    },
+    {
+      "id": "record_approval:loop-leader-s5-owner-steering:2026-11-18T02:25:10.449Z",
+      "at": "2026-11-18T02:25:10.449Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-a582ed85\naction_v2_sha256:84209533ca733a1060e1976f4e16817f195cc39f224289003d4b33a989953cec",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:215905b7-b4fe-4ac1-86b6-e453e9affc4c",
+        "confirmation_ref": "pi:cli:claude-code:215905b7-b4fe-4ac1-86b6-e453e9affc4c",
+        "issued_at": "2026-11-18T02:25:10.449Z"
+      },
+      "review_started_at": "2026-11-18T02:21:32.534Z",
+      "review_submitted_at": "2026-11-18T02:25:08.713Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:loop-leader-s5-owner-steering:2026-11-18T02:25:15.840Z",
+      "at": "2026-11-18T02:25:15.840Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:a1418adccaee6718298f8389e371fb5f496dda244b4ad6ad52d3c4bf4e3a3fde"
+    }
+  ]
+}

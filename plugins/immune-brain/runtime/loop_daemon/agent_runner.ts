@@ -20,36 +20,39 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { accessSync, chmodSync, constants, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { delimiter, join } from "node:path";
-import { agentRole, type AgentRole, type AgentsSection } from "../config/agent_roles.ts";
+import { agentRole, type AgentRole } from "../config/agent_roles.ts";
 import type { ExecutorHost } from "../unattended/agent_profiles.ts";
+import { catalogRole, LOOP_ROLE_DEFAULT_HOST, type LoopRoleBase, type LoopSessionConfig } from "./role_catalog.ts";
 
 export const AGENT_SESSION_CONTRACT = "assurance_kernel/loop_agent_session/v1" as const;
 
-export type AgentSessionKind = "clarify" | "planning" | "repair" | "judging";
+export type AgentSessionKind = "clarify" | "planning" | "repair" | "leader" | "analyze";
 
-/** The loop roles a session runs as (Spec loop-agent-scheduling D1/D2). */
-export type AgentSessionRole = "judging" | "clarify" | "plan" | "repair";
+/** The loop roles a session runs as (Spec loop-agent-scheduling D1/D2, Spec loop-leader D2.3). */
+export type AgentSessionRole = "clarify" | "plan" | "repair" | "leader" | "analyze";
 
 /** Roles whose argv never grants write permission (Spec D2). */
-export const READ_ONLY_SESSION_ROLES: readonly AgentSessionRole[] = ["judging", "clarify", "plan"];
+export const READ_ONLY_SESSION_ROLES: readonly AgentSessionRole[] = ["clarify", "plan", "leader", "analyze"];
 
 /**
  * The built-in per-role session limits (Spec D2). Making them configurable is
  * `BR-DEFER-3`, so every role starts at the daemon's existing 40 turns / 900 s.
  */
 export const ROLE_SESSION_LIMITS: Record<AgentSessionRole, { turn_budget: number; timeout_ms: number }> = {
-	judging: { turn_budget: 40, timeout_ms: 900_000 },
 	clarify: { turn_budget: 40, timeout_ms: 900_000 },
 	plan: { turn_budget: 40, timeout_ms: 900_000 },
 	repair: { turn_budget: 40, timeout_ms: 900_000 },
+	leader: { turn_budget: 40, timeout_ms: 900_000 },
+	analyze: { turn_budget: 40, timeout_ms: 900_000 },
 };
 
 /** A session kind runs as the role that owns it (Spec D1/D2). */
 const ROLE_OF_KIND: Record<AgentSessionKind, AgentSessionRole> = {
 	clarify: "clarify",
 	planning: "plan",
-	judging: "judging",
 	repair: "repair",
+	leader: "leader",
+	analyze: "analyze",
 };
 
 export function sessionRole(kind: AgentSessionKind): AgentSessionRole {
@@ -75,6 +78,13 @@ export interface AgentSessionRequest {
 	timeout_ms: number;
 	/** The only environment the session receives. */
 	env: Record<string, string>;
+	/**
+	 * The exact Host profile this session runs on. Absent means the provider
+	 * resolves the session kind's role the usual way; a leader dispatch sets
+	 * it so a catalog role runs on its own Host, model, effort and advisory
+	 * instructions even when its base has several roles (D3.5).
+	 */
+	profile?: CliAgentSessionProfile;
 }
 
 /** What a session process actually did; a provider never interprets it. */
@@ -247,26 +257,72 @@ export async function runAgentSession(
 	);
 }
 
-/** The configured role each loop session runs on (ADR 0041): repair writes code like the executor. */
-const LOOP_AGENT_ROLE: Record<AgentSessionRole | "executor", AgentRole> = { executor: "executor", repair: "executor", clarify: "planner", plan: "planner", judging: "triage" };
+/**
+ * The base a loop session kind takes from the project catalog (Spec loop-leader
+ * D1.6). The Lane Host stays `agents.executor` (BR-DEC-8).
+ */
+const LOOP_SESSION_BASE: Partial<Record<AgentSessionRole, LoopRoleBase>> = {
+	clarify: "clarify",
+	plan: "plan",
+	repair: "repair",
+	leader: "leader",
+	analyze: "analyze",
+};
+
+/** The roles a session still takes from the `agents` table rather than the catalog. */
+const LOOP_AGENT_ROLE: Partial<Record<AgentSessionRole | "executor", AgentRole>> = { executor: "executor" };
 
 export interface CliAgentSessionProfile {
 	host: ExecutorHost;
 	model?: string | null;
 	effort?: string | null;
+	/** Repository-relative advisory instructions file of the catalog role. */
+	instructions?: string | null;
 }
 
 /**
- * The Host profile bound to one role, or the documented Host fallback when the
- * role is unset (Spec D1). A session never borrows another role's Host.
+ * The Host profile bound to one role: the project catalog role of its base, or
+ * the `agents` role that still owns it. A session never borrows another role's
+ * Host, and never falls back to an agents binding the catalog replaced.
  */
-export function loopRoleProfile(agents: AgentsSection, role: AgentSessionRole | "executor"): CliAgentSessionProfile {
-	const resolved = agentRole(agents, LOOP_AGENT_ROLE[role]);
+export function loopRoleProfile(config: LoopSessionConfig, role: AgentSessionRole | "executor"): CliAgentSessionProfile {
+	const base = LOOP_SESSION_BASE[role as AgentSessionRole];
+	if (base) {
+		const resolved = catalogRole(config.loop.value.roles, base);
+		return {
+			host: resolved?.host ?? LOOP_ROLE_DEFAULT_HOST,
+			model: resolved?.model ?? null,
+			effort: resolved?.effort ?? null,
+			instructions: resolved?.instructions ?? null,
+		};
+	}
+	const bound = agentRole(config.agents, LOOP_AGENT_ROLE[role] ?? "executor");
 	return {
-		host: (resolved?.host ?? "claude-code") as ExecutorHost,
-		model: resolved?.model ?? null,
-		effort: resolved?.effort ?? null,
+		host: (bound?.host ?? LOOP_ROLE_DEFAULT_HOST) as ExecutorHost,
+		model: bound?.model ?? null,
+		effort: bound?.effort ?? null,
+		instructions: null,
 	};
+}
+
+/** One session role's budget: the catalog role's limits, else the built-in per-role table. */
+export function loopSessionLimits(config: LoopSessionConfig, role: AgentSessionRole): { turn_budget: number; timeout_ms: number } {
+	const base = LOOP_SESSION_BASE[role];
+	const resolved = base ? catalogRole(config.loop.value.roles, base) : null;
+	if (!resolved) return ROLE_SESSION_LIMITS[role];
+	return { turn_budget: resolved.limits.turn_budget, timeout_ms: resolved.limits.timeout_s * 1000 };
+}
+
+/**
+ * The advisory instructions block a catalog role appends to its entry prompt
+ * (D1.6): text only, so it changes what the session reads, never its tools,
+ * permission flags or output contract.
+ */
+export function advisoryInstructions(instructions: string | null | undefined, root: string | null | undefined): string | null {
+	if (!instructions) return null;
+	const content = root === null || root === undefined ? null : readFileOrNull(join(root, instructions));
+	if (content === null || content.trim().length === 0) throw new Error(`role_instructions_missing: ${instructions}`);
+	return `## Advisory project instructions\n\n${content.trim()}`;
 }
 
 const SESSION_BINARY: Record<ExecutorHost, string> = {
@@ -352,6 +408,8 @@ export function sessionBinary(host: ExecutorHost): string | null {
 export interface CliAgentSessionOptions {
 	/** One profile per role: the session runs on the Host bound to its own role. */
 	profileFor: (role: AgentSessionRole) => CliAgentSessionProfile;
+	/** The repository root a role's advisory instructions path resolves against. */
+	instructions_root?: string | null;
 	/** Test seam; production resolves the Host CLI from PATH. */
 	binary?: string | null;
 	/** Where the transcript of each session is kept; absent keeps none. */
@@ -370,14 +428,18 @@ export function createCliAgentSessionProvider(options: CliAgentSessionOptions): 
 	const spawn = options.spawn ?? spawnSync;
 	return {
 		async run(request: AgentSessionRequest): Promise<AgentSessionProcess> {
-			const profile = options.profileFor(sessionRole(request.kind));
+			const profile = request.profile ?? options.profileFor(sessionRole(request.kind));
+			// Built before the spawn, so unreadable instructions start no process.
+			const advisory = advisoryInstructions(profile.instructions, options.instructions_root);
+			const entry = advisory === null ? request.prompt : `${request.prompt}\n\n${advisory}`;
 			const prompt = isReadOnlyRole(sessionRole(request.kind))
-				? `${request.prompt}\n\nPrint your structured JSON result to stdout and nothing else.`
-				: `${request.prompt}\n\nWrite your structured result to \`${request.output_path}\` in this worktree. That file, not your reply, is what is read.`;
+				? `${entry}\n\nPrint your structured JSON result to stdout and nothing else.`
+				: `${entry}\n\nWrite your structured result to \`${request.output_path}\` in this worktree. That file, not your reply, is what is read.`;
 			// Built before the spawn, so an unsupported read-only Host starts no process.
 			const argv = sessionArguments(sessionRole(request.kind), profile, prompt, request.turn_budget);
 			const binary = options.binary ?? sessionBinary(profile.host);
-			if (!binary) throw new Error(`agent_session_host_unavailable: ${profile.host} executable is not on PATH`);
+			// BR-DEC-9: an absent Host fails the role; it never starts another Host.
+			if (!binary) throw new Error(`role_host_unavailable: ${profile.host} executable is not on PATH`);
 			const res = spawn(binary, argv, {
 				cwd: request.worktree_path,
 				env: request.env,

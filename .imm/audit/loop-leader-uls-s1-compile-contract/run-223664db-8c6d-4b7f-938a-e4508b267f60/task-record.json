@@ -1,0 +1,142 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "loop-leader-uls-s1-compile-contract",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "loop-leader-uls-s1-compile-contract",
+    "goal": "Restore compilation and the loop-daemon boundary contract after the ULS rebase: replace the retired-shape driveInitiativeLane with a refusal lane_initiative_entry_pending that leaves the WorkItem retryable, remove executor_model/executor_effort from loop_daemon, drop the dead exit_recorder test import, scrub HERDR_* in the daemon drive test, renumber the loop-leader ADR to 0042, and correct the retired judging references in ADR 0041 (simplified configuration) and record the ULS Spec D15/D19 corrections as amendments in the new Spec, per D1 of docs/specs/loop-leader-uls-alignment.spec.md.",
+    "acceptance": [
+      {
+        "id": "S1-AC1",
+        "assertion": "Source BR-REQ-A1; meet D1.1-D1.2 in docs/specs/loop-leader-uls-alignment.spec.md. Agreed seam: tests/loop-daemon-boundary.test.ts, tests/loop-daemon-drive-pr.test.ts, tests/loop-daemon-dispatch.test.ts, tests/loop-leader-dispatch.test.ts. Done looks like: bun run typecheck passes; LDP-A4 finds no retired identifier (no executor_model or executor_effort under loop_daemon/); LDP-A2 refuses lane_session_unavailable even when the test process inherits HERDR_* variables; an Initiative-shaped dispatch fails its job with lane_initiative_entry_pending and leaves the WorkItem retryable. Negative: no test imports the deleted loop_daemon/exit_recorder.ts; single-task daemon drive behavior is unchanged.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/loop-daemon-boundary.test.ts tests/loop-daemon-drive-pr.test.ts tests/loop-daemon-dispatch.test.ts tests/loop-leader-dispatch.test.ts && bun scripts/sync-dist-docs.ts --check && bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "S1-AC2",
+        "assertion": "Source BR-DEC-A7; meet D1.3 in docs/specs/loop-leader-uls-alignment.spec.md. Agreed seam: tests/loop-daemon-contracts.test.ts. Done looks like: docs/adr/0042-loop-leader-role-catalog.md exists, states its former number 0041, and is the only ADR numbered 0042; outside historical records (settled Specs, settled docs/plans/*.intent.json and .imm/audit/, which stay unedited) no tracked file names 0041-loop-leader-role-catalog; .changeset/loop-leader-s3-guarded-dispatch.md cites ADR 0042; 0041-simplified-configuration.md does not name judging as a live role; the Amendments to Settled Specs section of docs/specs/loop-leader-uls-alignment.spec.md records the ULS D15/D19 and loop-leader ADR-citation corrections. Negative: citations of ADR 0041 that mean the simplified-configuration ADR are unchanged.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/loop-daemon-contracts.test.ts && bun scripts/sync-dist-docs.ts --check && bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/loop-leader-s3-guarded-dispatch.md",
+      ".changeset/loop-leader-uls-s1-compile-contract.md",
+      "docs/adr/0041-loop-leader-role-catalog.md",
+      "docs/adr/0041-simplified-configuration.md",
+      "docs/adr/0042-loop-leader-role-catalog.md",
+      "docs/plans/loop-leader-uls-s1-compile-contract.intent.json",
+      "docs/specs/loop-leader-uls-alignment.spec.md",
+      "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+      "plugins/immune-brain-antigravity/runtime/loop_daemon/agent_handlers.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts",
+      "tests/loop-daemon-boundary.test.ts",
+      "tests/loop-daemon-contracts.test.ts",
+      "tests/loop-daemon-dispatch.test.ts",
+      "tests/loop-daemon-drive-pr.test.ts",
+      "tests/loop-leader-dispatch.test.ts"
+    ],
+    "scope_size_reason": "The retired drive shape, the boundary regex that rejects it and the test that covers Initiative dispatch must change together for typecheck and LDP-A4 to pass; the ADR renumber touches only the citations of the renamed file.",
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/loop-leader-uls-s1-compile-contract.intent.json",
+    "content_hash": "sha256:709c3c0b53e6f9033acf49d72fc3fb3fcef59a43a7dea2a8f007f84845a642a4"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:709c3c0b53e6f9033acf49d72fc3fb3fcef59a43a7dea2a8f007f84845a642a4",
+  "git_base_head": "08611dabafc39c566a147ba162cab5b1bf07b621",
+  "attestations": [
+    {
+      "id": "approval-qa-7b34f653",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:709c3c0b53e6f9033acf49d72fc3fb3fcef59a43a7dea2a8f007f84845a642a4",
+      "diff_hash": "sha256:5f8f3daa78598457937f06ff1eaf7bbaeadcf4fc1c55bad3edf59625381717ff",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:30857615b7a1f605bb0d9397b1fe9a8766f07099a88aec849341bb5d6b33480b",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S1-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:30857615b7a1f605bb0d9397b1fe9a8766f07099a88aec849341bb5d6b33480b"
+        },
+        {
+          "acceptance_id": "S1-AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:30857615b7a1f605bb0d9397b1fe9a8766f07099a88aec849341bb5d6b33480b"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-05280140",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:709c3c0b53e6f9033acf49d72fc3fb3fcef59a43a7dea2a8f007f84845a642a4",
+      "diff_hash": "sha256:5f8f3daa78598457937f06ff1eaf7bbaeadcf4fc1c55bad3edf59625381717ff",
+      "actor_id": "cli:claude-code:5a59488d-2508-4344-a946-0fab9270bdc9",
+      "summary": "driveInitiativeLane now refuses with lane_initiative_entry_pending (settled:false, exit:null) and is pinned at the daemon tick seam with the WorkItem left retryable; executor_model/effort leave loop_daemon/ under an LDP-A4 guard; drive-pr scrubs and restores all HERDR_* per test; the exit_recorder import is gone; the ADR is renamed to 0042 with a note on its former number, the S3 changeset cites 0042, ADR 0041 drops judging, and contract tests pin these; the Antigravity runtime mirror is byte-identical and the dist diffs are only the bundler renaming projectAssurance2 to projectAssurance; blast radius medium (loop_daemon/agent_handlers.ts Initiative dispatch path and two dist bundles).",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "08611dabafc39c566a147ba162cab5b1bf07b621",
+        "review_commit": "e658dfa4ed2d82bd79105fd089aec96aed132416"
+      },
+      "reviewer_verdict_sha256": "sha256:47fd9d256ece8d8024e354dfb743ce0235636463ed7aa575cd0fd2a78dba34c0"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:loop-leader-uls-s1-compile-contract:2026-11-20T14:20:06.928Z",
+      "at": "2026-11-20T14:20:06.928Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-leader-uls-s1-compile-contract.intent.json"
+    },
+    {
+      "id": "record_approval:loop-leader-uls-s1-compile-contract:2026-11-20T14:20:28.268Z",
+      "at": "2026-11-20T14:20:28.268Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-7b34f653\naction_v2_sha256:7296b265d50d32dd33a03c2ddc0ec81adae7a620e85fa42d9c14cee8ac162cb2",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-11-20T14:20:28.268Z"
+      }
+    },
+    {
+      "id": "record_approval:loop-leader-uls-s1-compile-contract:2026-11-20T14:24:03.574Z",
+      "at": "2026-11-20T14:24:03.574Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-05280140\naction_v2_sha256:9603467f7be1b6becf394d982db48b8916fdeed95b820728e87bfcf5164173c2",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:5a59488d-2508-4344-a946-0fab9270bdc9",
+        "confirmation_ref": "claude:cli:claude-code:5a59488d-2508-4344-a946-0fab9270bdc9",
+        "issued_at": "2026-11-20T14:24:03.574Z"
+      },
+      "review_started_at": "2026-11-20T14:23:08.305Z",
+      "review_submitted_at": "2026-11-20T14:24:02.681Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:loop-leader-uls-s1-compile-contract:2026-11-20T14:24:05.996Z",
+      "at": "2026-11-20T14:24:05.996Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:8723391cdea36352ef7f77771162b0fb1aa8a86f5182b90d068c32af63058bc0"
+    }
+  ]
+}

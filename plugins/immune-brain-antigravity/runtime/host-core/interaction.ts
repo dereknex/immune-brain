@@ -24,6 +24,8 @@ export const PRIVILEGED_OPERATIONS = [
 	"retire_stale_batch",
 	// Spec loop-agent-scheduling D4: one local Interaction answer is a literal-user act.
 	"answer_loop_interaction",
+	// Spec loop-leader D5.2: pausing, resuming or abandoning one work item is a literal-user act.
+	"steer_loop_work_item",
 ] as const;
 
 export type PrivilegedOperation = (typeof PRIVILEGED_OPERATIONS)[number];
@@ -117,6 +119,8 @@ export interface NativeConfirmationInput {
 	reworkExits?: ReworkExitsReadiness;
 	/** Present only for one local Interaction answer (D4). */
 	interaction?: InteractionConfirmationFacts;
+	/** Present only for one local owner steering request (Spec loop-leader D5.2). */
+	steering?: { target: string; action: string; reason: string | null };
 	verifierDispute?: { claim: string; trigger: string; caller_chain: string[]; counter_path: string };
 	reviewRetryNotice?: string;
 	batchDetails?: {

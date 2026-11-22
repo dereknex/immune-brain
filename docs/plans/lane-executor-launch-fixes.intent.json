@@ -1,0 +1,43 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "lane-executor-launch-fixes",
+  "owner": "user",
+  "goal": "Make a Lane Executor session start ready to work without Parent intervention and make single-task batches run the project's final verification: launch claude-code Executors with --plugin-dir set to the runtime's own Claude plugin root (as cli_review.ts already does for reviewers), submit the claude-code entry as the slash command /immune-brain:drive <task_id> instead of plain drive <task_id>, and let a single-task start that names no final_verification commands take them from layered config batch.final_verification, with drive-batch.md stating that the single-task Parent resolves commands by the same order as a new lane batch. Observed in batches loop-leader-uls S1-S5 (2026-11-20/21): every claude-code Executor idled with phase_entry_required or failed Review with batch_runtime_too_old until relaunched by hand, and final_verification.results stayed empty.",
+  "acceptance": [
+    {
+      "id": "LEL-AC1",
+      "assertion": "Source: request item 1; repository evidence plugins/immune-brain/runtime/lane_sessions/index.ts:128-137 (executorSessionTarget builds only --model/--effort) and plugins/immune-brain/runtime/assurance/cli_review.ts:297,374 (reviewers already pass runtimeClaudePluginDir()). Agreed seam: tests/lane-sessions.test.ts (fake provider createSession hostArgs). Done looks like: a claude-code Executor session opens and resumes with hostArgs containing --plugin-dir followed by the realpath of the Claude plugin root the runtime was loaded from, alongside the configured --model and --effort. Negative cases: a pi Executor's hostArgs stay exactly [--model, m, --thinking, high] with no --plugin-dir; an antigravity Executor gets no --plugin-dir; when runtimeClaudePluginDir() returns null no --plugin-dir flag is added and the session still opens.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/lane-sessions.test.ts && bun scripts/sync-dist-docs.ts --check && bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "LEL-AC2",
+      "assertion": "Source: request item 2; repository evidence plugins/immune-brain/runtime/unattended/batch_lanes.ts:1789 (entry: `drive ${child.task_id}`) and plugins/immune-brain/runtime/assurance/phase_entry.ts:27 (run entry on Claude Code is /immune-brain:drive). Agreed seam: tests/batch-session-port.test.ts (fake port records create/resume entry). Done looks like: when the Lane's Executor host is claude-code, both the session create and the --resume re-entry submit /immune-brain:drive <task_id>. Negative cases: a pi Executor's entry is unchanged from today; a pending instruction or correction text is still submitted verbatim and is not prefixed.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/batch-session-port.test.ts && bun scripts/sync-dist-docs.ts --check && bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "LEL-AC3",
+      "assertion": "Source: request item 3; repository evidence plugins/immune-brain/runtime/host-core/runtime.ts:1350,1587-1589 (single_task exempt from final_verification_required; commands only from the caller), plugins/immune-brain/runtime/config/layered_config.ts:185 (batch.final_verification resolved but unused by single-task start), plugins/immune-brain/dist/drive-batch.md:37,275-289 (Parent command resolution order). Agreed seams: tests/single-task-lane-decision.test.ts and tests/unattended-contracts.test.ts. Done looks like: a new single-task start with no final_verification argument and layered batch.final_verification [bun test, bun run typecheck] records those commands on the batch and its native confirmation lists them; drive-batch.md states that the single-task Parent passes final_verification resolved by the same 1-4 order as a new lane batch. Negative cases: explicit caller commands win over config; with neither caller commands nor config the single-task start still succeeds and completes with final verification not run (single_task stays optional per docs/specs/parent-hook-remoteless-guards.spec.md D2); an invalid batch.final_verification config refuses with lane_config_invalid; resuming an existing batch keeps its recorded commands.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/single-task-lane-decision.test.ts tests/unattended-contracts.test.ts && bun scripts/sync-dist-docs.ts --check && bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/lane-executor-launch-fixes.md",
+    "docs/plans/lane-executor-launch-fixes.intent.json",
+    "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+    "plugins/immune-brain-antigravity/dist/drive-batch.md",
+    "plugins/immune-brain-antigravity/runtime/host-core/runtime.ts",
+    "plugins/immune-brain-antigravity/runtime/lane_sessions/index.ts",
+    "plugins/immune-brain-antigravity/runtime/unattended/batch_lanes.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/drive-batch.md",
+    "plugins/immune-brain/runtime/host-core/runtime.ts",
+    "plugins/immune-brain/runtime/lane_sessions/index.ts",
+    "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+    "tests/batch-session-port.test.ts",
+    "tests/lane-sessions.test.ts",
+    "tests/single-task-lane-decision.test.ts",
+    "tests/unattended-contracts.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

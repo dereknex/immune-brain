@@ -15,7 +15,7 @@
  *   evidence fails closed with no record, no integrated commit, or no audit.
  */
 
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -32,6 +32,7 @@ import {
 	LOOP_DAEMON_BATCH_ACTOR,
 	LOOP_DAEMON_COMPOSITION_ROOT,
 	type LoopDriveInput,
+	type LoopInitiativeDriveInput,
 } from "../plugins/immune-brain/runtime/loop_daemon/drive_dispatcher";
 import { laneDeliveryEvidence } from "../plugins/immune-brain/runtime/unattended/batch_preflight";
 import type { BatchRunnerKernelPort } from "../plugins/immune-brain/runtime/unattended/batch_kernel_port";
@@ -45,20 +46,32 @@ import {
 import { LANE_EXECUTOR_ENV } from "../plugins/immune-brain/runtime/unattended/batch_session_port";
 import type { SupervisedSessionPort } from "../plugins/immune-brain/runtime/session/supervised_session_port";
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
+import { dispatchDecisions } from "../plugins/immune-brain/runtime/loop_daemon/dispatch";
+import type { LoopDecisionRecord } from "../plugins/immune-brain/runtime/loop_daemon/decision_record";
+import { createFakeLoopGitHubPort } from "../plugins/immune-brain/runtime/loop_daemon/github_port";
+import { initLoopState } from "../plugins/immune-brain/runtime/loop_daemon/state";
+import { LOOP_DAEMON_EVENT_CONTRACT, type E13LaneSettledEvent } from "../plugins/immune-brain/runtime/loop_daemon/types";
+import { newWorkItem, readWorkItem, recordWorkItemOutcome, writeWorkItem } from "../plugins/immune-brain/runtime/loop_daemon/work_items";
+import { batchDeliveryEvidence } from "../plugins/immune-brain/runtime/unattended/batch_preflight";
 
 const TS = "2026-01-01T00:00:00.000Z";
 const TASK = "loop-daemon-drive-task";
 
 const roots: string[] = [];
-// Restore, not delete: other files in the same bun process set these once at import.
-const PRIOR_HERDR_ENV = process.env.HERDR_ENV;
-const PRIOR_HERDR_WORKSPACE_ID = process.env.HERDR_WORKSPACE_ID;
+// Every HERDR_* variable is scrubbed before each test and restored after it, so a
+// run inside a Herdr pane (which inherits HERDR_ENV, HERDR_SOCKET_PATH, ...) sees
+// the same "no Herdr" baseline as CI. Restore, not delete: other files in the same
+// bun process set these once at import.
+let priorHerdrEnv: Array<[string, string]> = [];
+const herdrKeys = (): string[] => Object.keys(process.env).filter((key) => key.startsWith("HERDR_"));
+beforeEach(() => {
+	priorHerdrEnv = herdrKeys().map((key) => [key, process.env[key]!]);
+	for (const key of herdrKeys()) delete process.env[key];
+});
 afterEach(() => {
 	for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
-	if (PRIOR_HERDR_ENV === undefined) delete process.env.HERDR_ENV;
-	else process.env.HERDR_ENV = PRIOR_HERDR_ENV;
-	if (PRIOR_HERDR_WORKSPACE_ID === undefined) delete process.env.HERDR_WORKSPACE_ID;
-	else process.env.HERDR_WORKSPACE_ID = PRIOR_HERDR_WORKSPACE_ID;
+	for (const key of herdrKeys()) delete process.env[key];
+	for (const [key, value] of priorHerdrEnv) process.env[key] = value;
 });
 
 function git(cwd: string, ...args: string[]): string {
@@ -216,6 +229,7 @@ function driveArgs(
 	kernel: BatchRunnerKernelPort,
 	fake: FakeHerdr,
 	overrides: Partial<LoopDriveInput> = {},
+	slug: string = TASK,
 ): LoopDriveInput {
 	const intent = readTaskIntent(repo, TASK);
 	const children = [{
@@ -234,7 +248,7 @@ function driveArgs(
 	const budget = { max_children: 1, qa_failure_limit: 2 };
 	const binding = {
 		batch_id: batchId,
-		initiative_slug: TASK,
+		initiative_slug: slug,
 		plan_digest: planDigest,
 		branch: `imm/${TASK}`,
 		base_head: base,
@@ -512,5 +526,304 @@ describe("LDP-A2: no sessions outside Herdr, fail-closed evidence", () => {
 			commits: [base],
 		});
 		expect(laneDeliveryEvidence(auditRepo, TASK)).toMatchObject({ ok: false, reason: expect.stringContaining("no audit evidence") });
+	});
+});
+
+describe("ULS S2-AC1: the Initiative entry through the session port", () => {
+	const SLUG = "widget-initiative";
+	const COMMANDS = ["bun run typecheck", "bun test"];
+
+	/** The single-task args re-shaped as an Initiative drive over the same slice. */
+	function initiativeArgs(
+		repo: string,
+		base: string,
+		batchId: string,
+		kernel: BatchRunnerKernelPort,
+		fake: FakeHerdr,
+		overrides: Partial<LoopInitiativeDriveInput> = {},
+	): LoopInitiativeDriveInput {
+		const { task_id: _task, ...shared } = driveArgs(repo, base, batchId, kernel, fake, {}, SLUG) as Extract<LoopDriveInput, { task_id: string }>;
+		void _task;
+		return { ...shared, kind: "initiative", slug: SLUG, final_verification: COMMANDS, ...overrides };
+	}
+
+	it("writes one v3 record with entry kind initiative, retain_branch, parent_relayed and required final verification", async () => {
+		herdrEnv();
+		const { repo, base } = fixture();
+		const fake = new FakeHerdr();
+		const kernel = fakeKernel(new Map([[TASK, "r1"]]), new Set());
+		const batchId = `batch-${SLUG}-start`;
+		const first = await dispatchLoopDrive(initiativeArgs(repo, base, batchId, kernel, fake));
+		expect(first.reason).toBe("lane running");
+		expect(first.settled).toBe(false);
+		expect(first.batch_id).toBe(batchId);
+		const record = readAnyBatchRunState(repo, batchId);
+		if (!record || !isLaneBatchRecord(record)) throw new Error("expected a v3 lane batch record");
+		// The Initiative entry kind carries no plan_source, like a Host Initiative record.
+		expect(record.plan_source).toBeUndefined();
+		expect(record.initiative_slug).toBe(SLUG);
+		expect(record.return_policy).toBe("retain_branch");
+		expect(record.interaction_mode).toBe("parent_relayed");
+		expect(record.final_verification_required).toBe(true);
+		expect(record.final_verification).toEqual(COMMANDS);
+		expect(record.confirmation).toMatchObject({ source: "policy_auto", ref: "policy_auto:plan" });
+		expect(fake.opens).toHaveLength(1);
+	});
+
+	it("refuses final_verification_required before writing anything when no commands are configured", async () => {
+		herdrEnv();
+		const { repo, base } = fixture();
+		const fake = new FakeHerdr();
+		const kernel = fakeKernel(new Map([[TASK, "r1"]]), new Set());
+		const batchId = `batch-${SLUG}-nocommands`;
+		const refused = await dispatchLoopDrive(initiativeArgs(repo, base, batchId, kernel, fake, { final_verification: [] }));
+		expect(refused.settled).toBe(false);
+		expect(refused.reason).toContain("final_verification_required");
+		expect(refused.batch_id).toBeNull();
+		expect(readAnyBatchRunState(repo, batchId)).toBeNull();
+		expect(fake.opens).toHaveLength(0);
+	});
+
+	it("refuses lane_session_unavailable without a usable provider and leaves no record", async () => {
+		const { repo, base } = fixture();
+		const fake = new FakeHerdr();
+		const kernel = fakeKernel(new Map([[TASK, "r1"]]), new Set());
+		const batchId = `batch-${SLUG}-refused`;
+		const refused = await dispatchLoopDrive(initiativeArgs(repo, base, batchId, kernel, fake));
+		expect(refused.settled).toBe(false);
+		expect(refused.reason).toContain("lane_session_unavailable");
+		expect(refused.batch_id).toBeNull();
+		expect(readAnyBatchRunState(repo, batchId)).toBeNull();
+		expect(fake.opens).toHaveLength(0);
+	});
+
+	it("refuses with the rejection reason when the batch authorization does not match the capability", async () => {
+		herdrEnv();
+		const { repo, base } = fixture();
+		const fake = new FakeHerdr();
+		const kernel = fakeKernel(new Map([[TASK, "r1"]]), new Set());
+		const batchId = `batch-${SLUG}-mismatch`;
+		const args = initiativeArgs(repo, base, batchId, kernel, fake, { slug: "other-initiative" });
+		const refused = await dispatchLoopDrive(args);
+		expect(refused.settled).toBe(false);
+		expect(refused.reason).toContain("initiative_slug mismatch");
+		expect(refused.batch_id).toBeNull();
+		expect(readAnyBatchRunState(repo, batchId)).toBeNull();
+	});
+
+	it("keeps single-task drives at final_verification.required false", async () => {
+		herdrEnv();
+		const { repo, base } = fixture();
+		const fake = new FakeHerdr();
+		const kernel = fakeKernel(new Map([[TASK, "r1"]]), new Set());
+		const batchId = `batch-${TASK}-single`;
+		await dispatchLoopDrive(driveArgs(repo, base, batchId, kernel, fake));
+		const record = readAnyBatchRunState(repo, batchId);
+		if (!record || !isLaneBatchRecord(record)) throw new Error("expected a v3 lane batch record");
+		expect(record.plan_source).toBe("single_task");
+		expect(record.final_verification_required).toBe(false);
+	});
+});
+
+describe("ULS S3-AC1: the Initiative PR gate", () => {
+	const SLUG = "widget-initiative";
+	const BATCH = `batch-${SLUG}-done`;
+	const CHILDREN = ["slice-one", "slice-two"] as const;
+	const ISSUE = 77;
+
+	const passedReport = {
+		passed: true,
+		head: null,
+		results: [{ command: "bun test", exit_code: 0, signal: null, passed: true, duration_ms: 1 }],
+	};
+	const failedReport = {
+		passed: false,
+		head: null,
+		results: [{ command: "bun test", exit_code: 1, signal: null, passed: false, duration_ms: 1 }],
+	};
+
+	/** A repository whose retained imm/<slug> carries both slices' intents and audit pairs, plus a v3 Initiative record over it. */
+	function seedInitiative(options: {
+		state?: "completed" | "running";
+		report?: typeof passedReport | typeof failedReport | null;
+		auditFor?: readonly string[];
+		stateDir?: boolean;
+	} = {}): { repo: string; commit: string; stateDir: string } {
+		const { repo } = fixture();
+		for (const id of CHILDREN) {
+			writeFileSync(
+				join(repo, `docs/plans/${id}.intent.json`),
+				`${JSON.stringify({
+					contract: "assurance_kernel/task_intent/v1",
+					task_id: id,
+					goal: `Deliver ${id}`,
+					acceptance: [{ id: `${id}-AC1`, assertion: "holds", verification: VERIFICATION }],
+					scope_hint: [`${id}.txt`],
+					risk: "routine",
+					revision: 1,
+				})}\n`,
+			);
+		}
+		for (const id of options.auditFor ?? CHILDREN) {
+			const dir = join(repo, ".imm/audit", id, "run-1");
+			mkdirSync(dir, { recursive: true });
+			writeFileSync(join(dir, "task-record.json"), `${JSON.stringify({ task_id: id })}\n`);
+			writeFileSync(join(dir, "terminal-proof.json"), `${JSON.stringify({ task_id: id, terminal_lifecycle: "done" })}\n`);
+		}
+		git(repo, "add", "-A");
+		git(repo, "commit", "-qm", "deliver slices");
+		const commit = git(repo, "rev-parse", "HEAD");
+		git(repo, "branch", `imm/${SLUG}`, commit);
+		const prepared = prepareBatchLaneRunState({
+			batch_id: BATCH,
+			initiative_slug: SLUG,
+			children: CHILDREN.map((id) => ({
+				task_id: id, slice_id: id, blocked_by: [], status: "enrollable" as const, reason: null,
+				intent_path: `docs/plans/${id}.intent.json`, intent_revision: 1, intent_content_hash: "sha256:x",
+			})),
+			plan_digest: "sha256:plan",
+			base_head: "0".repeat(40),
+			confirmation_time: TS,
+			budget: { max_children: 2, qa_failure_limit: 1 },
+			max_parallel: 1,
+			now: TS,
+		});
+		writeBatchLaneRunState(repo, {
+			...prepared,
+			batch_state: options.state ?? "completed",
+			final_verification: ["bun test"],
+			...(options.report === null ? {} : { final_verification_result: options.report ?? passedReport }),
+			children: CHILDREN.map((id) => ({
+				task_id: id, slice_id: id, blocked_by: [], state: "integrated" as const, reason: null, commit,
+				lane: { path: join(repo, "lane", id), branch: `imm-lane/${id}/${id}`, base_head: commit, lane_commit: commit },
+				qa_failures: 0, session: null,
+			})),
+			commits: [commit],
+		} as never);
+		const stateDir = join(repo, ".imm/state/loop");
+		mkdirSync(stateDir, { recursive: true });
+		const item = newWorkItem(`issue-${ISSUE}`, "driving", TS);
+		item.binding.initiative_slug = SLUG;
+		item.binding.batch_id = BATCH;
+		writeWorkItem(stateDir, item);
+		return { repo, commit, stateDir };
+	}
+
+	const e13 = (id: string): E13LaneSettledEvent => ({
+		contract: LOOP_DAEMON_EVENT_CONTRACT,
+		event_id: id,
+		kind: "E13_LANE_SETTLED",
+		timestamp: TS,
+		issue_number: ISSUE,
+		task_id: CHILDREN[0],
+		job_id: "job-1",
+		final_commit_sha: null,
+		verification_evidence_digest: null,
+	});
+
+	async function openPr(repo: string, stateDir: string, port: ReturnType<typeof createFakeLoopGitHubPort>, event: E13LaneSettledEvent) {
+		const decision: LoopDecisionRecord = {
+			contract: "assurance_kernel/loop_decision_record/v1",
+			decision_id: `dec-${event.event_id}`,
+			event_id: event.event_id,
+			event_kind: event.kind,
+			target: { kind: "issue", id: String(ISSUE) },
+			handler: "open_pr",
+			tier: 1,
+			reason: "lane settled with a Kernel projection",
+			guards_passed: ["G1"],
+			mutations: [],
+			dry_run: false,
+			recorded_at: TS,
+		};
+		const loopConfig = {
+			mode: "assist", interval_seconds: 45, max_concurrent: 2, max_ready_buffer: 5, max_pr_buffer: 5,
+			auto_enroll_max_risk: "none", allowed_actors: [], allowed_associations: ["OWNER"],
+			budget: { max_ticks_per_day: null, max_dispatches_per_day: null },
+		};
+		const result = await dispatchDecisions({
+			root: repo,
+			stateDir,
+			loopConfig: loopConfig as never,
+			events: [event],
+			decisions: [decision],
+			snapshot: { issues: [], pull_requests: [], lane_decisions: [] },
+			state: initLoopState(),
+			gitHubPort: port,
+			guardFacts: {
+				allowed_actors: [], allowed_associations: ["OWNER"], daemon_identity: "daemon-bot", budget_exhausted: false,
+				retry_counts: {}, unresolved_blockers: {}, shutdown_requested: false,
+			},
+			dryRun: false,
+			now: TS,
+		});
+		return result.dispatches[0]!;
+	}
+
+	it("opens one PR from imm/<slug> listing every child's acceptance ids and audit digest, and status shows it in review", async () => {
+		const { repo, commit, stateDir } = seedInitiative();
+		const evidence = batchDeliveryEvidence(repo, BATCH);
+		if (!evidence.ok) throw new Error(`expected delivery evidence: ${evidence.reason}`);
+		expect(evidence).toMatchObject({ slug: SLUG, branch: `imm/${SLUG}`, commit });
+		expect(evidence.children.map((child) => child.task_id)).toEqual([...CHILDREN]);
+		const port = createFakeLoopGitHubPort();
+		const event = e13("evt-e13-initiative");
+		const dispatched = await openPr(repo, stateDir, port, event);
+		expect(dispatched).toMatchObject({ handler: "open_pr", outcome: "executed" });
+		expect(port.prs.size).toBe(1);
+		const pr = [...port.prs.values()][0]!;
+		expect(pr.head).toBe(`imm/${SLUG}`);
+		for (const child of evidence.children) {
+			expect(pr.body).toContain(`${child.task_id}-AC1`);
+			expect(pr.body).toContain(child.digest);
+		}
+		expect(pr.body).toContain(evidence.digest);
+		expect(pr.body).toContain(commit);
+		expect(pr.body).toContain(`Closes #${ISSUE}`);
+		// The judged E13 moves the item to review; its batch binding is kept.
+		const { item } = recordWorkItemOutcome(stateDir, { event, handler: "open_pr", plan_digest: null, now: TS });
+		expect(item?.state).toBe("pr_open");
+		expect(readWorkItem(stateDir, `issue-${ISSUE}`)?.binding.batch_id).toBe(BATCH);
+	});
+
+	it("opens no second PR for a repeated E13 of the same batch", async () => {
+		const { repo, stateDir } = seedInitiative();
+		const port = createFakeLoopGitHubPort();
+		await openPr(repo, stateDir, port, e13("evt-e13-first"));
+		const second = await openPr(repo, stateDir, port, e13("evt-e13-second"));
+		expect(second.outcome).toBe("executed");
+		expect(second.detail).toContain("found existing PR");
+		expect(port.prs.size).toBe(1);
+	});
+
+	it.each([
+		["a child without audit evidence", { auditFor: [CHILDREN[0]] }, "no audit evidence for slice-two"],
+		["a failed final verification", { report: failedReport }, "final_verification_failed"],
+		["a missing final verification result", { report: null }, "final_verification_missing"],
+		["a batch that is not completed", { state: "running" as const, report: null }, "batch_not_completed"],
+	])("opens no PR and names the reason for %s", async (_name, options, reason) => {
+		const { repo, stateDir } = seedInitiative(options);
+		const evidence = batchDeliveryEvidence(repo, BATCH);
+		expect(evidence).toMatchObject({ ok: false, reason: expect.stringContaining(reason) });
+		const port = createFakeLoopGitHubPort();
+		const dispatched = await openPr(repo, stateDir, port, e13("evt-e13-refused"));
+		expect(dispatched).toMatchObject({ handler: "open_pr", outcome: "failed", detail: expect.stringContaining(reason) });
+		expect(port.prs.size).toBe(0);
+	});
+
+	it("refuses when the retained branch is gone", () => {
+		const { repo } = seedInitiative();
+		git(repo, "branch", "-D", `imm/${SLUG}`);
+		expect(batchDeliveryEvidence(repo, BATCH)).toMatchObject({ ok: false, reason: expect.stringContaining("retained_branch_missing") });
+	});
+
+	it("keeps single-task delivery on refs/heads/imm/<task_id>", async () => {
+		const { repo, stateDir } = seedInitiative();
+		// A WorkItem with no recorded batch is a single-task delivery: the Initiative record is not consulted.
+		writeWorkItem(stateDir, newWorkItem(`issue-${ISSUE}`, "driving", TS));
+		const port = createFakeLoopGitHubPort();
+		const dispatched = await openPr(repo, stateDir, port, e13("evt-e13-single"));
+		expect(dispatched).toMatchObject({ handler: "open_pr", outcome: "failed", detail: expect.stringContaining("no delivery evidence for slice-one") });
+		expect(port.prs.size).toBe(0);
 	});
 });

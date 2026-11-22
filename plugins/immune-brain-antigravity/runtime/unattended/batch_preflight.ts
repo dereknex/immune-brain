@@ -11,7 +11,7 @@
 // anything, including on decline, cancel, or rejection.
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
 
@@ -1233,6 +1233,66 @@ export function laneDeliveryEvidence(root: string, taskId: string):
 	const digest = auditEvidenceDigest(root, commit, taskId);
 	if (!digest) return { ok: false, reason: `no audit evidence for ${taskId} at ${commit.slice(0, 12)}` };
 	return { ok: true, batch_id: record.batch_id, commit, digest };
+}
+
+/** One child's settled delivery inside an Initiative batch: its audit digest at the batch commit. */
+export interface BatchDeliveryChild {
+	task_id: string;
+	digest: string;
+}
+
+/**
+ * ULS Spec D3.1, the daemon Initiative PR gate: the settled delivery evidence of
+ * one whole v3 batch. The record must be `completed` with a passing final
+ * verification, the commit is the batch's last integrated commit and the retained
+ * `imm/<slug>` branch must still contain it, and every child must be integrated
+ * with a tracked `.imm/audit/` pair at that commit. The aggregate digest is
+ * SHA-256 over the sorted `task_id:digest` lines. Every refusal names its reason
+ * (`batch_not_completed`, `final_verification_missing`, `final_verification_failed`,
+ * `retained_branch_missing`, `no integrated delivery`, `no audit evidence`), so the
+ * gate fails closed instead of guessing.
+ */
+export function batchDeliveryEvidence(root: string, batchId: string):
+	| { ok: true; batch_id: string; slug: string; branch: string; commit: string; digest: string; children: BatchDeliveryChild[] }
+	| { ok: false; reason: string } {
+	let record: AnyBatchRunStateRecord | null;
+	try {
+		record = readAnyBatchRunState(root, batchId);
+	} catch (error) {
+		return { ok: false, reason: `batch_record_unreadable: ${batchId}: ${error instanceof Error ? error.message : String(error)}` };
+	}
+	if (!record || !isLaneBatchRecord(record)) return { ok: false, reason: `no batch record for ${batchId}` };
+	if (record.batch_state !== "completed")
+		return { ok: false, reason: `batch_not_completed: ${batchId} is ${record.batch_state}` };
+	if (record.final_verification_result === undefined)
+		return { ok: false, reason: `final_verification_missing: ${batchId} completed without a final verification result` };
+	if (record.final_verification_result.passed !== true)
+		return { ok: false, reason: `final_verification_failed: ${batchId} completed without a passing final verification` };
+	const commit = record.commits.at(-1) ?? null;
+	if (!commit) return { ok: false, reason: `no integrated commit for batch ${batchId}` };
+	const branch = record.branch ?? `imm/${record.initiative_slug}`;
+	let tip: string | null;
+	try {
+		tip = readBatchRef(root, branch);
+	} catch (error) {
+		return { ok: false, reason: `retained_branch_missing: ${branch}: ${error instanceof Error ? error.message : String(error)}` };
+	}
+	if (!tip) return { ok: false, reason: `retained_branch_missing: ${branch} is not retained for ${batchId}` };
+	const contained = spawnSync("git", ["-C", root, "merge-base", "--is-ancestor", commit, tip], { stdio: "ignore" });
+	if (contained.status !== 0)
+		return { ok: false, reason: `retained_branch_missing: ${branch} at ${tip.slice(0, 12)} does not contain batch commit ${commit.slice(0, 12)}` };
+	const children: BatchDeliveryChild[] = [];
+	for (const child of record.children) {
+		if (child.state !== "integrated" && child.state !== "released")
+			return { ok: false, reason: `no integrated delivery for ${child.task_id} (child state ${child.state})` };
+		const digest = auditEvidenceDigest(root, commit, child.task_id);
+		if (!digest) return { ok: false, reason: `no audit evidence for ${child.task_id} at ${commit.slice(0, 12)}` };
+		children.push({ task_id: child.task_id, digest });
+	}
+	if (children.length === 0) return { ok: false, reason: `no children recorded for batch ${batchId}` };
+	const lines = children.map(child => `${child.task_id}:${child.digest}`).sort();
+	const digest = `sha256:${createHash("sha256").update(lines.join("\n")).digest("hex")}`;
+	return { ok: true, batch_id: record.batch_id, slug: record.initiative_slug, branch, commit, digest, children: children.sort((a, b) => a.task_id.localeCompare(b.task_id)) };
 }
 
 /**

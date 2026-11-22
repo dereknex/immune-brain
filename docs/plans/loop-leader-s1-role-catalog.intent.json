@@ -1,0 +1,47 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "loop-leader-s1-role-catalog",
+  "owner": "user",
+  "goal": "Add the project-level loop role catalog (loop.roles in .imm/config.json) with closed capability bases, limits, advisory instructions and diagnostics, resolve it in imm-kernel config --json, and make loop clarify, plan and repair sessions take Host, model, effort and limits from it, per D1 of docs/specs/loop-leader.spec.md.",
+  "acceptance": [
+    {
+      "id": "S1-AC1",
+      "assertion": "Source BR-REQ-1, BR-DEC-6, BR-DEC-8; meet D1.1-D1.5 in docs/specs/loop-leader.spec.md. Agreed seam: tests/loop-role-catalog.test.ts and tests/layered-config.test.ts. Done looks like: loop.roles with a leader role, a planner role on base plan and a security-analyst role on base analyze resolves in imm-kernel config --json under loop.value.roles with base, host, model, effort, when, instructions, limits and source project; an absent loop.roles yields one default role per base on claude-code with limits 40/900/1. Negative: unknown base reports role_base_unknown; an invalid name reports role_name_invalid; instructions ../x.md reports role_instructions_outside_repo; a missing instructions file reports role_instructions_missing; two leader-base roles report leader_role_duplicate; turn_budget 0 reports role_limit_out_of_range, and each rejected role is absent from the catalog. Bound: max_parallel 9 and timeout_s 59 are rejected while max_parallel 8 is accepted; derived-output checks and typecheck pass.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/loop-role-catalog.test.ts tests/layered-config.test.ts && bun scripts/sync-dist-docs.ts --check && bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "S1-AC2",
+      "assertion": "Source BR-DEC-7, BR-DEC-9, BR-DEC-8; meet D1.6-D1.8 in docs/specs/loop-leader.spec.md. Agreed seam: tests/loop-sched-role-sessions.test.ts and tests/agent-roles-config.test.ts. Done looks like: loop clarify, plan and repair sessions use the Host, model, effort, turn_budget and timeout_s of their catalog role, and the role instructions file content is appended to the prompt as advisory text without changing permission flags. Negative: an explicit agents.presets.<preset>.roles.plan, clarify or repair binding and a \"*\" wildcard binding to pi no longer affect loop sessions, and each affected loop role yields one deprecated_config_source diagnostic naming the binding path and loop.roles in .imm/config.json; a configured Host whose binary is absent concludes the session failed with role_host_unavailable and spawns no other Host; read-only argv never contains acceptEdits or --dangerously-skip-permissions. Bound: agents.executor still selects the Lane Host.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-sched-role-sessions.test.ts\",\n      \"tests/agent-roles-config.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/loop-leader-s1-role-catalog.md",
+    "docs/agents/derived-files.json",
+    "docs/plans/loop-leader-s1-role-catalog.intent.json",
+    "docs/reference/immune-brain-config.md",
+    "docs/specs/loop-leader.spec.md",
+    "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+    "plugins/immune-brain-antigravity/dist/docs/reference/immune-brain-config.md",
+    "plugins/immune-brain-antigravity/runtime/config/agent_roles.ts",
+    "plugins/immune-brain-antigravity/runtime/config/layered_config.ts",
+    "plugins/immune-brain-antigravity/runtime/loop_daemon/agent_handlers.ts",
+    "plugins/immune-brain-antigravity/runtime/loop_daemon/agent_runner.ts",
+    "plugins/immune-brain-antigravity/runtime/loop_daemon/cli.ts",
+    "plugins/immune-brain-antigravity/runtime/loop_daemon/role_catalog.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/docs/reference/immune-brain-config.md",
+    "plugins/immune-brain/runtime/config/agent_roles.ts",
+    "plugins/immune-brain/runtime/config/layered_config.ts",
+    "plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts",
+    "plugins/immune-brain/runtime/loop_daemon/agent_runner.ts",
+    "plugins/immune-brain/runtime/loop_daemon/cli.ts",
+    "plugins/immune-brain/runtime/loop_daemon/role_catalog.ts",
+    "tests/agent-roles-config.test.ts",
+    "tests/layered-config.test.ts",
+    "tests/loop-role-catalog.test.ts",
+    "tests/loop-sched-role-sessions.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

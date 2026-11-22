@@ -14,7 +14,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, writeFileSync }
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMcpRuntime, listMcpTools } from "../plugins/immune-brain/runtime/claude/mcp_server";
-import { resolveConfig } from "../plugins/immune-brain/runtime/config/layered_config";
+import { DEFAULT_LOOP_CONFIG, resolveConfig } from "../plugins/immune-brain/runtime/config/layered_config";
 import { listPendingLoopInteractions } from "../plugins/immune-brain/runtime/host-core/loop_interactions";
 import { readTaskRecordRaw } from "../plugins/immune-brain/runtime/kernel/storage";
 import type { relayLaneDecision } from "../plugins/immune-brain/runtime/unattended/lane_decision";
@@ -29,7 +29,12 @@ import {
 	loopInteractionStateDir,
 	readLocalAnswer,
 	readLocalRequest,
+	writeLocalAnswer,
 } from "../plugins/immune-brain/runtime/loop_daemon/interaction/local_channel";
+import { askOwnerQuestion } from "../plugins/immune-brain/runtime/loop_daemon/replan";
+import { dispatchDecisions } from "../plugins/immune-brain/runtime/loop_daemon/dispatch";
+import { initLoopState } from "../plugins/immune-brain/runtime/loop_daemon/state";
+import { listWaitingStatus } from "../plugins/immune-brain/runtime/loop_daemon/waiting";
 import { prepareBatchLaneRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
 import { loopInteractionToolDefinitions } from "../plugins/immune-brain/.pi-extension/imm-canary-work";
 import { enrollTaskForTest } from "./helpers/kernel-enroll";
@@ -39,6 +44,7 @@ setDefaultTimeout(60_000);
 const TASK = "loop-sched-local-task";
 const OPTION = "authorize";
 const ENV = { CLAUDE_CODE_VERSION: "2.1.236", CLAUDE_CODE_PERMISSION_MODE: "manual" };
+const TS = "2026-01-01T00:00:00.000Z";
 
 const roots: string[] = [];
 afterEach(() => {
@@ -479,5 +485,221 @@ describe("Pi tool registration", () => {
 		await expect(
 			answerTool.execute("tool-call-2", { interaction_id: "x", answer: OPTION }, undefined, undefined, { ...ctx, mode: "print" } as never),
 		).rejects.toThrow(/native confirmation/);
+	});
+});
+
+// S4-AC2: the local channel stores the same context pack the GitHub channel
+// renders, `ask_owner` annotates a pending `literal_user` request in place, a
+// new advisory question supersedes the pending one, and status shows a pointer.
+const CONTEXT = {
+	blocked_on: "the Lane waits on a decision only you can make",
+	tried: ["relayed the question once"],
+	options: [{ id: OPTION, label: "Authorize", consequence: "the revision is applied" }],
+	evidence: [{ label: "run", ref: "https://example.test/runs/4" }],
+};
+
+describe("local interaction context and waiting pointers (S4-AC2)", () => {
+	test("stores the context pack and returns it from loop_interactions", async () => {
+		const root = checkout({ interaction: { channel: "local" } });
+		const stateDir = loopInteractionStateDir(root);
+		const request = { ...laneRequest("rev-ctx"), context: CONTEXT };
+		expect(await createLocalInteractionChannel({ stateDir }).post(request)).toBe("posted");
+
+		expect(readLocalRequest(stateDir, request.interaction_id)?.context).toEqual(CONTEXT);
+		expect(listPendingLoopInteractions(root, TASK).pending[0]?.context).toEqual(CONTEXT);
+	});
+
+	test("annotates a pending lane_decision in place and still applies the owner's answer", async () => {
+		const root = checkout({ interaction: { channel: "local" } });
+		const stateDir = loopInteractionStateDir(root);
+		const request = laneRequest("rev-annotate");
+		const channel = createLocalInteractionChannel({
+			stateDir,
+			binding: () => ({ record_revision: "rev-annotate" }),
+		});
+		expect(await channel.post(request)).toBe("posted");
+
+		const asked = await askOwnerQuestion(
+			{
+				stateDir,
+				now: TS,
+				target: `lane-${TASK}`,
+				channel,
+				pending_literal_user: [{ interaction_id: request.interaction_id, kind: "lane_decision" }],
+			},
+			{ subject: request.subject, context: CONTEXT },
+		);
+		expect(asked.action).toBe("annotated");
+		expect(asked.interaction_id).toBe(request.interaction_id);
+		// RF-AC4: the annotated request is what the target now waits on.
+		expect(listWaitingStatus(stateDir)).toEqual([
+			{ target: `lane-${TASK}`, kind: "lane_decision", channel: "local", link: expect.stringContaining(request.interaction_id) },
+		]);
+
+		// The rewrite keeps the request's identity and answer semantics.
+		const stored = readLocalRequest(stateDir, request.interaction_id)!;
+		expect(stored).toMatchObject({
+			interaction_id: request.interaction_id,
+			kind: "lane_decision",
+			binding: { record_revision: "rev-annotate" },
+			answer: "choice",
+			context: CONTEXT,
+		});
+		// A second `ask_owner` for the same subject annotates rather than duplicates.
+		expect(listPendingLoopInteractions(root, TASK).pending_count).toBe(1);
+
+		writeLocalAnswer(stateDir, {
+			interaction_id: request.interaction_id,
+			kind: "lane_decision",
+			subject: request.subject,
+			binding: { record_revision: "rev-annotate" },
+			value: OPTION,
+			confirmation: { tool: "answer_loop_interaction", confirmed_at: TS, confirmation_ref: "call-annotate" },
+		});
+		expect(await channel.poll(request.interaction_id)).toMatchObject({ state: "answered", value: OPTION });
+	});
+
+	test("supersedes a pending advisory request but never a literal_user one", async () => {
+		const root = checkout({ interaction: { channel: "local" } });
+		const stateDir = loopInteractionStateDir(root);
+		const channel = createLocalInteractionChannel({ stateDir });
+		const advisory = (id: string, prompt: string) => ({
+			contract: "immune_brain/interaction_request/v1" as const,
+			interaction_id: id,
+			kind: "escalation" as const,
+			subject: { issue: 42 },
+			binding: {},
+			prompt,
+			answer: "none" as const,
+			authority: "advisory" as const,
+			context: CONTEXT,
+		});
+		await channel.post(advisory("escalation:first", "first question"));
+		await channel.post(advisory("escalation:second", "second question"));
+
+		expect(readLocalRequest(stateDir, "escalation:first")).toBeNull();
+		expect(readLocalRequest(stateDir, "escalation:second")).not.toBeNull();
+
+		// A pending literal_user request on the same subject is never superseded.
+		const approval = {
+			contract: "immune_brain/interaction_request/v1" as const,
+			interaction_id: "plan-approval:issue-42",
+			kind: "plan_approval" as const,
+			subject: { issue: 42 },
+			binding: { plan_digest: "sha256:plan" },
+			prompt: "approve the plan",
+			answer: "approve_digest" as const,
+			authority: "literal_user" as const,
+		};
+		await channel.post(approval);
+		await channel.post(advisory("escalation:third", "third question"));
+		expect(readLocalRequest(stateDir, approval.interaction_id)).not.toBeNull();
+		expect(readLocalRequest(stateDir, "escalation:second")).toBeNull();
+	});
+
+	test("keeps one pointer per target and drops it when the request is retired", async () => {
+		const root = checkout({ interaction: { channel: "local" } });
+		const stateDir = loopInteractionStateDir(root);
+		const channel = createLocalInteractionChannel({ stateDir });
+
+		await askOwnerQuestion(
+			{ stateDir, now: TS, target: "issue-42", channel, pending_literal_user: [] },
+			{ subject: { issue: 42 }, context: CONTEXT },
+		);
+		const second = await askOwnerQuestion(
+			{ stateDir, now: TS, target: "issue-42", channel, pending_literal_user: [] },
+			{ subject: { issue: 42 }, context: { ...CONTEXT, blocked_on: "the blocker changed" } },
+		);
+
+		// The superseded request retired its own pointer with it.
+		expect(listWaitingStatus(stateDir)).toHaveLength(1);
+		expect(listWaitingStatus(stateDir)[0]!.link).toContain(second.interaction_id);
+
+		await channel.withdraw(second.interaction_id);
+		expect(listWaitingStatus(stateDir)).toEqual([]);
+	});
+
+	test("the Status Issue renders the waiting link, not the question", async () => {
+		const root = checkout({ interaction: { channel: "local" } });
+		const stateDir = loopInteractionStateDir(root);
+		const asked = await askOwnerQuestion(
+			{ stateDir, now: TS, target: "issue-42", channel: createLocalInteractionChannel({ stateDir }), pending_literal_user: [] },
+			{ subject: { issue: 42 }, context: CONTEXT },
+		);
+
+		const edits: Array<{ number: number; body: string }> = [];
+		const created: string[] = [];
+		const port = {
+			async postComment() {
+				return { id: 1 };
+			},
+			async editComment() {},
+			async createIssue(_title: string, body: string) {
+				created.push(body);
+				return { number: 900 };
+			},
+			async editIssue(number: number, body: string) {
+				edits.push({ number, body });
+			},
+			async upsertPullRequest() {
+				return { number: 1, url: "https://example.test/pr/1" };
+			},
+			async markPrReady() {},
+			async checkLog() {
+				return null;
+			},
+			async prReviewComments() {
+				return [];
+			},
+		};
+		const statusIssue = {
+			id: 900,
+			number: 900,
+			title: "Loop daemon status",
+			body: "<!-- immune-brain:kind=loop-status -->\nold status",
+			state: "open" as const,
+			created_at: TS,
+			updated_at: TS,
+			author: { login: "imm-bot" },
+		};
+		await dispatchDecisions({
+			root,
+			stateDir,
+			loopConfig: DEFAULT_LOOP_CONFIG,
+			events: [],
+			decisions: [],
+			snapshot: { issues: [statusIssue], pull_requests: [], observed_at: TS },
+			state: initLoopState(),
+			gitHubPort: port as never,
+			guardFacts: { identity_posture: "isolated" },
+			dryRun: false,
+			now: TS,
+		});
+
+		expect(created).toEqual([]);
+		expect(edits).toHaveLength(1);
+		// The pointer the daemon recorded is the link the Status Issue shows.
+		expect(edits[0]!.body).toContain("### Waiting on owner");
+		expect(edits[0]!.body).toContain(asked.link!);
+		expect(edits[0]!.body).not.toContain(CONTEXT.blocked_on);
+	});
+
+	test("records the local pointer status lists for an owner question", async () => {
+		const root = checkout({ interaction: { channel: "local" } });
+		const stateDir = loopInteractionStateDir(root);
+		const channel = createLocalInteractionChannel({ stateDir });
+
+		const asked = await askOwnerQuestion(
+			{ stateDir, now: TS, target: "issue-42", channel, pending_literal_user: [] },
+			{ subject: { issue: 42 }, context: CONTEXT },
+		);
+
+		expect(asked.action).toBe("posted");
+		const waiting = listWaitingStatus(stateDir);
+		expect(waiting).toHaveLength(1);
+		expect(waiting[0]).toMatchObject({ target: "issue-42", kind: "escalation", channel: "local" });
+		expect(waiting[0]!.link).toContain(asked.interaction_id);
+		// The pointer is a link, not the question.
+		expect(JSON.stringify(waiting)).not.toContain(CONTEXT.blocked_on);
 	});
 });

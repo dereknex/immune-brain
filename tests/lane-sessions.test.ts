@@ -12,7 +12,8 @@ import type { BatchRunnerKernelPort } from "../plugins/immune-brain/runtime/unat
 import type { StartBatchInput } from "../plugins/immune-brain/runtime/unattended/batch_lanes";
 import type { BatchPlanChild } from "../plugins/immune-brain/runtime/unattended/types";
 import type { BatchAgreement } from "../plugins/immune-brain/runtime/unattended/batch_agreement";
-import { startLanes, advanceLanes, observeLanes } from "../plugins/immune-brain/runtime/lane_sessions/index";
+import { startLanes, advanceLanes, observeLanes, executorSessionTarget } from "../plugins/immune-brain/runtime/lane_sessions/index";
+import { runtimeClaudePluginDir } from "../plugins/immune-brain/runtime/plugin_source_skew";
 import { reconcileChildSession } from "../plugins/immune-brain/runtime/unattended/child_session_reconciler";
 import { SessionPortAdapter } from "../plugins/immune-brain/runtime/lane_sessions/session_port_adapter";
 import type { SupervisedSessionPort } from "../plugins/immune-brain/runtime/session/supervised_session_port";
@@ -565,6 +566,57 @@ describe("Herdr leak guard: injected port never touches the `herdr` binary", () 
 		} finally {
 			process.env.PATH = priorPath;
 			rmSync(sentinelDir, { recursive: true, force: true });
+			fx.cleanup();
+		}
+	});
+});
+
+describe("LEL-AC1: a claude-code Executor loads the runtime's own Claude plugin root", () => {
+	const profile = { model: "m", effort: "high" };
+	test("claude-code argv appends --plugin-dir after --model and --effort", () => {
+		const target = executorSessionTarget({ root: tmpdir(), executor: { host: "claude-code", ...profile }, host: "pi", pluginDir: () => "/real/claude-root" });
+		expect(target).toEqual({ host: "claude-code", hostArgs: ["--model", "m", "--effort", "high", "--plugin-dir", "/real/claude-root"] });
+	});
+	test("the default root is the realpath of the Claude plugin the runtime was loaded from", () => {
+		const loadedFrom = runtimeClaudePluginDir();
+		expect(loadedFrom).not.toBeNull();
+		const target = executorSessionTarget({ root: tmpdir(), executor: { host: "claude-code", ...profile }, host: "pi" });
+		expect(target.hostArgs.slice(-2)).toEqual(["--plugin-dir", realpathSync(loadedFrom!)]);
+	});
+	test("no resolvable root adds no flag, and a throwing resolver does not fail the open", () => {
+		for (const pluginDir of [() => null, () => { throw new Error("no manifest"); }]) {
+			const target = executorSessionTarget({ root: tmpdir(), executor: { host: "claude-code", ...profile }, host: "pi", pluginDir });
+			expect(target.hostArgs).toEqual(["--model", "m", "--effort", "high"]);
+		}
+	});
+	test("pi and antigravity Executors never get --plugin-dir", () => {
+		const pi = executorSessionTarget({ root: tmpdir(), executor: { host: "pi", ...profile }, host: "claude-code", pluginDir: () => "/real/claude-root" });
+		expect(pi.hostArgs).toEqual(["--model", "m", "--thinking", "high"]);
+		const antigravity = executorSessionTarget({ root: tmpdir(), executor: { host: "antigravity", ...profile }, host: "claude-code", pluginDir: () => "/real/claude-root" });
+		expect(antigravity.hostArgs).not.toContain("--plugin-dir");
+	});
+	test("a Lane session opens and re-opens a claude-code Executor with --plugin-dir", async () => {
+		const fx = mkRepo(["task-a"]);
+		try {
+			const fake = new FakeSupervised("ws1");
+			const kernel = fakeKernel(new Map([["task-a", "r1"]]));
+			const agreement = agreementFor(fx.repo, fx.base, "batch-lel-ac1", "task-a", ["task-a"], { return_policy: "checkout_delivery", interaction_mode: "interactive_host" });
+			const env = { HERDR_ENV: "1", HERDR_WORKSPACE_ID: "ws1" };
+			const deps = { ...depsFor(fx.repo, kernel, fake, "claude-code", env, agreement), executor: { host: "claude-code", ...profile }, claudePluginDir: () => "/real/claude-root" };
+			const expected = [{ host: "claude-code", hostArgs: ["--model", "m", "--effort", "high", "--plugin-dir", "/real/claude-root"] }];
+			const started = (await startLanes(agreement, deps as never)) as unknown as { batch_state: string };
+			expect(started.batch_state).toBe("running");
+			expect(fake.opens).toEqual(expected);
+			// Drop the session so re-entry opens a fresh one through the resume path.
+			const record = readAnyBatchRunState(fx.repo, "batch-lel-ac1") as BatchLaneRunStateRecord;
+			writeBatchLaneRunState(fx.repo, { ...record, children: record.children.map((c) => ({ ...c, session: null })) });
+			fake.handles.clear();
+			fake.states.clear();
+			fake.opens.length = 0;
+			const resumed = (await advanceLanes(fx.repo, "batch-lel-ac1", deps as never)) as unknown as { batch_state: string };
+			expect(resumed.batch_state).toBe("running");
+			expect(fake.opens).toEqual(expected);
+		} finally {
 			fx.cleanup();
 		}
 	});

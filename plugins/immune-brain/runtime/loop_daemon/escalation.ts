@@ -42,8 +42,18 @@ export function parseEscalationKey(body: string): string | null {
  * deduplicates on, then the `escalation` request as the `github` channel
  * renders it (D3), so the comment is that request's record.
  */
-export function renderEscalationBody(key: string, message: string): string {
-	return `${escalationKeyMarker(key)}\n${renderInteractionBody(escalationInteractionRequest({ key, message }))}\n`;
+export function renderEscalationBody(key: string, message: string, options: EscalationRequestOptions = {}): string {
+	return `${escalationKeyMarker(key)}\n${renderInteractionBody(escalationInteractionRequest({ key, message, ...options }))}\n`;
+}
+
+/** ULS D5.2: the `interaction_id` prefix that names a Lane dialog the daemon already escalated once. */
+export const LANE_ENTRY_BLOCKED_ID_PREFIX = "escalation:lane_entry_blocked:";
+
+/** What a labelled escalation additionally carries: its class and the subject it is posted on. */
+export interface EscalationRequestOptions {
+	/** `lane_entry_blocked` makes the comment the one question a leader `ask_owner` annotates in place. */
+	label?: "lane_entry_blocked";
+	issue_number?: number;
 }
 
 export interface EscalationPlan {
@@ -61,9 +71,12 @@ export interface EscalationPlan {
  */
 export function planEscalation(
 	existing: readonly RawComment[],
-	input: { key: string; message: string },
+	input: { key: string; message: string } & EscalationRequestOptions,
 ): EscalationPlan {
-	const body = renderEscalationBody(input.key, input.message);
+	const body = renderEscalationBody(input.key, input.message, {
+		...(input.label === undefined ? {} : { label: input.label }),
+		...(input.issue_number === undefined ? {} : { issue_number: input.issue_number }),
+	});
 	const match = existing
 		.filter((comment) => parseEscalationKey(comment.body) === input.key)
 		.sort((a, b) => a.id - b.id)[0];
@@ -87,10 +100,11 @@ export function escalationInteractionRequest(input: {
 	message: string;
 	issue_number?: number;
 	pr_number?: number;
+	label?: "lane_entry_blocked";
 }): InteractionRequest {
 	return {
 		contract: INTERACTION_REQUEST_CONTRACT,
-		interaction_id: `escalation:${input.key}`,
+		interaction_id: input.label === "lane_entry_blocked" ? `${LANE_ENTRY_BLOCKED_ID_PREFIX}${input.key}` : `escalation:${input.key}`,
 		kind: "escalation",
 		subject: {
 			...(input.issue_number === undefined ? {} : { issue: input.issue_number }),

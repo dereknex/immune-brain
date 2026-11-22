@@ -16,20 +16,27 @@
  */
 
 import { spawn } from "node:child_process";
-import { chmodSync, closeSync, existsSync, fstatSync, openSync, readSync } from "node:fs";
+import { chmodSync, closeSync, existsSync, fstatSync, mkdtempSync, openSync, readSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
-import { DEFAULT_LOOP_CONFIG, type LoopConfig, resolveConfig } from "../config/layered_config.ts";
+import { DEFAULT_LOOP_CONFIG, LOOP_LEADER_WAKES_BOUNDS, type LoopConfig, resolveConfig } from "../config/layered_config.ts";
 import { createGhTransport, type GhTransport } from "../github_issue_tracker.ts";
 import { readTaskRecordRaw } from "../kernel/storage.ts";
+import { projectAssurance } from "../kernel/assurance_projection.ts";
+import type { LaneSessionsDeps } from "../lane_sessions/index.ts";
 import { readNoTouch } from "../no_touch.ts";
 import { findLaneRelayTarget, type relayLaneDecision } from "../unattended/lane_decision.ts";
 import { POINT_REGISTRY } from "../decision_model/thresholds.ts";
 import { buildDecisionRecord } from "./decision_record.ts";
-import { findLatestLaneDecisionQuestion } from "./decision_relay.ts";
 import { selectBestDuplicateCandidate } from "./duplicate_candidates.ts";
-import { createCliAgentSessionProvider, loopRoleProfile } from "./agent_runner.ts";
+import { loopSessionLimits, runAgentSession, sessionEnvironment, type AgentSessionKind, type AgentSessionProvider } from "./agent_runner.ts";
+import { readBatchSummaries, recordLeaderWake, runLeaderTick } from "./leader_agent.ts";
+import { applyLeaderProposal, parseInitiativePlan, type InitiativePlan, type LeaderDispatchDeps } from "./leader_dispatch.ts";
+import { reconcileCandidates } from "./reconcile.ts";
+import { reapOrphanedRoleSessions, runningRoleSessions } from "./role_sessions.ts";
+import type { ResolvedLoopRole } from "./role_catalog.ts";
 import {
 	createAgentHandlerPort,
 	createDefaultAgentHandlerDeps,
@@ -42,9 +49,14 @@ import { type GuardFacts, eventTarget } from "./guards.ts";
 import { detectIdentityPosture, inspectDaemonIdentity, readAuthenticatedGithubLogin } from "./identity.ts";
 import {
 	applyLocalLaneDecisionAnswers,
+	createLocalInteractionChannel,
 	localClarifyAnswerDecisions,
 	localDecisionRecordRevision,
 } from "./interaction/local_channel.ts";
+import { createGithubInteractionChannel } from "./interaction/github_channel.ts";
+import { askOwnerQuestion, batchStateForTarget, collectResolveFacts } from "./replan.ts";
+import { resolveSubject } from "./leader_dispatch.ts";
+import { clearWaitingPointer, listWaitingStatus } from "./waiting.ts";
 import { loopJobEvents, reconcileLoopJobs } from "./jobs.ts";
 import {
 	type ClassifyFn,
@@ -52,19 +64,22 @@ import {
 	judgeEvents,
 	type JudgingBudgetTracker,
 } from "./judgement.ts";
-import { createSessionJudgingAgent, type JudgingAgentFn } from "./judging_agent.ts";
 import { acquireDaemonLock, cleanStaleDaemonLock, isPidAlive, readDaemonLock } from "./lock.ts";
 import { observeGithub } from "./observer.ts";
 import { rebuildLoopState } from "./rebuild.ts";
 import { reconcileSkippedDecisions, shouldRunScheduledReconcile } from "./reconcile.ts";
 import {
 	ensureWorkItems,
+	listWorkItems,
 	pendingClarifyInteractions,
 	recordJudgedEvents,
 	recordWorkItemOutcome,
 	selectUnjudgedEvents,
 	type JudgedEventSelection,
 } from "./work_items.ts";
+import { readLeaderJournal } from "./leader_journal.ts";
+import { discardAbandonedBatches, type DiscardTickEntry } from "./discard.ts";
+import { applySteeringRequests } from "./steering.ts";
 import { loadRepairRetries } from "./repair_agent.ts";
 import { budgetExhausted, type ScheduleBudget } from "./scheduler.ts";
 import {
@@ -75,6 +90,7 @@ import {
 	initLoopState,
 	inspectLoopDaemonState,
 	loadLoopState,
+	rollDailyStats,
 	saveLoopState,
 } from "./state.ts";
 import type { ObservationInput } from "./types.ts";
@@ -246,6 +262,131 @@ function spawnDetachedDaemonProcess(params: SpawnDaemonParams): SpawnDaemonHandl
 	}
 }
 
+/** The session kind one catalog base's role runs as (Spec loop-leader D1.2). */
+const ROLE_SESSION_KIND: Record<string, AgentSessionKind> = {
+	clarify: "clarify",
+	plan: "planning",
+	repair: "repair",
+	analyze: "analyze",
+};
+
+function roleEntryPrompt(role: ResolvedLoopRole, subject: string, brief: string): string {
+	return [
+		`You are the Loop's \`${role.name}\` role (base \`${role.base}\`).`,
+		`Subject: ${subject}`,
+		"",
+		brief,
+		"",
+		"Report what you found.",
+	].join("\n");
+}
+
+/**
+ * Start one catalog role session for an accepted `dispatch` (D3.5). A read-only
+ * base runs in an empty directory it cannot write; a `repair` base runs in the
+ * daemon's own PR worktree and must leave a new commit there as its evidence.
+ */
+export function createRoleSessionRunner(input: {
+	provider: AgentSessionProvider;
+	root: string;
+	stateDir: string;
+	snapshot: ObservationInput;
+}): LeaderDispatchDeps["startSession"] {
+	return async ({ role, subject, brief, target }) => {
+		const kind = ROLE_SESSION_KIND[role.base];
+		if (kind === undefined) return { completed: false, reason: `role_base_not_dispatchable: ${role.base}` };
+		const limits = { turn_budget: role.limits.turn_budget, timeout_ms: role.limits.timeout_s * 1000 };
+		// D3.5: the session runs on the dispatched role's own profile, not the
+		// first role of its base, so two roles on one base stay distinct.
+		const profile = { host: role.host, model: role.model, effort: role.effort, instructions: role.instructions };
+		if (role.base === "repair") {
+			const prNumber = /^pr-(\d+)$/.exec(target);
+			const pr = prNumber ? input.snapshot.pull_requests.find((entry) => entry.number === Number(prNumber[1])) : undefined;
+			if (!pr) return { completed: false, reason: "repair_outside_daemon_branch" };
+			const worktree = createDefaultAgentHandlerDeps(input.root, { stateDir: input.stateDir }).prWorktree({
+				root: input.root,
+				pr_number: pr.number,
+				branch: pr.head_ref_name,
+				head_sha: pr.head_sha,
+			});
+			const record = await runAgentSession(
+				{ kind, worktree_path: worktree, prompt: roleEntryPrompt(role, subject, brief), ...limits, env: sessionEnvironment(null), profile },
+				input.provider,
+				{ branch: pr.head_ref_name, expect_head_change: true },
+			);
+			return { completed: record.status === "completed", reason: `${record.status}: ${record.reason}` };
+		}
+		const directory = mkdtempSync(join(tmpdir(), "imm-loop-role-"));
+		try {
+			const record = await runAgentSession(
+				{ kind, worktree_path: directory, prompt: roleEntryPrompt(role, subject, brief), ...limits, env: sessionEnvironment(null), profile },
+				input.provider,
+			);
+			return { completed: record.status === "completed", reason: `${record.status}: ${record.reason}` };
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
+	};
+}
+
+/**
+ * The Host a discarded Lane's session port is resolved for: the configured
+ * executor Host, else claude-code. A value outside the Executor Hosts is refused
+ * here rather than cast through the discard dependency's type.
+ */
+type LaneExecutorHost = LaneSessionsDeps["host"];
+const LANE_EXECUTOR_HOSTS = ["claude-code", "pi", "antigravity"] as const satisfies readonly LaneExecutorHost[];
+
+function laneExecutorHost(host: string | null | undefined): LaneExecutorHost {
+	if (host === undefined || host === null) return "claude-code";
+	const known = LANE_EXECUTOR_HOSTS.find((candidate) => candidate === host);
+	if (known) return known;
+	throw new Error(`executor host ${host} is not one of ${LANE_EXECUTOR_HOSTS.join(", ")}`);
+}
+
+/** The one reply the plan role returns for an Initiative shape (D3.3). */
+function initiativePlanPrompt(target: string, reason: string): string {
+	return [
+		"You are the Loop's plan role. Split one piece of work into ordered slices.",
+		"Read nothing outside this directory. Decide, then print exactly one JSON object and nothing else:",
+		`{"contract": "immune_brain/loop_initiative_plan/v1", "slug": "<initiative-slug>", "slices": [{"slice_id": "<id>", "result": "<what the slice delivers>", "path": "docs/plans/<task-id>.intent.json", "intent": {...}, "blocked_by": ["<slice_id>"]}]}`,
+		"Each `intent` is one complete TaskIntent the Kernel can author, with its own `task_id`.",
+		"Each slice's `path` must be exactly `docs/plans/<task-id>.intent.json` for that intent's `task_id`: the drive reads every slice back through that path.",
+		"`blocked_by` lists the `slice_id`s of earlier slices of this same plan, never a `task_id`; an unknown or self-referencing id rejects the whole plan.",
+		"Leave `blocked_by` out when the slice has no predecessor.",
+		"",
+		`Target: ${target}`,
+		`Reason: ${reason}`,
+	].join("\n");
+}
+
+/** Run the plan role once, and read its Initiative slices from the session record. */
+export function createInitiativePlanner(input: {
+	provider: AgentSessionProvider;
+	turn_budget: number;
+	timeout_ms: number;
+}): (input: { target: string; reason: string }) => Promise<InitiativePlan | null> {
+	return async ({ target, reason }) => {
+		const directory = mkdtempSync(join(tmpdir(), "imm-loop-initiative-"));
+		try {
+			const record = await runAgentSession(
+				{
+					kind: "planning",
+					worktree_path: directory,
+					prompt: initiativePlanPrompt(target, reason),
+					turn_budget: input.turn_budget,
+					timeout_ms: input.timeout_ms,
+					env: sessionEnvironment(null),
+				},
+				input.provider,
+			);
+			return record.status === "completed" && record.output !== null ? parseInitiativePlan(record.output) : null;
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
+	};
+}
+
 export async function runLoopDaemonCli(
 	argv: string[],
 	root: string = process.cwd(),
@@ -260,8 +401,6 @@ export async function runLoopDaemonCli(
 		classify?: ClassifyFn;
 		/** Configured enabled points override; defaults to every point `decision_models.bindings` does not turn `off`. */
 		enabledPoints?: readonly string[];
-		/** Read-only judging agent seam; production executable binds the S9 session runner. */
-		judgingAgent?: JudgingAgentFn;
 		/** Facts the caller owns (budget, leases, identity posture, retry cap). */
 		guardFacts?: Partial<GuardFacts>;
 		loopConfig?: LoopConfig;
@@ -275,8 +414,18 @@ export async function runLoopDaemonCli(
 		laneRuntime?: LaneRuntimeFactory;
 		/** The S9 agent port; the executable composes the production one. */
 		agentPort?: AgentHandlerPort;
+		/** The leader session backend; absent compiles the briefing but starts no leader session. */
+		leader?: {
+			provider: AgentSessionProvider;
+			/** The plan role's Initiative slices for a `shape{plan:"initiative"}` item. */
+			planInitiative?: (input: { target: string; reason: string }) => Promise<InitiativePlan | null>;
+			/** `imm-kernel intent author --stdin --json`, for the carrier's TaskIntents. */
+			runKernel?: LeaderDispatchDeps["runKernel"];
+		};
 		/** True only inside the standing `imm-loop run` process. */
 		standingDaemon?: boolean;
+		/** Test seam for the Lane session provider the abandon discard closes sessions through. */
+		createPort?: Parameters<typeof discardAbandonedBatches>[0]["createPort"];
 		/** Deterministic clock seam for reconciliation schedule tests. */
 		now?: () => string;
 		/** Subprocess seams for testing `start` and `stop` lifecycle deterministically. */
@@ -315,7 +464,7 @@ Commands:
   resume                                         Resume scheduling for the daemon
   retire-lease <target-id>                       Manually retire/remove an active lease
   rebuild [--json]                               Reconstruct state and leases from GitHub and repository evidence
-  reconcile [--dry-run] [--json]                 Re-check model-skipped decisions with the judging agent
+  reconcile [--dry-run] [--json]                 Collect model-skipped decisions as leader reconcile candidates
   run [--interval <sec>] [--dry-run]             Run standing loop daemon process in foreground
 
 Options:
@@ -392,14 +541,41 @@ Options:
 		const updatedAt = snapshot.updated_at ?? fallbackState!.updated_at;
 		const mode = resolved.loop?.valid === false ? "invalid" : loopConfig.mode;
 
+		// S5/D5.4: the paused items the owner set locally, and what the leader last did.
+		const leaderJournal = readLeaderJournal(stateDir);
+		const lastWake = [...leaderJournal].reverse().find((entry) => entry.kind === "wake") ?? null;
+		const lastProposal = [...leaderJournal].reverse().find((entry) => entry.kind === "proposal") ?? null;
 		const projection = {
 			daemon_running: snapshot.daemon_running,
 			lock: snapshot.lock,
 			mode,
 			paused: snapshot.paused,
 			pause_reason: snapshot.pause_reason,
+			paused_items: listWorkItems(stateDir)
+				.filter((item) => item.paused === true)
+				.map((item) => ({ target: item.target, state: item.state, updated_at: item.updated_at })),
+			// ULS D5.3: items held by the environment, shown here and nowhere in the leader's counters.
+			environment_blocked_items: listWorkItems(stateDir)
+				.filter((item) => (item.environment_blocked ?? null) !== null)
+				.map((item) => ({ target: item.target, state: item.state, environment_blocked: item.environment_blocked, updated_at: item.updated_at })),
+			leader: {
+				last_wake_at: lastWake?.at ?? null,
+				wakes_today: stats.leader_wakes_today ?? 0,
+				last_proposal_items: Array.isArray((lastProposal?.payload as { items?: unknown } | null)?.items)
+					? ((lastProposal!.payload as { items: unknown[] }).items.length)
+					: 0,
+			},
 			watermarks,
 			active_leases: snapshot.active_leases,
+			// D3.5: the catalog role sessions still running, with what they run for.
+			sessions: runningRoleSessions(stateDir).map((session) => ({
+				target: session.target,
+				role: session.role,
+				base: session.base,
+				started_at: session.started_at,
+			})),
+			// D4.6: where the owner is awaited, as pointers only — never the question.
+			waiting: listWaitingStatus(stateDir),
 			stats,
 			updated_at: updatedAt,
 			log_path: snapshot.log_path,
@@ -414,6 +590,7 @@ Options:
   Mode: ${mode}
   Paused: ${snapshot.paused ? `YES (${snapshot.pause_reason || "no reason"})` : "NO"}
   Active Leases: ${snapshot.active_leases_count}
+  Running Sessions: ${projection.sessions.length === 0 ? "none" : projection.sessions.map((session) => `${session.role} (${session.base}) on ${session.target}`).join(", ")}
   Log: ${snapshot.log_path}
   Watermarks:
     Issues: ${watermarks.issues_updated_at || "none"}
@@ -870,12 +1047,8 @@ Options:
 			}
 
 			if (!isDryRun) {
-				const today = new Date().toISOString().slice(0, 10);
-				if (state.stats.today_date !== today) {
-					state.stats.today_date = today;
-					state.stats.ticks_today = 0;
-					state.stats.dispatches_today = 0;
-				}
+				// Every per-day counter rolls together, the leader wake count included.
+				rollDailyStats(state, new Date().toISOString().slice(0, 10));
 
 				state.watermarks = obs.watermarks;
 				state.updated_at = new Date().toISOString();
@@ -1065,12 +1238,7 @@ Options:
 				},
 				recordInvocation: () => {
 					if (!isDryRun) {
-						const today = recordedAt.slice(0, 10);
-						if (state.stats.today_date !== today) {
-							state.stats.today_date = today;
-							state.stats.ticks_today = 0;
-							state.stats.dispatches_today = 0;
-						}
+						rollDailyStats(state, recordedAt.slice(0, 10));
 						state.stats.dispatches_today = (state.stats.dispatches_today ?? 0) + 1;
 						state.stats.dispatches_total = (state.stats.dispatches_total ?? 0) + 1;
 						state.updated_at = recordedAt;
@@ -1083,8 +1251,20 @@ Options:
 
 			// S5/D5: the rebuildable work-item store is restored before scheduling, and a
 			// level event is judged only when its fact fingerprint changed.
+			let discardedBatches: DiscardTickEntry[] = [];
 			if (!isDryRun) {
 				ensureWorkItems(absoluteRoot, stateDir, obs.snapshot, loadPublishedPlanDigests(stateDir), recordedAt);
+				// D5.2: a natively confirmed steer request lands before this tick judges,
+				// dispatches and briefs, so the gate sees it once and the file is removed.
+				applySteeringRequests(stateDir, recordedAt);
+				// ULS D4.2: an abandoned item's batch is discarded until its record is terminal.
+				discardedBatches = await discardAbandonedBatches({
+					root: absoluteRoot,
+					stateDir,
+					now: recordedAt,
+					host: laneExecutorHost(resolved.agents?.roles?.executor?.host),
+					...(options?.createPort ? { createPort: options.createPort } : {}),
+				});
 			}
 			const judged: JudgedEventSelection = isDryRun
 				? { events: obs.events, pending: [] }
@@ -1094,17 +1274,7 @@ Options:
 				facts,
 				classify,
 				enabledPoints,
-				judgingAgent: options?.judgingAgent,
 				budgetTracker,
-				offeredOptionsForEvent: (evt) => {
-					if (evt.kind !== "E3_OWNER_COMMENT") return undefined;
-					if (facts.lane_decision_facts?.options) {
-						return facts.lane_decision_facts.options;
-					}
-					const issueComments =
-						obs.snapshot.issues.find((i) => i.number === evt.issue_number)?.comments ?? [];
-					return findLatestLaneDecisionQuestion(issueComments)?.options;
-				},
 			});
 			const decisions = judged.events.map((event, index) =>
 				buildDecisionRecord(event, judgements[index], eventTarget(event), { recorded_at: recordedAt, dry_run: isDryRun }),
@@ -1152,7 +1322,7 @@ Options:
 							relayInputFactory: (taskId) =>
 								options?.relayInputFactory ??
 								(options?.laneRuntime
-									? createDefaultRelayInputFactory(absoluteRoot, taskId, { laneRuntime: options.laneRuntime })
+									? createDefaultRelayInputFactory(absoluteRoot, taskId, { laneRuntime: options.laneRuntime, stateDir })
 									: undefined),
 							...(options?.relayDecision ? { relayDecision: options.relayDecision } : {}),
 						});
@@ -1171,11 +1341,191 @@ Options:
 				now: recordedAt,
 				agentPort: options?.agentPort,
 				standingDaemon: options?.standingDaemon === true,
-				judgingAgent: options?.judgingAgent,
 				relayDecision: options?.relayDecision,
 				relayInputFactory: options?.relayInputFactory,
 				laneRuntime: options?.laneRuntime,
 			});
+
+			// S2/D2: the briefing is compiled on every tick; only a fingerprint the journal
+			// has not recorded starts one read-only leader session. `S2` executes nothing.
+			rollDailyStats(state, recordedAt.slice(0, 10));
+			const leaderLimits = loopSessionLimits({ agents: resolved.agents, loop: resolved.loop }, "leader");
+			const leaderTick = await runLeaderTick({
+				root: absoluteRoot,
+				stateDir,
+				roles: resolved.loop.value.roles,
+				mode: loopConfig.mode,
+				dry_run: isDryRun,
+				now: recordedAt,
+				turn_budget: leaderLimits.turn_budget,
+				timeout_ms: leaderLimits.timeout_ms,
+				budget: {
+					wakes_today: state.stats.leader_wakes_today ?? 0,
+					max_leader_wakes_per_day: loopConfig.budget.max_leader_wakes_per_day ?? LOOP_LEADER_WAKES_BOUNDS.default,
+					dispatches_today: state.stats.dispatches_today ?? 0,
+					max_dispatches_per_day: loopConfig.budget.max_dispatches_per_day,
+				},
+				sessionProvider: options?.leader?.provider ?? null,
+			});
+			if (leaderTick.counted_wake && !isDryRun) {
+				recordLeaderWake(state.stats);
+				state.updated_at = recordedAt;
+				saveLoopState(stateDir, state);
+			}
+
+			// S3/D3.1: an accepted proposal item executes only behind its own code guard.
+			// A record still running belongs to a dead tick: every dispatch awaits
+			// its session inside the same tick, so reaping first frees the role
+			// for this tick's items instead of refusing them forever.
+			if (!isDryRun) reapOrphanedRoleSessions(stateDir, { at: recordedAt });
+			const leaderItems =
+				leaderTick.items.length === 0
+					? []
+					: await applyLeaderProposal(leaderTick.items, {
+							root: absoluteRoot,
+							stateDir,
+							now: recordedAt,
+							dry_run: isDryRun,
+							fingerprint: leaderTick.briefing_fingerprint,
+							roles: resolved.loop.value.roles,
+							guardFacts: facts,
+							events: obs.events,
+							candidates: reconcileCandidates(stateDir),
+							max_concurrent: loopConfig.max_concurrent,
+							dispatches_today: state.stats.dispatches_today ?? 0,
+							max_dispatches_per_day: loopConfig.budget.max_dispatches_per_day,
+							runNext: async ({ decision, event }) =>
+								(
+									await dispatchDecisions({
+										root: absoluteRoot,
+										stateDir,
+										loopConfig,
+										events: [event],
+										decisions: [decision],
+										snapshot: obs.snapshot,
+										state,
+										gitHubPort,
+										guardFacts: facts,
+										dryRun: isDryRun,
+										now: recordedAt,
+										agentPort: options?.agentPort,
+										standingDaemon: options?.standingDaemon === true,
+										...(options?.relayDecision ? { relayDecision: options.relayDecision } : {}),
+										...(options?.relayInputFactory ? { relayInputFactory: options.relayInputFactory } : {}),
+										...(options?.laneRuntime ? { laneRuntime: options.laneRuntime } : {}),
+									})
+								).dispatches,
+							planInitiative: (input) =>
+								options?.leader?.planInitiative
+									? options.leader.planInitiative(input)
+									: Promise.resolve(null),
+							runKernel:
+								options?.leader?.runKernel ??
+								((input) => ({ exit_code: 1, json: { reason: `kernel_unavailable: ${input.argv.join(" ")}` } })),
+							startSession:
+								options?.leader?.provider === undefined
+									? async () => ({ completed: false, reason: "session_provider_unavailable" })
+									: createRoleSessionRunner({
+											provider: options.leader.provider,
+											root: absoluteRoot,
+											stateDir,
+											snapshot: obs.snapshot,
+										}),
+							// D4.2: the target's authority gates, from local requests and the Kernel projection.
+							resolveFacts: async ({ target, work_item }) => {
+								const subject = resolveSubject(target);
+								const taskIds = [...new Set([...work_item.binding.task_ids, ...(subject.task_id ? [subject.task_id] : [])])];
+								let owned: ReturnType<typeof batchStateForTarget> | undefined;
+								const ownedBatch = () =>
+									(owned ??= batchStateForTarget(absoluteRoot, {
+										task_ids: taskIds,
+										initiative_slug: work_item.binding.initiative_slug ?? null,
+									}));
+								return collectResolveFacts({
+									stateDir,
+									target,
+									subject,
+									task_ids: taskIds,
+									project: async (taskId) => {
+										try {
+											const projected = await projectAssurance(absoluteRoot, taskId);
+											if (projected.error !== null) return null;
+											return {
+												risk: projected.projection.risk,
+												open_user_decision_count: projected.projection.open_user_decision_count,
+												unresolved_user_decision_ids: [...projected.projection.unresolved_user_decision_ids],
+												replan_required_ids: [...projected.projection.replan_required_ids],
+												authorization: { state: projected.projection.authorization.state },
+												next_obligation: projected.projection.next_obligation,
+											};
+										} catch {
+											return null;
+										}
+									},
+									// ULS D5.4: an ambiguous or unreadable batch throws, and the leader dispatch refuses the item as unresolved.
+									batchState: () => ownedBatch()?.batch_state ?? null,
+									noProgressChildren: () => ownedBatch()?.no_progress_children ?? [],
+									heldChildren: () => readBatchSummaries(absoluteRoot, taskIds).blocked_children.map((child) => child.task_id),
+									comments: obs.snapshot.issues.flatMap((issue) => issue.comments ?? []),
+								});
+							},
+							// D4.2 / ULS D5.1: a parked batch leaves `needs_human` only through a fresh Batch
+							// Authorization and a stalled Executor only through a fresh drive entry, so `resume`
+							// applies to an item with no batch blocker.
+							checkBatchResumable: ({ work_item }) => {
+								const subject = resolveSubject(work_item.target);
+								let batch: ReturnType<typeof batchStateForTarget>;
+								try {
+									batch = batchStateForTarget(absoluteRoot, {
+										task_ids: [...new Set([...work_item.binding.task_ids, ...(subject.task_id ? [subject.task_id] : [])])],
+										initiative_slug: work_item.binding.initiative_slug ?? null,
+									});
+								} catch (error) {
+									return { resumed: false, reason: error instanceof Error ? error.message : String(error) };
+								}
+								if (!batch) return { resumed: true, reason: "no batch blocks the item" };
+								if (batch.batch_state === "needs_human")
+									return { resumed: false, reason: "the parked batch needs a fresh Batch Authorization" };
+								if (batch.no_progress_children.length > 0)
+									return { resumed: false, reason: `lane_executor_no_progress: ${batch.no_progress_children.join(", ")} needs a fresh drive entry` };
+								if (batch.batch_state !== "running" && batch.batch_state !== "pending")
+									return { resumed: false, reason: `batch_${batch.batch_state}` };
+								return { resumed: true, reason: `batch ${batch.batch_id} is ${batch.batch_state}` };
+							},
+							// D4.5: ask on the subject; a pending literal_user request is annotated, never withdrawn.
+							askOwner: async ({ target, subject, context, pending_literal_user, pending_lane_entry_blocked }) => {
+								const channel =
+									loopConfig.interaction?.channel === "local"
+										? createLocalInteractionChannel({ stateDir })
+										: createGithubInteractionChannel({
+												port: gitHubPort,
+												comments: () => obs.snapshot.issues.flatMap((issue) => issue.comments ?? []),
+												binding: () => ({}),
+												guardFacts: facts,
+												// D4.6: a withdrawn request is no longer a waiting pointer.
+												onRetired: (interactionId) => clearWaitingPointer(stateDir, interactionId),
+											});
+								return askOwnerQuestion(
+									{ stateDir, now: recordedAt, target, channel, pending_literal_user, ...(pending_lane_entry_blocked ? { pending_lane_entry_blocked } : {}) },
+									{ subject, context },
+								);
+							},
+						});
+
+			// D3.5: a leader dispatch starts a real catalog session, so started
+			// sessions count against the daily dispatch budget exactly like a
+			// Tier-1/2 dispatch: later ticks and the scheduler see them. A failed
+			// session ran too, so only refusals that started nothing are spared.
+			// D3.5: every started catalog session counts, whatever item kind started
+			// it (`dispatch` or a `resolve{kind:"replan"}`), accepted or failed.
+			const leaderStartedSessions = isDryRun ? 0 : leaderItems.filter((item) => item.session_started === true).length;
+			if (leaderStartedSessions > 0) {
+				rollDailyStats(state, recordedAt.slice(0, 10));
+				state.stats.dispatches_today = (state.stats.dispatches_today ?? 0) + leaderStartedSessions;
+				state.stats.dispatches_total = (state.stats.dispatches_total ?? 0) + leaderStartedSessions;
+				state.updated_at = recordedAt;
+				saveLoopState(stateDir, state);
+			}
 
 			const outputPayload = {
 				contract: "assurance_kernel/loop_tick_result/v1",
@@ -1188,6 +1538,10 @@ Options:
 				dispatches_count: dispatchRes.dispatches.length,
 				local_answers: localAnswers,
 				local_answers_count: localAnswers.length,
+				discarded_batches: discardedBatches,
+				leader: leaderTick,
+				leader_items: leaderItems,
+				leader_items_count: leaderItems.length,
 				watermarks: obs.watermarks,
 				paused: state.paused,
 			};
@@ -1203,7 +1557,17 @@ Options:
 				decisions.map((d) => `  -> ${d.handler} (tier ${d.tier}) ${d.event_id}: ${d.reason}`).join("\n") +
 				(decisions.length > 0 ? "\n" : "") +
 				dispatchRes.dispatches.map((d) => `  => dispatch: ${d.handler} [${d.outcome}] ${d.detail}`).join("\n") +
-				(dispatchRes.dispatches.length > 0 ? "\n" : "");
+				(dispatchRes.dispatches.length > 0 ? "\n" : "") +
+				discardedBatches
+					.map((d) => `  => discard: ${d.target} batch ${d.batch_id} ${d.batch_state}${d.retained.map((r) => `\n     ${r.reason}`).join("")}`)
+					.join("\n") +
+				(discardedBatches.length > 0 ? "\n" : "") +
+				`  => leader: ${leaderTick.woke ? "woke" : "idle"} (${leaderTick.reason}) fingerprint ${leaderTick.briefing_fingerprint}` +
+				(leaderItems.length === 0
+					? ""
+					: `\n${leaderItems.map((item) => `  => leader item ${item.action} ${item.target} [${item.outcome}] ${item.reason}`).join("\n")}`) +
+				(leaderTick.proposal === null ? "" : `, ${leaderTick.proposal.items} item(s), ${leaderTick.proposal.rejected.length} rejected`) +
+				"\n";
 
 			return { stdout: summary, stderr: "", returncode: 0 };
 		} finally {
@@ -1235,76 +1599,10 @@ Options:
 		try {
 			const state = loadLoopState(stateDir) ?? initLoopState();
 			const now = options?.now?.() ?? new Date().toISOString();
-			const gh = options?.gh ?? createGhTransport();
-			let snapshot: ObservationInput = options?.snapshotOverride ?? {
-				issues: [],
-				pull_requests: [],
-				observed_at: now,
-			};
-			if (!options?.snapshotOverride && options?.gh) {
-				try {
-					const obs = await observeGithub(absoluteRoot, {
-						gh: options.gh,
-						previousState: state,
-					});
-					snapshot = obs.snapshot;
-				} catch {}
-			}
-
-			let declaredNoTouch: string[] = [];
-			try {
-				declaredNoTouch = readNoTouch(absoluteRoot);
-			} catch (error: any) {
-				return {
-					stdout: "",
-					stderr: `Error: unreadable no-touch declaration: ${error?.message || String(error)}\n`,
-					returncode: 1,
-				};
-			}
-
-			let daemonLogin: string | null = options?.guardFacts?.daemon_identity ?? null;
-			if (!isDryRun && !daemonLogin && options?.gh) {
-				daemonLogin = await readAuthenticatedGithubLogin(gh, absoluteRoot);
-			}
-
-			const currentBudget: ScheduleBudget = {
-				ticks_today: state.stats.ticks_today ?? 0,
-				dispatches_today: state.stats.dispatches_today ?? 0,
-				max_ticks_per_day: loopConfig.budget.max_ticks_per_day,
-				max_dispatches_per_day: loopConfig.budget.max_dispatches_per_day,
-			};
-
-			const facts: GuardFacts = {
-				paused: state.paused,
-				no_touch_paths: declaredNoTouch,
-				active_leases: state.active_leases,
-				identity_posture: detectIdentityPosture(inspectDaemonIdentity(absoluteRoot)),
-				allowed_actors: loopConfig.allowed_actors,
-				allowed_associations: loopConfig.allowed_associations,
-				daemon_identity: daemonLogin,
-				budget_exhausted: Boolean(budgetExhausted(currentBudget)),
-				retry_counts: loadRepairRetries(stateDir),
-				pending_clarify: pendingClarifyInteractions(stateDir),
-				expected_plan_digests: loadPublishedPlanDigests(stateDir),
-				...options?.guardFacts,
-			};
-
-			const gitHubPort = options?.gitHubPort ?? createLoopGitHubPort(gh, absoluteRoot);
 			const result = await reconcileSkippedDecisions({
-				root: absoluteRoot,
 				stateDir,
-				loopConfig,
-				snapshot,
-				gitHubPort,
-				guardFacts: facts,
 				dryRun: isDryRun,
 				now,
-				judgingAgent: options?.judgingAgent,
-				agentPort: options?.agentPort,
-				standingDaemon: options?.standingDaemon === true,
-				relayDecision: options?.relayDecision,
-				relayInputFactory: options?.relayInputFactory,
-				laneRuntime: options?.laneRuntime,
 				state,
 			});
 
@@ -1316,7 +1614,9 @@ Options:
 			if (isJson) {
 				return { stdout: jsonOutput(payload), stderr: "", returncode: 0 };
 			}
-			const summary = `Reconcile completed (${isDryRun ? "DRY-RUN" : "LIVE"}): checked ${result.checked}, overrides ${result.overrides}, labels appended ${result.labels_appended}, dispatched ${result.dispatches.length}\n`;
+			const summary = `Reconcile completed (${isDryRun ? "DRY-RUN" : "LIVE"}): checked ${result.checked}, candidates ${result.candidates.length}\n` +
+				result.candidates.map((candidate) => `  => candidate ${candidate.target} (${candidate.point ?? "needs_judging"}${candidate.choice === null ? "" : `: ${candidate.choice}`})`).join("\n") +
+				(result.candidates.length > 0 ? "\n" : "");
 			return { stdout: summary, stderr: "", returncode: 0 };
 		} finally {
 			if (releaseLock) releaseLock();
@@ -1475,26 +1775,26 @@ export async function runLoopDaemonExecutable(
 	// The agent port belongs to the live daemon: a `tick`, `run`, or `reconcile`
 	// from this executable dispatches agent-backed handlers through real sessions.
 	const needsAgent = command === "tick" || command === "run" || command === "reconcile";
-	const agentPort = needsAgent
-		? createAgentHandlerPort(createDefaultAgentHandlerDeps(root, { stateDir: effectiveStateDir }))
+	const handlerDeps = needsAgent ? createDefaultAgentHandlerDeps(root, { stateDir: effectiveStateDir }) : undefined;
+	const agentPort = handlerDeps ? createAgentHandlerPort(handlerDeps) : undefined;
+	const leader = handlerDeps
+		? (() => {
+				const planLimits = loopSessionLimits(resolveConfig(root), "plan");
+				return {
+					provider: handlerDeps.sessionProvider,
+					planInitiative: createInitiativePlanner({
+						provider: handlerDeps.sessionProvider,
+						turn_budget: planLimits.turn_budget,
+						timeout_ms: planLimits.timeout_ms,
+					}),
+					runKernel: handlerDeps.runKernel,
+				};
+			})()
 		: undefined;
-	let judgingAgent: JudgingAgentFn | undefined;
-	if (needsAgent) {
-		// The judging session runs on the profile bound to the judging role; no
-		// executor Host leaf decides it (Spec D2).
-		const agents = resolveConfig(root).agents;
-		judgingAgent = createSessionJudgingAgent({
-			root,
-			provider: createCliAgentSessionProvider({
-				profileFor: (role) => loopRoleProfile(agents, role),
-				log_dir: join(effectiveStateDir, "session-logs"),
-			}),
-		});
-	}
 	return runLoopDaemonCli(argv, root, {
 		classify: createDecisionModelClassifier(root),
 		...(agentPort ? { agentPort } : {}),
-		...(judgingAgent ? { judgingAgent } : {}),
+		...(leader ? { leader } : {}),
 	});
 }
 

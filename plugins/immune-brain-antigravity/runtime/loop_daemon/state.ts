@@ -82,6 +82,15 @@ export function loadLoopState(stateDir: string): LoopDaemonState | null {
 	return null;
 }
 
+/** Roll the per-day counters onto a new day, so every budget reader sees the same day. */
+export function rollDailyStats(state: LoopDaemonState, today: string): void {
+	if (state.stats.today_date === today) return;
+	state.stats.today_date = today;
+	state.stats.ticks_today = 0;
+	state.stats.dispatches_today = 0;
+	state.stats.leader_wakes_today = 0;
+}
+
 export function saveLoopState(stateDir: string, state: LoopDaemonState): void {
 	ensureLoopStateDir(stateDir);
 	const targetPath = join(stateDir, "state.json");

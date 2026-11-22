@@ -1,0 +1,50 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "loop-leader-uls-s5-resolve-alignment",
+  "owner": "user",
+  "goal": "Align leader resolve with ULS: resume applies only to WorkItem escalated without a batch blocker while needs_human batches and lane_executor_no_progress children admit only ask_owner (the recorded amendment of loop-leader D4 and S4-AC1); a Lane dialog is asked once by planEscalation and a leader ask_owner on it annotates in place; lane_session_unavailable never counts as a refusal or replan round nor changes the briefing fingerprint and shows as environment_blocked in status; batch lookup uses findActiveLaneBatchForTask and briefing batches carry v3 session facts, per D5 of docs/specs/loop-leader-uls-alignment.spec.md.",
+  "acceptance": [
+    {
+      "id": "S5-AC1",
+      "assertion": "Source BR-DEC-A2, BR-REQ-A1; meet D5.1 and D5.4 in docs/specs/loop-leader-uls-alignment.spec.md. Agreed seam: tests/loop-leader-replan.test.ts, tests/loop-leader-briefing.test.ts. Done looks like: resume on an escalated item with no batch blocker is accepted; briefing batches carry each child's session generation, no_progress and attention. Negative: resume on a needs_human batch or a lane_executor_no_progress child is rejected and only ask_owner is accepted; two active batch records for one task make the batch lookup refuse instead of taking the first file.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/loop-leader-replan.test.ts tests/loop-leader-briefing.test.ts && bun scripts/sync-dist-docs.ts --check && bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "S5-AC2",
+      "assertion": "Source BR-DEC-A3, BR-SCN-A2; meet D5.2 in docs/specs/loop-leader-uls-alignment.spec.md. Agreed seam: tests/loop-leader-replan.test.ts, tests/loop-sched-interaction-github.test.ts. Done looks like: a child blocked on a startup dialog yields exactly one lane_entry_blocked comment on the Issue and appears in the briefing as a pending interaction. Negative: a leader ask_owner on the same subject annotates that request in place and posts no second comment.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/loop-leader-replan.test.ts tests/loop-sched-interaction-github.test.ts && bun scripts/sync-dist-docs.ts --check && bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "S5-AC3",
+      "assertion": "Source BR-DEC-A6, BR-SCN-A4; meet D5.3 in docs/specs/loop-leader-uls-alignment.spec.md. Agreed seam: tests/loop-leader-briefing.test.ts, tests/loop-leader-replan.test.ts. Done looks like: five ticks refused lane_session_unavailable leave refused_transitions, replan_rounds, the briefing fingerprint and the leader wake count unchanged, and imm-loop status --json shows environment_blocked lane_session_unavailable on the item. Negative: a different refusal reason still counts toward the three-refusal trigger.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/loop-leader-briefing.test.ts tests/loop-leader-replan.test.ts && bun scripts/sync-dist-docs.ts --check && bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/loop-leader-uls-s5-resolve-alignment.md",
+    "docs/plans/loop-leader-uls-s5-resolve-alignment.intent.json",
+    "docs/specs/loop-leader-uls-alignment.spec.md",
+    "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+    "plugins/immune-brain-antigravity/runtime/loop_daemon/cli.ts",
+    "plugins/immune-brain-antigravity/runtime/loop_daemon/escalation.ts",
+    "plugins/immune-brain-antigravity/runtime/loop_daemon/leader_agent.ts",
+    "plugins/immune-brain-antigravity/runtime/loop_daemon/leader_briefing.ts",
+    "plugins/immune-brain-antigravity/runtime/loop_daemon/leader_dispatch.ts",
+    "plugins/immune-brain-antigravity/runtime/loop_daemon/replan.ts",
+    "plugins/immune-brain-antigravity/runtime/loop_daemon/work_items.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/loop_daemon/cli.ts",
+    "plugins/immune-brain/runtime/loop_daemon/escalation.ts",
+    "plugins/immune-brain/runtime/loop_daemon/leader_agent.ts",
+    "plugins/immune-brain/runtime/loop_daemon/leader_briefing.ts",
+    "plugins/immune-brain/runtime/loop_daemon/leader_dispatch.ts",
+    "plugins/immune-brain/runtime/loop_daemon/replan.ts",
+    "plugins/immune-brain/runtime/loop_daemon/work_items.ts",
+    "tests/loop-leader-briefing.test.ts",
+    "tests/loop-leader-replan.test.ts",
+    "tests/loop-sched-interaction-github.test.ts"
+  ],
+  "scope_size_reason": "The resume rule, the single-question rule and the refusal exclusion all change what the leader may do with a blocked batch and share the briefing and replan code; together they are one resolve contract.",
+  "risk": "material",
+  "revision": 1
+}

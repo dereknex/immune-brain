@@ -15,6 +15,7 @@
 import { scopesOverlap } from "../unattended/batch_schedule.ts";
 import type { LoopHandler } from "./handlers.ts";
 import type { LoopEventKind, LoopLease } from "./types.ts";
+import type { WorkItemGate } from "./work_items.ts";
 
 export const LOOP_SCHEDULE_CONTRACT = "assurance_kernel/loop_schedule/v1";
 
@@ -67,6 +68,10 @@ export interface ScheduleCandidate {
 	event_kind?: LoopEventKind;
 	scope_hint?: string[];
 	candidate_id?: string;
+	/** The leader's tie-break inside one class (Spec loop-leader D3.1); `null` sorts last. */
+	leader_rank?: number | null;
+	/** Spec loop-leader D5.2: a paused or abandoned target admits no candidate at all. */
+	work_item_gate?: WorkItemGate | null;
 }
 
 /**
@@ -182,6 +187,10 @@ export function scheduleLoopWork(input: ScheduleInput): ScheduleResult {
 			const leftRank = left.priority === null ? Number.MAX_SAFE_INTEGER : SCHEDULE_PRIORITY[left.priority];
 			const rightRank = right.priority === null ? Number.MAX_SAFE_INTEGER : SCHEDULE_PRIORITY[right.priority];
 			if (leftRank !== rightRank) return leftRank - rightRank;
+			// D3.1: priority only reorders ties inside one class, never across classes.
+			const leftLead = left.candidate.leader_rank ?? Number.MAX_SAFE_INTEGER;
+			const rightLead = right.candidate.leader_rank ?? Number.MAX_SAFE_INTEGER;
+			if (leftLead !== rightLead) return leftLead - rightLead;
 			if (left.candidate.target_id !== right.candidate.target_id) {
 				return left.candidate.target_id < right.candidate.target_id ? -1 : 1;
 			}
@@ -202,6 +211,12 @@ export function scheduleLoopWork(input: ScheduleInput): ScheduleResult {
 		const entry = { target_id: candidate.target_id, handler: candidate.handler, priority, candidate_id: candidate.candidate_id };
 		if (guard !== null) {
 			hold(entry, `${guard.id}: ${guard.detail}`);
+			continue;
+		}
+		// D5.2: the steer gate comes before every other admission rule, so a paused
+		// or abandoned target yields no candidate from any dispatch path.
+		if (candidate.work_item_gate) {
+			hold(entry, candidate.work_item_gate);
 			continue;
 		}
 		if (priority === null) {

@@ -15,7 +15,7 @@
  *   - executes open_pr via the GitHub write port
  *   - executes mark_pr_ready via the GitHub write port
  *   - executes close_out on merged PR
- *   - executes owner commands pause, resume, retry, ignore
+ *   - answers GitHub pause, resume and abandon with one notice and executes retry, ignore
  *   - maintains status Issue in place (creates if absent, edits in place if existing)
  *   - appends assurance_kernel/loop_dispatch_record/v1 rows to .imm/state/loop/dispatches.jsonl with mode 0600
  *
@@ -138,8 +138,27 @@ import {
 	prepareBatchLaneRunState,
 	writeBatchLaneRunState,
 } from "../plugins/immune-brain/runtime/unattended/batch_state.ts";
+import { readWorkItem } from "../plugins/immune-brain/runtime/loop_daemon/work_items.ts";
 
 const TS = "2026-11-12T10:00:00.000Z";
+
+/** The `noop_record` decision row one verified owner comment produces at Tier 1. */
+function ownerCommandDecision(event: E3OwnerCommentEvent, decisionId: string, reason: string): LoopDecisionRecord {
+	return {
+		contract: "assurance_kernel/loop_decision_record/v1",
+		decision_id: decisionId,
+		event_id: event.event_id,
+		event_kind: event.kind,
+		target: { kind: "issue", id: String(event.issue_number) },
+		handler: "noop_record",
+		tier: 1,
+		reason,
+		guards_passed: ["G1", "G7"],
+		mutations: [],
+		dry_run: false,
+		recorded_at: TS,
+	};
+}
 
 export function makeWorkspace(options?: {
 	loopConfig?: Partial<LoopConfig>;
@@ -905,7 +924,7 @@ describe("Loop Daemon: Tick Dispatch Core (S8)", () => {
 			expect(listLeases(stateDir).some((l) => l.target_id === "pr-102")).toBe(false);
 		});
 
-		it("executes owner commands pause, resume, retry, ignore", async () => {
+		it("answers GitHub pause, resume and abandon with one notice and still executes retry, ignore", async () => {
 			const { root, stateDir, loopConfig, cleanup } = makeWorkspace({
 				loopConfig: { mode: "assist" },
 			});
@@ -930,7 +949,7 @@ describe("Loop Daemon: Tick Dispatch Core (S8)", () => {
 				lane_decisions: [],
 			};
 
-			// 1. @imm-loop pause
+			// 1. @imm-loop pause is a notice (BR-DEC-11): the daemon-wide effect is retired
 			const pauseEvent: E3OwnerCommentEvent = {
 				contract: LOOP_DAEMON_EVENT_CONTRACT,
 				event_id: "evt-e3-pause",
@@ -942,20 +961,7 @@ describe("Loop Daemon: Tick Dispatch Core (S8)", () => {
 				author_association: "OWNER",
 				body: "@imm-loop pause --reason maintenance",
 			};
-			const pauseDecision: LoopDecisionRecord = {
-				contract: "assurance_kernel/loop_decision_record/v1",
-				decision_id: "dec-cmd-pause",
-				event_id: pauseEvent.event_id,
-				event_kind: pauseEvent.kind,
-				target: { kind: "issue", id: "1" },
-				handler: "noop_record",
-				tier: 1,
-				reason: "owner pause command",
-				guards_passed: ["G1", "G7"],
-				mutations: [],
-				dry_run: false,
-				recorded_at: TS,
-			};
+			const pauseDecision = ownerCommandDecision(pauseEvent, "dec-cmd-pause", "owner pause command");
 
 			const resPause = await dispatchDecisions({
 				root,
@@ -973,10 +979,16 @@ describe("Loop Daemon: Tick Dispatch Core (S8)", () => {
 
 			expect(resPause.dispatches.length).toBe(1);
 			expect(resPause.dispatches[0].outcome).toBe("executed");
-			state = loadLoopState(stateDir)!;
-			expect(state.paused).toBe(true);
+			expect(resPause.dispatches[0].detail).toContain("notice posted");
+			// The item holder and the daemon-wide flag change neither.
+			expect(state.paused).toBe(false);
+			expect(readWorkItem(stateDir, "issue-1")).toBeNull();
+			const pauseNotices = [...fakePort.comments.values()].filter((comment) => comment.body.includes("imm-loop pause"));
+			expect(pauseNotices).toHaveLength(1);
+			expect(pauseNotices[0]!.body).toContain("imm-loop pause` in your local checkout");
+			expect(pauseNotices[0]!.body).toContain("notice only");
 
-			// 2. @imm-loop resume
+			// 2. @imm-loop resume gets the same one-notice answer
 			const resumeEvent: E3OwnerCommentEvent = {
 				contract: LOOP_DAEMON_EVENT_CONTRACT,
 				event_id: "evt-e3-resume",
@@ -988,20 +1000,7 @@ describe("Loop Daemon: Tick Dispatch Core (S8)", () => {
 				author_association: "OWNER",
 				body: "@imm-loop resume",
 			};
-			const resumeDecision: LoopDecisionRecord = {
-				contract: "assurance_kernel/loop_decision_record/v1",
-				decision_id: "dec-cmd-resume",
-				event_id: resumeEvent.event_id,
-				event_kind: resumeEvent.kind,
-				target: { kind: "issue", id: "1" },
-				handler: "noop_record",
-				tier: 1,
-				reason: "owner resume command",
-				guards_passed: ["G1", "G7"],
-				mutations: [],
-				dry_run: false,
-				recorded_at: TS,
-			};
+			const resumeDecision = ownerCommandDecision(resumeEvent, "dec-cmd-resume", "owner resume command");
 
 			const resResume = await dispatchDecisions({
 				root,
@@ -1019,10 +1018,46 @@ describe("Loop Daemon: Tick Dispatch Core (S8)", () => {
 
 			expect(resResume.dispatches.length).toBe(1);
 			expect(resResume.dispatches[0].outcome).toBe("executed");
-			state = loadLoopState(stateDir)!;
 			expect(state.paused).toBe(false);
+			const resumeNotices = [...fakePort.comments.values()].filter((comment) => comment.body.includes("imm-loop resume"));
+			expect(resumeNotices).toHaveLength(1);
 
-			// 3. @imm-loop retry
+			// 3. @imm-loop abandon names the local steering Tool and abandons nothing by comment
+			const abandonEvent: E3OwnerCommentEvent = {
+				contract: LOOP_DAEMON_EVENT_CONTRACT,
+				event_id: "evt-e3-abandon",
+				kind: "E3_OWNER_COMMENT",
+				timestamp: TS,
+				issue_number: 1,
+				comment_id: 503,
+				author: "human-owner",
+				author_association: "OWNER",
+				body: "@imm-loop abandon",
+			};
+			const abandonDecision = ownerCommandDecision(abandonEvent, "dec-cmd-abandon", "owner abandon command");
+
+			const resAbandon = await dispatchDecisions({
+				root,
+				stateDir,
+				loopConfig,
+				events: [abandonEvent],
+				decisions: [abandonDecision],
+				snapshot,
+				state,
+				gitHubPort: fakePort,
+				guardFacts,
+				dryRun: false,
+				now: TS,
+			});
+
+			expect(resAbandon.dispatches.length).toBe(1);
+			expect(resAbandon.dispatches[0].outcome).toBe("executed");
+			const abandonNotices = [...fakePort.comments.values()].filter((comment) => comment.body.includes("imm-loop abandon"));
+			expect(abandonNotices).toHaveLength(1);
+			expect(abandonNotices[0]!.body).toContain("steer_loop_work_item");
+			expect(readWorkItem(stateDir, "issue-1")).toBeNull();
+
+			// 4. @imm-loop retry
 			const retryEvent: E3OwnerCommentEvent = {
 				contract: LOOP_DAEMON_EVENT_CONTRACT,
 				event_id: "evt-e3-retry",
@@ -1066,7 +1101,7 @@ describe("Loop Daemon: Tick Dispatch Core (S8)", () => {
 			expect(resRetry.dispatches.length).toBe(1);
 			expect(resRetry.dispatches[0].outcome).toBe("executed");
 
-			// 4. @imm-loop ignore
+			// 5. @imm-loop ignore
 			const ignoreEvent: E3OwnerCommentEvent = {
 				contract: LOOP_DAEMON_EVENT_CONTRACT,
 				event_id: "evt-e3-ignore",

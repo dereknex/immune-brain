@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { agentRole, AGENT_ROLES, parseAgentShorthand } from "../plugins/immune-brain/runtime/config/agent_roles.ts";
+import { loopRoleProfile } from "../plugins/immune-brain/runtime/loop_daemon/agent_runner.ts";
 import { resolveConfig } from "../plugins/immune-brain/runtime/config/layered_config.ts";
 import { frozenExecutorPreferences, frozenReviewProfile, laneExecutorChoice } from "../plugins/immune-brain/runtime/unattended/agent_profiles.ts";
 
@@ -64,7 +65,37 @@ test("each role takes a profile name, shorthand or inline object, and a profile 
 		planner: { host: "claude-code", model: "m", effort: null, source: "user" },
 		triage: { host: "antigravity", model: "named", effort: null, source: "user" },
 	});
-	expect(c.diagnostics).toEqual([]);
+	// Spec loop-leader D1.7: the two bindings loop sessions no longer read are reported, never silently kept.
+	expect(c.diagnostics.map((d) => [d.code, d.severity, d.key_path])).toEqual([
+		["deprecated_config_source", "warning", "loop.roles"],
+		["deprecated_config_source", "warning", "loop.roles"],
+		["deprecated_config_source", "warning", "loop.roles"],
+		// RF-AC6: `agents.triage` is bound here too, and nothing reads it.
+		["deprecated_config_source", "warning", "agents.triage"],
+	]);
+});
+
+// RF-AC6 / BR-SCN-5: a bound `agents.triage` is one deprecation notice per layer that binds it; the
+// binding still parses, so `agents.valid` and the other roles are unchanged.
+test("agents.triage is reported once per binding layer and never invalidates the agents table", () => {
+	const f = fixture();
+	f.project({ agents: { executor: "pi", triage: "pi" } });
+	const bound = f.read();
+	expect(bound.agents.valid).toBe(true);
+	expect(bound.diagnostics.filter((d) => d.key_path === "agents.triage").map((d) => [d.code, d.severity, d.file])).toEqual([
+		["deprecated_config_source", "warning", f.projectPath],
+	]);
+	expect(bound.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+
+	f.user({ agents: { profiles: PROFILES, triage: "pi" } });
+	expect(f.read().diagnostics.filter((d) => d.key_path === "agents.triage").map((d) => d.file).sort()).toEqual([f.projectPath, f.userPath].sort());
+
+	const unbound = fixture();
+	unbound.project({ agents: { executor: "pi", reviewer: "pi" } });
+	const c = unbound.read();
+	expect(c.diagnostics.filter((d) => d.key_path === "agents.triage")).toEqual([]);
+	expect(c.agents.roles.executor).toMatchObject({ host: "pi", source: "project" });
+	expect(c.agents.roles.reviewer).toMatchObject({ host: "pi", source: "project" });
 });
 
 test("roles merge per role: the project value wins whole, never mixing a host and a model from two layers", () => {
@@ -169,4 +200,67 @@ test("imm-kernel config --json lists each resolved role with its source", () => 
 		planner: { host: "pi", model: "grok/grok-4.7@500k", effort: null, source: "project" },
 		triage: null,
 	});
+});
+
+test("an agents binding that used to choose a loop role is ignored and reported once per affected role", () => {
+	const f = fixture();
+	f.user({ agents: { profiles: PROFILES, planner: "opus", executor: "deepseek" } });
+	const c = f.read();
+	// BR-DEC-7: clarify, plan and repair resolve from the catalog now, so the agent
+	// bindings are named as ignored sources rather than silently kept or dropped.
+	expect(c.diagnostics.map((d) => [d.code, d.file, d.key_path])).toEqual([
+		["deprecated_config_source", f.userPath, "loop.roles"],
+		["deprecated_config_source", f.userPath, "loop.roles"],
+		["deprecated_config_source", f.userPath, "loop.roles"],
+	]);
+	// The message names the ignored binding path and the key that replaces it, once per affected role.
+	expect(c.diagnostics.map((d) => d.message)).toEqual([
+		expect.stringContaining("agents.planner no longer chooses the loop clarify role"),
+		expect.stringContaining("agents.planner no longer chooses the loop plan role"),
+		expect.stringContaining("agents.executor no longer chooses the loop repair role"),
+	]);
+	for (const d of c.diagnostics) expect(d.message).toContain("loop.roles in .imm/config.json");
+	expect(c.diagnostics.every((d) => d.severity === "warning")).toBe(true);
+	// The sessions run on the catalog role: the default when no role overrides it.
+	expect(loopRoleProfile(c, "plan")).toEqual({ host: "claude-code", model: null, effort: null, instructions: null });
+	expect(loopRoleProfile(c, "repair")).toEqual({ host: "claude-code", model: null, effort: null, instructions: null });
+	// The Lane Host and the read-only catalog roles are unchanged (BR-DEC-8).
+	expect(loopRoleProfile(c, "analyze")).toEqual({ host: "claude-code", model: null, effort: null, instructions: null });
+	expect(loopRoleProfile(c, "executor")).toEqual({ host: "pi", model: "auto/deepseek-v4.1-flash", effort: "high", instructions: null });
+	// The project can still bind the loop's own role, and the notice stays: the agents key is not a loop source.
+	f.project({ loop: { roles: { planner: { base: "plan", host: "pi", model: "p-model" } } } });
+	const bound = f.read();
+	expect(loopRoleProfile(bound, "plan")).toEqual({ host: "pi", model: "p-model", effort: null, instructions: null });
+	expect(bound.diagnostics.filter((d) => d.code === "deprecated_config_source")).toHaveLength(3);
+});
+
+test("a resurrected agents.presets table is config_invalid and never reaches a loop session", () => {
+	const f = fixture();
+	// ADR 0041 removed presets; the Loop catalog replaced the role bindings they held.
+	f.user({ agents: { presets: { fast: { roles: { plan: "pi", clarify: "pi", repair: "pi", "*": "pi" } } } } });
+	const c = f.read();
+	expect(c.agents.valid).toBe(false);
+	expect(c.diagnostics).toContainEqual(expect.objectContaining({ code: "config_invalid", severity: "error", file: f.userPath, key_path: "agents.presets" }));
+	// Nothing from the preset reaches a loop role: every catalog role keeps its documented default.
+	for (const role of ["clarify", "plan", "repair"] as const) expect(loopRoleProfile(c, role)).toEqual({ host: "claude-code", model: null, effort: null, instructions: null });
+	expect(c.loop.value.roles.every((role) => role.source === "default")).toBe(true);
+});
+
+test("a retired preset roles.judging binding is tolerated, reported once, and leaves the executor Host alone", () => {
+	const f = fixture();
+	// Spec loop-leader D3.4: judging is retired, so the binding selects nothing and
+	// is reported rather than making the whole agents table config_invalid.
+	f.user({ agents: { executor: "pi:exec-model", presets: { fast: { roles: { judging: "pi" } } } } });
+	const c = f.read();
+	expect(c.agents.valid).toBe(true);
+	expect(c.diagnostics).toContainEqual(
+		expect.objectContaining({
+			code: "deprecated_config_source",
+			severity: "warning",
+			file: f.userPath,
+			key_path: "agents.presets.fast.roles.judging",
+		}),
+	);
+	expect(c.agents.roles.executor).toEqual({ host: "pi", model: "exec-model", effort: null, source: "user" });
+	expect(loopRoleProfile(c, "executor")).toEqual({ host: "pi", model: "exec-model", effort: null, instructions: null });
 });

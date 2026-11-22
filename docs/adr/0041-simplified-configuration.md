@@ -26,7 +26,7 @@ project without editing a shared file.
    `loop.allowed_actors` / `loop.allowed_associations` (intersection).
 3. **Four roles.** `executor` (with repair), `reviewer` (with findings
    verification and advisory review), `planner` (clarify and plan) and
-   `triage` (judging). A role value is a user profile name, shorthand
+   `triage` (reserved; no Loop session reads it). A role value is a user profile name, shorthand
    `host[:model][@effort]` (effort only when the text after the last `@` is a
    known level), or an object. Roles merge one by one, each a whole profile
    from one layer. Profiles are defined only in the user file. Presets,

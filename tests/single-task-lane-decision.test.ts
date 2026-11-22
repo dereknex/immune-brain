@@ -401,7 +401,7 @@ interface HostHarness {
 	gates: Array<{ text: string }>;
 	/** What the next native gate answers: accept when true, decline otherwise. */
 	answer: { approve: boolean };
-	start(): Promise<any>;
+	start(args?: Record<string, unknown>): Promise<any>;
 	stop(): Promise<any>;
 	stopBatch(): Promise<void>;
 	relay(op: "request_authorization" | "approve_breaking_intent_revision" | "stop", extra?: { record_revision?: string; next_intent?: unknown }): Promise<Relayed>;
@@ -470,7 +470,7 @@ function claudeHarness(root: string, factory: () => unknown): HostHarness {
 	const tool = (name: string, args: Record<string, unknown>) => runtime.callTool(name, args, { toolCallId: `s5-${name}-${++calls}` });
 	return {
 		gates, answer,
-		start: () => tool("start_unattended_batch", { task_id: TASK, agents: { executor: "claude-code" }, final_verification: FINAL_VERIFICATION }),
+		start: (args = { agents: { executor: "claude-code" }, final_verification: FINAL_VERIFICATION }) => tool("start_unattended_batch", { task_id: TASK, ...args }),
 		stop: () => tool("start_unattended_batch", { task_id: TASK, stop: true, final_verification: FINAL_VERIFICATION }),
 		stopBatch: async () => { await tool("start_unattended_batch", { task_id: TASK, stop: true, final_verification: FINAL_VERIFICATION }).catch(() => undefined); },
 		relay: async (op, extra = {}) => {
@@ -1156,5 +1156,70 @@ describe("per-child Lane decisions (S7)", () => {
 		// the provider's reason instead of opening anything.
 		const refused = openBatchSessionPort({ root: repo, provider: "herdr", env: {}, host: "pi" });
 		expect(refused).toMatchObject({ ok: false, reason: expect.stringContaining("lane_session_unavailable") });
+	});
+});
+
+describe("LEL-AC3: a new single-task start takes the layered batch.final_verification", () => {
+	const savedXdg = process.env.XDG_CONFIG_HOME;
+	afterEach(() => { if (savedXdg === undefined) delete process.env.XDG_CONFIG_HOME; else process.env.XDG_CONFIG_HOME = savedXdg; });
+	const CONFIGURED = ["bun test", "bun run typecheck"];
+
+	/** A single-task fixture whose project config is `batch`, with no user config. */
+	function configuredHost(batch: unknown) {
+		const xdg = realpathSync(mkdtempSync(join(tmpdir(), "imm-lel-xdg-")));
+		roots.push(xdg);
+		process.env.XDG_CONFIG_HOME = xdg;
+		const f = hostFixture();
+		const writeConfig = (value: unknown) => {
+			mkdirSync(join(f.root, ".imm"), { recursive: true });
+			writeFileSync(join(f.root, ".imm/config.json"), JSON.stringify({ contract: "immune_brain/project_config/v2", ...(value === undefined ? {} : { batch: value }) }));
+		};
+		writeConfig(batch);
+		const h = claudeHarness(f.root, f.factory);
+		const recorded = () => (readAnyBatchRunState(f.root, findActiveLaneBatchForTask(f.root, TASK)!.record.batch_id) as BatchLaneRunStateRecord).final_verification;
+		return { f, h, writeConfig, recorded };
+	}
+
+	it("records the configured commands and lists them in the native confirmation", async () => {
+		const { h, recorded } = configuredHost({ final_verification: CONFIGURED });
+		const started = await h.start({ agents: { executor: "claude-code" } });
+		expect(started.state).toBe("started");
+		expect(recorded()).toEqual(CONFIGURED);
+		expect(h.gates).toHaveLength(1);
+		for (const command of CONFIGURED) expect(h.gates[0]!.text).toContain(command);
+		await h.stopBatch();
+	});
+
+	it("lets caller commands win over config", async () => {
+		const { h, recorded } = configuredHost({ final_verification: CONFIGURED });
+		const started = await h.start({ agents: { executor: "claude-code" }, final_verification: ["bun run lint"] });
+		expect(started.state).toBe("started");
+		expect(recorded()).toEqual(["bun run lint"]);
+		await h.stopBatch();
+	});
+
+	it("still starts with neither caller commands nor config, recording none", async () => {
+		const { h, recorded } = configuredHost(undefined);
+		const started = await h.start({ agents: { executor: "claude-code" } });
+		expect(started.state).toBe("started");
+		expect(recorded() ?? []).toEqual([]);
+		await h.stopBatch();
+	});
+
+	it("refuses an invalid batch.final_verification with lane_config_invalid before any gate", async () => {
+		const { h } = configuredHost({ final_verification: "bun test" });
+		const refused = await h.start({ agents: { executor: "claude-code" } });
+		expect(refused.state).toBe("rejected");
+		expect(refused.reason).toContain("lane_config_invalid");
+		expect(h.gates).toHaveLength(0);
+	});
+
+	it("keeps the recorded commands when re-entering after the config changed", async () => {
+		const { h, writeConfig, recorded } = configuredHost({ final_verification: CONFIGURED });
+		expect((await h.start({ agents: { executor: "claude-code" } })).state).toBe("started");
+		writeConfig({ final_verification: ["bun run lint"] });
+		expect((await h.start({ agents: { executor: "claude-code" } })).state).toBe("started");
+		expect(recorded()).toEqual(CONFIGURED);
+		await h.stopBatch();
 	});
 });
