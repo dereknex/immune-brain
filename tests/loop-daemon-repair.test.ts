@@ -512,9 +512,12 @@ describe("Suite 5: Scope Enforcement and Authority/No-Touch Rejection (review-2)
 		expect(noTouchFile.valid).toBe(false);
 		expect(noTouchFile.reason).toContain("authority/no-touch path targeted");
 
-		const workflowFile = validatePathsInScope([".github/workflows/ci.yml"], undefined);
-		expect(workflowFile.valid).toBe(false);
-		expect(workflowFile.reason).toContain("authority/no-touch path targeted");
+		const authorityState = validatePathsInScope([".imm/state/loop/state.json"], undefined);
+		expect(authorityState.valid).toBe(false);
+		expect(authorityState.reason).toContain("authority/no-touch path targeted");
+
+		expect(validatePathsInScope([".github/workflows/ci.yml"], undefined).valid).toBe(true);
+		expect(validatePathsInScope(["deploy.pem"], undefined).valid).toBe(true);
 	});
 
 	it("repairPrCi rejects applyFix touching authority path even when scope_hint is undefined", async () => {
@@ -531,7 +534,7 @@ describe("Suite 5: Scope Enforcement and Authority/No-Touch Rejection (review-2)
 				runVerification: async () => ({ exit_code: 1, stdout: "", stderr: "failed" }),
 				applyFix: async () => ({
 					success: true,
-					modified_paths: [".github/workflows/ci.yml"],
+					modified_paths: [".imm/state/loop/state.json"],
 				}),
 				gitCommitAndPush: async () => ({ commit_sha: "dummy" }),
 			},
@@ -549,7 +552,7 @@ describe("Suite 5: Scope Enforcement and Authority/No-Touch Rejection (review-2)
 			deps: {
 				rebaseOrMerge: async () => ({
 					success: false,
-					conflicting_paths: [".github/workflows/release.yml"],
+					conflicting_paths: [".imm/state/loop/state.json"],
 				}),
 				runVerification: async () => ({ exit_code: 0, stdout: "", stderr: "" }),
 				gitCommitAndPush: async () => ({ commit_sha: "dummy" }),
@@ -604,7 +607,7 @@ describe("Suite 5: Scope Enforcement and Authority/No-Touch Rejection (review-2)
 	});
 
 	it("normalizes repo-relative paths and rejects traversal", () => {
-		const res1 = validatePathsInScope(["./.github/workflows/ci.yml"], undefined);
+		const res1 = validatePathsInScope(["./.imm/state/loop/state.json"], undefined);
 		expect(res1.valid).toBe(false);
 		expect(res1.reason).toContain("authority/no-touch path targeted");
 
@@ -617,7 +620,7 @@ describe("Suite 5: Scope Enforcement and Authority/No-Touch Rejection (review-2)
 		expect(resInternalDot.valid).toBe(false);
 		expect(resInternalDot.reason).toContain("authority/no-touch path targeted");
 
-		const resLeadingSlashDot = validatePathsInScope(["/./.github/workflows/ci.yml"], undefined);
+		const resLeadingSlashDot = validatePathsInScope(["/./.imm/state/loop/state.json"], undefined);
 		expect(resLeadingSlashDot.valid).toBe(false);
 		expect(resLeadingSlashDot.reason).toContain("authority/no-touch path targeted");
 

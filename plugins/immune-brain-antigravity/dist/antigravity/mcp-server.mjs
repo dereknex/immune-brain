@@ -217,6 +217,11 @@ var init_batch_reasons = __esm(() => {
       reason: (detail) => detail || "batch run rejected",
       recovery_action: "delete or rename the conflicting branch, or commit working changes and retry in the current Host"
     },
+    batch_runtime_contract_mismatch: {
+      state: "rejected",
+      reason: (detail) => detail || "batch_runtime_contract_mismatch",
+      recovery_action: "load the same Immune-Brain runtime contracts in the coordinator Host and the Lane Executor Host, then retry in the current Host"
+    },
     stale_batch_absent: {
       state: "rejected",
       reason: (detail) => `no retirable batch record to dispose: ${detail}`,
@@ -1576,10 +1581,7 @@ function readNoTouchAt(root, commit) {
   return parseNoTouch(JSON.parse(execFileSync2("git", ["show", `${commit}:${NO_TOUCH_PATH}`], options)));
 }
 function noTouchPaths(paths, additions = []) {
-  return paths.filter((path) => {
-    const name = path.split("/").at(-1);
-    return path === ".imm/state" || path.startsWith(".imm/state/") || path === ".github/workflows" || path.startsWith(".github/workflows/") || path === ".changeset/config.json" || name === ".env" || name.startsWith(".env.") || /\.(pem|key)$/.test(name) || /^id_(rsa|ed25519)/.test(name) || name === ".npmrc" || name === ".netrc" || additions.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
-  });
+  return paths.filter((path) => path === STATE_RELATIVE || path.startsWith(`${STATE_RELATIVE}/`) || additions.some((prefix) => path === prefix || path.startsWith(`${prefix}/`)));
 }
 function assertNoTouch(paths, additions = []) {
   const forbidden = noTouchPaths(paths, additions);
@@ -1587,7 +1589,9 @@ function assertNoTouch(paths, additions = []) {
     throw new Error(`no_touch_path_changed: ${forbidden.join(", ")}`);
 }
 var NO_TOUCH_PATH = "docs/agents/no-touch.json", CONTRACT = "immune_brain/no_touch/v1";
-var init_no_touch = () => {};
+var init_no_touch = __esm(() => {
+  init_storage_paths();
+});
 
 // plugins/immune-brain/runtime/kernel/intent.ts
 import { createHash as createHash3 } from "node:crypto";
@@ -18993,9 +18997,6 @@ function laneRuntimeDir(root, explicit) {
   }
 }
 function laneRuntimeContractRefusal(root, executorRuntime, loadedFrom) {
-  const skew = pluginSourceSkewWarning(root, loadedFrom);
-  if (skew)
-    return `${RUNTIME_CONTRACT_MISMATCH}: ${skew.message}`;
   const dir = laneRuntimeDir(root, executorRuntime);
   if (!dir)
     return null;
@@ -26383,7 +26384,7 @@ class HostRuntime {
     if (options.max_parallel !== undefined && !isResuming) {
       const contractRefusal = laneRuntimeContractRefusal(this.cwd);
       if (contractRefusal)
-        return batchReason("batch_run_rejected", contractRefusal);
+        return batchReason("batch_runtime_contract_mismatch", contractRefusal);
     }
     const authorization = await authorizeBatch({
       root: this.cwd,
@@ -26606,7 +26607,7 @@ class HostRuntime {
       report = started;
     }
     if (report.batch_state === "rejected")
-      return batchReason("batch_run_rejected", report.reason ?? "");
+      return batchReason(report.reason?.startsWith(`${RUNTIME_CONTRACT_MISMATCH}: `) ? "batch_runtime_contract_mismatch" : "batch_run_rejected", report.reason ?? "");
     if (!options.plan_source && report.batch_state === "completed" && report.final_verification?.passed)
       report = await completedParentReport(this.cwd, initiativeSlug, this.readInitiative, this.batchTracker) ?? report;
     return {

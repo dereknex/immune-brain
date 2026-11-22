@@ -1,0 +1,198 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "lane-runtime-contract-check",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "lane-runtime-contract-check",
+    "goal": "A Lane batch start refuses only when the coordinator's runtime and the Lane Executor's runtime disagree on runtime contract identifiers; a loaded plugin build that merely differs byte-wise from the workspace plugin stays a non-blocking status warning, a claude-code Lane Executor loads the coordinator's own plugin, and the refusal carries a recovery action that names the runtime mismatch (Spec docs/specs/lane-runtime-contract-check.spec.md D1-D4).",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "In a plugin-source workspace whose dist/claude/mcp-server.mjs differs from the loaded build while runtime_contracts.json identifiers match, laneRuntimeContractRefusal returns null and a new lane startBatch reaches batch_state running; an executor_runtime whose task_record differs still refuses batch_runtime_contract_mismatch naming both manifests and creates no batch record. Done looks like: the former byte-skew refusal case in tests/unattended-batch-lanes.test.ts now starts, and the contract-mismatch case still rejects.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-lanes.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "For an ordinary plugin-source checkout with a differing loaded build, pluginSourceSkewWarning still returns loaded_plugin_differs_from_workspace with the reload guidance and projectTaskStatus still lists it in warnings, while laneRuntimeContractRefusal for the same checkout and loaded build returns null. Done looks like: tests/lane-executor-status-guidance.test.ts asserts the warning and the null refusal.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/lane-executor-status-guidance.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "A Lane session opened for a claude-code Executor passes --plugin-dir followed by the coordinator's runtimeClaudePluginDir() in its hostArgs, alongside the profile's --model and --effort; a pi Executor's hostArgs carry no --plugin-dir. Done looks like: the requested-executor-profile cases in tests/lane-sessions.test.ts assert both argv shapes.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/lane-sessions.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "The batch reason table maps batch_runtime_contract_mismatch to a rejected state whose recovery_action tells the user to load the same Immune-Brain runtime contracts in the coordinator Host and the Lane Executor Host and retry in the current Host, with no mention of a conflicting branch; batch_run_rejected keeps its existing text. Done looks like: the reason-table expectations in tests/unattended-batch-run.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-run.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/lane-runtime-contract-check.md",
+      "docs/plans/lane-runtime-contract-check.intent.json",
+      "docs/specs/lane-runtime-contract-check.spec.md",
+      "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+      "plugins/immune-brain-antigravity/runtime/host-core/runtime.ts",
+      "plugins/immune-brain-antigravity/runtime/lane_sessions/index.ts",
+      "plugins/immune-brain-antigravity/runtime/unattended/batch_lanes.ts",
+      "plugins/immune-brain-antigravity/runtime/unattended/batch_reasons.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/host-core/runtime.ts",
+      "plugins/immune-brain/runtime/lane_sessions/index.ts",
+      "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+      "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+      "tests/lane-executor-status-guidance.test.ts",
+      "tests/lane-sessions.test.ts",
+      "tests/unattended-batch-lanes.test.ts",
+      "tests/unattended-batch-run.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/lane-runtime-contract-check.intent.json",
+    "content_hash": "sha256:1eb900e800b67a952c2cb75ffc71014fdc7c977c488967b9517be9b3f4bbebf3"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:1eb900e800b67a952c2cb75ffc71014fdc7c977c488967b9517be9b3f4bbebf3",
+  "git_base_head": "52f374d715dde5582b3d5b06fe67c235449c6068",
+  "attestations": [
+    {
+      "id": "approval-qa-60a31cf1",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:1eb900e800b67a952c2cb75ffc71014fdc7c977c488967b9517be9b3f4bbebf3",
+      "diff_hash": "sha256:53e04c695c337a8fab5ba883e0a042f4040f0ceca6d4419ce35869ef912d3245",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 project verification check(s) passed; execution=sha256:7cb4e72839021cdf46c4b6c8b0767aedd20c8be6b0ba67611e833a840c937afd",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:7cb4e72839021cdf46c4b6c8b0767aedd20c8be6b0ba67611e833a840c937afd"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:7cb4e72839021cdf46c4b6c8b0767aedd20c8be6b0ba67611e833a840c937afd"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:7cb4e72839021cdf46c4b6c8b0767aedd20c8be6b0ba67611e833a840c937afd"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:7cb4e72839021cdf46c4b6c8b0767aedd20c8be6b0ba67611e833a840c937afd"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-1e34c2c9",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:1eb900e800b67a952c2cb75ffc71014fdc7c977c488967b9517be9b3f4bbebf3",
+      "diff_hash": "sha256:53e04c695c337a8fab5ba883e0a042f4040f0ceca6d4419ce35869ef912d3245",
+      "actor_id": "cli:claude-code:ab7f329a-61f1-4870-ae35-38a171399fda",
+      "summary": "AC1-AC4 met: laneRuntimeContractRefusal drops the byte-skew refusal and keeps the contract-identifier half (task_record mismatch case still in tests/unattended-batch-lanes.test.ts), skew stays a status warning, claude-code Executor argv gains --plugin-dir runtimeClaudePluginDir() while pi argv is unchanged, batch_runtime_contract_mismatch has its own rejected reason with a same-Host runtime recovery action at both refusal sites; antigravity runtime tree is byte-identical to the claude runtime and both dist bundles mirror the source; merged uls-final-repair label bounding and open-rejection park are consistent. Blast radius: medium-high, load-bearing paths batch_lanes.ts preflight, host-core/runtime.ts batch admission, lane_sessions/index.ts Executor argv, both dist bundles; no persisted shape change.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "52f374d715dde5582b3d5b06fe67c235449c6068",
+        "review_commit": "4874174dc3067eadbae3d56e6b38347c53d4ac52"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-1af41d27fa18-1-review-1",
+          "acceptance_id": null,
+          "summary": "runLaneBatch store-condition catch uses /locked/i, which also matches any error text containing 'blocked', converting an unrelated engine throw into a rejected report with a kernel-store recovery action.",
+          "anchor": "sha256:658f5d825548705d58fe226b55e06cb31401d8fc5c688b648cf57d96cfe027f4",
+          "evidence": {
+            "trigger": "runLaneBatchEngine throws an Error whose message contains 'blocked' (not a store condition) with a persisted v3 record → runLaneBatch returns batch_state rejected with next_action 'settle the reported kernel store condition' instead of propagating the error",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/unattended/batch_lanes.ts:runLaneBatch",
+              "plugins/immune-brain/runtime/unattended/batch_lanes.ts:laneRejectionReport"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "AC1"
+            }
+          }
+        },
+        {
+          "id": "review-1af41d27fa18-2-review-2",
+          "acceptance_id": "AC4",
+          "summary": "The reason-table expected object in tests/unattended-batch-run.test.ts now declares batch_agreement_invalid and batch_record_retired twice; values match so the assertion holds, but the duplicate keys are redundant.",
+          "anchor": "sha256:c99859f3e7294d18c362e958c3c2c7261ccaadee3e7f8ab9c67abea4e963ee8c",
+          "evidence": {
+            "trigger": "object literal `expected` in the shared batch preflight projection test contains the same key twice → later entry silently overrides the earlier, a future edit to one copy is ignored",
+            "caller_chain": [
+              "tests/unattended-batch-run.test.ts:shared batch preflight projection",
+              "plugins/immune-brain/runtime/unattended/batch_reasons.ts:BATCH_REASONS"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "AC4"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:9544e26ca4b0f22d829d8f04c51dde70cc010d292c22d32cf409615d73ec7c20"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:lane-runtime-contract-check:2026-11-20T04:02:32.406Z",
+      "at": "2026-11-20T04:02:32.406Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/lane-runtime-contract-check.intent.json"
+    },
+    {
+      "id": "record_approval:lane-runtime-contract-check:2026-11-20T04:04:45.914Z",
+      "at": "2026-11-20T04:04:45.914Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-60a31cf1\naction_v2_sha256:bd967cd3b60b79a4e5d257beece33a2b3fe96ffd317734928e23e4d85a351d5c",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-20T04:04:45.914Z"
+      }
+    },
+    {
+      "id": "record_approval:lane-runtime-contract-check:2026-11-20T06:32:02.585Z",
+      "at": "2026-11-20T06:32:02.585Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-1e34c2c9\naction_v2_sha256:eccdb8fb28eb0c416958f0177dc7a35621a20390f86e467814dac98e5184623a",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:ab7f329a-61f1-4870-ae35-38a171399fda",
+        "confirmation_ref": "pi:cli:claude-code:ab7f329a-61f1-4870-ae35-38a171399fda",
+        "issued_at": "2026-11-20T06:32:02.586Z"
+      },
+      "review_started_at": "2026-11-20T06:29:48.236Z",
+      "review_submitted_at": "2026-11-20T06:32:01.115Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:lane-runtime-contract-check:2026-11-20T06:32:06.681Z",
+      "at": "2026-11-20T06:32:06.681Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:f3805673f52c6c41c7490b784cb1beff2d783aca30f3b684aab3b61b09f9eab5"
+    }
+  ]
+}

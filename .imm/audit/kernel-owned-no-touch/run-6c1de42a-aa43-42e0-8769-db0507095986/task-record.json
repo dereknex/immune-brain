@@ -1,0 +1,177 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "kernel-owned-no-touch",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "kernel-owned-no-touch",
+    "goal": "The Kernel's built-in hard no-touch set protects only its own authority root (.imm/state, from kernel/storage_paths.ts); credential-type and CI/release patterns leave the built-in set, and any other protection is declared through docs/agents/no-touch.json or .imm/risk-floor.json (Spec docs/specs/kernel-owned-no-touch.spec.md D1-D5).",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "Single-task delivery whose diff changes .env, nested/.env.local, cert.pem, private.key, nested/id_rsa.pub, id_ed25519, .npmrc, .netrc, .github/workflows/ci.yml or .changeset/config.json returns that path in changed_paths, and a force-added .imm/state/x still refuses with no_touch_path_changed naming it. Done looks like: taskDeliveryIdentity in tests/no-touch-paths.test.ts accepts each former default and throws only for .imm/state.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/no-touch-paths.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "A batch Lane commit changing .github/workflows/ci.yml integrates and advances the Parent branch, while one changing .imm/state/x or a path declared in docs/agents/no-touch.json refuses with no_touch_path_changed and leaves the Parent ref unmoved. Done looks like: integrateLaneCommit in tests/no-touch-paths.test.ts and tests/batch-merge-queue.test.ts shows both outcomes.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/no-touch-paths.test.ts\",\n      \"tests/batch-merge-queue.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "imm-kernel intent validate reports valid for a scope_hint of .github/workflows/** or .env, and reports valid false with no_touch_path_changed for .imm/state/x, for the ancestor pair .imm plus .imm/state/x, and for a declared addition; a no-touch declaration carrying a remove field is rejected naming no_touch.remove. Done looks like: runKernelCommand output in tests/no-touch-paths.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/no-touch-paths.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "Loop guard G3 and repair validatePathsInScope allow .github/workflows/ci.yml and deploy.pem, and still block .imm/state/loop/state.json, docs/agents/no-touch.json and a declared no_touch_paths addition. Done looks like: evaluateGuards and validatePathsInScope verdicts in tests/loop-daemon-boundary.test.ts and tests/loop-daemon-repair.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-daemon-boundary.test.ts\",\n      \"tests/loop-daemon-repair.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/kernel-owned-no-touch.md",
+      "docs/adr/0028-scope-as-estimate.md",
+      "docs/plans/kernel-owned-no-touch.intent.json",
+      "docs/specs/kernel-owned-no-touch.spec.md",
+      "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+      "plugins/immune-brain-antigravity/runtime/no_touch.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/no_touch.ts",
+      "tests/batch-merge-queue.test.ts",
+      "tests/loop-daemon-boundary.test.ts",
+      "tests/loop-daemon-repair.test.ts",
+      "tests/no-touch-paths.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/kernel-owned-no-touch.intent.json",
+    "content_hash": "sha256:db3773ca64eaaef446631a0db9f25ad0b40dd13eb83b08171f010b5ac0f8a2ec"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:db3773ca64eaaef446631a0db9f25ad0b40dd13eb83b08171f010b5ac0f8a2ec",
+  "git_base_head": "98c9858671472d0b839af9b6aafc7c7e2ec3bd91",
+  "attestations": [
+    {
+      "id": "approval-qa-a0fb94d6",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:db3773ca64eaaef446631a0db9f25ad0b40dd13eb83b08171f010b5ac0f8a2ec",
+      "diff_hash": "sha256:73f506b0d5a6ad647143f6cb790de05c967f2a1f5c077322bf858a55beb7843a",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 project verification check(s) passed; execution=sha256:497e8932df0180787a9beaaba31af67366053a2a0a14705502c8e5ad67810ecc",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:497e8932df0180787a9beaaba31af67366053a2a0a14705502c8e5ad67810ecc"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:497e8932df0180787a9beaaba31af67366053a2a0a14705502c8e5ad67810ecc"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:497e8932df0180787a9beaaba31af67366053a2a0a14705502c8e5ad67810ecc"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:497e8932df0180787a9beaaba31af67366053a2a0a14705502c8e5ad67810ecc"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-a91a82d6",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:db3773ca64eaaef446631a0db9f25ad0b40dd13eb83b08171f010b5ac0f8a2ec",
+      "diff_hash": "sha256:73f506b0d5a6ad647143f6cb790de05c967f2a1f5c077322bf858a55beb7843a",
+      "actor_id": "cli:claude-code:4bf539f5-3afe-4dc0-a28d-4538fd8ebeda",
+      "summary": "noTouchPaths now refuses only STATE_RELATIVE (.imm/state, verified in kernel/storage_paths.ts:35) plus declared additions in both runtime mirrors and both dist bundles; tests pin former defaults as deliverable/integrable/valid and authority state plus declarations as refused across delivery, batch integration, intent validate (incl. ancestor compaction), G3 and repair; remove-field rejection still pinned; blast radius high: shared authority predicate plugins/immune-brain/runtime/no_touch.ts consumed by settlement, integration, enrollment and Loop guards.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "98c9858671472d0b839af9b6aafc7c7e2ec3bd91",
+        "review_commit": "a24cf05f5fc260cee1c58698aa884867495c5056"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-6f04aefd3e21-1-review-1",
+          "acceptance_id": "AC2",
+          "summary": "tests/batch-merge-queue.test.ts covers only the refusal outcome; the ci.yml integrate-and-advance outcome is pinned only in tests/no-touch-paths.test.ts at integrateLaneCommit.",
+          "anchor": "sha256:f455d2eee5bac8f783f393c0bed92f49b8e9e481197cecf5f29fc25e81114316",
+          "evidence": {
+            "trigger": "Lane commit changing .github/workflows/ci.yml through the full merge-queue tick → advance outcome not asserted at the merge-queue seam, only at integrateLaneCommit directly",
+            "caller_chain": [
+              "tests/batch-merge-queue.test.ts",
+              "plugins/immune-brain/runtime/unattended/batch_integration.ts#integrateLaneCommit",
+              "plugins/immune-brain/runtime/no_touch.ts#noTouchPaths"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "AC2"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:b56a4c8c36eaa5b474f4bd61eee9ad66f4b88291ef6b3644d96b51d444068b2f"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:kernel-owned-no-touch:2026-11-20T07:39:04.143Z",
+      "at": "2026-11-20T07:39:04.143Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/kernel-owned-no-touch.intent.json"
+    },
+    {
+      "id": "record_approval:kernel-owned-no-touch:2026-11-20T07:40:38.972Z",
+      "at": "2026-11-20T07:40:38.972Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-a0fb94d6\naction_v2_sha256:8a2738a04ccfcb23a3f4b73efd0cb0558045738a5f0fa801b0ea6ba71d8b89ac",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-20T07:40:38.972Z"
+      }
+    },
+    {
+      "id": "record_approval:kernel-owned-no-touch:2026-11-20T07:41:44.378Z",
+      "at": "2026-11-20T07:41:44.378Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-a91a82d6\naction_v2_sha256:b4415d8b5c245ac7c570fbe98e2728e5d6f1a2eb9e0b7fbd7054d3c5a712b468",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:4bf539f5-3afe-4dc0-a28d-4538fd8ebeda",
+        "confirmation_ref": "pi:cli:claude-code:4bf539f5-3afe-4dc0-a28d-4538fd8ebeda",
+        "issued_at": "2026-11-20T07:41:44.379Z"
+      },
+      "review_started_at": "2026-11-20T07:40:44.625Z",
+      "review_submitted_at": "2026-11-20T07:41:43.096Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:kernel-owned-no-touch:2026-11-20T07:41:48.190Z",
+      "at": "2026-11-20T07:41:48.190Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:8fd7c254c933a382d601f86f17a157b37d09d2eb1c4624321afc72ee124a575b"
+    }
+  ]
+}

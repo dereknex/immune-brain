@@ -30,9 +30,14 @@ Planner estimate into a stop.
 3. **Risk follows the diff.** Projected risk is the highest of declared risk,
    the scope floor and the floor of the actual changed paths; a raise
    strengthens Review and opens no gate.
-4. **Hard no-touch paths.** Authority state, credential-type files, CI and
-   release config, and repository-declared additions are refused at settlement
-   and integration.
+4. **Hard no-touch paths follow ownership.** The Kernel hard-refuses only the
+   state it owns — its worktree authority root, `.imm/state` and everything
+   beneath it — plus the repository-declared additions in
+   `docs/agents/no-touch.json`. Credential-type names, CI and release config are
+   ordinary delivery content: a project that wants one protected declares it
+   there, and `.imm/risk-floor.json` raises Review strength instead.
+   Amended on 2026-11-20 by task `kernel-owned-no-touch`
+   (`docs/specs/kernel-owned-no-touch.spec.md`).
 5. **No delegated revision.** Delegated in-Lane revision and reseal are
    removed. Any `scope_hint` change that keeps the bound Spec path is a
    compatible revision, whether it adds, removes or replaces files, directories

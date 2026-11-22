@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { lstatSync, readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
+import { STATE_RELATIVE } from "./kernel/storage_paths";
 
 export const NO_TOUCH_PATH = "docs/agents/no-touch.json";
 const CONTRACT = "immune_brain/no_touch/v1";
@@ -40,15 +41,16 @@ export function readNoTouchAt(root: string, commit: string): string[] {
 	return parseNoTouch(JSON.parse(execFileSync("git", ["show", `${commit}:${NO_TOUCH_PATH}`], options)));
 }
 
+/**
+ * The Kernel hard-refuses only state it owns: the worktree authority root. Any
+ * other protection is a project decision declared through `docs/agents/no-touch.json`
+ * (hard refusal) or `.imm/risk-floor.json` (Review escalation).
+ */
 export function noTouchPaths(paths: readonly string[], additions: readonly string[] = []): string[] {
-	return paths.filter(path => {
-		const name = path.split("/").at(-1)!;
-		return path === ".imm/state" || path.startsWith(".imm/state/") ||
-			path === ".github/workflows" || path.startsWith(".github/workflows/") || path === ".changeset/config.json" ||
-			name === ".env" || name.startsWith(".env.") || /\.(pem|key)$/.test(name) ||
-			/^id_(rsa|ed25519)/.test(name) || name === ".npmrc" || name === ".netrc" ||
-			additions.some(prefix => path === prefix || path.startsWith(`${prefix}/`));
-	});
+	return paths.filter(path =>
+		path === STATE_RELATIVE || path.startsWith(`${STATE_RELATIVE}/`) ||
+		additions.some(prefix => path === prefix || path.startsWith(`${prefix}/`)),
+	);
 }
 
 export function assertNoTouch(paths: readonly string[], additions: readonly string[] = []): void {

@@ -225,17 +225,22 @@ describe("G3: no-touch and authority path guard", () => {
 		expect(judgement.handler).toBe("escalate");
 	});
 
-	it("rejects an action targeting an authority path inside the declarations", async () => {
+	it("rejects an action targeting an authority path or a declared path", async () => {
 		const cases: GuardFacts[] = [
-			{ target_paths: [".github/workflows/ci.yml"] },
 			{ target_paths: [".imm/state/loop/state.json"] },
-			{ target_paths: ["deploy.pem"] },
 			{ target_paths: ["scripts/release.ts"], no_touch_paths: ["scripts"] },
 		];
 		for (const facts of cases) {
 			const judgement = await judgeEvent(readyEvent(), { facts });
 			expect(judgement.guard?.id).toBe("G3");
 			expect(judgement.handler).toBe("escalate");
+		}
+	});
+
+	it("allows a CI workflow or a certificate file outside every protected path", () => {
+		for (const target_paths of [[".github/workflows/ci.yml"], ["deploy.pem"], [".env"]]) {
+			const verdict = evaluateGuards(readyEvent(), { target_paths });
+			expect(verdict.find((entry) => entry.guard === "G3")?.blocked).toBe(false);
 		}
 	});
 

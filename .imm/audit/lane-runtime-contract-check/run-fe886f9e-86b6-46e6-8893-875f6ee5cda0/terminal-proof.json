@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "lane-runtime-contract-check",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:lane-runtime-contract-check:2026-11-20T06:32:06.681Z",
+  "final_record_hash": "sha256:4b5ce7bbf4eee5fe946f469ae2cdd63f6396a84c1c1a36c3501bff13558b4d17",
+  "terminalized_at": "2026-11-20T06:32:06.681Z"
+}

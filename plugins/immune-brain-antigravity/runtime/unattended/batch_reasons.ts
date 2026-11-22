@@ -51,6 +51,7 @@ export type BatchReasonKey =
 	| "cancelled_before_execution"
 	| "precondition_commit_failed"
 	| "batch_run_rejected"
+	| "batch_runtime_contract_mismatch"
 	| "stale_batch_absent"
 	| "stale_batch_in_flight";
 
@@ -244,6 +245,12 @@ export const BATCH_REASONS: Readonly<Record<BatchReasonKey, BatchReasonSpec>> = 
 		// The runner owns the specific reason; the fallback is this entry's own text.
 		reason: (detail: string) => detail || "batch run rejected",
 		recovery_action: "delete or rename the conflicting branch, or commit working changes and retry in the current Host",
+	},
+	batch_runtime_contract_mismatch: {
+		state: "rejected",
+		// The refusal already names both runtime sources and the disagreeing identifiers.
+		reason: (detail: string) => detail || "batch_runtime_contract_mismatch",
+		recovery_action: "load the same Immune-Brain runtime contracts in the coordinator Host and the Lane Executor Host, then retry in the current Host",
 	},
 	stale_batch_absent: {
 		state: "rejected",
