@@ -54,4 +54,4 @@ jobs:
         run: bun scripts/plugin_versioning.ts validate
 
       - name: Test
-        run: bun test
+        run: bun test --parallel=4
