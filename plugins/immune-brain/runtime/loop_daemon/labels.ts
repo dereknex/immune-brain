@@ -1,9 +1,8 @@
 /**
  * Loop Daemon: Disagreement & Reversal Label Corpus Append Log (S10)
  *
- * Implements D12 item 4 of docs/specs/loop-daemon.spec.md:
- * Appends `labels.jsonl` (mode 0600) rows whenever the judging agent overrides a
- * model-skipped decision during reconciliation, or when a verified owner
+ * Implements D12 item 4 of docs/specs/loop-daemon.spec.md (and ADR 0042):
+ * Appends `labels.jsonl` (mode 0600) rows whenever a verified owner
  * `@imm-loop retry` / `@imm-loop ignore` reverses a model-decided event.
  * Output rows conform to scripts/decision-eval/harness.ts `loadCorpus()` rows.
  */
@@ -12,7 +11,7 @@ import { appendFileSync, chmodSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { ensureLoopStateDir } from "./state.ts";
 
-export type LabelSource = "judging_agent" | "owner";
+export type LabelSource = "owner";
 
 export interface LoopLabelRow {
 	id: string;

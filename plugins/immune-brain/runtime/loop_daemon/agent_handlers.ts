@@ -757,6 +757,7 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 				comments: () => comments,
 				binding,
 				guardFacts: context.guardFacts,
+				stateDir: context.stateDir,
 			}),
 		};
 	}

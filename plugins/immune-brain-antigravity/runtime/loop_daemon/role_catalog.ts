@@ -18,8 +18,6 @@ import { AGENT_HOSTS, type AgentHost, type AgentsSection } from "../config/agent
 /** The closed capability bases a project role may bind (D1.2); configuration never widens one. */
 export const LOOP_ROLE_BASES = ["leader", "clarify", "plan", "execute", "repair", "analyze"] as const;
 export type LoopRoleBase = (typeof LOOP_ROLE_BASES)[number];
-/** Bases that only read: their session argv never grants write permission. */
-export const READ_ONLY_LOOP_BASES: readonly LoopRoleBase[] = ["leader", "clarify", "plan", "analyze"];
 export const LOOP_ROLE_NAME_PATTERN = /^[a-z][a-z0-9-]{0,31}$/;
 export const LOOP_ROLE_WHEN_MAX = 500;
 

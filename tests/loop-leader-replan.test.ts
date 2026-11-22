@@ -21,6 +21,11 @@ import { dirname, join } from "node:path";
 
 import { applyLeaderProposal, type LeaderDispatchDeps } from "../plugins/immune-brain/runtime/loop_daemon/leader_dispatch.ts";
 import { readPlanPublication } from "../plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts";
+import { runLoopDaemonCli } from "../plugins/immune-brain/runtime/loop_daemon/cli.ts";
+import { createFakeLoopGitHubPort } from "../plugins/immune-brain/runtime/loop_daemon/github_port.ts";
+import { LOOP_LEADER_PROPOSAL_CONTRACT } from "../plugins/immune-brain/runtime/loop_daemon/leader_proposal.ts";
+import { listWaitingStatus } from "../plugins/immune-brain/runtime/loop_daemon/waiting.ts";
+import type { AgentSessionProcess, AgentSessionProvider, AgentSessionRequest } from "../plugins/immune-brain/runtime/loop_daemon/agent_runner.ts";
 import { canonicalIntentHash } from "../plugins/immune-brain/runtime/kernel/intent.ts";
 import { readLeaderJournal } from "../plugins/immune-brain/runtime/loop_daemon/leader_journal.ts";
 import type { LeaderProposalItem } from "../plugins/immune-brain/runtime/loop_daemon/leader_proposal.ts";
@@ -542,6 +547,103 @@ describe("Loop Leader: resolve facts come from local state (S4-AC1)", () => {
 				],
 			}),
 		).toEqual([]);
+	});
+
+	it("fails closed when a bound task's Kernel projection throws, blocking non-ask_owner resolves", async () => {
+		const ws = workspace();
+		const facts = await collectResolveFacts({
+			stateDir: ws.stateDir,
+			target: "issue-42",
+			subject: { issue: 42 },
+			task_ids: [TASK],
+			project: async () => {
+				throw new Error("corrupt kernel store");
+			},
+			batchState: () => null,
+		});
+		expect(facts.unreadable_task_projections).toEqual([{ task_id: TASK, reason: "corrupt kernel store" }]);
+		expect(resolveBlockers(facts)).toEqual([`kernel_projection_unreadable:${TASK}`]);
+	});
+
+	it("rejects replan and release but admits ask_owner through the real CLI wiring when Kernel storage is corrupt", async () => {
+		const ws = workspace();
+		const target = "issue-42";
+		await shapeAndEscalate(ws, target);
+		const draftsBefore = planFiles(ws.root);
+		expect(Object.keys(draftsBefore)).toEqual([
+			"docs/plans/task-a.intent.json",
+			"docs/plans/task-b.intent.json",
+			"docs/initiatives/widget-initiative.md",
+		]);
+		// Fault injection: corrupt the Kernel SQLite store so projectAssurance fails.
+		writeFileSync(join(ws.root, ".imm/state/kernel.sqlite"), "not-a-sqlite-database");
+
+		const fakeGh = createFakeLoopGitHubPort();
+		const providerWith = (items: LeaderProposalItem[]): AgentSessionProvider => ({
+			async run(request: AgentSessionRequest): Promise<AgentSessionProcess> {
+				const match = /"briefing_fingerprint": "(sha256:[0-9a-f]{64})"/.exec(request.prompt);
+				if (!match) throw new Error("prompt carries no briefing_fingerprint");
+				return {
+					exit_code: 0,
+					exit_signal: null,
+					timed_out: false,
+					stdout: JSON.stringify({
+						contract: LOOP_LEADER_PROPOSAL_CONTRACT,
+						briefing_fingerprint: match[1],
+						items,
+					}),
+				};
+			},
+		});
+		const snapshot = {
+			issues: [
+				{
+					id: 42,
+					number: 42,
+					title: "Corrupt projection test",
+					body: "body",
+					state: "open" as const,
+					created_at: NOW,
+					updated_at: NOW,
+					author: { login: "owner" },
+					labels: [],
+					comments: [],
+				},
+			],
+			pull_requests: [],
+			observed_at: NOW,
+		};
+
+		const tick1 = await runLoopDaemonCli(["tick", "--json"], ws.root, {
+			stateDir: ws.stateDir,
+			gitHubPort: fakeGh,
+			guardFacts: GUARD_FACTS,
+			snapshotOverride: snapshot,
+			leader: { provider: providerWith([resolveItem(target, "replan"), resolveItem(target, "release"), resolveItem(target, "ask_owner")]) },
+		});
+		expect(tick1.returncode).toBe(0);
+		const payload = JSON.parse(tick1.stdout) as {
+			leader_items: Array<{ action: string; outcome: string; reason: string }>;
+		};
+		expect(payload.leader_items).toHaveLength(3);
+		expect(payload.leader_items[0]).toMatchObject({ action: "resolve", outcome: "rejected" });
+		expect(payload.leader_items[0]!.reason).toContain("authority_gated");
+		expect(payload.leader_items[0]!.reason).toContain("kernel_projection_unreadable:task-a");
+		expect(payload.leader_items[1]).toMatchObject({ action: "resolve", outcome: "rejected" });
+		expect(payload.leader_items[1]!.reason).toContain("kernel_projection_unreadable:task-a");
+		// ask_owner stays admissible even when Kernel projection is unreadable.
+		expect(payload.leader_items[2]).toMatchObject({ action: "resolve", outcome: "accepted" });
+		// Drafts and escalated work item remain untouched.
+		expect(planFiles(ws.root)).toEqual(draftsBefore);
+		expect(readWorkItem(ws.stateDir, target)?.state).toBe("escalated");
+		expect(listWaitingStatus(ws.stateDir)).toEqual([
+			{
+				target,
+				kind: "escalation",
+				channel: "github",
+				link: expect.stringContaining("/issues/42#issuecomment-"),
+			},
+		]);
 	});
 });
 

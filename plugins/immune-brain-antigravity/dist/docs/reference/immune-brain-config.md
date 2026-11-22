@@ -253,7 +253,8 @@ A role is refused whole — absent from the catalog, one `error` diagnostic — 
 
 A refused role never stops the daemon: `loop.valid` ignores `loop.roles` errors,
 so the rest of the Loop keeps running while `imm-kernel config --json` keeps
-exiting 1 until the role is fixed. A read-only base on a Host without a verified
+exiting 1 and `imm-loop status` (including `--json` `role_catalog_diagnostics`)
+surfaces the error until the role is fixed. A read-only base on a Host without a verified
 read-only mode still fails closed at spawn (`role_readonly_unsupported`), and a
 configured Host whose executable is not on `PATH` fails that session
 (`role_host_unavailable`) instead of falling back to another Host.

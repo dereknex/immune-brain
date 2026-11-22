@@ -18,15 +18,21 @@ project without editing a shared file.
 
 1. **Two files, one order.** The user file and a local, unversioned
    `.imm/config.json` read from the main checkout. Every key resolves request →
-   project → user → default. `projects.<key>` is retired: per-repository
+   project → user → default (except `loop.roles`, which is project-only per
+   [ADR 0042](0042-loop-leader-role-catalog.md)). `projects.<key>` is retired: per-repository
    choices live in that repository's project file. Nothing checks whether Git
    tracks the project file.
 2. **Permission keys take the stricter value.** `git_integration` (`manual`
    wins), `loop.auto_enroll_max_risk` (lower risk wins), and
    `loop.allowed_actors` / `loop.allowed_associations` (intersection).
-3. **Four roles.** `executor` (with repair), `reviewer` (with findings
-   verification and advisory review), `planner` (clarify and plan) and
-   `triage` (reserved; no Loop session reads it). A role value is a user profile name, shorthand
+3. **Four roles.** `executor` (Lane Executor), `reviewer` (with findings
+   verification and advisory review), `planner` (reserved for non-Loop planning) and
+   `triage` (retired; no Loop session reads it). Loop sessions (`leader`,
+   `clarify`, `plan`, `repair`, `analyze`) take their profile from the
+   project-level `loop.roles` catalog instead, and legacy `agents.planner`,
+   `agents.executor` (for loop `repair`) and `agents.triage` bindings emit
+   `deprecated_config_source` warnings ([ADR 0042](0042-loop-leader-role-catalog.md)).
+   A role value is a user profile name, shorthand
    `host[:model][@effort]` (effort only when the text after the last `@` is a
    known level), or an object. Roles merge one by one, each a whole profile
    from one layer. Profiles are defined only in the user file. Presets,
@@ -51,9 +57,13 @@ project without editing a shared file.
 6. **Decision models.** Profiles stay in the user file; the project file may
    bind a point to a user profile by name. `bindings.<point>: "off"` replaces
    `enabled_points`. Egress resolves project over user per provider kind.
-7. **One failure rule.** An invalid value counts as unset and stays an error
-   diagnostic. A batch is refused while `agents`, `batch` or `session_providers`
-   has an error, or a file is unreadable or has the wrong contract.
+7. **One failure rule (with role-catalog isolation).** An invalid value counts
+   as unset and stays an error diagnostic. A batch is refused while `agents`,
+   `batch` or `session_providers` has an error, or a file is unreadable or has
+   the wrong contract. For `loop.roles` specifically, [ADR 0042](0042-loop-leader-role-catalog.md)
+   excludes only the rejected role from the catalog and keeps `loop.valid` true
+   while surfacing the diagnostic in both `imm-kernel config --json` and
+   `imm-loop status`.
 8. **Contract v2 and one migration.** Both files move to `v2`; a `v1` file is
    `config_invalid` with a pointer to `imm-kernel config migrate [--write]`.
    Every legacy reader is deleted: `lanes`, `.imm/lanes.local.json`,

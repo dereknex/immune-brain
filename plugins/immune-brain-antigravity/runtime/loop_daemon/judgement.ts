@@ -312,6 +312,10 @@ function baseline(
 	return { tier: 3, handler, reason, guard: null, classification, ...extra };
 }
 
+function withNeedsJudging(judgement: Judgement, needsJudging: boolean): Judgement {
+	return needsJudging ? { ...judgement, needs_judging: true } : judgement;
+}
+
 async function triageIssue(
 	event: Extract<NormalizedLoopEvent, { kind: "E1_NEW_ISSUE" | "E2_ISSUE_EDITED" }>,
 	facts: GuardFacts,
@@ -338,9 +342,10 @@ async function triageIssue(
 			kept_for_reconciliation: true,
 		};
 	}
-	if (prefilter.kind === "needs_judging") {
-		// D3.4: no judging session starts. The D12 item 2 baseline for a18 proceeds as `actionable`.
-	}
+	// D3.4 / ADR 0042 Decision 1: when a18 or a20 falls back to its point baseline
+	// (`actionable` / `unrelated`), carry `needs_judging: true` onto the final
+	// decision so reconcile surfaces it as a leader candidate.
+	let needsJudging = prefilter.kind === "needs_judging";
 
 	const candidate = facts.duplicate_candidate ?? facts.duplicate_candidates_by_issue?.[event.issue_number];
 	if (candidate !== undefined) {
@@ -353,17 +358,18 @@ async function triageIssue(
 			deps,
 		);
 		if (duplicate.kind === "decided" && duplicate.choice === "duplicate") {
-			return {
-				tier: 2,
-				handler: "escalate",
-				reason: `issue #${event.issue_number} duplicates #${candidate.number}`,
-				guard: null,
-				classification: duplicate.classification,
-			};
+			return withNeedsJudging(
+				{
+					tier: 2,
+					handler: "escalate",
+					reason: `issue #${event.issue_number} duplicates #${candidate.number}`,
+					guard: null,
+					classification: duplicate.classification,
+				},
+				needsJudging,
+			);
 		}
-		if (duplicate.kind === "needs_judging") {
-			// D3.4: no judging session starts. The D12 item 2 baseline for a20 proceeds as `unrelated`.
-		}
+		if (duplicate.kind === "needs_judging") needsJudging = true;
 	}
 
 	const granularity = await classifyPoint(
@@ -374,33 +380,45 @@ async function triageIssue(
 	if (granularity.kind === "decided") {
 		switch (granularity.choice) {
 			case "clear_single_task":
-				return {
-					tier: 2,
-					handler: "draft_plan",
-					reason: "a15_task_granularity judged the issue one clear task; planning one intent",
-					guard: null,
-					classification: granularity.classification,
-				};
+				return withNeedsJudging(
+					{
+						tier: 2,
+						handler: "draft_plan",
+						reason: "a15_task_granularity judged the issue one clear task; planning one intent",
+						guard: null,
+						classification: granularity.classification,
+					},
+					needsJudging,
+				);
 			case "needs_initiative_decomposition":
-				return {
-					tier: 2,
-					handler: "draft_plan",
-					reason: "issue must be split into an initiative before it can be driven; planning a decomposition",
-					guard: null,
-					classification: granularity.classification,
-				};
+				return withNeedsJudging(
+					{
+						tier: 2,
+						handler: "draft_plan",
+						reason: "issue must be split into an initiative before it can be driven; planning a decomposition",
+						guard: null,
+						classification: granularity.classification,
+					},
+					needsJudging,
+				);
 			case "needs_clarification":
-				return {
-					tier: 2,
-					handler: "clarify_issue",
-					reason: "issue needs clarification before it can be planned",
-					guard: null,
-					classification: granularity.classification,
-				};
+				return withNeedsJudging(
+					{
+						tier: 2,
+						handler: "clarify_issue",
+						reason: "issue needs clarification before it can be planned",
+						guard: null,
+						classification: granularity.classification,
+					},
+					needsJudging,
+				);
 			default:
-				return escalated(
-					`a15_task_granularity returned an unknown choice: ${granularity.choice}`,
-					granularity.classification,
+				return withNeedsJudging(
+					escalated(
+						`a15_task_granularity returned an unknown choice: ${granularity.choice}`,
+						granularity.classification,
+					),
+					needsJudging,
 				);
 		}
 	}
@@ -457,9 +475,9 @@ async function classifyOwnerComment(
 			kept_for_reconciliation: true,
 		};
 	}
-	if (prefilter.kind === "needs_judging") {
-		// D3.4: no judging session starts. The D12 item 2 baseline for a18 proceeds as `actionable`.
-	}
+	// D3.4 / ADR 0042 Decision 1: when a18 falls back to its `actionable` baseline,
+	// carry `needs_judging: true` onto the final decision so reconcile surfaces it.
+	const needsJudging = prefilter.kind === "needs_judging";
 
 	const intent = await classifyPoint(
 		"a19_owner_comment_intent",
@@ -475,32 +493,41 @@ async function classifyOwnerComment(
 		switch (intent.choice) {
 			case "approve_plan":
 			case "command":
-				return a19FormatReminder(event, intent.choice, intent.classification);
+				return withNeedsJudging(a19FormatReminder(event, intent.choice, intent.classification), needsJudging);
 			case "request_plan_revision":
-				return {
-					tier: 2,
-					handler: "draft_plan",
-					reason: "verified owner requested a plan revision",
-					guard: null,
-					classification: intent.classification,
-				};
+				return withNeedsJudging(
+					{
+						tier: 2,
+						handler: "draft_plan",
+						reason: "verified owner requested a plan revision",
+						guard: null,
+						classification: intent.classification,
+					},
+					needsJudging,
+				);
 			case "answer_lane_decision":
-				return {
-					tier: 2,
-					handler: "apply_lane_decision_reply",
-					reason: "verified owner answered a parked lane decision",
-					guard: null,
-					classification: intent.classification,
-				};
+				return withNeedsJudging(
+					{
+						tier: 2,
+						handler: "apply_lane_decision_reply",
+						reason: "verified owner answered a parked lane decision",
+						guard: null,
+						classification: intent.classification,
+					},
+					needsJudging,
+				);
 			default:
-				return {
-					tier: 2,
-					handler: "noop_record",
-					reason: "verified owner comment is discussion",
-					guard: null,
-					classification: intent.classification,
-					kept_for_reconciliation: true,
-				};
+				return withNeedsJudging(
+					{
+						tier: 2,
+						handler: "noop_record",
+						reason: "verified owner comment is discussion",
+						guard: null,
+						classification: intent.classification,
+						kept_for_reconciliation: true,
+					},
+					needsJudging,
+				);
 		}
 	}
 

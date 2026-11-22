@@ -33,9 +33,11 @@ import {
 	type LoopLabelRow,
 } from "../plugins/immune-brain/runtime/loop_daemon/labels.ts";
 import {
+	isReconcileCandidate,
 	loadReconcileState,
 	reconcileCandidates,
 } from "../plugins/immune-brain/runtime/loop_daemon/reconcile.ts";
+import { buildDecisionRecord } from "../plugins/immune-brain/runtime/loop_daemon/decision_record.ts";
 import { listRoleSessions } from "../plugins/immune-brain/runtime/loop_daemon/role_sessions.ts";
 import {
 	LOOP_DAEMON_EVENT_CONTRACT,
@@ -299,7 +301,46 @@ describe("D12 v1 thresholds & correctable-direction gating (S3 retains S10 basel
 			classify: stubClassifier({ a18_event_prefilter: { choice: "ignore", confidence: 0.85, truncation: "none" } }).classify,
 		});
 		expect(lowIgnore).toMatchObject({ tier: 3, handler: "escalate", needs_judging: true });
-		expect(lowIgnore.judging_agent_used).toBeUndefined();
+
+		// 1b) ADR 0042 Decision 1: when a18 or a20 falls back to its baseline (`actionable` / `unrelated`)
+		// and a downstream classifier (a15 or a19) decides cleanly, the resulting decision still carries
+		// `needs_judging: true` so reconcile surfaces the target to the leader.
+		const a18BaselineThenA15 = await judgeEvent(issueEvent(), {
+			classify: stubClassifier({
+				a18_event_prefilter: { choice: "ignore", confidence: 0.85, truncation: "none" },
+				a15_task_granularity: { choice: "clear_single_task", confidence: 0.92, truncation: "none" },
+			}).classify,
+		});
+		expect(a18BaselineThenA15).toMatchObject({ tier: 2, handler: "draft_plan", needs_judging: true });
+		expect(
+			isReconcileCandidate(
+				buildDecisionRecord(issueEvent(), a18BaselineThenA15, { kind: "issue", id: "10" }, { recorded_at: TS, dry_run: false }),
+			),
+		).toBe(true);
+
+		const a20BaselineThenA15 = await judgeEvent(issueEvent(), {
+			facts: { duplicate_candidate: { number: 2, title: "Existing", body: "Existing" } },
+			classify: stubClassifier({
+				a18_event_prefilter: { choice: "actionable", confidence: 0.95, truncation: "none" },
+				a20_issue_duplicate_pair: { choice: "duplicate", confidence: 0.5, truncation: "none" },
+				a15_task_granularity: { choice: "clear_single_task", confidence: 0.92, truncation: "none" },
+			}).classify,
+		});
+		expect(a20BaselineThenA15).toMatchObject({ tier: 2, handler: "draft_plan", needs_judging: true });
+
+		const a18BaselineThenA19 = await judgeEvent(commentEvent(), {
+			facts: { allowed_actors: ["owner"], allowed_associations: ["OWNER"] },
+			classify: stubClassifier({
+				a18_event_prefilter: { choice: "ignore", confidence: 0.7, truncation: "none" },
+				a19_owner_comment_intent: { choice: "request_plan_revision", confidence: 0.95, truncation: "none" },
+			}).classify,
+		});
+		expect(a18BaselineThenA19).toMatchObject({ tier: 2, handler: "draft_plan", needs_judging: true });
+		expect(
+			isReconcileCandidate(
+				buildDecisionRecord(commentEvent(), a18BaselineThenA19, { kind: "issue", id: "10" }, { recorded_at: TS, dry_run: false }),
+			),
+		).toBe(true);
 
 		// 2) Truncation !== "none" is needs_judging, same baseline.
 		const truncated = await judgeEvent(issueEvent(), {

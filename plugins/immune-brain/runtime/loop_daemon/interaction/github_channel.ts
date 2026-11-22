@@ -14,6 +14,8 @@
  * `record-revision` markers, and an approval is still `/approve <digest>`.
  */
 
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { verifyTrackerApproval } from "../../kernel/enrollment_confirmation.ts";
 import {
 	matchOfferedOption,
@@ -202,7 +204,7 @@ export function renderWithdrawnNotice(marker: InteractionMarker, reason: string)
 
 export interface GithubInteractionPort {
 	postComment(issueNumber: number, body: string): Promise<{ id: number; url?: string }>;
-	editComment(commentId: number, body: string): Promise<unknown>;
+	editComment(commentId: number, body: string): Promise<{ id?: number; url?: string } | unknown>;
 }
 
 export interface GithubInteractionChannelDeps {
@@ -213,6 +215,11 @@ export interface GithubInteractionChannelDeps {
 	/** The binding that holds now; a change retires the request. */
 	binding: () => InteractionBinding;
 	guardFacts: GuardFacts;
+	/**
+	 * D4.6: daemon state directory where posted/annotated comment URLs persist
+	 * across ticks so `link()` survives fresh channel instances.
+	 */
+	stateDir?: string;
 	/** D4.6: told when a request stops waiting on the owner, so its pointer goes with it. */
 	onRetired?: (interactionId: string) => void;
 }
@@ -345,6 +352,35 @@ function pollPlanApproval(
 	return { state: "pending" };
 }
 
+const GITHUB_LINKS_FILENAME = "github_interaction_links.json";
+
+function readPersistedLinks(stateDir: string): Record<string, string> {
+	const file = join(stateDir, GITHUB_LINKS_FILENAME);
+	if (!existsSync(file)) return {};
+	try {
+		const parsed = JSON.parse(readFileSync(file, "utf8")) as unknown;
+		if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+		const links: Record<string, string> = {};
+		for (const [key, value] of Object.entries(parsed)) {
+			if (typeof value === "string" && value.length > 0) links[key] = value;
+		}
+		return links;
+	} catch {
+		return {};
+	}
+}
+
+function writePersistedLinks(stateDir: string, links: Record<string, string>): void {
+	mkdirSync(stateDir, { recursive: true, mode: 0o700 });
+	writeFileSync(join(stateDir, GITHUB_LINKS_FILENAME), `${JSON.stringify(links, null, 2)}\n`, { mode: 0o600 });
+}
+
+function commentUrlFromWrite(written: unknown): string | null {
+	if (!written || typeof written !== "object") return null;
+	const url = (written as { url?: unknown }).url;
+	return typeof url === "string" && url.length > 0 ? url : null;
+}
+
 /**
  * The `github` channel. `accepts` is the authority boundary: this channel may
  * apply an answer only when it arrives as the digest approval or the Lane
@@ -354,6 +390,29 @@ function pollPlanApproval(
 export function createGithubInteractionChannel(deps: GithubInteractionChannelDeps): InteractionChannel {
 	/** D4.6: the comment each request was posted as, so status can link to it. */
 	const postedLinks = new Map<string, string>();
+	const rememberLink = (interactionId: string, url: string | null | undefined): void => {
+		if (!url) return;
+		postedLinks.set(interactionId, url);
+		if (!deps.stateDir) return;
+		try {
+			const links = readPersistedLinks(deps.stateDir);
+			if (links[interactionId] !== url) {
+				links[interactionId] = url;
+				writePersistedLinks(deps.stateDir, links);
+			}
+		} catch {}
+	};
+	const forgetLink = (interactionId: string): void => {
+		postedLinks.delete(interactionId);
+		if (!deps.stateDir) return;
+		try {
+			const links = readPersistedLinks(deps.stateDir);
+			if (Object.hasOwn(links, interactionId)) {
+				delete links[interactionId];
+				writePersistedLinks(deps.stateDir, links);
+			}
+		} catch {}
+	};
 	const find = (interactionId: string): { comment: RawComment; marker: InteractionMarker } | null => {
 		for (const comment of deps.comments()) {
 			const marker = parseInteractionMarker(comment.body);
@@ -378,6 +437,7 @@ export function createGithubInteractionChannel(deps: GithubInteractionChannelDep
 				comment.id,
 				renderWithdrawnNotice(marker, `Superseded by \`${req.interaction_id}\`, the question this subject waits on now.`),
 			);
+			forgetLink(marker.interaction_id);
 			deps.onRetired?.(marker.interaction_id);
 		}
 	};
@@ -401,7 +461,11 @@ export function createGithubInteractionChannel(deps: GithubInteractionChannelDep
 					`interaction_binding_required: ${req.interaction_id} lane_decision needs a record_revision and a run_id`,
 				);
 			}
-			if (find(req.interaction_id)) return "already_posted";
+			const existing = find(req.interaction_id);
+			if (existing) {
+				rememberLink(req.interaction_id, existing.comment.url);
+				return "already_posted";
+			}
 			// D4.4: the question lives on its own subject, Issue or PR.
 			const subjectNumber = req.subject.issue ?? req.subject.pr;
 			if (subjectNumber === undefined) {
@@ -409,7 +473,7 @@ export function createGithubInteractionChannel(deps: GithubInteractionChannelDep
 			}
 			await supersedeAdvisory(req);
 			const written = await deps.port.postComment(subjectNumber, renderInteractionBody(req));
-			if (written.url) postedLinks.set(req.interaction_id, written.url);
+			rememberLink(req.interaction_id, written.url);
 			return answerable(req) ? "posted" : "notice_only";
 		},
 
@@ -427,6 +491,7 @@ export function createGithubInteractionChannel(deps: GithubInteractionChannelDep
 						`The request was bound to a ${changed} that has since changed, so any answer it collected cannot be applied.`,
 					),
 				);
+				forgetLink(interactionId);
 				deps.onRetired?.(interactionId);
 				return { state: "stale" };
 			}
@@ -455,18 +520,28 @@ export function createGithubInteractionChannel(deps: GithubInteractionChannelDep
 						: `The request was bound to a ${changed} that has since changed, so any answer it collected cannot be applied.`,
 				),
 			);
+			forgetLink(interactionId);
 			deps.onRetired?.(interactionId);
 		},
 
 		async annotate(interactionId: string, context: InteractionContext): Promise<"annotated" | "absent"> {
 			const found = find(interactionId);
 			if (!found || isWithdrawn(found.comment.body)) return "absent";
-			await deps.port.editComment(found.comment.id, replaceContextSection(found.comment.body, context));
+			const edited = await deps.port.editComment(found.comment.id, replaceContextSection(found.comment.body, context));
+			rememberLink(interactionId, commentUrlFromWrite(edited) ?? found.comment.url);
 			return "annotated";
 		},
 
 		link(interactionId: string): string | null {
-			return postedLinks.get(interactionId) ?? null;
+			const memory = postedLinks.get(interactionId);
+			if (memory) return memory;
+			const observed = find(interactionId)?.comment.url;
+			if (observed) return observed;
+			if (deps.stateDir) {
+				const persisted = readPersistedLinks(deps.stateDir)[interactionId];
+				if (persisted) return persisted;
+			}
+			return null;
 		},
 	};
 }

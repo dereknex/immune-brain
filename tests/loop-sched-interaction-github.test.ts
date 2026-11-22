@@ -511,6 +511,98 @@ describe("interaction context pack and in-place questions (S4-AC2)", () => {
 		expect(listWaitingStatus(stateDir)).toEqual([]);
 	});
 
+	it("keeps the waiting pointer across ticks when a fresh GitHub channel annotates a previously posted plan_approval", async () => {
+		const port = fakePort();
+		const read = reader(port);
+		const stateDir = waitingStateDir();
+		const approval = approvalRequest({ plan_digest: PLAN_DIGEST });
+
+		// Tick 1: first channel instance posts plan_approval and persists its comment link.
+		const tick1 = createGithubInteractionChannel({
+			port,
+			comments: read.comments,
+			binding: () => ({ plan_digest: PLAN_DIGEST }),
+			guardFacts: OWNER_FACTS,
+			stateDir,
+		});
+		expect(await tick1.post(approval)).toBe("posted");
+
+		// Tick 2: daemon constructs a brand-new channel instance (no in-memory postedLinks,
+		// RawComment carries no url, editComment returns no url). Link resolves from stateDir.
+		const tick2 = createGithubInteractionChannel({
+			port,
+			comments: read.comments,
+			binding: () => ({ plan_digest: PLAN_DIGEST }),
+			guardFacts: OWNER_FACTS,
+			stateDir,
+		});
+		const result = await askOwnerQuestion(
+			{
+				stateDir,
+				now: LATER,
+				target: "issue-42",
+				channel: tick2,
+				pending_literal_user: [{ interaction_id: approval.interaction_id, kind: "plan_approval" }],
+			},
+			{ subject: { issue: ISSUE }, context: CONTEXT },
+		);
+
+		const expectedLink = `https://github.com/example/repo/issues/${ISSUE}#issuecomment-${port.comments[0]!.id}`;
+		expect(result).toEqual({ action: "annotated", interaction_id: approval.interaction_id, link: expectedLink });
+		expect(listWaitingStatus(stateDir)).toEqual([
+			{ target: "issue-42", kind: "plan_approval", channel: "github", link: expectedLink },
+		]);
+		// Tick 3: a fresh channel hitting `already_posted` still knows the persisted link.
+		const tick3 = createGithubInteractionChannel({
+			port,
+			comments: read.comments,
+			binding: () => ({ plan_digest: PLAN_DIGEST }),
+			guardFacts: OWNER_FACTS,
+			stateDir,
+		});
+		expect(await tick3.post(approval)).toBe("already_posted");
+		expect(tick3.link(approval.interaction_id, approval.subject)).toBe(expectedLink);
+	});
+
+	it("records the waiting pointer from editComment's returned url when annotating an externally posted comment", async () => {
+		const port = fakePort();
+		const approval = approvalRequest({ plan_digest: PLAN_DIGEST });
+		const preExisting = await port.postComment(ISSUE, renderInteractionBody(approval));
+		const read = reader(port);
+		const stateDir = waitingStateDir();
+		const portWithEditUrl: GithubInteractionPort = {
+			postComment: (issue, body) => port.postComment(issue, body),
+			editComment: async (id, body) => {
+				await port.editComment(id, body);
+				return { id, url: preExisting.url };
+			},
+		};
+
+		// No channel ever called post(); only the observed comment exists when a fresh channel annotates it.
+		const freshChannel = createGithubInteractionChannel({
+			port: portWithEditUrl,
+			comments: read.comments,
+			binding: () => ({ plan_digest: PLAN_DIGEST }),
+			guardFacts: OWNER_FACTS,
+			stateDir,
+		});
+		const result = await askOwnerQuestion(
+			{
+				stateDir,
+				now: LATER,
+				target: "issue-42",
+				channel: freshChannel,
+				pending_literal_user: [{ interaction_id: approval.interaction_id, kind: "plan_approval" }],
+			},
+			{ subject: { issue: ISSUE }, context: CONTEXT },
+		);
+
+		expect(result).toEqual({ action: "annotated", interaction_id: approval.interaction_id, link: preExisting.url });
+		expect(listWaitingStatus(stateDir)).toEqual([
+			{ target: "issue-42", kind: "plan_approval", channel: "github", link: preExisting.url! },
+		]);
+	});
+
 	it("falls through to posting when the annotate finds no request", async () => {
 		const port = fakePort();
 		const read = reader(port);

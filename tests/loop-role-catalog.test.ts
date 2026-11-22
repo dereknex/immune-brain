@@ -23,6 +23,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { resolveConfig } from "../plugins/immune-brain/runtime/config/layered_config.ts";
+import { runLoopDaemonCli } from "../plugins/immune-brain/runtime/loop_daemon/cli.ts";
 import {
 	DEFAULT_LOOP_ROLE_LIMITS,
 	LOOP_ROLE_BASES,
@@ -194,7 +195,7 @@ test.each([
 	expect(roles[2]!.limits[key]).toBe(value);
 });
 
-test("a rejected role is one error diagnostic and the daemon's loop keeps running", () => {
+test("a rejected role is one error diagnostic and the daemon's loop keeps running", async () => {
 	const f = fixture();
 	f.project({ loop: { roles: { broken: { base: "review" }, planner: { base: "plan", limits: { turn_budget: 0 } }, "security-analyst": { base: "analyze" } } } });
 	const c = f.read();
@@ -210,6 +211,22 @@ test("a rejected role is one error diagnostic and the daemon's loop keeps runnin
 		env: { ...process.env, XDG_CONFIG_HOME: join(temp, "xdg") },
 	});
 	expect(result.status).toBe(1);
+
+	// ADR 0042: because loop.valid stays true, `imm-loop status` surfaces the rejected
+	// role diagnostics explicitly in both JSON and text output.
+	const statusJson = await runLoopDaemonCli(["status", "--json"], f.root, { userConfigPath: f.userPath });
+	expect(statusJson.returncode).toBe(0);
+	const parsed = JSON.parse(statusJson.stdout);
+	expect(parsed.role_catalog_diagnostics).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({ code: "role_base_unknown", severity: "error", key_path: "loop.roles.broken.base" }),
+			expect.objectContaining({ code: "role_limit_out_of_range", severity: "error", key_path: "loop.roles.planner.limits.turn_budget" }),
+		]),
+	);
+	const statusText = await runLoopDaemonCli(["status"], f.root, { userConfigPath: f.userPath });
+	expect(statusText.returncode).toBe(0);
+	expect(statusText.stdout).toContain("Role Catalog Diagnostics:");
+	expect(statusText.stdout).toContain("role_base_unknown");
 });
 
 test("the catalog is project-only: a user-file loop.roles is config_invalid", () => {
