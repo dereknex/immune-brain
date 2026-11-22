@@ -452,7 +452,7 @@ function releaseWorkspaceForTest(root: string): void {
 setDefaultTimeout(120_000);
 
 const TASK = "dual-host-task";
-const ROOT = "/tmp/dual-host-assurance";
+const ROOT = mkdtempSync(join(tmpdir(), "dual-host-assurance-"));
 // The shared fixture cwd is a real repository with the project's review profile
 // committed, so the CLI dispatcher can read the tree it guards (D5, D6).
 mkdirSync(join(ROOT, ".imm"), { recursive: true });

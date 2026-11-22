@@ -66,7 +66,7 @@ function createMcpRuntime(options: Parameters<typeof createMcpRuntimeUngated>[0]
 }
 
 const TASK = "phase3-task";
-const ROOT = "/tmp/claude-host-authority";
+const ROOT = mkdtempSync(join(tmpdir(), "claude-host-authority-"));
 const ctx = { cwd: ROOT };
 // These tests drive real git repositories and full Kernel flows. The Kernel QA
 // runner executes them under a minimal environment where the same flow takes
