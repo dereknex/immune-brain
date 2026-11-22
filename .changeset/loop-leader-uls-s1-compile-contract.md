@@ -1,5 +1,5 @@
 ---
-"@dereknex/immune-brain": patch
+"immune-brain": patch
 ---
 
 Restore compilation and the loop-daemon boundary contract after the unified Lane

@@ -1,5 +1,5 @@
 ---
-"@dereknex/immune-brain": patch
+"immune-brain": patch
 ---
 
 Make a Lane Executor session start ready to work. A `claude-code` Executor now opens

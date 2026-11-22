@@ -1,5 +1,5 @@
 ---
-"@dereknex/immune-brain": minor
+"immune-brain": minor
 ---
 
 Add the resident read-only Loop leader (Slice `S2` of Spec `loop-leader`). Every

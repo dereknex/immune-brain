@@ -1,5 +1,5 @@
 ---
-"@dereknex/immune-brain": patch
+"immune-brain": patch
 ---
 
 Fix the review findings of the Loop Leader. A `replan` resolve now invalidates the

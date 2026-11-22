@@ -1,5 +1,5 @@
 ---
-"@dereknex/immune-brain": minor
+"immune-brain": minor
 ---
 
 Make loop steering act on the item's unified-lane-sessions batch (Slice `S4` of

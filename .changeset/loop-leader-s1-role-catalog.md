@@ -1,5 +1,5 @@
 ---
-"@dereknex/immune-brain": minor
+"immune-brain": minor
 ---
 
 Add the project loop role catalog (`loop.roles` in `.imm/config.json`, Slice

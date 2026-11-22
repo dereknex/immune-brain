@@ -1,5 +1,5 @@
 ---
-"@dereknex/immune-brain": minor
+"immune-brain": minor
 ---
 
 Owner steering and status (Slice `S5` of Spec `loop-leader`). Verified

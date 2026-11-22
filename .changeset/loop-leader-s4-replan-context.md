@@ -1,5 +1,5 @@
 ---
-"@dereknex/immune-brain": minor
+"immune-brain": minor
 ---
 
 Resolve blocked work in place and cap replanning (Slice `S4` of Spec

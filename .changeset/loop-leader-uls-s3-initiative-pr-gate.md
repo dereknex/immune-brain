@@ -1,5 +1,5 @@
 ---
-"@dereknex/immune-brain": minor
+"immune-brain": minor
 ---
 
 Gate the daemon's Initiative pull request on the whole batch (Slice `S3` of Spec

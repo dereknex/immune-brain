@@ -1,5 +1,5 @@
 ---
-"@dereknex/immune-brain": minor
+"immune-brain": minor
 ---
 
 Execute accepted leader proposal items behind code guards (Slice `S3` of Spec
