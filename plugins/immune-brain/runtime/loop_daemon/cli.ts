@@ -26,7 +26,6 @@ import { createGhTransport, type GhTransport } from "../github_issue_tracker.ts"
 import { readTaskRecordRaw } from "../kernel/storage.ts";
 import { projectAssurance } from "../kernel/assurance_projection.ts";
 import type { LaneSessionsDeps } from "../lane_sessions/index.ts";
-import { readNoTouch } from "../no_touch.ts";
 import { findLaneRelayTarget, type relayLaneDecision } from "../unattended/lane_decision.ts";
 import { POINT_REGISTRY } from "../decision_model/thresholds.ts";
 import { buildDecisionRecord } from "./decision_record.ts";
@@ -1072,16 +1071,6 @@ Options:
 				reconcileLoopJobs(stateDir, { now: recordedAt });
 				obs.events.push(...loopJobEvents(stateDir, { now: recordedAt }));
 			}
-			let declaredNoTouch: string[];
-			try {
-				declaredNoTouch = readNoTouch(absoluteRoot);
-			} catch (error: any) {
-				return {
-					stdout: "",
-					stderr: `Error: unreadable no-touch declaration: ${error?.message || String(error)}\n`,
-					returncode: 1,
-				};
-			}
 
 			const gh = options?.gh ?? createGhTransport();
 			let daemonLogin: string | null = options?.guardFacts?.daemon_identity ?? null;
@@ -1192,7 +1181,6 @@ Options:
 
 			const facts: GuardFacts = {
 				paused: state.paused,
-				no_touch_paths: declaredNoTouch,
 				active_leases: state.active_leases,
 				identity_posture: detectIdentityPosture(inspectDaemonIdentity(absoluteRoot)),
 				allowed_actors: loopConfig.allowed_actors,

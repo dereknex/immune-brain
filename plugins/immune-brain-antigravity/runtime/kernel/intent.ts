@@ -38,7 +38,7 @@ import {
 	type TokenIdentity,
 } from "./intent_token_registry";
 import { parseVerificationDescriptor } from "../verification_descriptor";
-import { assertNoTouch, readNoTouch } from "../no_touch";
+import { assertNoTouch } from "../no_touch";
 
 export const INTENT_MAX_BYTES = 64 * 1024;
 export const INTENT_SIDECAR_RELATIVE_PREFIX = "docs/plans/";
@@ -133,7 +133,7 @@ function parseAcceptanceItemV1(
 	};
 }
 
-function parseScopeHintV1(value: unknown, violations: string[], noTouch: readonly string[] = []): string[] {
+function parseScopeHintV1(value: unknown, violations: string[]): string[] {
 	if (!Array.isArray(value) || value.length === 0) {
 		violations.push("intent.scope_hint must contain at least one path");
 		return [];
@@ -188,7 +188,7 @@ function parseScopeHintV1(value: unknown, violations: string[], noTouch: readonl
 		}
 	}
 
-	assertNoTouch(entries, noTouch);
+	assertNoTouch(entries);
 	const unique = [...new Set(entries)].sort((left, right) =>
 		left < right ? -1 : left > right ? 1 : 0,
 	);
@@ -204,7 +204,7 @@ function parseScopeHintV1(value: unknown, violations: string[], noTouch: readonl
 	);
 }
 
-export function parseTaskIntentV1(raw: unknown, noTouch: readonly string[] = []): TaskIntentV1 {
+export function parseTaskIntentV1(raw: unknown): TaskIntentV1 {
 	const violations: string[] = [];
 	const value = objectAt(raw, "intent", violations);
 	rejectUnknown(
@@ -229,7 +229,7 @@ export function parseTaskIntentV1(raw: unknown, noTouch: readonly string[] = [])
 			ids.add(item.id);
 		}
 	}
-	const scopeHint = parseScopeHintV1(value.scope_hint, violations, noTouch);
+	const scopeHint = parseScopeHintV1(value.scope_hint, violations);
 	const scopeSizeReason = Object.hasOwn(value, "scope_size_reason")
 		? nonEmptyString(value.scope_size_reason, "intent.scope_size_reason", violations, 500)
 		: undefined;
@@ -320,7 +320,7 @@ const RISK_RANK: Record<TaskRisk, number> = { routine: 0, material: 1, critical:
  * `readTaskIntent` later reads back agree.
  */
 export function parseProjectTaskIntent(root: string, raw: unknown, recordedIntent?: TaskIntentV1): TaskIntentV1 {
-	const parsed = parseTaskIntentV1(raw, readNoTouch(root));
+	const parsed = parseTaskIntentV1(raw);
 	// An enrolled revision keeps its recorded risk; today's policy only changes gating.
 	if (recordedIntent && parsed.revision === recordedIntent.revision &&
 		raiseRisk(recordedIntent.risk, parsed.risk) === recordedIntent.risk)

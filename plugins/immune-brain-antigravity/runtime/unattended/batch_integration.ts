@@ -7,7 +7,7 @@
 // Defined by docs/specs/parallel-batch-lanes.spec.md (Temporal sequence, step 2).
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
-import { noTouchPaths, readNoTouchAt } from "../no_touch";
+import { noTouchPaths } from "../no_touch";
 import { withTempDirectory } from "../temp_directory";
 import { materializeDeliveryWorkspace } from "../assurance/delivery_workspace";
 import { DERIVED_FILES_PATH, parseDerivedFiles, readDerivedFilesAt, runDerivedCommand, type DerivedFile } from "../derived_files";
@@ -360,8 +360,7 @@ export function prepareLaneCandidate(input: IntegrateLaneInput): string {
 			"batch_integration_conflict",
 			`batch_integration_conflict: candidate ${candidate} does not carry the lane commit ${laneCommit} change`,
 		);
-	const forbidden = noTouchPaths([...changeIdentity(root, head, candidate).keys()],
-		readNoTouchAt(root, input.declaration_head ?? base));
+	const forbidden = noTouchPaths([...changeIdentity(root, head, candidate).keys()]);
 	if (forbidden.length) throw new BatchIntegrationError("no_touch_path_changed", `no_touch_path_changed: ${forbidden.join(", ")}`);
 	return candidate;
 }

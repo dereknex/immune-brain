@@ -10,7 +10,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { assertNoTouch, readNoTouch, readNoTouchAt } from "./no_touch";
+import { assertNoTouch } from "./no_touch";
 
 export interface GitWorkspaceSnapshot {
 	kind: "git-workspace-v1";
@@ -770,7 +770,7 @@ export function taskDeliveryIdentity(
 		...decodeNullPaths(gitBytes(projectRoot, ["diff", "--cached", "--no-renames", "--name-only", "-z", base, "--"]), "no-touch index paths"),
 		...decodeNullPaths(gitBytes(projectRoot, ["diff", "--no-renames", "--name-only", "-z", base, "--"]), "no-touch working paths"),
 	])];
-	assertNoTouch(changed, [...readNoTouchAt(projectRoot, base), ...readNoTouch(projectRoot)]);
+	assertNoTouch(changed);
 	if (record.contract === "assurance_kernel/task_record/v4") {
 		if (!record.git_base_head) throw new Error("TaskRecord v4 is missing git_base_head");
 		return taskRevisionIdentity(

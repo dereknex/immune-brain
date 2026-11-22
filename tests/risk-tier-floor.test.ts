@@ -164,7 +164,6 @@ describe("changed-path task-tier classification", () => {
 		expect(resolveProjectedRisk(intent, ["plugins/immune-brain/runtime/kernel/completion.ts"], FLOOR)).toBe("material");
 		expect(intent.risk).toBe("routine");
 		expect(resolveProjectedRisk({ ...intent, risk: "material" }, ["src/feature.ts"], FLOOR)).toBe("material");
-		expect(resolveProjectedRisk(intent, ["docs/agents/no-touch.json"], FLOOR)).toBe("critical");
 	});
 	it("forces configured prefixes and descendants to material without near-prefix matches", () => {
 		for (const prefix of CHANGED_PATH_RISK_FLOOR_PREFIXES) {

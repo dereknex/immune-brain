@@ -103,11 +103,8 @@ const mergedCheck = "const fs=require('node:fs'); process.exit(fs.existsSync('a.
 
 describe("Parent merge queue", () => {
 	test("no-touch integration parks the child without a redo or Parent advance", async () => {
-		for (const path of [".imm/state/x", "protected/config.json"]) {
-			const fx = fixture({ a: pass }, {}, root => {
-				mkdirSync(join(root, "docs/agents"), { recursive: true });
-				writeFileSync(join(root, "docs/agents/no-touch.json"), JSON.stringify({ contract: "immune_brain/no_touch/v1", paths: ["protected"] }));
-			});
+		for (const path of [".imm/state/x", ".imm/state/loop/state.json"]) {
+			const fx = fixture({ a: pass });
 			await fx.tick();
 			mkdirSync(dirname(join(fx.laneOf("a"), path)), { recursive: true });
 			writeFileSync(join(fx.laneOf("a"), path), "changed\n");

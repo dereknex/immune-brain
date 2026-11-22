@@ -84,10 +84,6 @@ function makeWorkspace(options: {
 	mkdirSync(join(root, "docs/agents"), { recursive: true });
 	mkdirSync(join(root, "docs/plans"), { recursive: true });
 	writeFileSync(
-		join(root, "docs/agents/no-touch.json"),
-		JSON.stringify({ contract: "immune_brain/no_touch/v1", paths: ["docs/agents/no-touch.json"] }) + "\n",
-	);
-	writeFileSync(
 		join(root, ".imm/config.json"),
 		JSON.stringify(
 			{
@@ -104,7 +100,6 @@ function makeWorkspace(options: {
 			2,
 		) + "\n",
 	);
-	execFileSync("git", ["add", "docs/agents/no-touch.json"], { cwd: root });
 
 	let userConfigPath: string | undefined;
 	if (options.userConfig) {

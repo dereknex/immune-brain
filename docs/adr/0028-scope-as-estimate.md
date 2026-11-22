@@ -32,12 +32,14 @@ Planner estimate into a stop.
    strengthens Review and opens no gate.
 4. **Hard no-touch paths follow ownership.** The Kernel hard-refuses only the
    state it owns — its worktree authority root, `.imm/state` and everything
-   beneath it — plus the repository-declared additions in
-   `docs/agents/no-touch.json`. Credential-type names, CI and release config are
-   ordinary delivery content: a project that wants one protected declares it
-   there, and `.imm/risk-floor.json` raises Review strength instead.
+   beneath it. There is no repository declaration of further hard no-touch
+   paths. Credential-type names, CI and release config are ordinary delivery
+   content; a project that wants stronger Review on one declares it in
+   `.imm/risk-floor.json`.
    Amended on 2026-11-20 by task `kernel-owned-no-touch`
-   (`docs/specs/kernel-owned-no-touch.spec.md`).
+   (`docs/specs/kernel-owned-no-touch.spec.md`), and on 2026-11-22 to retire
+   the `docs/agents/no-touch.json` declaration (`immune_brain/no_touch/v1`),
+   which no repository used.
 5. **No delegated revision.** Delegated in-Lane revision and reseal are
    removed. Any `scope_hint` change that keeps the bound Spec path is a
    compatible revision, whether it adds, removes or replaces files, directories

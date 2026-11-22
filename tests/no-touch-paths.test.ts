@@ -3,9 +3,8 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { assertNoTouch, NO_TOUCH_PATH, parseNoTouch, readNoTouch } from "../plugins/immune-brain/runtime/no_touch";
+import { assertNoTouch } from "../plugins/immune-brain/runtime/no_touch";
 import { parseProjectTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
-import { changedPathRiskFloor, NO_RISK_FLOOR } from "../plugins/immune-brain/runtime/kernel/risk_floor";
 import { taskDeliveryIdentity } from "../plugins/immune-brain/runtime/workspace_scope";
 import { integrateLaneCommit, BatchIntegrationError } from "../plugins/immune-brain/runtime/unattended/batch_integration";
 import { runKernelCommand } from "../plugins/immune-brain/runtime/commands/kernel";
@@ -19,11 +18,10 @@ function put(root: string, path: string, value = "changed\n") {
 	mkdirSync(dirname(join(root, path)), { recursive: true });
 	writeFileSync(join(root, path), value);
 }
-function repo(additions: string[] = []) {
+function repo() {
 	const root = mkdtempSync(join(tmpdir(), "no-touch-")); roots.push(root);
 	git(root, "init", "-q");
 	put(root, "README.md", "base\n");
-	put(root, NO_TOUCH_PATH, JSON.stringify({ contract: "immune_brain/no_touch/v1", paths: additions }));
 	git(root, "add", "."); git(root, "commit", "-qm", "base");
 	return { root, base: git(root, "rev-parse", "HEAD") };
 }
@@ -72,8 +70,8 @@ test("ordinary changesets remain deliverable", () => {
 		intent_snapshot: { scope_hint: [".changeset/feature.md"] } }).changed_paths).toEqual([".changeset/feature.md"]);
 });
 
-function laneChange(additions: string[], path: string) {
-	const { root, base } = repo(additions);
+function laneChange(path: string) {
+	const { root, base } = repo();
 	git(root, "update-ref", "refs/heads/imm/test", base);
 	put(root, path); git(root, "add", "-f", "--", path); git(root, "commit", "-qm", "lane");
 	const lane = git(root, "rev-parse", "HEAD");
@@ -84,16 +82,16 @@ function laneChange(additions: string[], path: string) {
 
 test("batch rebuilt candidate integrates former default paths and advances the Parent branch", () => {
 	for (const path of [".github/workflows/ci.yml", ".env", ".changeset/config.json"]) {
-		const input = laneChange([], path);
+		const input = laneChange(path);
 		const { commit } = integrateLaneCommit(input);
 		expect(git(input.root, "rev-parse", input.branch)).toBe(commit);
 		expect(git(input.root, "rev-parse", input.branch)).not.toBe(input.batch_head);
 	}
 });
 
-test("batch rebuilt candidate refuses Kernel authority state and declared additions without moving the Parent", () => {
-	for (const [additions, path] of [[[], ".imm/state/x"], [[], ".imm/state/loop/state.json"], [["protected"], "protected/config.json"]] as const) {
-		const input = laneChange(additions, path);
+test("batch rebuilt candidate refuses Kernel authority state without moving the Parent", () => {
+	for (const path of authority) {
+		const input = laneChange(path);
 		try {
 			integrateLaneCommit(input);
 			throw new Error("integration should refuse");
@@ -106,28 +104,28 @@ test("batch rebuilt candidate refuses Kernel authority state and declared additi
 	}
 });
 
-test("intent validation accepts former defaults and refuses authority state or a declared addition", () => {
-	const { root } = repo(["protected"]);
+test("intent validation accepts former defaults and refuses authority state", () => {
+	const { root } = repo();
 	for (const scope_hint of [[".github/workflows/**"], [".env"], [".github/workflows/ci.yml"]]) {
 		expect(() => parseProjectTaskIntent(root, { ...candidate, scope_hint })).not.toThrow();
 		put(root, "docs/plans/fixture.intent.json", JSON.stringify({ ...candidate, scope_hint }));
 		const result = runKernelCommand(["intent", "validate", "docs/plans/fixture.intent.json", "--json"], root);
 		expect(JSON.parse(result.stdout).valid).toBe(true);
 	}
-	for (const path of [...authority, "protected/config.json"]) {
+	for (const path of authority) {
 		expect(() => parseProjectTaskIntent(root, { ...candidate, scope_hint: [path] })).toThrow(`no_touch_path_changed: ${path}`);
 		put(root, "docs/plans/fixture.intent.json", JSON.stringify({ ...candidate, scope_hint: [path] }));
 		const result = runKernelCommand(["intent", "validate", "docs/plans/fixture.intent.json", "--json"], root);
 		expect(result.stdout).toContain("no_touch_path_changed");
 		expect(JSON.parse(result.stdout).valid).toBe(false);
 	}
-	expect(() => assertNoTouch([".github/workflows/ci.yml", ".env"], [])).not.toThrow();
-	expect(() => assertNoTouch([".imm/state/x"], [])).toThrow("no_touch_path_changed");
+	expect(() => assertNoTouch([".github/workflows/ci.yml", ".env", "docs/agents/no-touch.json"])).not.toThrow();
+	expect(() => assertNoTouch([".imm/state/x"])).toThrow("no_touch_path_changed");
 });
 
 test("ancestor compaction cannot hide a named no-touch path from intent validation", () => {
-	const { root } = repo(["protected/config.json"]);
-	for (const scope_hint of [[".imm", ".imm/state/x"], [".imm/state/", ".imm/state/loop/state.json"], ["protected", "protected/config.json"]]) {
+	const { root } = repo();
+	for (const scope_hint of [[".imm", ".imm/state/x"], [".imm/state/", ".imm/state/loop/state.json"]]) {
 		expect(() => parseProjectTaskIntent(root, { ...candidate, scope_hint })).toThrow("no_touch_path_changed");
 		put(root, "docs/plans/fixture.intent.json", JSON.stringify({ ...candidate, scope_hint }));
 		const result = runKernelCommand(["intent", "validate", "docs/plans/fixture.intent.json", "--json"], root);
@@ -139,23 +137,4 @@ test("ancestor compaction cannot hide a named no-touch path from intent validati
 		const result = runKernelCommand(["intent", "validate", "docs/plans/fixture.intent.json", "--json"], root);
 		expect(JSON.parse(result.stdout).valid).toBe(true);
 	}
-});
-
-test("deleting additions during a task cannot authorize a forbidden delivery", () => {
-	const { root, base } = repo(["protected"]);
-	put(root, NO_TOUCH_PATH, JSON.stringify({ contract: "immune_brain/no_touch/v1", paths: [] }));
-	put(root, "protected/config.json"); git(root, "add", ".");
-	expect(() => taskDeliveryIdentity(root, { contract: "assurance_kernel/task_record/v4", task_id: "fixture", git_base_head: base,
-		intent_snapshot: { scope_hint: ["protected", NO_TOUCH_PATH] } })).toThrow("no_touch_path_changed: protected/config.json");
-});
-
-test("strict declarations name malformed fields and changing the declaration raises critical risk", () => {
-	for (const [value, field] of [
-		[{ contract: "wrong", paths: [] }, "contract"], [{ contract: "immune_brain/no_touch/v1", paths: "x" }, "paths"],
-		[{ contract: "immune_brain/no_touch/v1", paths: ["../x"] }, "paths[0]"],
-		[{ contract: "immune_brain/no_touch/v1", paths: [], remove: [".env"] }, "remove"],
-	] as const) expect(() => parseNoTouch(value)).toThrow(`no_touch.${field}`);
-	const { root } = repo(); put(root, NO_TOUCH_PATH, "{broken");
-	expect(() => readNoTouch(root)).toThrow();
-	expect(changedPathRiskFloor([NO_TOUCH_PATH], NO_RISK_FLOOR)).toBe("critical");
 });

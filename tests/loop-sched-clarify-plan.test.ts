@@ -93,10 +93,6 @@ function makeWorkspace(options: { channel?: "github" | "local" } = {}): Workspac
 	writeFileSync(join(root, "docs/plans/.gitkeep"), "");
 	mkdirSync(join(root, "src"), { recursive: true });
 	writeFileSync(join(root, "src/seed.ts"), "export const seed = 1;\n");
-	writeFileSync(
-		join(root, "docs/agents/no-touch.json"),
-		JSON.stringify({ contract: "immune_brain/no_touch/v1", paths: [] }, null, 2),
-	);
 	mkdirSync(join(root, ".imm"), { recursive: true });
 	writeFileSync(
 		join(root, ".imm/config.json"),

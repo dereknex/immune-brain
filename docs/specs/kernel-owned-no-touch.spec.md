@@ -6,6 +6,8 @@
 **Design risk**: High — it changes a trust boundary every settlement, batch integration, TaskIntent validation and unattended guard consumes; no persisted schema or state machine changes.
 **Design views**: component interfaces, data flow.
 
+> **Amendment 2026-11-22 (user direction: "这个逻辑没有必要，帮我删除逻辑并清理文件").** The `docs/agents/no-touch.json` declaration (`immune_brain/no_touch/v1`) is retired: `readNoTouch`, `readNoTouchAt`, `parseNoTouch` and `NO_TOUCH_PATH` are deleted, `noTouchPaths`/`assertNoTouch` take no additions, and this repository's empty declaration file is removed. D2's hard-refusal declaration, D3, T1 and the declared-addition halves of AC2–AC4 no longer apply; the built-in `.imm/state` root (D1) is the whole hard no-touch set, and `.imm/risk-floor.json` remains the only project lever.
+
 ## Outcome and provenance
 
 The Kernel's built-in hard no-touch set protects only what the Kernel itself owns: its worktree authority state root. Credential-type filename patterns and CI/release paths leave the built-in set. Protection of anything else is a project decision expressed through the existing declarations, so a confirmed task can change CI or similar files under ordinary Review instead of being forced outside Immune-Brain.
