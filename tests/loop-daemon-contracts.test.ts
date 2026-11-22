@@ -22,6 +22,15 @@ function normalized(rel: string): string {
 	return read(rel).replace(/\s+/g, " ");
 }
 
+/** One released CHANGELOG.md entry, whitespace-normalized, from its opening words to the next list item. */
+function releasedNote(opening: string): string {
+	const changelog = normalized("CHANGELOG.md");
+	const start = changelog.indexOf(opening);
+	expect(start).toBeGreaterThanOrEqual(0);
+	const end = changelog.indexOf(" - ", start);
+	return changelog.slice(start, end < 0 ? undefined : end);
+}
+
 describe("loop daemon upstream contracts (loop-daemon-s0-contracts)", () => {
 	test("docs/adr/0039-loop-daemon.md exists, is accepted, and renumbers from 0038 per BR-DEC-3", () => {
 		const adr39Path = "docs/adr/0039-loop-daemon.md";
@@ -405,8 +414,10 @@ describe("loop-leader ADR numbering and judging references (loop-leader-uls-s1-c
 		expect(hits).toEqual([]);
 	});
 
-	test("the S3 changeset cites ADR 0042 and ADR 0041 stops naming judging as a live role", () => {
-		const changeset = normalized(".changeset/loop-leader-s3-guarded-dispatch.md");
+	test("the S3 release note cites ADR 0042 and ADR 0041 stops naming judging as a live role", () => {
+		// A release consumes the changeset into CHANGELOG.md; check whichever currently carries the S3 note.
+		const pending = ".changeset/loop-leader-s3-guarded-dispatch.md";
+		const changeset = existsSync(join(ROOT, pending)) ? normalized(pending) : releasedNote("Execute accepted leader proposal items");
 		expect(changeset).toContain("ADR 0042 records the leader plus catalog");
 		expect(changeset).not.toContain("ADR 0041");
 		// ADR 0041 here is the simplified-configuration ADR; its other citations stay.
