@@ -47,7 +47,7 @@ import { QaPreparationError, runDeterministicQa } from "../plugins/immune-brain/
 setDefaultTimeout(30_000);
 
 const TASK = "phase3-task";
-const ROOT = "/tmp/phase3-assurance";
+const ROOT = mkdtempSync(join(tmpdir(), "phase3-assurance-"));
 const ctx = { cwd: ROOT };
 
 function projection(

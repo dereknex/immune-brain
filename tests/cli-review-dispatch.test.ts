@@ -548,6 +548,7 @@ describe("review profile required", () => {
 	test("a configured review_host without its executable fails closed", async () => {
 		const root = reviewRepo("claude-code");
 		const kernel = kernelFor(root);
+		enterHerdr();
 		// The reviewer binary must be absent from PATH; the layered config still needs git.
 		const bin = scratchDir("bin-no-claude");
 		const gitBinary = ROOT_PATH.split(delimiter).map((dir) => join(dir || ".", "git")).find((path) => existsSync(path));
