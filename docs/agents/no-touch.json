@@ -1,1 +1,4 @@
-{"contract":"immune_brain/no_touch/v1","paths":[".github/workflows",".changeset/config.json",".env",".npmrc",".netrc"]}
+{
+  "contract": "immune_brain/no_touch/v1",
+  "paths": []
+}
