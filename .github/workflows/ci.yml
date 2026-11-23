@@ -54,4 +54,9 @@ jobs:
         run: bun scripts/plugin_versioning.ts validate
 
       - name: Test
-        run: bun test
+        # --no-isolate: with isolated workers, Bun 1.4.2 on Linux stops reaping
+        # finished git children, so every later spawnSync in that worker hangs
+        # until the test times out. Without isolation the preload runs once per
+        # worker and the CLI timeout governs later files, so pass the same
+        # 30000 ms default that tests/helpers/test-timeout.ts sets.
+        run: bun test --parallel=4 --no-isolate --timeout=30000
