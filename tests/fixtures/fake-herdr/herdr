@@ -5,7 +5,33 @@
 // {"id","error":{"code","message"}} on stderr and exits 1; `pane read` prints
 // terminal text; `api schema` prints JSON only with --json. State lives in the
 // JSON file named by FAKE_HERDR_STATE, and every argv is appended to `calls`.
-import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { appendFileSync, existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+
+// Spawning mode (Spec e2e-release-gate D4). When the state file carries
+// `spawn: true`, `agent start <name> --kind <k> --pane <p> -- <argv...>` runs argv as a
+// real child process in the pane's cwd with the pane's --env (every inherited HERDR_*
+// variable scrubbed first), under a detached supervisor that mirrors the child's output into
+// `<state>.<pane>.out` and writes `<state>.<pane>.exit` when it ends. When `event_log`
+// names a file, every lifecycle event (create, start, attention, stop, exit, pane_not_found)
+// is appended to it as one JSON line. Closing a tab or pane kills the child's process group.
+const emit = (log, event, fields = {}) => { if (log) appendFileSync(log, `${JSON.stringify({ at: new Date().toISOString(), event, ...fields })}\n`); };
+
+if (process.argv[2] === "--supervise") {
+	const [, , , statePath, paneId, , ...command] = process.argv;
+	const log = JSON.parse(readFileSync(statePath, "utf8")).event_log;
+	const out = `${statePath}.${paneId}.out`;
+	const child = spawn("sh", ["-c", 'out=$1; shift; exec "$@" >>"$out" 2>&1', "sh", out, ...command], { stdio: "ignore", env: process.env });
+	const finish = (code, signal) => {
+		writeFileSync(`${statePath}.${paneId}.exit`, JSON.stringify({ code, signal }));
+		emit(log, "exit", { pane: paneId, code, signal });
+		process.exit(0);
+	};
+	child.on("exit", finish);
+	child.on("error", () => finish(127, null));
+	for (const signal of ["SIGTERM", "SIGINT"]) process.on(signal, () => child.kill(signal));
+	await new Promise(() => {});
+}
 
 const file = process.env.FAKE_HERDR_STATE;
 if (!file) { process.stderr.write("FAKE_HERDR_STATE is not set\n"); process.exit(3); }
@@ -18,13 +44,36 @@ const text = (value) => { process.stdout.write(value); process.exit(0); };
 const fail = (code, message = code) => { process.stderr.write(`${JSON.stringify({ id, error: { code, message } })}\n`); process.exit(1); };
 const flag = (args, name) => { const index = args.indexOf(name); return index < 0 ? undefined : args[index + 1]; };
 
-const state = load();
+// A spawned pane that has exited reads as done (exit 0) or unknown (anything else).
+const settleExits = (value) => {
+	for (const [paneId, entry] of Object.entries(value.panes ?? {})) {
+		const exitFile = `${file}.${paneId}.exit`;
+		if (!entry.spawned || !existsSync(exitFile)) continue;
+		const { code, signal } = JSON.parse(readFileSync(exitFile, "utf8"));
+		entry.exit_code = code;
+		entry.exit_signal = signal;
+		entry.state = code === 0 ? "done" : "unknown";
+	}
+	return value;
+};
+const fresh = () => settleExits(load());
+const state = fresh();
 state.calls = [...(state.calls ?? []), argv];
 state.panes ??= {};
 save(state);
 const [group, verb, ...args] = argv;
 state.tabs ??= {};
-const pane = (paneId) => { const value = state.panes[paneId]; if (!value || value.closed) fail("pane_not_found", `pane ${paneId} not found`); return value; };
+const pane = (paneId) => { const value = state.panes[paneId]; if (!value || value.closed) { emit(state.event_log, "pane_not_found", { pane: paneId }); fail("pane_not_found", `pane ${paneId} not found`); } return value; };
+// Stops a spawned pane's child (its whole process group) and records the stop.
+const stopPane = (paneId, reason) => {
+	const value = state.panes[paneId];
+	if (value?.supervisor_pid && !existsSync(`${file}.${paneId}.exit`)) {
+		try { process.kill(-value.supervisor_pid, "SIGKILL"); } catch {}
+		writeFileSync(`${file}.${paneId}.exit`, JSON.stringify({ code: null, signal: "SIGKILL" }));
+		emit(state.event_log, "exit", { pane: paneId, code: null, signal: "SIGKILL" });
+	}
+	emit(state.event_log, "stop", { pane: paneId, reason });
+};
 // An agent target is a pane that currently hosts an agent.
 const hosted = (paneId) => { const value = pane(paneId); if (!value.agent) fail("agent_not_found", `no agent in ${paneId}`); return value; };
 const agent = (paneId) => ({ agent: { pane_id: paneId, name: state.panes[paneId].name ?? null, agent_status: state.panes[paneId].state } });
@@ -40,6 +89,7 @@ if (group === "tab" && verb === "create") {
 	state.tabs[`t${n}`] = { workspace: flag(args, "--workspace"), label: flag(args, "--label") };
 	state.panes[`p${n}`] = { tab: `t${n}`, workspace: flag(args, "--workspace"), cwd: flag(args, "--cwd"), env, agent: false, state: "unknown", prompts: [], keys: [], output: "", closed: false, starts: 0 };
 	save(state);
+	emit(state.event_log, "create", { tab: `t${n}`, pane: `p${n}`, cwd: flag(args, "--cwd"), label: flag(args, "--label") });
 	ok({ tab: { tab_id: `t${n}` }, root_pane: { pane_id: `p${n}` } });
 }
 if (group === "tab" && verb === "get") {
@@ -64,7 +114,7 @@ if (group === "pane" && verb === "get") {
 if (group === "tab" && verb === "close") {
 	if (!state.tabs[args[0]]) fail("tab_not_found");
 	delete state.tabs[args[0]];
-	for (const value of Object.values(state.panes)) if (value.tab === args[0]) { value.closed = true; value.agent = false; }
+	for (const [paneId, value] of Object.entries(state.panes)) if (value.tab === args[0]) { stopPane(paneId, "tab_close"); value.closed = true; value.agent = false; }
 	state.tabs_closed = [...(state.tabs_closed ?? []), args[0]];
 	save(state);
 	ok({});
@@ -78,11 +128,28 @@ if (group === "agent" && verb === "start") {
 		fail("agent_name_taken", `agent name already in use: ${name}`);
 	}
 	// agent_not_ready: the agent is there but shows a dialog (CLI reference, `agent start`).
-	if (state.not_ready_next) { state.not_ready_next = false; target.agent = true; target.name = name; target.starts += 1; target.state = "blocked"; save(state); fail("agent_not_ready"); }
+	if (state.not_ready_next) { state.not_ready_next = false; target.agent = true; target.name = name; target.starts += 1; target.state = "blocked"; save(state); emit(state.event_log, "attention", { pane: paneId, state: "blocked" }); fail("agent_not_ready"); }
 	target.name = name;
 	target.agent = true;
 	target.starts += 1;
 	target.state = "idle";
+	const command = args.includes("--") ? args.slice(args.indexOf("--") + 1) : [];
+	if (state.spawn && command.length) {
+		delete target.exit_code;
+		target.spawned = true;
+		target.state = "working";
+		const paneEnv = Object.fromEntries((target.env ?? []).map((pair) => pair.split(/=(.*)/s).slice(0, 2)));
+		const inherited = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("HERDR_") && key !== "FAKE_HERDR_STATE"));
+		const supervisor = spawn(process.execPath, [import.meta.path, "--supervise", file, paneId, "--", ...command], {
+			cwd: target.cwd,
+			detached: true,
+			stdio: "ignore",
+			env: { ...inherited, ...paneEnv, HERDR_ENV: "1", HERDR_PANE_ID: paneId, HERDR_WORKSPACE_ID: target.workspace ?? "" },
+		});
+		supervisor.unref();
+		target.supervisor_pid = supervisor.pid;
+		emit(state.event_log, "start", { pane: paneId, name, command });
+	}
 	save(state);
 	ok(agent(flag(args, "--pane")));
 }
@@ -101,7 +168,7 @@ if (group === "agent" && verb === "wait") {
 	const timeout = Number(flag(args, "--timeout") ?? 0);
 	const started = Date.now();
 	for (;;) {
-		const current = load().panes?.[args[0]];
+		const current = fresh().panes?.[args[0]];
 		if (!current || current.closed || !current.agent) fail("agent_not_running");
 		// Herdr's default is idle, done or blocked; repeated --until replaces it.
 		const until = args.flatMap((value, index) => (args[index - 1] === "--until" ? [value] : []));
@@ -111,7 +178,11 @@ if (group === "agent" && verb === "wait") {
 	}
 }
 if (group === "agent" && verb === "send-keys") { hosted(args[0]).keys.push(...args.slice(1)); save(state); ok({}); }
-if (group === "pane" && verb === "read") text(pane(args[0]).output);
+if (group === "pane" && verb === "read") {
+	const target = pane(args[0]);
+	const mirrored = `${file}.${args[0]}.out`;
+	text(target.spawned && existsSync(mirrored) ? readFileSync(mirrored, "utf8") : target.output);
+}
 if (group === "pane" && verb === "run") {
 	// Runs the typed command line in the tab's cwd, as the pane's shell would.
 	const target = pane(args[0]);
@@ -126,10 +197,12 @@ if (group === "pane" && verb === "wait-output") {
 	for (;;) {
 		const current = load().panes?.[args[0]];
 		if (!current || current.closed) fail("pane_not_found");
-		const line = current.output.split("\n").find((each) => pattern.test(each));
-		if (line !== undefined) ok({ pane_id: args[0], matched_line: line, read: { text: current.output } });
+		const mirrored = `${file}.${args[0]}.out`;
+		const output = current.spawned && existsSync(mirrored) ? readFileSync(mirrored, "utf8") : current.output;
+		const line = output.split("\n").find((each) => pattern.test(each));
+		if (line !== undefined) ok({ pane_id: args[0], matched_line: line, read: { text: output } });
 		await Bun.sleep(20);
 	}
 }
-if (group === "pane" && verb === "close") { const target = pane(args[0]); target.closed = true; target.agent = false; save(state); ok({}); }
+if (group === "pane" && verb === "close") { const target = pane(args[0]); stopPane(args[0], "pane_close"); target.closed = true; target.agent = false; save(state); ok({}); }
 fail("unknown_command", `fake herdr does not model: ${argv.join(" ")}`);

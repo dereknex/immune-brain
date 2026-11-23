@@ -33,7 +33,9 @@
     "verify:release": "bun scripts/plugin_versioning.ts validate && bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun scripts/sync-dist-docs.ts --check && bun run typecheck && bun test && npm pack --dry-run --ignore-scripts",
     "changeset:publish": "bun run verify:release && changeset publish",
     "release": "bun run changeset:publish",
-    "typecheck": "tsc -p tsconfig.json"
+    "typecheck": "tsc -p tsconfig.json",
+    "e2e": "bun tests/e2e/run.ts",
+    "e2e:record": "bun tests/e2e/run.ts --record"
   },
   "devDependencies": {
     "@changesets/changelog-github": "^0.5.2",

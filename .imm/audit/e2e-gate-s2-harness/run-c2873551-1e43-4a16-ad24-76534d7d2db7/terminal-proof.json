@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "e2e-gate-s2-harness",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:e2e-gate-s2-harness:2026-11-23T04:38:44.242Z",
+  "final_record_hash": "sha256:7c6cdfe19d4d3027eb044e6fc5c6d53fe365fc2ef83fb76578e377f10432fb5e",
+  "terminalized_at": "2026-11-23T04:38:44.242Z"
+}

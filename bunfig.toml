@@ -2,3 +2,6 @@
 # Raise Bun's 5000 ms per-test default for every bun test invocation (Spec
 # branch-boundary D1); an explicit per-test timeout still overrides it.
 preload = ["./tests/helpers/test-timeout.ts"]
+# The L1 Host journeys (tests/e2e, run by `bun run e2e`) are never part of `bun test`
+# (Spec e2e-release-gate D5); tests/e2e-black-box-boundary.test.ts pins this.
+pathIgnorePatterns = ["tests/e2e/**"]
