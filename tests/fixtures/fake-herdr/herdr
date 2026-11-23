@@ -134,12 +134,15 @@ if (group === "agent" && verb === "start") {
 	target.starts += 1;
 	target.state = "idle";
 	const command = args.includes("--") ? args.slice(args.indexOf("--") + 1) : [];
+	// Real Herdr resolves `--kind <k>` to that Host's binary when argv is only its options.
+	const kind = flag(args, "--kind");
+	if (state.spawn && kind && command.length && command[0].startsWith("-")) command.unshift(kind);
 	if (state.spawn && command.length) {
 		delete target.exit_code;
 		target.spawned = true;
 		target.state = "working";
 		const paneEnv = Object.fromEntries((target.env ?? []).map((pair) => pair.split(/=(.*)/s).slice(0, 2)));
-		const inherited = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("HERDR_") && key !== "FAKE_HERDR_STATE"));
+		const inherited = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("HERDR_")));
 		const supervisor = spawn(process.execPath, [import.meta.path, "--supervise", file, paneId, "--", ...command], {
 			cwd: target.cwd,
 			detached: true,

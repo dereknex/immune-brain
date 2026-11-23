@@ -1,0 +1,21 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "e2e-gate-s4-single-task",
+  "owner": "user",
+  "goal": "J1: a scripted single-task drive reaches a terminal TaskRecord with audit and delivered commit on Claude Code and Pi (Spec D2, J1) (Initiative e2e-release-gate slice S4; Spec docs/specs/e2e-release-gate.spec.md).",
+  "acceptance": [
+    {
+      "id": "S4-AC1",
+      "assertion": "bun run e2e single-task drives one scripted task from enrollment through Executor launch, implementation, QA and Review to a terminal TaskRecord with an audit directory and a delivered commit, for the claude and pi Executors. Negative cases: an Executor launch lacking --plugin-dir and an entry that is not the /immune-brain:drive slash command each fail the journey with a named assertion. Done looks like: tests/e2e/single-task.e2e.ts passes with both negatives asserted. Prerequisite: the pinned claude binary from tests/e2e/hosts.json is installed on the QA host (maintainer machine provides claude 2.1.330); an absent binary fails the check rather than skipping.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"run\",\n      \"e2e\",\n      \"single-task\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 600000,\n    \"max_output_bytes\": 262144\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/e2e-gate-s4-single-task.intent.json",
+    "tests/e2e/cassettes/single-task/claude.jsonl",
+    "tests/e2e/cassettes/single-task/pi.jsonl",
+    "tests/e2e/single-task.e2e.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

@@ -2,7 +2,7 @@
 // journeys (Spec e2e-release-gate D3, D4). Black box: it drives the `herdr` CLI and the
 // Host binaries as processes and never imports a plugin runtime module.
 
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join, resolve } from "node:path";
 
@@ -78,6 +78,20 @@ export function claudeLaunch(input: ClaudeLaunchInput): HostLaunch {
 	};
 }
 
+/**
+ * Puts `claude` and `pi` stand-ins first on PATH (see host-shim.ts): a Host the runtime starts by
+ * bare name inside a pane reaches the pinned real binary only after the entry prompt arrives.
+ */
+export function makeHostShims(dir: string): string {
+	mkdirSync(dir, { recursive: true });
+	for (const name of ["claude", "pi"]) {
+		const path = join(dir, name);
+		writeFileSync(path, `#!/bin/sh\nexec "${process.execPath}" "${join(import.meta.dir, "host-shim.ts")}" ${name} "$@"\n`);
+		chmodSync(path, 0o755);
+	}
+	return dir;
+}
+
 export interface ClaudeStream {
 	events: Array<Record<string, any>>;
 	init?: Record<string, any>;
@@ -107,21 +121,28 @@ export class FakeHerdr {
 	readonly eventLog: string;
 	private readonly env: Record<string, string>;
 
-	private constructor(private readonly dir: string, private readonly workspace: string) {
+	private constructor(private readonly dir: string, private readonly workspace: string, private readonly extraEnv: Record<string, string> = {}, pathPrefix = "") {
 		this.stateFile = join(dir, "state.json");
 		this.eventLog = join(dir, "events.jsonl");
 		writeFileSync(this.stateFile, JSON.stringify({ protocol: 22, panes: {}, spawn: true, event_log: this.eventLog }));
 		writeFileSync(this.eventLog, "");
 		// The harness owns every HERDR_* variable the Host sees: none is inherited.
-		this.env = { ...baseEnv(), PATH: `${FAKE_HERDR_DIR}${delimiter}${baseEnv().PATH ?? ""}`, FAKE_HERDR_STATE: this.stateFile, HERDR_ENV: "1", HERDR_WORKSPACE_ID: workspace };
+		this.env = { ...baseEnv(), PATH: `${pathPrefix ? pathPrefix + delimiter : ""}${FAKE_HERDR_DIR}${delimiter}${baseEnv().PATH ?? ""}`, FAKE_HERDR_STATE: this.stateFile, HERDR_ENV: "1", HERDR_WORKSPACE_ID: workspace, ...extraEnv };
 	}
 
-	static create(workspace = "w-e2e"): FakeHerdr {
-		return new FakeHerdr(mkdtempSync(join(tmpdir(), "imm-e2e-herdr-")), workspace);
+	/** `extraEnv` reaches every Host the fake spawns (the fake's own environment is what spawned children inherit). */
+	static create(workspace = "w-e2e", extraEnv: Record<string, string> = {}, pathPrefix = ""): FakeHerdr {
+		return new FakeHerdr(mkdtempSync(join(tmpdir(), "imm-e2e-herdr-")), workspace, extraEnv, pathPrefix);
 	}
 
-	run(argv: string[]) {
-		return capture([join(FAKE_HERDR_DIR, "herdr"), ...argv], this.env);
+	/** The Herdr-facing environment a Host started outside fake-herdr's spawn (the Parent pane) needs to be "inside Herdr". */
+	paneEnv(): Record<string, string> {
+		const { PATH, FAKE_HERDR_STATE, HERDR_ENV, HERDR_WORKSPACE_ID } = this.env;
+		return { ...this.extraEnv, PATH, FAKE_HERDR_STATE, HERDR_ENV, HERDR_WORKSPACE_ID, E2E_HERDR_STATE: this.stateFile };
+	}
+
+	run(argv: string[], timeoutMs?: number) {
+		return capture([join(FAKE_HERDR_DIR, "herdr"), ...argv], this.env, timeoutMs);
 	}
 
 	private async result(argv: string[]): Promise<any> {
@@ -141,7 +162,7 @@ export class FakeHerdr {
 
 	/** Waits for the Host process to end; returns its exit code from the lifecycle log. */
 	async waitForExit(pane: string, timeoutMs: number): Promise<number | null> {
-		const waited = await this.run(["agent", "wait", pane, "--until", "done", "--until", "unknown", "--until", "blocked", "--timeout", String(timeoutMs)]);
+		const waited = await this.run(["agent", "wait", pane, "--until", "done", "--until", "unknown", "--until", "blocked", "--timeout", String(timeoutMs)], timeoutMs + 15_000);
 		if (waited.code !== 0) throw new HostError("host_timeout", `pane ${pane} did not finish within ${timeoutMs} ms: ${waited.stderr.trim()}`);
 		const ended = this.events().find((event) => event.event === "exit" && event.pane === pane);
 		return (ended?.code as number | null | undefined) ?? null;
