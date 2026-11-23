@@ -17587,11 +17587,9 @@ async function projectPlanSurface(input) {
     });
     planDigest = computeBatchPlanDigest(plan.enrollable);
     for (const c of plan.children.filter((item) => item.status === "enrollable")) {
-      let childRisk = "material";
       try {
-        childRisk = (input.preparing ? observeEnrollmentTaskIntent(root, c.task_id) : readTaskIntent(root, c.task_id, c.intent_path ?? undefined)).intent.risk;
+        riskByTask.set(c.task_id, (input.preparing ? observeEnrollmentTaskIntent(root, c.task_id) : readTaskIntent(root, c.task_id, c.intent_path ?? undefined)).intent.risk);
       } catch {}
-      riskByTask.set(c.task_id, childRisk);
     }
     excluded = plan.children.filter((c) => c.status !== "enrollable").map((c) => ({ task_id: c.task_id, slice_id: c.slice_id, reason: c.reason ?? c.status }));
   }
@@ -18695,7 +18693,16 @@ async function reconcileChildSession(input) {
     return { session: { ...session, attention: "blocked" }, action: holdAction };
   session = session.attention === null ? session : { ...session, attention: null };
   if (state === "error")
-    return await recoverFromError(port, session, { batchId, taskId, kernel, interactionMode, entry, laneCwd, onWriteAhead, holdAction });
+    return await recoverFromError(port, session, {
+      batchId,
+      taskId,
+      kernel,
+      interactionMode,
+      laneCwd,
+      onWriteAhead,
+      holdAction,
+      entry: pendingCorrection && isHandled(session, pendingCorrection.digest) ? pendingCorrection.text : entry
+    });
   if (state === "working" || state === "unknown")
     return { session, action: holdAction };
   if (!session.entry_submitted) {
@@ -25225,6 +25232,8 @@ import { existsSync as existsSync21, lstatSync as lstatSync20, realpathSync as r
 import { randomUUID as randomUUID14 } from "node:crypto";
 import { join as join36 } from "node:path";
 var NATIVE_OPERATIONS = new Set(["start_unattended_batch", "retire_stale_batch", "request_authorization", "approve_breaking_intent_revision", "request_stop", "stop"]);
+var PARENT_IDENTITY_LOST = "no matching persisted batch identity";
+var SUSPENDED_REVIEW_OPERATIONS = new Set(["advance_assurance", "submit_review"]);
 var MAX_METADATA_BYTES = 256 * 1024;
 var NATIVE_FAILURE_LIMIT = 3;
 var PAUSED_GATE_GUIDANCE = "reply in this session to resume before another native gate";
@@ -25355,7 +25364,7 @@ async function applyRunContinuationEvent(host, root, session, event) {
   }
   if (event.kind === "tool_call") {
     const metadata = readMetadata(host, sessionId, root);
-    if (metadata.paused && NATIVE_OPERATIONS.has(event.operation))
+    if (metadata.paused && (NATIVE_OPERATIONS.has(event.operation) || SUSPENDED_REVIEW_OPERATIONS.has(event.operation)))
       return { kind: "deny", reason: metadata.paused };
     const entry = host.entry_state(sessionId);
     if (!entry?.run_live)
@@ -25510,9 +25519,17 @@ async function applyRunContinuationEvent(host, root, session, event) {
   metadata.sequence++;
   const taskId = metadata.state.binding.kind === "task" ? metadata.state.binding.task_id : metadata.state.binding.initiative_slug;
   let observation;
-  if (metadata.state.binding.kind === "parent")
-    observation = await observeParentRun(metadata.state.binding, boundary, metadata.review, metadata.recovery_action ?? undefined);
-  else {
+  if (metadata.state.binding.kind === "parent") {
+    try {
+      observation = await observeParentRun(metadata.state.binding, boundary, metadata.review, metadata.recovery_action ?? undefined);
+    } catch (error) {
+      if (!(error instanceof Error && error.message.includes(PARENT_IDENTITY_LOST)))
+        throw error;
+      host.revoke_entry(sessionId);
+      drop(host, statePath2(host, sessionId, root), root);
+      return { kind: "paused", reason: `${error.message}; enter drive explicitly to rebind the run` };
+    }
+  } else {
     const status = await projectTaskStatus(workspace, taskId);
     const record = readTaskRecordRaw(workspace, taskId);
     observation = {
@@ -27276,7 +27293,8 @@ class HostRuntime {
     }
     const isResuming = preflight.projection.is_resuming;
     if (options.plan_source === "single_task" && !isResuming && !options.final_verification?.length) {
-      const critical = Object.values(preflight.projection.risk_by_task ?? {}).includes("critical");
+      const risks = preflight.projection.risk_by_task ?? {};
+      const critical = Object.keys(risks).length === 0 || Object.values(risks).includes("critical");
       const batchConfig = resolveConfig(this.cwd).batch;
       const configured = batchConfig[critical ? "final_verification" : "single_task_final_verification"].value;
       if (Array.isArray(configured) && configured.length > 0)

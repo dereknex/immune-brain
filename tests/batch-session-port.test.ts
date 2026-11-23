@@ -602,6 +602,22 @@ describe("S3b: an error stop recovers in a fresh generation, bounded per Kernel 
 		expect(progressed.session.baseline).toBe("r2");
 	});
 
+	test("a generation opened for a correction recovers with the correction text", async () => {
+		const port = new MemPort("mem-error-correction");
+		errored(port, "h1");
+		const corrected = await reconcileChildSession({ port, batchId: "b", taskId: "t",
+			session: { key: laneSessionKey("b", "t", 1), generation: 1, baseline: "r1", handle: "h0", entry_submitted: true, attention: null, no_progress: 0, exit_proof: null },
+			kernel: kernelAt("r1"), interactionMode: "parent_relayed", entry: "drive t", laneCwd: tmpdir(), pendingCorrection: "design correction" });
+		port.states.set("h0", "idle");
+		const rotated = corrected.session.handle ? corrected : await reconcileChildSession({ port, batchId: "b", taskId: "t", session: corrected.session,
+			kernel: kernelAt("r1"), interactionMode: "parent_relayed", entry: "drive t", laneCwd: tmpdir(), pendingCorrection: "design correction" });
+		errored(port, rotated.session.handle!);
+		const recovered = await reconcileChildSession({ port, batchId: "b", taskId: "t", session: rotated.session,
+			kernel: kernelAt("r1"), interactionMode: "parent_relayed", entry: "drive t", laneCwd: tmpdir(), pendingCorrection: "design correction" });
+		expect(recovered.action).toBe("recovered_error");
+		expect(port.opens.at(-1)!.entry).toBe("design correction");
+	});
+
 	test.each([["settled", { settled: true }], ["an open decision", { hasOpenDecision: true }], ["a replan", { hasReplan: true }]] as const)(
 		"holds a child with %s on error, flags attention, and never recovers it",
 		async (_label, extra) => {

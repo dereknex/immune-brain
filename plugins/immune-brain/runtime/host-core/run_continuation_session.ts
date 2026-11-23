@@ -28,6 +28,8 @@ import { digestOfReviewerBytes } from "../assurance/review_mediation";
 import { appendPrivate, cacheDir, ensurePrivateDir, ownedByUs, readPrivate, sessionHash } from "./private_file";
 
 const NATIVE_OPERATIONS = new Set(["start_unattended_batch", "retire_stale_batch", "request_authorization", "approve_breaking_intent_revision", "request_stop", "stop"]);
+const PARENT_IDENTITY_LOST = "no matching persisted batch identity";
+const SUSPENDED_REVIEW_OPERATIONS = new Set(["advance_assurance", "submit_review"]);
 const MAX_METADATA_BYTES = 256 * 1024;
 /** Spec D9: the third native-operation failure under one entry pauses; the first two leave the run live for a retry. */
 const NATIVE_FAILURE_LIMIT = 3;
@@ -213,7 +215,10 @@ export async function applyRunContinuationEvent(host: RunContinuationHost, root:
 	}
 	if (event.kind === "tool_call") {
 		const metadata = readMetadata(host, sessionId, root);
-		if (metadata.paused && NATIVE_OPERATIONS.has(event.operation)) return { kind: "deny", reason: metadata.paused };
+		// A suspended run keeps its entry token, so the gate itself refuses the operations that
+		// move authority or Review until the user replies (Spec D1.1).
+		if (metadata.paused && (NATIVE_OPERATIONS.has(event.operation) || SUSPENDED_REVIEW_OPERATIONS.has(event.operation)))
+			return { kind: "deny", reason: metadata.paused };
 		const entry = host.entry_state(sessionId);
 		if (!entry?.run_live) return { kind: "none" };
 		// A drifted shell cwd records no correlation, so its result cannot be read as this run's (D5).
@@ -316,8 +321,18 @@ export async function applyRunContinuationEvent(host: RunContinuationHost, root:
 	metadata.sequence++;
 	const taskId = metadata.state.binding.kind === "task" ? metadata.state.binding.task_id : metadata.state.binding.initiative_slug;
 	let observation: Parameters<typeof decideRunContinuation>[1];
-	if (metadata.state.binding.kind === "parent") observation = await observeParentRun(metadata.state.binding,
-		boundary, metadata.review, metadata.recovery_action ?? undefined);
+	if (metadata.state.binding.kind === "parent") {
+		try {
+			observation = await observeParentRun(metadata.state.binding, boundary, metadata.review, metadata.recovery_action ?? undefined);
+		} catch (error) {
+			// A lost persisted batch identity is a lost bound identity: it spends the entry token
+			// in every Host instead of leaving the run live behind a warning (Spec D1.1).
+			if (!(error instanceof Error && error.message.includes(PARENT_IDENTITY_LOST))) throw error;
+			host.revoke_entry(sessionId);
+			drop(host, statePath(host, sessionId, root), root);
+			return { kind: "paused", reason: `${error.message}; enter drive explicitly to rebind the run` };
+		}
+	}
 	else {
 		const status = await projectTaskStatus(workspace, taskId);
 		const record = readTaskRecordRaw(workspace, taskId);

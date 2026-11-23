@@ -199,7 +199,11 @@ export async function reconcileChildSession(input: ReconcileChildInput): Promise
 	if (state === "blocked") return { session: { ...session, attention: "blocked" }, action: holdAction };
 	// Any other observation, including a successful resume below, clears a held attention.
 	session = session.attention === null ? session : { ...session, attention: null };
-	if (state === "error") return await recoverFromError(port, session, { batchId, taskId, kernel, interactionMode, entry, laneCwd, onWriteAhead, holdAction });
+	if (state === "error") return await recoverFromError(port, session, {
+		batchId, taskId, kernel, interactionMode, laneCwd, onWriteAhead, holdAction,
+		// A generation opened for a correction recovers with that correction, as a handle-less reopen does.
+		entry: pendingCorrection && isHandled(session, pendingCorrection.digest) ? pendingCorrection.text : entry,
+	});
 	if (state === "working" || state === "unknown") return { session, action: holdAction };
 
 	// Startup dialog hold: an unsubmitted entry resumes once idle or done.

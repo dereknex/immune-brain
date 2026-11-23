@@ -213,7 +213,13 @@ describe("Claude run continuation", () => {
 				expect(denial).toMatchObject({ hookSpecificOutput: { permissionDecision: "deny",
 					permissionDecisionReason: expect.stringContaining("reply in this session to resume") } });
 			}
+			// Review cannot advance behind a suspension that still holds the entry token.
+			for (const operation of ["advance_assurance", "submit_review"] as const)
+				expect(JSON.parse((await h.hook({ hook_event_name: "PreToolUse", ...h.tool(operation) }))!))
+					.toMatchObject({ hookSpecificOutput: { permissionDecision: "deny" } });
 			await h.prompt("Please continue");
+			for (const operation of ["advance_assurance", "submit_review"] as const)
+				expect(await h.hook({ hook_event_name: "PreToolUse", ...h.tool(operation) })).toBeNull();
 			for (const operation of ["retire_stale_batch", "start_unattended_batch"] as const) {
 				expect(await h.hook({ hook_event_name: "PreToolUse", ...h.tool(operation) })).toBeNull();
 				expect(phaseEntryGateHookOutput({ hook_event_name: "PreToolUse",
@@ -490,8 +496,12 @@ describe("Claude run continuation: lane_rebinds plan_digest", () => {
 			const path = join(p.root, ".imm/state/batches", `${LANE_BATCH}.json`);
 			const record = JSON.parse(readFileSync(path, "utf8")) as BatchLaneRunStateRecord;
 			writeBatchLaneRunState(p.root, { ...record, plan_digest: `sha256:${"b".repeat(64)}` });
+			expect(readPhaseEntryState("lane-session", p.root)?.run_live).toBe(true);
 			expect(JSON.parse((await p.stop())!).systemMessage)
 				.toContain("Parent continuation has no matching persisted batch identity");
+			// A lost batch identity is a lost bound identity: it spends the entry token (workflow-friction D1.1).
+			expect(readPhaseEntryState("lane-session", p.root)?.run_live).toBe(false);
+			expect(p.binding()).toBeNull();
 		} finally { p.dispose(); }
 	});
 });

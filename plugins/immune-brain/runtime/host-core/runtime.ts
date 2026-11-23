@@ -1353,7 +1353,9 @@ export class HostRuntime {
 		// Resuming keeps the commands recorded on the batch; with no commands the
 		// declared derived-file checks still gate checkout delivery.
 		if (options.plan_source === "single_task" && !isResuming && !options.final_verification?.length) {
-			const critical = Object.values(preflight.projection.risk_by_task ?? {}).includes("critical");
+			// An unread intent risk leaves no entry and keeps the full suite (conservative).
+			const risks = preflight.projection.risk_by_task ?? {};
+			const critical = Object.keys(risks).length === 0 || Object.values(risks).includes("critical");
 			const batchConfig = resolveConfig(this.cwd).batch;
 			const configured = (batchConfig[critical ? "final_verification" : "single_task_final_verification"] as { value?: unknown }).value;
 			if (Array.isArray(configured) && configured.length > 0) options = { ...options, final_verification: configured.map(String) };
