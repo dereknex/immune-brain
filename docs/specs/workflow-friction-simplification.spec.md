@@ -13,14 +13,14 @@
 ## Outcome
 
 Conserves the full confirmed outcome (`BR-REQ-1..4`, `BR-DEC-1..4`, `BR-SCN-1..4`) without weakening independent QA/Review gates, Host Native Gates, or `drive-always-lanes` worktree isolation:
-1. Active `/immune-brain:drive` sessions preserve their `entry_token` across non-terminal user-wait pauses on the same `(workspace, batch_id | run_id)` binding and reset `native_failures` when `start_unattended_batch` transitions to `started` (`S1`).
+1. Active `/immune-brain:drive` sessions only suspend at a non-terminal pause and keep their `entry_token` on the same `(workspace, batch_id | run_id)` binding; a plain reply resumes them, and any applied native operation resets `native_failures` (`S1`).
 2. Single-task `checkout_delivery` accepts staged and untracked (`??`) coordinator regular files matching the target commit's blob and executable mode byte-for-byte in both `manual` and `auto` modes while failing closed on mismatches/deletions, and `copyLanePlanningInput` preserves a newer shared Spec committed on `imm/<slug>` when the coordinator checkout copy matches `base_head` (`S2`).
 3. Non-`critical` standalone `single_task` runs skip inheriting project-wide `batch.final_verification` unless explicitly passed or configured via `batch.single_task_final_verification`, and supervised Lane Executors recover at most once per generation from transient `error` stops when no gate or conflict is open (`S3`).
 4. `/immune-brain:revisit` marks Claude synthetic hook/bash/interrupt frames `synthetic: true` and excludes non-error `CliReviewHost` `submit_review` completions from `review_without_verdict` (`S4`).
 
 | Slice | Task ID | Result when landed alone | Remaining gap | Risk | Blocked by | Scenarios | Agreed seam |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `S1` | `workflow-friction-simplification-s1-session-continuation` | Non-terminal user-wait pauses keep `entry_token` alive on the bound `(workspace, batch_id | run_id)`, non-cancelling/non-planning user prompts clear suspension without `run_entry_required` across Claude/Pi/Antigravity, `start_unattended_batch` `state === "started"` resets `native_failures = 0`, and ADR 0025 §3/§6 reflects the rule | Single-task checkout delivery & shared Spec safety (`S2`), single-task verification default & transient Lane recovery (`S3`), `revisit` parser accuracy (`S4`) | `material` | — | `BR-SCN-1` | `tests/run-continuation.test.ts`, `tests/claude-run-continuation.test.ts`, `tests/pi-run-continuation.test.ts`, `tests/antigravity-assurance-conformance.test.ts` |
+| `S1` | `workflow-friction-simplification-s1-session-continuation` | Every pause except a lost or terminal bound identity only suspends the run and keeps `entry_token`; a plain non-cancelling/non-planning reply clears the suspension and the retry counters across Claude/Pi/Antigravity; any applied native operation resets `native_failures = 0`; ADR 0025 §3/§6 reflects the rule | Single-task checkout delivery & shared Spec safety (`S2`), single-task verification default & transient Lane recovery (`S3`), `revisit` parser accuracy (`S4`) | `material` | — | `BR-SCN-1` | `tests/run-continuation.test.ts`, `tests/claude-run-continuation.test.ts`, `tests/pi-run-continuation.test.ts`, `tests/antigravity-assurance-conformance.test.ts` |
 | `S2` | `workflow-friction-simplification-s2-checkout-spec-safety` | Single-task `checkout_delivery` treats staged and untracked (`??`) regular files matching the target commit's blob and executable mode byte-for-byte as satisfied in both `manual` and `auto` modes (aligning the index for satisfied paths before `git merge --ff-only` in `auto` mode) while keeping all mismatches/deletions fail-closed with `checkout_delivery_overlap`, and `copyLanePlanningInput` preserves a newer Spec on the Lane `HEAD` when coordinator `root` matches `base_head` | Single-task verification default & transient Lane recovery (`S3`), `revisit` parser accuracy (`S4`) | `material` | — | `BR-SCN-2` | `tests/single-task-checkout-delivery.test.ts`, `tests/single-task-lane-batch.test.ts` |
 | `S3` | `workflow-friction-simplification-s3-single-task-lane-recovery` | Non-`critical` `plan_source === "single_task"` runs skip inheriting `batch.final_verification` by default unless `final_verification` is explicitly passed or `batch.single_task_final_verification` is configured (`critical` tasks and multi-child batches retain `final_verification`), and `SupervisedSessionPort` / `BatchSessionPort` surface `"error"` so `child_session_reconciler.ts` dispatches at most 1 automatic recovery prompt per generation for an unfinished child with no open decision/replan | `revisit` parser accuracy (`S4`) | `material` | — | `BR-SCN-3` | `tests/single-task-lane-batch.test.ts`, `tests/layered-config.test.ts`, `tests/supervised-session-conformance.test.ts`, `tests/batch-session-port.test.ts` |
 | `S4` | `workflow-friction-simplification-s4-revisit-parser-accuracy` | `session_evidence.ts` marks Claude `Stop hook feedback:`, `<bash-stdout>`/`<bash-stderr>`, and `[Request interrupted by user]` frames `synthetic: true` and excludes non-error `CliReviewHost` `submit_review` completions from `review_without_verdict` | None once `S1`–`S3` land | `material` | — | `BR-SCN-4` | `tests/review-retro-analyzer.test.ts` |
@@ -93,7 +93,7 @@ No `BR-DEFER-*` or `BR-Q-*` items exist.
 
 | Settled clause | Amendment | From |
 | --- | --- | --- |
-| `tri-host-capability-alignment.spec.md` D6 & `docs/adr/0025-run-entry-decision-hosting.md` §3/§6 pause revocation | Non-terminal user-wait suspension (`yield_for_user` when `!runnable && !executors_running`) keeps `entry_token` alive across a plain-text, non-cancelling, non-planning user prompt on the same bound `(workspace, batch_id | run_id)`; `settled`, `SessionEnd`, workspace drift, explicit cancel (`releasesRunBinding`), `/draw-up` or `/clarify` entry, `review_incomplete`, 7-stop limit, and 3 consecutive failures (`NATIVE_FAILURE_LIMIT`) continue to call `revoke_entry` | `S1` (`D1.1`) |
+| `tri-host-capability-alignment.spec.md` D6, `run-entry-decision-hosting.spec.md` D13 & `docs/adr/0025-run-entry-decision-hosting.md` §3/§6 pause revocation | The entry token is spent only by the closed list in D1.1 (settlement, `SessionEnd`, explicit cancel or `/draw-up`/`/clarify` via `releasesRunBinding`, and a lost or terminal bound identity). Every other pause — user decision or authorization wait, a blocked Parent with no runnable work, `host_failure`, `review_incomplete`, a rejected Review without recovery, the third native failure (`NATIVE_FAILURE_LIMIT`), the 7-stop limit and an interrupted Pi turn — only suspends the run: native gates refuse until a plain reply in the same session clears it | `S1` (`D1.1`) |
 | `single-task-delivery-path-identity.spec.md` D3 (`checkout_delivery` staged-only `pathSatisfied` and `auto` mode overlap check) | Both staged and untracked (`??`) regular files in the coordinator checkout whose content blob (`git hash-object --no-filters`) and executable mode (`100644`/`100755`) match the target commit byte-for-byte satisfy `pathSatisfied` in both `manual` and `auto` modes; `auto` mode stages satisfied untracked paths before `git merge --ff-only`; all byte/mode/symlink/deletion mismatches fail closed with `checkout_delivery_overlap` | `S2` (`D2.1`) |
 
 ## Technical Design
@@ -105,11 +105,12 @@ No `BR-DEFER-*` or `BR-Q-*` items exist.
 
 ### Service and Component Interfaces
 
-- **`decideRunContinuation` (`plugins/immune-brain/runtime/assurance/run_continuation.ts`)**: returns `action: "yield_for_user"` on non-terminal waits (`!observation.runnable && !observation.executors_running`, such as `needs_human`) instead of `action: "pause"`, reserving `action: "pause"` for hard stops (7-stop runaway limit, binding/workspace mismatch, review protocol rejection).
+- **`decideRunContinuation` (`plugins/immune-brain/runtime/assurance/run_continuation.ts`)**: keeps `action: "pause"` and marks `revoke: true` only on a lost or terminal bound identity (observation kind mismatch, batch identity change, task/run identity change or status error, `Kernel task stopped`, missing or contradictory Kernel authority). Every other pause carries no `revoke`.
 - **`applyRunContinuationEvent` (`plugins/immune-brain/runtime/host-core/run_continuation_session.ts`) & Host guards (`claude/`, `antigravity/`, `.pi-extension/`)**:
-  - Add non-revoking suspension helpers (`suspendForUser` storing `metadata.suspended_for_user` / wait reason without calling `host.revoke_entry(sessionId)`), distinct from `pauseRun` (`host.revoke_entry(sessionId)`).
-  - On `event.kind === "prompt"` with `!event.releases` (plain-text user reply, not `/draw-up`, `/clarify`, or explicit cancel `releasesRunBinding`), clear `suspended_for_user` while retaining `state` binding and live `entry_token` on the same workspace; on `event.releases === true`, call `host.revoke_entry` and drop binding state as before.
-  - Reset `metadata.native_failures = 0` when `event.operation === "start_unattended_batch"` returns `response?.state === "started"`.
+  - `pauseRun` records `metadata.paused` and calls `host.revoke_entry` only for a `revoke` decision; `review_incomplete`, the third native failure and the 7-stop limit suspend without revoking. `suspendRun` lets a Host suspend a bound run (Pi interrupted turn) without spending the entry.
+  - `resumeSuspendedRun` runs on `event.kind === "prompt"` with `!event.releases` (Claude `UserPromptSubmit`, Pi `input`) and on Antigravity's turn-start `recordPhaseEntryPrompt` for a plain prompt: it clears `paused`, `native_failures` and `stop_blocks`, keeping the binding and the live `entry_token`. A releasing prompt drops the binding as before.
+  - Any non-failed, applied native operation (`NATIVE_OPERATIONS`, not `blocked`/`cancelled`/`rejected`/`failed`) resets `metadata.native_failures = 0`.
+  - Paused native-gate refusals name `PAUSED_GATE_GUIDANCE` ("reply in this session to resume before another native gate").
   - Keep `phase_entry.ts` and all Host `PreToolUse` / `mcp_runtime.ts` Native Gates (`request_authorization`, `approve_breaking_intent_revision`) unchanged.
 - **`inspectSingleTaskDelivery` / `deliverSingleTask` (`plugins/immune-brain/runtime/unattended/checkout_delivery.ts`)**:
   - `pathSatisfied(root, target, entry)` verifies `target` holds a regular file (`100644` or `100755`) at `entry.path` (not deleted/symlink/gitlink), `lstatSync` at coordinator `root/entry.path` is a regular file with matching executable mode, and `git hash-object --no-filters -- <path>` equals target's blob OID (and if staged in the index, index mode + OID also match).
@@ -132,19 +133,19 @@ No `BR-DEFER-*` or `BR-Q-*` items exist.
 ```mermaid
 stateDiagram-v2
     [*] --> ActiveRun: explicit /immune-brain:drive entry_token issued
-    ActiveRun --> SuspendedForUser: yield_for_user (!runnable && !executors_running, needs_human)
+    ActiveRun --> SuspendedForUser: pause without revoke (user wait | blocked Parent | host_failure | review_incomplete | 3x native failure | 7-stop | Pi interrupt)
     SuspendedForUser --> ActiveRun: plain-text prompt (!releases && same workspace)
-    ActiveRun --> ActiveRun: start_unattended_batch -> started (native_failures = 0)
-    ActiveRun --> EntryRevoked: settled | SessionEnd | releasesRunBinding | /draw-up | /clarify | drift | review_incomplete | 7-stop | 3x failure
-    SuspendedForUser --> EntryRevoked: SessionEnd | releasesRunBinding | /draw-up | /clarify | workspace drift
+    ActiveRun --> ActiveRun: applied native operation (native_failures = 0)
+    ActiveRun --> EntryRevoked: settled | SessionEnd | releasesRunBinding | /draw-up | /clarify | lost or terminal bound identity
+    SuspendedForUser --> EntryRevoked: SessionEnd | releasesRunBinding | /draw-up | /clarify
     EntryRevoked --> [*]
 ```
 
 ### Temporal Sequence
 
 1. **Interactive user-wait pause & plain-text resume (`S1`)**:
-   - Enrolled session invokes `start_unattended_batch` / `advance_assurance`; if `!runnable && !executors_running` (`needs_human`), Stop hook emits `yield_for_user` -> `host-core/run_continuation_session.ts` records `suspended_for_user` **without** calling `host.revoke_entry`.
-   - User replies with plain text (`!releases`, same workspace) -> Host prompt hook clears `suspended_for_user`, leaving `entry_token` live.
+   - Enrolled session invokes `start_unattended_batch` / `advance_assurance`; when the Stop decision pauses without `revoke` (for example `!runnable && !executors_running`), `host-core/run_continuation_session.ts` records `paused` **without** calling `host.revoke_entry`.
+   - User replies with plain text (`!releases`, same workspace) -> Host prompt hook runs `resumeSuspendedRun`, leaving `entry_token` live.
    - Parent executes next MCP tool call -> Host `PreToolUse` validates live `entry_token` + workspace binding and permits execution through existing Host Native Gates.
 2. **Single-task `auto` `checkout_delivery` with untracked planning files (`S2`)**:
    - Completed Lane commits updated workspace files + `docs/plans/<id>.intent.json` + `docs/specs/<slug>.spec.md`.
@@ -153,8 +154,8 @@ stateDiagram-v2
 
 ### D1–D4 Slice Decisions
 
-- **D1.1** *(Source: `BR-DEC-1`)*: Decouple `yield_for_user` suspension from `entry_token` revocation across `assurance/run_continuation.ts`, `host-core/run_continuation_session.ts`, `claude/`, `antigravity/`, `.pi-extension/`, and amend `docs/adr/0025-run-entry-decision-hosting.md` §3/§6 while preserving terminal/cancel/drift/planner-entry/7-stop/3x-failure revocation and all Native Gates.
-- **D1.2** *(Source: `BR-REQ-1`)*: Reset `metadata.native_failures = 0` in `host-core/run_continuation_session.ts` whenever `start_unattended_batch` returns `response?.state === "started"`.
+- **D1.1** *(Source: `BR-DEC-1`)*: Revocation is a closed list: settlement, `SessionEnd`, a releasing prompt (explicit cancel, `/draw-up`, `/clarify`), and a decision marked `revoke` (lost or terminal bound identity). Every other pause suspends the run without spending `entry_token`; native gates refuse while suspended, and a plain reply in the same session resumes it. Workspace drift keeps its existing `"workspace changed; enter drive explicitly in this workspace"` release. Applies across `assurance/run_continuation.ts`, `host-core/run_continuation_session.ts`, `claude/`, `antigravity/`, `.pi-extension/`, and amends `docs/adr/0025-run-entry-decision-hosting.md` §3/§6; all Native Gates stay.
+- **D1.2** *(Source: `BR-REQ-1`)*: Reset `metadata.native_failures = 0` in `host-core/run_continuation_session.ts` whenever a native operation applies (not just `start_unattended_batch` `started`), and when a plain reply resumes the run.
 - **D2.1** *(Source: `BR-DEC-3`)*: Extend `pathSatisfied` in `checkout_delivery.ts` to verify regular-file `lstatSync` + executable mode + `git hash-object --no-filters` blob identity for both staged and untracked (`??`) files uniformly across `manual` and `auto` modes (staging satisfied paths before `git merge --ff-only` in `auto` mode), while failing closed on any content, mode, symlink, or deletion mismatch.
 - **D2.2** *(Source: `BR-REQ-2`)*: Guard `copyLanePlanningInput` in `batch_worktrees.ts` so a coordinator `docs/specs/*.spec.md` equal to `lane.base_head` never overwrites a newer Spec already committed on Lane `HEAD`.
 - **D3.1** *(Source: `BR-DEC-2`)*: Add optional `batch.single_task_final_verification` in `layered_config.ts` and restrict `batch.final_verification` fallback on `plan_source === "single_task"` in `host-core/runtime.ts` strictly to `critical` tasks (non-`critical` single tasks use `single_task_final_verification` if configured, or `required: false`).
@@ -164,7 +165,7 @@ stateDiagram-v2
 
 ### Compatibility, Interruption Recovery, and Rollback
 
-- Backward compatibility: `BatchChildSession.error_recovered_baseline` and `ContinuationMetadata.suspended_for_user` are optional fields; existing `.imm/state/batches/*.json` and host session files remain readable with no migration.
+- Backward compatibility: `BatchChildSession.error_recovered_baseline` is an optional field and `ContinuationMetadata` keeps its shape (`paused` now also means "suspended"); existing `.imm/state/batches/*.json` and host session files remain readable with no migration.
 - Interruption recovery: if a Host session stops during `SuspendedForUser`, `TaskRecord` and batch state stay in the Kernel/`.imm/state/` store; an identical-session plain-text reply resumes, while switching sessions still allows explicit `/immune-brain:drive` re-entry.
 - Rollback: each Slice (`S1`–`S4`) modifies orthogonal runtime surfaces and can be reverted independently; `S1`–`S3` rebuild generated bundles (`mcp-server.mjs`, Antigravity mirror, `supervised-session-port.md` mirror) cleanly from source.
 

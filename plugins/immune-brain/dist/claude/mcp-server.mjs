@@ -24744,7 +24744,7 @@ function decideRunContinuation(previous, observation) {
   if (binding.workspace !== observation.workspace || binding.session_id !== observation.session_id)
     return result("unbound", "Host session or workspace changed", null);
   if (binding.kind !== observation.kind)
-    return result("pause", "run observation does not match the bound entry", null);
+    return { ...result("pause", "run observation does not match the bound entry", null), revoke: true };
   if (observation.host_failure)
     return result("pause", observation.host_failure, null);
   let progressDigest;
@@ -24753,7 +24753,7 @@ function decideRunContinuation(previous, observation) {
   let base = previous;
   if (binding.kind === "parent" && observation.kind === "parent") {
     if (binding.initiative_slug !== observation.initiative_slug || binding.batch_id !== observation.batch_id || binding.plan_digest !== observation.plan_digest && observation.rebound_from_plan_digest !== binding.plan_digest)
-      return result("pause", "batch identity changed; reread its authorized plan", null);
+      return { ...result("pause", "batch identity changed; reread its authorized plan", null), revoke: true };
     if (observation.rebound_from_plan_digest === binding.plan_digest && observation.plan_digest !== binding.plan_digest)
       base = { ...previous, binding: { ...binding, plan_digest: observation.plan_digest } };
     if (observation.all_required_integrated && observation.final_passed && !observation.pending_repair)
@@ -24767,13 +24767,13 @@ function decideRunContinuation(previous, observation) {
     const { status } = observation;
     const p = status.projection;
     if (status.error || status.task_id !== binding.task_id || p.run_id !== binding.run_id)
-      return result("pause", status.error ?? "Kernel task/run identity changed", null);
+      return { ...result("pause", status.error ?? "Kernel task/run identity changed", null), revoke: true };
     if (p.lifecycle === "done" && p.completion_ready && status.claim === null)
       return result("settled", "Kernel terminal settlement confirmed", null);
     if (p.lifecycle === "stopped" && status.claim === null)
-      return result("pause", "Kernel task stopped", null);
+      return { ...result("pause", "Kernel task stopped", null), revoke: true };
     if (status.claim?.task_id !== binding.task_id || status.claim.lifecycle_status !== "active" || p.lifecycle !== "active")
-      return result("pause", "Kernel authority is missing or contradictory", null);
+      return { ...result("pause", "Kernel authority is missing or contradictory", null), revoke: true };
     if (p.unresolved_user_decision_ids.length || p.replan_required_ids.length || p.open_user_decision_count || p.next_obligation === "resolve_user_decision" || p.next_obligation === "revise_intent" || p.authorization.state !== "none" || p.authorization.blocked)
       return result("pause", "Kernel requires a concrete user decision or authorization", "Use the existing native authorization operation");
     progressDigest = digest({
@@ -24828,7 +24828,7 @@ function decideRunContinuation(previous, observation) {
       }
     }
   } else {
-    return result("pause", "run observation does not match the bound entry", null);
+    return { ...result("pause", "run observation does not match the bound entry", null), revoke: true };
   }
   if (previous.boundary_id === observation.boundary_id)
     return result("wait", "duplicate Host boundary", null);
@@ -25179,6 +25179,7 @@ import { join as join36 } from "node:path";
 var NATIVE_OPERATIONS = new Set(["start_unattended_batch", "retire_stale_batch", "request_authorization", "approve_breaking_intent_revision", "request_stop", "stop"]);
 var MAX_METADATA_BYTES = 256 * 1024;
 var NATIVE_FAILURE_LIMIT = 3;
+var PAUSED_GATE_GUIDANCE = "reply in this session to resume before another native gate";
 var blank = () => ({
   state: null,
   sequence: 0,
@@ -25253,10 +25254,20 @@ function save(host, sessionId, root, value) {
     drop(host, temporary, root);
   }
 }
-function pauseRun(host, metadata, sessionId, root, reason) {
+function pauseRun(host, metadata, sessionId, root, reason, revoke = false) {
   metadata.paused = reason;
   save(host, sessionId, root, metadata);
-  host.revoke_entry(sessionId);
+  if (revoke)
+    host.revoke_entry(sessionId);
+}
+function resumeSuspendedRun(host, root, sessionId) {
+  const metadata = readMetadata(host, sessionId, root);
+  if (!metadata.paused && !metadata.native_failures && !metadata.stop_blocks)
+    return;
+  metadata.paused = null;
+  metadata.native_failures = 0;
+  metadata.stop_blocks = 0;
+  save(host, sessionId, root, metadata);
 }
 async function observeNativeFailure(host, metadata, correlation, root, reason) {
   metadata.native_failures++;
@@ -25290,6 +25301,8 @@ async function applyRunContinuationEvent(host, root, session, event) {
   if (event.kind === "prompt") {
     if (event.releases)
       drop(host, statePath2(host, sessionId, root), root);
+    else if (existsSync21(statePath2(host, sessionId, root)))
+      resumeSuspendedRun(host, root, sessionId);
     return { kind: "none" };
   }
   if (event.kind === "tool_call") {
@@ -25399,6 +25412,10 @@ async function applyRunContinuationEvent(host, root, session, event) {
     }
     if (NATIVE_OPERATIONS.has(event.operation) && ["blocked", "cancelled", "rejected", "failed"].includes(String(response?.state)))
       await observeNativeFailure(host, metadata, correlated, root, `${event.operation} did not apply ${NATIVE_FAILURE_LIMIT} times under this entry; inspect the same-Host recovery`);
+    else if (NATIVE_OPERATIONS.has(event.operation) && metadata.native_failures) {
+      metadata.native_failures = 0;
+      save(host, sessionId, root, metadata);
+    }
     if (metadata.state)
       save(host, sessionId, root, metadata);
     return { kind: "none" };
@@ -25485,8 +25502,8 @@ async function applyRunContinuationEvent(host, root, session, event) {
   metadata.stop_blocks++;
   if (decision.action === "pause" || metadata.stop_blocks >= 7) {
     const hostName = host.host_name ?? "Claude";
-    const reason = decision.action === "pause" ? decision.reason : `${hostName} consecutive Stop boundary reached; resume explicitly in the same Host`;
-    pauseRun(host, metadata, sessionId, root, reason);
+    const reason = decision.action === "pause" ? decision.reason : `${hostName} consecutive Stop boundary reached; reply in this session to resume`;
+    pauseRun(host, metadata, sessionId, root, reason, decision.action === "pause" && decision.revoke === true);
     return { kind: "paused", reason: metadata.paused };
   }
   save(host, sessionId, root, metadata);
@@ -25611,7 +25628,7 @@ function render(outcome) {
       return JSON.stringify({ hookSpecificOutput: {
         hookEventName: "PreToolUse",
         permissionDecision: "deny",
-        permissionDecisionReason: `Run paused: ${outcome.reason}; enter drive explicitly before another native gate`
+        permissionDecisionReason: `Run paused: ${outcome.reason}; ${PAUSED_GATE_GUIDANCE}`
       } });
     case "paused":
       return warning(outcome.reason);

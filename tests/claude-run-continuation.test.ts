@@ -58,7 +58,7 @@ function fixture() {
 }
 
 describe("Claude run continuation", () => {
-	test("second incomplete pauses and revokes the run entry, not Kernel authority", async () => {
+	test("second incomplete suspends the run without spending its entry or Kernel authority", async () => {
 		const h = fixture(); try {
 			await h.enter();
 			const result = async (response: object) => {
@@ -69,7 +69,7 @@ describe("Claude run continuation", () => {
 			await result({ state: "blocked", reason: "review_incomplete_retry", recovery_action: "advance_assurance" });
 			expect(readPhaseEntryState("hook-session", h.root)?.run_live).toBe(true);
 			await result({ state: "review_incomplete", reason: "unfinished", recovery_action: "reduce scope and enter drive" });
-			expect(readPhaseEntryState("hook-session", h.root)?.run_live).toBe(false);
+			expect(readPhaseEntryState("hook-session", h.root)?.run_live).toBe(true);
 			expect(JSON.parse((await h.stop())!)).toMatchObject({ systemMessage: expect.stringContaining("review_incomplete") });
 		} finally { h.dispose(); }
 	});
@@ -127,7 +127,7 @@ describe("Claude run continuation", () => {
 		finally { h.dispose(); }
 	});
 
-	test("two native-operation failures leave the run live; the third pauses and denies; a new entry resets the count (D9)", async () => {
+	test("two native-operation failures leave the run live; the third suspends and denies; a plain reply or a new entry resets the count (D9)", async () => {
 		const h = fixture(); try {
 			await h.enter();
 			const fail = async () => {
@@ -145,7 +145,9 @@ describe("Claude run continuation", () => {
 			expect(JSON.parse((await h.stop())!)).toMatchObject({ systemMessage: expect.stringContaining("failed 3 times under this entry") });
 			const retry = await h.hook({ hook_event_name: "PreToolUse", ...h.tool("enroll") });
 			expect(retry === null || JSON.parse(retry).hookSpecificOutput?.permissionDecision === "deny").toBe(true);
-			expect(readPhaseEntryState("hook-session", h.root)?.run_live).toBe(false);
+			expect(readPhaseEntryState("hook-session", h.root)?.run_live).toBe(true);
+			await h.prompt("Go on"); await fail(); await fail();
+			expect(JSON.parse((await h.stop())!).decision).toBe("block");
 			await h.enter(); await fail(); await fail();
 			expect(JSON.parse((await h.stop())!).decision).toBe("block");
 		} finally { h.dispose(); }
@@ -195,25 +197,57 @@ describe("Claude run continuation", () => {
 		} finally { h.dispose(); }
 	});
 
-	test("a pause revokes the entry token and refuses retire_stale_batch and the native gates (D10)", async () => {
+	test("a suspending pause keeps the entry token and refuses native gates until a plain reply (D10, workflow-friction D1.1)", async () => {
 		const h = fixture(); try {
 			await h.enter();
+			const token = readPhaseEntryState("hook-session", h.root)?.token;
 			for (let attempt = 0; attempt < 3; attempt++) {
 				const event = h.tool("request_authorization");
 				await h.hook({ hook_event_name: "PreToolUse", ...event });
 				await h.hook({ hook_event_name: "PostToolUseFailure", ...event, error: "rejected" });
 			}
 			expect(JSON.parse((await h.stop())!).systemMessage).toContain("failed 3 times");
-			expect(readPhaseEntryState("hook-session", h.root)?.token ?? null).toBeNull();
-			// With the entry spent, the phase-entry gate denies and records no admission for tools/call to consume.
+			expect(readPhaseEntryState("hook-session", h.root)).toMatchObject({ run_live: true, token });
 			for (const operation of ["retire_stale_batch", "start_unattended_batch"] as const) {
-				const denial = JSON.parse(phaseEntryGateHookOutput({ hook_event_name: "PreToolUse",
-					tool_name: `mcp__plugin_immune-brain_immune-brain__${operation}`, tool_input: {}, tool_use_id: `paused-${operation}`,
-					session_id: "hook-session", cwd: h.root }, { root: h.root })!);
-				expect(denial).toMatchObject({ hookSpecificOutput: { permissionDecision: "deny" } });
-				expect(consumePhaseAdmission(`paused-${operation}`, operation, h.root)).toBe(false);
+				const denial = JSON.parse((await h.hook({ hook_event_name: "PreToolUse", ...h.tool(operation) }))!);
+				expect(denial).toMatchObject({ hookSpecificOutput: { permissionDecision: "deny",
+					permissionDecisionReason: expect.stringContaining("reply in this session to resume") } });
+			}
+			await h.prompt("Please continue");
+			for (const operation of ["retire_stale_batch", "start_unattended_batch"] as const) {
+				expect(await h.hook({ hook_event_name: "PreToolUse", ...h.tool(operation) })).toBeNull();
+				expect(phaseEntryGateHookOutput({ hook_event_name: "PreToolUse",
+					tool_name: `mcp__plugin_immune-brain_immune-brain__${operation}`, tool_input: {}, tool_use_id: `resumed-${operation}`,
+					session_id: "hook-session", cwd: h.root }, { root: h.root })).toBeNull();
+				expect(consumePhaseAdmission(`resumed-${operation}`, operation, h.root)).toMatchObject({ entry_token: token });
 			}
 		} finally { h.dispose(); }
+	});
+
+	test("an applied native operation restores the failure budget (workflow-friction D1.2)", async () => {
+		const h = fixture(); try {
+			await h.enter();
+			const run = async (response: object | null) => {
+				const event = h.tool("request_authorization");
+				await h.hook({ hook_event_name: "PreToolUse", ...event });
+				await h.hook(response ? { hook_event_name: "PostToolUse", ...event, tool_response: response }
+					: { hook_event_name: "PostToolUseFailure", ...event, error: "rejected" });
+			};
+			await run(null); await run(null); await run({ state: "authorized" }); await run(null); await run(null);
+			expect(JSON.parse((await h.stop())!).decision).toBe("block");
+		} finally { h.dispose(); }
+	});
+
+	test("a lost bound identity still spends the entry token (workflow-friction D1.1)", async () => {
+		const h = fixture();
+		const projection = spyOn(coordinator, "projectTaskStatus");
+		try {
+			await h.enter();
+			const live = await coordinator.projectTaskStatus(h.root, "slice-a");
+			projection.mockResolvedValue({ ...live, claim: null, projection: { ...live.projection, lifecycle: "stopped" } });
+			expect(JSON.parse((await h.stop())!).systemMessage).toContain("Kernel task stopped");
+			expect(readPhaseEntryState("hook-session", h.root)?.run_live).toBe(false);
+		} finally { projection.mockRestore(); h.dispose(); }
 	});
 
 	test("the entry token survives a same-session Stop continuation and is spent when the bound run settles", async () => {

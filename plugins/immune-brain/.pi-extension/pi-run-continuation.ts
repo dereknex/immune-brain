@@ -4,8 +4,8 @@
 // Interface: `PI_CACHE_DIR`, `piContinuationHost`, `readRunToolSession`,
 // `selectedPiParent`, `registerPiRunContinuation`.
 // Invariants: every continuation decision re-reads the Kernel; the entry token
-// ends with its session, a pause or a settlement; 7 consecutive settle boundaries pause
-// with Pi-named recovery; tool correlation is one-use and workspace-scoped.
+// ends with its session, a settlement or a lost bound identity; an interrupted turn
+// or 7 consecutive settle boundaries only suspend the run until the user replies; tool correlation is one-use and workspace-scoped.
 // Side Effects: reads and writes private session/correlation files under PI_CACHE_DIR.
 // Verification: `bun test tests/pi-run-continuation.test.ts`.
 
@@ -17,9 +17,11 @@ import { digestOfReviewerBytes } from "../runtime/assurance/review_mediation";
 import { releasesRunBinding } from "../runtime/assurance/run_continuation";
 import {
 	applyRunContinuationEvent,
+	PAUSED_GATE_GUIDANCE,
 	readSessionMetadata,
 	readSessionToolCall,
 	selectedParentSession,
+	suspendRun,
 	type RunContinuationHost,
 } from "../runtime/host-core/run_continuation_session";
 
@@ -97,7 +99,7 @@ export function registerPiRunContinuation(
 	pi: ExtensionAPI,
 	ports: {
 		entry(text: string, root: string): PhaseEntry | null;
-		/** ADR 0025: ends the session's entry token at a pause or when the bound run is terminal. */
+		/** ADR 0025: ends the session's entry token when the bound run is terminal or its identity is lost. */
 		revokeEntry?(sessionId: string): void;
 		entryState?(sessionId: string): { run_live?: boolean } | null;
 	},
@@ -250,7 +252,7 @@ export function registerPiRunContinuation(
 		if (outcome.kind === "deny") {
 			return {
 				block: true,
-				reason: `Run paused: ${outcome.reason}; enter drive explicitly before another native gate`,
+				reason: `Run paused: ${outcome.reason}; ${PAUSED_GATE_GUIDANCE}`,
 			};
 		}
 	});
@@ -307,10 +309,10 @@ export function registerPiRunContinuation(
 		const workspace = realpathSync(ctx.cwd);
 		const session = { session_id: sessionId, workspace };
 
-		// Spec D13: an interrupted or non-continuable turn ends the entry like a pause.
+		// An interrupted or non-continuable turn yields to the user without spending the entry
+		// (Spec docs/specs/workflow-friction-simplification.spec.md D1.1): the next reply resumes.
 		if (event.outcome !== "completed" || !event.context.canContinue) {
-			host.revoke_entry(sessionId);
-			await applyRunContinuationEvent(host, storeRoot, session, { kind: "session_end" });
+			suspendRun(host, storeRoot, sessionId, `Pi turn ${event.outcome === "completed" ? "cannot continue" : event.outcome}; reply in this session to resume`);
 			return;
 		}
 

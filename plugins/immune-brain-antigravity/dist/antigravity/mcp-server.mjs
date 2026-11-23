@@ -24546,7 +24546,7 @@ function decideRunContinuation(previous, observation) {
   if (binding.workspace !== observation.workspace || binding.session_id !== observation.session_id)
     return result("unbound", "Host session or workspace changed", null);
   if (binding.kind !== observation.kind)
-    return result("pause", "run observation does not match the bound entry", null);
+    return { ...result("pause", "run observation does not match the bound entry", null), revoke: true };
   if (observation.host_failure)
     return result("pause", observation.host_failure, null);
   let progressDigest;
@@ -24555,7 +24555,7 @@ function decideRunContinuation(previous, observation) {
   let base = previous;
   if (binding.kind === "parent" && observation.kind === "parent") {
     if (binding.initiative_slug !== observation.initiative_slug || binding.batch_id !== observation.batch_id || binding.plan_digest !== observation.plan_digest && observation.rebound_from_plan_digest !== binding.plan_digest)
-      return result("pause", "batch identity changed; reread its authorized plan", null);
+      return { ...result("pause", "batch identity changed; reread its authorized plan", null), revoke: true };
     if (observation.rebound_from_plan_digest === binding.plan_digest && observation.plan_digest !== binding.plan_digest)
       base = { ...previous, binding: { ...binding, plan_digest: observation.plan_digest } };
     if (observation.all_required_integrated && observation.final_passed && !observation.pending_repair)
@@ -24569,13 +24569,13 @@ function decideRunContinuation(previous, observation) {
     const { status } = observation;
     const p = status.projection;
     if (status.error || status.task_id !== binding.task_id || p.run_id !== binding.run_id)
-      return result("pause", status.error ?? "Kernel task/run identity changed", null);
+      return { ...result("pause", status.error ?? "Kernel task/run identity changed", null), revoke: true };
     if (p.lifecycle === "done" && p.completion_ready && status.claim === null)
       return result("settled", "Kernel terminal settlement confirmed", null);
     if (p.lifecycle === "stopped" && status.claim === null)
-      return result("pause", "Kernel task stopped", null);
+      return { ...result("pause", "Kernel task stopped", null), revoke: true };
     if (status.claim?.task_id !== binding.task_id || status.claim.lifecycle_status !== "active" || p.lifecycle !== "active")
-      return result("pause", "Kernel authority is missing or contradictory", null);
+      return { ...result("pause", "Kernel authority is missing or contradictory", null), revoke: true };
     if (p.unresolved_user_decision_ids.length || p.replan_required_ids.length || p.open_user_decision_count || p.next_obligation === "resolve_user_decision" || p.next_obligation === "revise_intent" || p.authorization.state !== "none" || p.authorization.blocked)
       return result("pause", "Kernel requires a concrete user decision or authorization", "Use the existing native authorization operation");
     progressDigest = digest({
@@ -24630,7 +24630,7 @@ function decideRunContinuation(previous, observation) {
       }
     }
   } else {
-    return result("pause", "run observation does not match the bound entry", null);
+    return { ...result("pause", "run observation does not match the bound entry", null), revoke: true };
   }
   if (previous.boundary_id === observation.boundary_id)
     return result("wait", "duplicate Host boundary", null);
@@ -24682,6 +24682,441 @@ function isAbsent(error) {
   return code === "ENOENT" || code === "ENOTDIR";
 }
 
+// plugins/immune-brain/runtime/host-core/run_continuation_session.ts
+init_coordinator();
+init_storage();
+init_batch_state();
+import { existsSync as existsSync21, lstatSync as lstatSync20, realpathSync as realpathSync18, renameSync as renameSync6, rmSync as rmSync16 } from "node:fs";
+import { randomUUID as randomUUID13 } from "node:crypto";
+import { join as join35 } from "node:path";
+
+// plugins/immune-brain/runtime/assurance/review_mediation.ts
+import { createHash as createHash30 } from "node:crypto";
+function extractVerdictJson(input) {
+  if (typeof input === "string") {
+    const first = input.indexOf("{");
+    const last = input.lastIndexOf("}");
+    const cleaned = first >= 0 && last >= first ? input.slice(first, last + 1) : "";
+    if (!cleaned)
+      return null;
+    try {
+      return JSON.parse(cleaned);
+    } catch {
+      return null;
+    }
+  }
+  if (typeof input === "object" && input !== null && !Array.isArray(input))
+    return input;
+  return null;
+}
+function verdictFingerprint(raw) {
+  return JSON.stringify({
+    contract: raw.contract ?? null,
+    role: raw.role ?? null,
+    task_id: raw.task_id ?? null,
+    snapshot_digest: raw.snapshot_digest ?? null,
+    decision: raw.decision ?? null,
+    approval: raw.approval ?? null,
+    findings: raw.findings ?? null,
+    inspected_paths: raw.inspected_paths ?? null,
+    reason: raw.reason ?? null
+  });
+}
+function digestOfReviewerBytes(bytes) {
+  return `sha256:${createHash30("sha256").update(bytes).digest("hex")}`;
+}
+var RELEASED_REVIEW_RECOVERY = "Call advance_assurance to obtain a new Review reservation, then dispatch one fresh reviewer with the returned envelope unchanged";
+var RETAINED_REVIEW_RECOVERY = "Await the dispatched reviewer once (a Port session's await_command when the reservation carries one), then call submit_review once; do not poll submit_review and do not dispatch another reviewer";
+var MISMATCH_REVIEW_RECOVERY = "Resubmit without a verdict to apply the observed reviewer receipt, or resubmit the reviewer's verdict exactly as the reviewer returned it";
+function withReviewRecovery(result, recovery_action) {
+  if (result.state !== "blocked" || result.code === "verdict_invalid")
+    return result;
+  return { ...result, recovery_action };
+}
+async function submitMediatedReview(coordinator, ctx, taskId, verdictInput, inspect) {
+  if (coordinator.active(taskId)?.state === "settlement_unknown") {
+    return coordinator.submitReview(taskId, ctx, verdictInput);
+  }
+  const observed = inspect();
+  if (!observed.ok) {
+    if (observed.release)
+      return withReviewRecovery(coordinator.abandonReview(taskId, observed.reason), RELEASED_REVIEW_RECOVERY);
+    return { state: "blocked", reason: observed.reason, recovery_action: RETAINED_REVIEW_RECOVERY };
+  }
+  const receiptBytes = observed.receipt.result;
+  const options = {
+    reviewer_verdict_sha256: digestOfReviewerBytes(receiptBytes),
+    ...observed.receipt.model?.trim() ? { reviewer_model: observed.receipt.model } : {},
+    ...observed.receipt.offered_models ? { offered_models: observed.receipt.offered_models } : {},
+    validateReceipt: () => {
+      const current = inspect();
+      if (!current.ok)
+        return {
+          reason: current.reason,
+          release: current.release,
+          recovery_action: current.release ? RELEASED_REVIEW_RECOVERY : RETAINED_REVIEW_RECOVERY
+        };
+      return current.receipt.actorId === observed.receipt.actorId && current.receipt.result === receiptBytes && current.receipt.model === observed.receipt.model && JSON.stringify(current.receipt.offered_models ?? []) === JSON.stringify(observed.receipt.offered_models ?? []) ? null : { reason: "reviewer receipt changed during submission", release: true, recovery_action: RELEASED_REVIEW_RECOVERY };
+    }
+  };
+  if (verdictInput === undefined) {
+    if (!coordinator.isReviewVerdictValid(taskId, receiptBytes)) {
+      return withReviewRecovery(coordinator.abandonReview(taskId, "reviewer receipt is not a valid verdict"), RELEASED_REVIEW_RECOVERY);
+    }
+    return coordinator.submitReview(taskId, ctx, receiptBytes, options);
+  }
+  const parentValid = coordinator.isReviewVerdictValid(taskId, verdictInput);
+  if (!parentValid)
+    return coordinator.submitReview(taskId, ctx, verdictInput);
+  if (!coordinator.isReviewVerdictValid(taskId, receiptBytes)) {
+    return withReviewRecovery(coordinator.abandonReview(taskId, "reviewer receipt is not a valid verdict"), RELEASED_REVIEW_RECOVERY);
+  }
+  const parentJson = extractVerdictJson(verdictInput);
+  const receiptJson = extractVerdictJson(receiptBytes);
+  if (!parentJson || !receiptJson || verdictFingerprint(parentJson) !== verdictFingerprint(receiptJson)) {
+    return { state: "blocked", reason: "parent verdict does not match reviewer receipt", recovery_action: MISMATCH_REVIEW_RECOVERY };
+  }
+  return coordinator.submitReview(taskId, ctx, verdictInput, options);
+}
+
+// plugins/immune-brain/runtime/host-core/run_continuation_session.ts
+var NATIVE_OPERATIONS = new Set(["start_unattended_batch", "retire_stale_batch", "request_authorization", "approve_breaking_intent_revision", "request_stop", "stop"]);
+var MAX_METADATA_BYTES = 256 * 1024;
+var NATIVE_FAILURE_LIMIT = 3;
+var PAUSED_GATE_GUIDANCE = "reply in this session to resume before another native gate";
+var blank = () => ({
+  state: null,
+  sequence: 0,
+  review: "unobserved",
+  reviewer_prompt: null,
+  reviewer_call_id: null,
+  reviewer_agent_id: null,
+  recovery_action: null,
+  paused: null,
+  stop_blocks: 0,
+  native_failures: 0
+});
+var statePath2 = (host, sessionId, root) => join35(cacheDir(root, host.cache_name), `${sessionHash(sessionId)}.continuation`);
+var callPath = (host, toolId, root) => join35(cacheDir(root, host.cache_name), `${sessionHash(toolId)}.continuation-call`);
+function drop(host, path, root) {
+  if (!existsSync21(path))
+    return;
+  if (!ensurePrivateDir(cacheDir(root, host.cache_name)))
+    return;
+  try {
+    const stat = lstatSync20(path);
+    if (stat.isFile() && ownedByUs(stat))
+      rmSync16(path);
+  } catch {}
+}
+function readLast(path, dir) {
+  if (dir && existsSync21(dir) && !ensurePrivateDir(dir))
+    throw new Error("continuation directory could not be verified");
+  let stat;
+  try {
+    stat = lstatSync20(path);
+  } catch (error) {
+    if (error.code === "ENOENT")
+      return null;
+    throw error;
+  }
+  if (!stat.isFile() || !ownedByUs(stat))
+    throw new Error("unsafe continuation metadata");
+  if (stat.size > MAX_METADATA_BYTES)
+    return null;
+  const text = readPrivate(path, MAX_METADATA_BYTES);
+  if (text === undefined)
+    throw new Error("continuation metadata could not be read");
+  const lines = text.trim().split(`
+`);
+  return JSON.parse(lines.at(-1) ?? "null");
+}
+function readMetadata(host, sessionId, root) {
+  const value = readLast(statePath2(host, sessionId, root), cacheDir(root, host.cache_name));
+  if (!value)
+    return blank();
+  value.native_failures ??= 0;
+  if (typeof value !== "object" || !Number.isInteger(value.sequence) || value.sequence < 0 || !Number.isInteger(value.stop_blocks) || value.stop_blocks < 0 || !Number.isInteger(value.native_failures ?? 0) || (value.native_failures ?? 0) < 0 || !["unobserved", "ready", "running", "returned", "rejected"].includes(value.review) || ![value.reviewer_prompt, value.reviewer_call_id, value.reviewer_agent_id, value.recovery_action, value.paused].every((v) => v === null || typeof v === "string"))
+    throw new Error("invalid continuation metadata");
+  if (value.state) {
+    const { binding } = value.state;
+    if (!binding || binding.session_id !== sessionId || !Number.isInteger(value.state.unchanged_observations) || value.state.unchanged_observations < 0 || !(value.state.progress_digest === null || typeof value.state.progress_digest === "string") || !(value.state.boundary_id === null || typeof value.state.boundary_id === "string"))
+      throw new Error("invalid bound run metadata");
+    bindRun(binding);
+  }
+  return value;
+}
+function readSessionMetadata(host, root, sessionId) {
+  return readMetadata(host, sessionId, root);
+}
+function save(host, sessionId, root, value) {
+  const path = statePath2(host, sessionId, root);
+  const temporary = `${path}.${randomUUID13()}`;
+  if (!appendPrivate(temporary, cacheDir(root, host.cache_name), JSON.stringify(value) + `
+`))
+    throw new Error("continuation metadata could not be written");
+  try {
+    renameSync6(temporary, path);
+  } finally {
+    drop(host, temporary, root);
+  }
+}
+function pauseRun(host, metadata, sessionId, root, reason, revoke = false) {
+  metadata.paused = reason;
+  save(host, sessionId, root, metadata);
+  if (revoke)
+    host.revoke_entry(sessionId);
+}
+function resumeSuspendedRun(host, root, sessionId) {
+  const metadata = readMetadata(host, sessionId, root);
+  if (!metadata.paused && !metadata.native_failures && !metadata.stop_blocks)
+    return;
+  metadata.paused = null;
+  metadata.native_failures = 0;
+  metadata.stop_blocks = 0;
+  save(host, sessionId, root, metadata);
+}
+async function observeNativeFailure(host, metadata, correlation, root, reason) {
+  metadata.native_failures++;
+  if (metadata.native_failures < NATIVE_FAILURE_LIMIT) {
+    save(host, correlation.session_id, root, metadata);
+    return;
+  }
+  pauseRun(host, metadata, correlation.session_id, root, reason);
+}
+function readSessionToolCall(host, root, toolId, operation, workspace) {
+  const record = readLast(callPath(host, toolId, root), cacheDir(root, host.cache_name));
+  if (!record || record.operation !== operation || record.tool_use_id !== toolId || record.workspace !== realpathSync18(workspace) || typeof record.session_id !== "string" || !record.session_id || !host.entry_state(record.session_id)?.run_live)
+    return null;
+  return record.session_id;
+}
+function selectedParentSession(host, root, toolId, workspace, slug) {
+  const call = readLast(callPath(host, toolId, root), cacheDir(root, host.cache_name));
+  if (!call || call.workspace !== realpathSync18(workspace) || !["advance_assurance", "submit_review"].includes(call.operation) || !host.entry_state(call.session_id)?.run_live)
+    return false;
+  const state = readMetadata(host, call.session_id, root).state;
+  return state?.binding.kind === "parent" && state.binding.workspace === call.workspace && state.binding.initiative_slug === slug;
+}
+async function applyRunContinuationEvent(host, root, session, event) {
+  const sessionId = session.session_id;
+  const { workspace } = session;
+  if (event.kind === "session_end") {
+    drop(host, statePath2(host, sessionId, root), root);
+    host.drop_entry_log(sessionId);
+    return { kind: "none" };
+  }
+  if (event.kind === "prompt") {
+    if (event.releases)
+      drop(host, statePath2(host, sessionId, root), root);
+    else if (existsSync21(statePath2(host, sessionId, root)))
+      resumeSuspendedRun(host, root, sessionId);
+    return { kind: "none" };
+  }
+  if (event.kind === "tool_call") {
+    const metadata = readMetadata(host, sessionId, root);
+    if (metadata.paused && NATIVE_OPERATIONS.has(event.operation))
+      return { kind: "deny", reason: metadata.paused };
+    const entry = host.entry_state(sessionId);
+    if (!entry?.run_live)
+      return { kind: "none" };
+    if (entry.workspace && entry.workspace !== workspace)
+      return { kind: "none" };
+    const correlation = {
+      session_id: sessionId,
+      workspace,
+      tool_use_id: event.tool_id,
+      operation: event.operation,
+      task_id: event.task_id
+    };
+    if (!appendPrivate(callPath(host, event.tool_id, root), cacheDir(root, host.cache_name), JSON.stringify(correlation) + `
+`))
+      throw new Error("tool correlation could not be recorded");
+    return { kind: "none" };
+  }
+  const metadata = readMetadata(host, sessionId, root);
+  if (metadata.paused)
+    return event.kind === "stop" ? { kind: "paused", reason: metadata.paused } : { kind: "none" };
+  if (event.kind === "tool_result") {
+    const correlated = readLast(callPath(host, event.tool_id, root), cacheDir(root, host.cache_name));
+    if (!correlated || correlated.session_id !== sessionId || correlated.workspace !== workspace || correlated.operation !== event.operation || readSessionToolCall(host, root, event.tool_id, event.operation, workspace) !== sessionId)
+      return { kind: "none" };
+    drop(host, callPath(host, event.tool_id, root), root);
+    if (event.failed) {
+      if (NATIVE_OPERATIONS.has(event.operation))
+        await observeNativeFailure(host, metadata, correlated, root, `${event.operation} failed ${NATIVE_FAILURE_LIMIT} times under this entry; no further automatic retry`);
+      else if (event.operation === "submit_review") {
+        metadata.review = "rejected";
+        save(host, sessionId, root, metadata);
+      }
+      return { kind: "none" };
+    }
+    const response = event.response;
+    if (event.operation === "start_unattended_batch" && response?.state === "native_parent" && typeof response.plan_digest === "string" && typeof response.initiative_slug === "string") {
+      if (metadata.state?.binding.kind !== "parent")
+        metadata.state = bindRun({
+          kind: "parent",
+          workspace,
+          session_id: sessionId,
+          batch_id: null,
+          initiative_slug: response.initiative_slug,
+          plan_digest: response.plan_digest,
+          final_verification: response.final_verification_commands
+        });
+    }
+    if (event.operation === "start_unattended_batch" && response?.state === "started" && typeof response.batch_id === "string") {
+      const batch = readAnyBatchRunState(workspace, response.batch_id);
+      if (!batch)
+        throw new Error("batch receipt has no persisted identity");
+      const binding = metadata.state?.binding;
+      if (!binding || binding.kind !== "parent")
+        metadata.state = bindRun({
+          kind: "parent",
+          workspace,
+          session_id: sessionId,
+          batch_id: batch.batch_id,
+          initiative_slug: batch.initiative_slug,
+          plan_digest: batch.plan_digest
+        });
+      else if (binding.batch_id === batch.batch_id && binding.initiative_slug === batch.initiative_slug && hasContiguousLaneRebind(batch, binding.plan_digest))
+        metadata.state = { ...metadata.state, binding: { ...binding, plan_digest: batch.plan_digest } };
+    }
+    if (!metadata.state && correlated.task_id && event.operation === "status") {
+      const status = await projectTaskStatus(workspace, correlated.task_id);
+      if (!status.error && status.claim?.task_id === correlated.task_id && status.projection.lifecycle === "active" && status.projection.run_id)
+        metadata.state = bindRun({ kind: "task", workspace, session_id: sessionId, task_id: correlated.task_id, run_id: status.projection.run_id });
+    }
+    if (metadata.state?.binding.kind === "task" && correlated.task_id !== metadata.state.binding.task_id)
+      return { kind: "none" };
+    if (event.operation === "advance_assurance" && response?.state === "review_ready") {
+      const params = response.agent_params;
+      if (typeof params?.prompt === "string" && digestOfReviewerBytes(params.prompt) !== metadata.reviewer_prompt) {
+        metadata.reviewer_prompt = digestOfReviewerBytes(params.prompt);
+        metadata.reviewer_call_id = null;
+        metadata.reviewer_agent_id = null;
+        metadata.review = "ready";
+      }
+    }
+    if (["advance_assurance", "submit_review"].includes(event.operation) && response?.state === "review_incomplete") {
+      pauseRun(host, metadata, sessionId, root, `review_incomplete: ${String(response.recovery_action)}`);
+      return { kind: "none" };
+    }
+    if (event.operation === "submit_review") {
+      if (response?.reason === "review_incomplete_retry") {
+        metadata.review = "unobserved";
+        metadata.reviewer_prompt = null;
+        metadata.reviewer_call_id = null;
+        metadata.recovery_action = null;
+      } else if (["blocked", "rejected", "failed"].includes(String(response?.state))) {
+        metadata.review = "rejected";
+        const recovery = response?.recovery_action ?? response?.next_action;
+        metadata.recovery_action = typeof recovery === "string" ? recovery : null;
+      } else {
+        metadata.review = "unobserved";
+        metadata.reviewer_prompt = null;
+        metadata.reviewer_call_id = null;
+        metadata.recovery_action = null;
+      }
+    }
+    if (NATIVE_OPERATIONS.has(event.operation) && ["blocked", "cancelled", "rejected", "failed"].includes(String(response?.state)))
+      await observeNativeFailure(host, metadata, correlated, root, `${event.operation} did not apply ${NATIVE_FAILURE_LIMIT} times under this entry; inspect the same-Host recovery`);
+    else if (NATIVE_OPERATIONS.has(event.operation) && metadata.native_failures) {
+      metadata.native_failures = 0;
+      save(host, sessionId, root, metadata);
+    }
+    if (metadata.state)
+      save(host, sessionId, root, metadata);
+    return { kind: "none" };
+  }
+  if (event.kind === "reviewer" && metadata.state && metadata.reviewer_prompt) {
+    if (event.phase === "dispatch" && event.call_id && event.prompt_digest !== null && event.prompt_digest === metadata.reviewer_prompt) {
+      if (metadata.reviewer_call_id) {
+        metadata.review = "rejected";
+      } else {
+        metadata.reviewer_call_id = event.call_id;
+        metadata.review = "running";
+      }
+      save(host, sessionId, root, metadata);
+    }
+    if (event.phase === "return" && event.call_id === metadata.reviewer_call_id) {
+      if (event.asynchronous)
+        metadata.reviewer_agent_id = event.agent_id;
+      else
+        metadata.review = "returned";
+      save(host, sessionId, root, metadata);
+    }
+    return { kind: "none" };
+  }
+  if (event.kind === "reviewer_stop") {
+    if (metadata.reviewer_agent_id && event.agent_id === metadata.reviewer_agent_id) {
+      metadata.review = "returned";
+      save(host, sessionId, root, metadata);
+    }
+    return { kind: "none" };
+  }
+  if (event.kind !== "stop" || !metadata.state)
+    return { kind: "none" };
+  if (!host.entry_state(sessionId)?.run_live) {
+    drop(host, statePath2(host, sessionId, root), root);
+    return { kind: "none" };
+  }
+  if (metadata.state.binding.workspace !== workspace) {
+    drop(host, statePath2(host, sessionId, root), root);
+    return { kind: "paused", reason: "workspace changed; enter drive explicitly in this workspace" };
+  }
+  const boundary = event.boundary();
+  if (!boundary)
+    return { kind: "none" };
+  metadata.sequence++;
+  const taskId = metadata.state.binding.kind === "task" ? metadata.state.binding.task_id : metadata.state.binding.initiative_slug;
+  let observation;
+  if (metadata.state.binding.kind === "parent")
+    observation = await observeParentRun(metadata.state.binding, boundary, metadata.review, metadata.recovery_action ?? undefined);
+  else {
+    const status = await projectTaskStatus(workspace, taskId);
+    const record = readTaskRecordRaw(workspace, taskId);
+    observation = {
+      kind: "task",
+      workspace,
+      session_id: sessionId,
+      boundary_id: boundary,
+      status,
+      source_digest: record.record ? scopedSourceDigest(workspace, record.record.intent_snapshot.scope_hint) : "terminal",
+      review: metadata.review,
+      recovery_action: metadata.recovery_action ?? undefined
+    };
+  }
+  const decision = decideRunContinuation(metadata.state, observation);
+  if (decision.action === "unbound" || decision.action === "settled") {
+    if (decision.action === "settled")
+      host.revoke_entry(sessionId);
+    drop(host, statePath2(host, sessionId, root), root);
+    return { kind: "none" };
+  }
+  if (decision.action === "wait") {
+    metadata.state = decision.state;
+    save(host, sessionId, root, metadata);
+    return { kind: "none" };
+  }
+  if (decision.action === "pause" && decision.stalled) {
+    metadata.state = decision.state;
+    metadata.stop_blocks = 0;
+    save(host, sessionId, root, metadata);
+    return { kind: "none" };
+  }
+  if (!event.stop_hook_active)
+    metadata.stop_blocks = 0;
+  metadata.state = decision.state;
+  metadata.stop_blocks++;
+  if (decision.action === "pause" || metadata.stop_blocks >= 7) {
+    const hostName = host.host_name ?? "Claude";
+    const reason = decision.action === "pause" ? decision.reason : `${hostName} consecutive Stop boundary reached; reply in this session to resume`;
+    pauseRun(host, metadata, sessionId, root, reason, decision.action === "pause" && decision.revoke === true);
+    return { kind: "paused", reason: metadata.paused };
+  }
+  save(host, sessionId, root, metadata);
+  return { kind: "continue", label: taskId, next_action: decision.next_action };
+}
+
 // plugins/immune-brain/runtime/host-core/runtime.ts
 init_verdict_authority();
 init_layered_config();
@@ -24693,9 +25128,9 @@ init_storage();
 init_intent();
 init_canary_application();
 init_authority_port();
-import { existsSync as existsSync23, readFileSync as readFileSync25, writeFileSync as writeFileSync16 } from "node:fs";
+import { existsSync as existsSync24, readFileSync as readFileSync25, writeFileSync as writeFileSync16 } from "node:fs";
 import { execFileSync as execFileSync15 } from "node:child_process";
-import { join as join38 } from "node:path";
+import { join as join39 } from "node:path";
 init_storage();
 init_workflow_autocommit();
 init_qa();
@@ -24725,11 +25160,11 @@ init_actor_identity();
 // plugins/immune-brain/runtime/staged_intent.ts
 import { execFileSync as execFileSync13 } from "node:child_process";
 import { readFileSync as readFileSync23, writeFileSync as writeFileSync15 } from "node:fs";
-import { join as join35 } from "node:path";
+import { join as join36 } from "node:path";
 function captureStagedIntent(root, relativePath) {
   return {
     path: relativePath,
-    bytes: readFileSync23(join35(root, relativePath)),
+    bytes: readFileSync23(join36(root, relativePath)),
     index_state: execFileSync13("git", ["ls-files", "--stage", "-z", "--", relativePath], {
       cwd: root,
       stdio: ["ignore", "pipe", "pipe"]
@@ -24737,7 +25172,7 @@ function captureStagedIntent(root, relativePath) {
   };
 }
 function restoreStagedIntent(root, snapshot) {
-  writeFileSync15(join35(root, snapshot.path), snapshot.bytes);
+  writeFileSync15(join36(root, snapshot.path), snapshot.bytes);
   execFileSync13("git", ["update-index", "--force-remove", "--", snapshot.path], {
     cwd: root,
     stdio: ["ignore", "pipe", "pipe"]
@@ -24749,7 +25184,7 @@ function restoreStagedIntent(root, snapshot) {
       stdio: ["pipe", "ignore", "pipe"]
     });
   }
-  const restoredBytes = readFileSync23(join35(root, snapshot.path));
+  const restoredBytes = readFileSync23(join36(root, snapshot.path));
   if (!restoredBytes.equals(snapshot.bytes)) {
     throw new Error("failed to restore prior intent bytes");
   }
@@ -24810,8 +25245,8 @@ init_storage_paths();
 init_batch_reasons();
 init_batch_preflight();
 init_batch_state();
-import { existsSync as existsSync21 } from "node:fs";
-import { join as join36 } from "node:path";
+import { existsSync as existsSync22 } from "node:fs";
+import { join as join37 } from "node:path";
 var SERIAL_IN_FLIGHT = new Set(["enrolled", "settled"]);
 var LANE_IN_FLIGHT = new Set(["lane_admitted", "enrolled", "settled", "lane_committed"]);
 var RETIRE_REASON = "Retired by an explicit literal-user disposition: the batch plan moved past this record, so its authorization could neither reconfirm nor continue. " + "Recorded child commits, child states and the batch branch are preserved as evidence. " + "Children this batch never executed carry no commit, no batch trailer and no approval; nothing infers their delivery from this record.";
@@ -24831,7 +25266,7 @@ function laneChildLifecycleOf(root, child) {
   if (!lane)
     return kernelLifecycleOf(root, child.task_id);
   try {
-    if (!existsSync21(join36(lane.path, KERNEL_DB_RELATIVE)))
+    if (!existsSync22(join37(lane.path, KERNEL_DB_RELATIVE)))
       return null;
     if (readActiveClaimTaskId(lane.path) === child.task_id)
       return null;
@@ -25011,9 +25446,9 @@ init_batch_state();
 init_session_result_slot();
 init_host_port();
 import { execFileSync as execFileSync14 } from "node:child_process";
-import { accessSync as accessSync3, constants as constants10, existsSync as existsSync22, readFileSync as readFileSync24 } from "node:fs";
-import { createHash as createHash30 } from "node:crypto";
-import { delimiter as delimiter4, dirname as dirname18, join as join37 } from "node:path";
+import { accessSync as accessSync3, constants as constants10, existsSync as existsSync23, readFileSync as readFileSync24 } from "node:fs";
+import { createHash as createHash31 } from "node:crypto";
+import { delimiter as delimiter4, dirname as dirname18, join as join38 } from "node:path";
 import { fileURLToPath as fileURLToPath4 } from "node:url";
 var REVIEW_PROFILE_RECOVERY = "Set `agents.reviewer` (a user `agents.profiles` name, `host[:model][@effort]` or { host, model?, effort? }) in the user or project configuration, then call `advance_assurance`";
 var REVIEW_BINARY = {
@@ -25055,7 +25490,7 @@ var CLAUDE_REVIEW_SETTINGS = JSON.stringify({
 });
 function reviewBinary(host) {
   const name = REVIEW_BINARY[host];
-  return (process.env.PATH ?? "").split(delimiter4).map((dir) => join37(dir || ".", name)).find((path) => {
+  return (process.env.PATH ?? "").split(delimiter4).map((dir) => join38(dir || ".", name)).find((path) => {
     try {
       accessSync3(path, constants10.X_OK);
       return true;
@@ -25075,8 +25510,8 @@ function reviewSessionRunner(env = process.env) {
   }
   let dir = dirname18(fileURLToPath4(import.meta.url));
   for (let level = 0;level < 5; level++) {
-    const candidate = join37(dir, "bin", "imm-session");
-    if (existsSync22(candidate))
+    const candidate = join38(dir, "bin", "imm-session");
+    if (existsSync23(candidate))
       return candidate;
     dir = dirname18(dir);
   }
@@ -25086,7 +25521,7 @@ function git9(root, argv) {
   return execFileSync14("git", argv, { cwd: root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] });
 }
 function digest2(bytes) {
-  return `sha256:${createHash30("sha256").update(bytes).digest("hex")}`;
+  return `sha256:${createHash31("sha256").update(bytes).digest("hex")}`;
 }
 function reviewTreeState(root) {
   return {
@@ -25221,7 +25656,7 @@ class CliReviewHost {
     requireReviewBinary(profile);
     const slotId = `verify-${request.operationId}`;
     const slot = allocateResultSlot(review.root, slotId, request.prompt, "verify-packet.md");
-    const awaitRecord = join37(slot.directory, "session-await.json");
+    const awaitRecord = join38(slot.directory, "session-await.json");
     const label = `verify ${request.taskId}`.slice(0, 32);
     const actorId = `cli-verifier:${profile.host}:${request.operationId}`;
     const session = withSlot(slot, () => sessionSpec(sessionRunner, label, {
@@ -25284,7 +25719,7 @@ ${receiptInstruction(profile.host, slotId, slot.result)}`,
     const tree = reviewTreeState(root);
     const slotId = `review-${request.operationId}`;
     const slot = allocateResultSlot(root, slotId, request.snapshotPrompt);
-    const awaitRecord = join37(slot.directory, "session-await.json");
+    const awaitRecord = join38(slot.directory, "session-await.json");
     const actorId = `cli:${profile.host}:${request.operationId}`;
     const session = withSlot(slot, () => sessionSpec(sessionRunner, `review ${request.taskId}`.slice(0, 32), {
       root,
@@ -25365,95 +25800,6 @@ ${receiptInstruction(profile.host, slotId, slot.result)}`,
   }
 }
 
-// plugins/immune-brain/runtime/assurance/review_mediation.ts
-import { createHash as createHash31 } from "node:crypto";
-function extractVerdictJson(input) {
-  if (typeof input === "string") {
-    const first = input.indexOf("{");
-    const last = input.lastIndexOf("}");
-    const cleaned = first >= 0 && last >= first ? input.slice(first, last + 1) : "";
-    if (!cleaned)
-      return null;
-    try {
-      return JSON.parse(cleaned);
-    } catch {
-      return null;
-    }
-  }
-  if (typeof input === "object" && input !== null && !Array.isArray(input))
-    return input;
-  return null;
-}
-function verdictFingerprint(raw) {
-  return JSON.stringify({
-    contract: raw.contract ?? null,
-    role: raw.role ?? null,
-    task_id: raw.task_id ?? null,
-    snapshot_digest: raw.snapshot_digest ?? null,
-    decision: raw.decision ?? null,
-    approval: raw.approval ?? null,
-    findings: raw.findings ?? null,
-    inspected_paths: raw.inspected_paths ?? null,
-    reason: raw.reason ?? null
-  });
-}
-function digestOfReviewerBytes(bytes) {
-  return `sha256:${createHash31("sha256").update(bytes).digest("hex")}`;
-}
-var RELEASED_REVIEW_RECOVERY = "Call advance_assurance to obtain a new Review reservation, then dispatch one fresh reviewer with the returned envelope unchanged";
-var RETAINED_REVIEW_RECOVERY = "Await the dispatched reviewer once (a Port session's await_command when the reservation carries one), then call submit_review once; do not poll submit_review and do not dispatch another reviewer";
-var MISMATCH_REVIEW_RECOVERY = "Resubmit without a verdict to apply the observed reviewer receipt, or resubmit the reviewer's verdict exactly as the reviewer returned it";
-function withReviewRecovery(result, recovery_action) {
-  if (result.state !== "blocked" || result.code === "verdict_invalid")
-    return result;
-  return { ...result, recovery_action };
-}
-async function submitMediatedReview(coordinator, ctx, taskId, verdictInput, inspect) {
-  if (coordinator.active(taskId)?.state === "settlement_unknown") {
-    return coordinator.submitReview(taskId, ctx, verdictInput);
-  }
-  const observed = inspect();
-  if (!observed.ok) {
-    if (observed.release)
-      return withReviewRecovery(coordinator.abandonReview(taskId, observed.reason), RELEASED_REVIEW_RECOVERY);
-    return { state: "blocked", reason: observed.reason, recovery_action: RETAINED_REVIEW_RECOVERY };
-  }
-  const receiptBytes = observed.receipt.result;
-  const options = {
-    reviewer_verdict_sha256: digestOfReviewerBytes(receiptBytes),
-    ...observed.receipt.model?.trim() ? { reviewer_model: observed.receipt.model } : {},
-    ...observed.receipt.offered_models ? { offered_models: observed.receipt.offered_models } : {},
-    validateReceipt: () => {
-      const current = inspect();
-      if (!current.ok)
-        return {
-          reason: current.reason,
-          release: current.release,
-          recovery_action: current.release ? RELEASED_REVIEW_RECOVERY : RETAINED_REVIEW_RECOVERY
-        };
-      return current.receipt.actorId === observed.receipt.actorId && current.receipt.result === receiptBytes && current.receipt.model === observed.receipt.model && JSON.stringify(current.receipt.offered_models ?? []) === JSON.stringify(observed.receipt.offered_models ?? []) ? null : { reason: "reviewer receipt changed during submission", release: true, recovery_action: RELEASED_REVIEW_RECOVERY };
-    }
-  };
-  if (verdictInput === undefined) {
-    if (!coordinator.isReviewVerdictValid(taskId, receiptBytes)) {
-      return withReviewRecovery(coordinator.abandonReview(taskId, "reviewer receipt is not a valid verdict"), RELEASED_REVIEW_RECOVERY);
-    }
-    return coordinator.submitReview(taskId, ctx, receiptBytes, options);
-  }
-  const parentValid = coordinator.isReviewVerdictValid(taskId, verdictInput);
-  if (!parentValid)
-    return coordinator.submitReview(taskId, ctx, verdictInput);
-  if (!coordinator.isReviewVerdictValid(taskId, receiptBytes)) {
-    return withReviewRecovery(coordinator.abandonReview(taskId, "reviewer receipt is not a valid verdict"), RELEASED_REVIEW_RECOVERY);
-  }
-  const parentJson = extractVerdictJson(verdictInput);
-  const receiptJson = extractVerdictJson(receiptBytes);
-  if (!parentJson || !receiptJson || verdictFingerprint(parentJson) !== verdictFingerprint(receiptJson)) {
-    return { state: "blocked", reason: "parent verdict does not match reviewer receipt", recovery_action: MISMATCH_REVIEW_RECOVERY };
-  }
-  return coordinator.submitReview(taskId, ctx, verdictInput, options);
-}
-
 // plugins/immune-brain/runtime/host-core/runtime.ts
 function diffSnapshotOf(root, record) {
   return taskDeliveryIdentity(root, record);
@@ -25471,7 +25817,7 @@ async function executeOrdinaryKernelOperation(input) {
   const operation = input.operation.op === "revise_intent" ? { ...input.operation, next_intent: parseProjectTaskIntent(root, input.operation.next_intent) } : input.operation;
   const priorIntent = (input.readIntent ?? readTaskIntentForRecord)(root, taskId);
   const nextScope = operation.op === "revise_intent" ? operation.next_intent.scope_hint : undefined;
-  const sidecar = join38(root, priorIntent.intent_ref.path);
+  const sidecar = join39(root, priorIntent.intent_ref.path);
   const priorBytes = operation.op === "revise_intent" ? readFileSync25(sidecar) : null;
   const priorStaged = priorBytes !== null ? captureStagedIntent(root, priorIntent.intent_ref.path) : null;
   try {
@@ -25718,7 +26064,7 @@ class HostRuntime {
     try {
       if (!this.profile.selectedParent(meta.toolCallId, this.cwd, slug))
         return result;
-      if (existsSync23(join38(this.cwd, ".imm", "audit", taskId)))
+      if (existsSync24(join39(this.cwd, ".imm", "audit", taskId)))
         execFileSync15("git", ["-C", this.cwd, "add", "--", `.imm/audit/${taskId}`], { stdio: "ignore" });
       const batch = await this.startUnattendedBatch(slug, meta, { reuseOnly: true });
       return { ...result, batch, ...batch.state === "started" && batch.report?.tracker ? { tracker: batch.report.tracker } : {} };
@@ -26012,7 +26358,7 @@ class HostRuntime {
       throw new Error("approve_breaking_intent_revision requires next_intent");
     const nextIntentHash = nextIntent ? canonicalIntentHash(nextIntent) : undefined;
     const nextIntentRef = nextIntent ? { path: `docs/plans/${nextIntent.task_id}.intent.json`, content_hash: nextIntentHash } : undefined;
-    const sidecar = nextIntent ? join38(this.cwd, priorIntent.intent_ref.path) : undefined;
+    const sidecar = nextIntent ? join39(this.cwd, priorIntent.intent_ref.path) : undefined;
     const stagedSnapshot = sidecar ? captureStagedIntent(this.cwd, priorIntent.intent_ref.path) : undefined;
     const restoreStagedIntent2 = () => {
       if (!stagedSnapshot)
@@ -26843,335 +27189,6 @@ var ANTIGRAVITY_CAPABILITY = validateHostCapabilityDeclaration({
 // plugins/immune-brain/runtime/antigravity/run_continuation.ts
 import { closeSync as closeSync10, fstatSync as fstatSync7, openSync as openSync10, readSync as readSync4, realpathSync as realpathSync19 } from "node:fs";
 import { tmpdir as tmpdir8 } from "node:os";
-
-// plugins/immune-brain/runtime/host-core/run_continuation_session.ts
-init_coordinator();
-init_storage();
-init_batch_state();
-import { existsSync as existsSync24, lstatSync as lstatSync20, realpathSync as realpathSync18, renameSync as renameSync6, rmSync as rmSync16 } from "node:fs";
-import { randomUUID as randomUUID13 } from "node:crypto";
-import { join as join39 } from "node:path";
-var NATIVE_OPERATIONS = new Set(["start_unattended_batch", "retire_stale_batch", "request_authorization", "approve_breaking_intent_revision", "request_stop", "stop"]);
-var MAX_METADATA_BYTES = 256 * 1024;
-var NATIVE_FAILURE_LIMIT = 3;
-var blank = () => ({
-  state: null,
-  sequence: 0,
-  review: "unobserved",
-  reviewer_prompt: null,
-  reviewer_call_id: null,
-  reviewer_agent_id: null,
-  recovery_action: null,
-  paused: null,
-  stop_blocks: 0,
-  native_failures: 0
-});
-var statePath2 = (host, sessionId, root) => join39(cacheDir(root, host.cache_name), `${sessionHash(sessionId)}.continuation`);
-var callPath = (host, toolId, root) => join39(cacheDir(root, host.cache_name), `${sessionHash(toolId)}.continuation-call`);
-function drop(host, path, root) {
-  if (!existsSync24(path))
-    return;
-  if (!ensurePrivateDir(cacheDir(root, host.cache_name)))
-    return;
-  try {
-    const stat = lstatSync20(path);
-    if (stat.isFile() && ownedByUs(stat))
-      rmSync16(path);
-  } catch {}
-}
-function readLast(path, dir) {
-  if (dir && existsSync24(dir) && !ensurePrivateDir(dir))
-    throw new Error("continuation directory could not be verified");
-  let stat;
-  try {
-    stat = lstatSync20(path);
-  } catch (error) {
-    if (error.code === "ENOENT")
-      return null;
-    throw error;
-  }
-  if (!stat.isFile() || !ownedByUs(stat))
-    throw new Error("unsafe continuation metadata");
-  if (stat.size > MAX_METADATA_BYTES)
-    return null;
-  const text = readPrivate(path, MAX_METADATA_BYTES);
-  if (text === undefined)
-    throw new Error("continuation metadata could not be read");
-  const lines = text.trim().split(`
-`);
-  return JSON.parse(lines.at(-1) ?? "null");
-}
-function readMetadata(host, sessionId, root) {
-  const value = readLast(statePath2(host, sessionId, root), cacheDir(root, host.cache_name));
-  if (!value)
-    return blank();
-  value.native_failures ??= 0;
-  if (typeof value !== "object" || !Number.isInteger(value.sequence) || value.sequence < 0 || !Number.isInteger(value.stop_blocks) || value.stop_blocks < 0 || !Number.isInteger(value.native_failures ?? 0) || (value.native_failures ?? 0) < 0 || !["unobserved", "ready", "running", "returned", "rejected"].includes(value.review) || ![value.reviewer_prompt, value.reviewer_call_id, value.reviewer_agent_id, value.recovery_action, value.paused].every((v) => v === null || typeof v === "string"))
-    throw new Error("invalid continuation metadata");
-  if (value.state) {
-    const { binding } = value.state;
-    if (!binding || binding.session_id !== sessionId || !Number.isInteger(value.state.unchanged_observations) || value.state.unchanged_observations < 0 || !(value.state.progress_digest === null || typeof value.state.progress_digest === "string") || !(value.state.boundary_id === null || typeof value.state.boundary_id === "string"))
-      throw new Error("invalid bound run metadata");
-    bindRun(binding);
-  }
-  return value;
-}
-function readSessionMetadata(host, root, sessionId) {
-  return readMetadata(host, sessionId, root);
-}
-function save(host, sessionId, root, value) {
-  const path = statePath2(host, sessionId, root);
-  const temporary = `${path}.${randomUUID13()}`;
-  if (!appendPrivate(temporary, cacheDir(root, host.cache_name), JSON.stringify(value) + `
-`))
-    throw new Error("continuation metadata could not be written");
-  try {
-    renameSync6(temporary, path);
-  } finally {
-    drop(host, temporary, root);
-  }
-}
-function pauseRun(host, metadata, sessionId, root, reason) {
-  metadata.paused = reason;
-  save(host, sessionId, root, metadata);
-  host.revoke_entry(sessionId);
-}
-async function observeNativeFailure(host, metadata, correlation, root, reason) {
-  metadata.native_failures++;
-  if (metadata.native_failures < NATIVE_FAILURE_LIMIT) {
-    save(host, correlation.session_id, root, metadata);
-    return;
-  }
-  pauseRun(host, metadata, correlation.session_id, root, reason);
-}
-function readSessionToolCall(host, root, toolId, operation, workspace) {
-  const record = readLast(callPath(host, toolId, root), cacheDir(root, host.cache_name));
-  if (!record || record.operation !== operation || record.tool_use_id !== toolId || record.workspace !== realpathSync18(workspace) || typeof record.session_id !== "string" || !record.session_id || !host.entry_state(record.session_id)?.run_live)
-    return null;
-  return record.session_id;
-}
-function selectedParentSession(host, root, toolId, workspace, slug) {
-  const call = readLast(callPath(host, toolId, root), cacheDir(root, host.cache_name));
-  if (!call || call.workspace !== realpathSync18(workspace) || !["advance_assurance", "submit_review"].includes(call.operation) || !host.entry_state(call.session_id)?.run_live)
-    return false;
-  const state = readMetadata(host, call.session_id, root).state;
-  return state?.binding.kind === "parent" && state.binding.workspace === call.workspace && state.binding.initiative_slug === slug;
-}
-async function applyRunContinuationEvent(host, root, session, event) {
-  const sessionId = session.session_id;
-  const { workspace } = session;
-  if (event.kind === "session_end") {
-    drop(host, statePath2(host, sessionId, root), root);
-    host.drop_entry_log(sessionId);
-    return { kind: "none" };
-  }
-  if (event.kind === "prompt") {
-    if (event.releases)
-      drop(host, statePath2(host, sessionId, root), root);
-    return { kind: "none" };
-  }
-  if (event.kind === "tool_call") {
-    const metadata = readMetadata(host, sessionId, root);
-    if (metadata.paused && NATIVE_OPERATIONS.has(event.operation))
-      return { kind: "deny", reason: metadata.paused };
-    const entry = host.entry_state(sessionId);
-    if (!entry?.run_live)
-      return { kind: "none" };
-    if (entry.workspace && entry.workspace !== workspace)
-      return { kind: "none" };
-    const correlation = {
-      session_id: sessionId,
-      workspace,
-      tool_use_id: event.tool_id,
-      operation: event.operation,
-      task_id: event.task_id
-    };
-    if (!appendPrivate(callPath(host, event.tool_id, root), cacheDir(root, host.cache_name), JSON.stringify(correlation) + `
-`))
-      throw new Error("tool correlation could not be recorded");
-    return { kind: "none" };
-  }
-  const metadata = readMetadata(host, sessionId, root);
-  if (metadata.paused)
-    return event.kind === "stop" ? { kind: "paused", reason: metadata.paused } : { kind: "none" };
-  if (event.kind === "tool_result") {
-    const correlated = readLast(callPath(host, event.tool_id, root), cacheDir(root, host.cache_name));
-    if (!correlated || correlated.session_id !== sessionId || correlated.workspace !== workspace || correlated.operation !== event.operation || readSessionToolCall(host, root, event.tool_id, event.operation, workspace) !== sessionId)
-      return { kind: "none" };
-    drop(host, callPath(host, event.tool_id, root), root);
-    if (event.failed) {
-      if (NATIVE_OPERATIONS.has(event.operation))
-        await observeNativeFailure(host, metadata, correlated, root, `${event.operation} failed ${NATIVE_FAILURE_LIMIT} times under this entry; no further automatic retry`);
-      else if (event.operation === "submit_review") {
-        metadata.review = "rejected";
-        save(host, sessionId, root, metadata);
-      }
-      return { kind: "none" };
-    }
-    const response = event.response;
-    if (event.operation === "start_unattended_batch" && response?.state === "native_parent" && typeof response.plan_digest === "string" && typeof response.initiative_slug === "string") {
-      if (metadata.state?.binding.kind !== "parent")
-        metadata.state = bindRun({
-          kind: "parent",
-          workspace,
-          session_id: sessionId,
-          batch_id: null,
-          initiative_slug: response.initiative_slug,
-          plan_digest: response.plan_digest,
-          final_verification: response.final_verification_commands
-        });
-    }
-    if (event.operation === "start_unattended_batch" && response?.state === "started" && typeof response.batch_id === "string") {
-      const batch = readAnyBatchRunState(workspace, response.batch_id);
-      if (!batch)
-        throw new Error("batch receipt has no persisted identity");
-      const binding = metadata.state?.binding;
-      if (!binding || binding.kind !== "parent")
-        metadata.state = bindRun({
-          kind: "parent",
-          workspace,
-          session_id: sessionId,
-          batch_id: batch.batch_id,
-          initiative_slug: batch.initiative_slug,
-          plan_digest: batch.plan_digest
-        });
-      else if (binding.batch_id === batch.batch_id && binding.initiative_slug === batch.initiative_slug && hasContiguousLaneRebind(batch, binding.plan_digest))
-        metadata.state = { ...metadata.state, binding: { ...binding, plan_digest: batch.plan_digest } };
-    }
-    if (!metadata.state && correlated.task_id && event.operation === "status") {
-      const status = await projectTaskStatus(workspace, correlated.task_id);
-      if (!status.error && status.claim?.task_id === correlated.task_id && status.projection.lifecycle === "active" && status.projection.run_id)
-        metadata.state = bindRun({ kind: "task", workspace, session_id: sessionId, task_id: correlated.task_id, run_id: status.projection.run_id });
-    }
-    if (metadata.state?.binding.kind === "task" && correlated.task_id !== metadata.state.binding.task_id)
-      return { kind: "none" };
-    if (event.operation === "advance_assurance" && response?.state === "review_ready") {
-      const params = response.agent_params;
-      if (typeof params?.prompt === "string" && digestOfReviewerBytes(params.prompt) !== metadata.reviewer_prompt) {
-        metadata.reviewer_prompt = digestOfReviewerBytes(params.prompt);
-        metadata.reviewer_call_id = null;
-        metadata.reviewer_agent_id = null;
-        metadata.review = "ready";
-      }
-    }
-    if (["advance_assurance", "submit_review"].includes(event.operation) && response?.state === "review_incomplete") {
-      pauseRun(host, metadata, sessionId, root, `review_incomplete: ${String(response.recovery_action)}`);
-      return { kind: "none" };
-    }
-    if (event.operation === "submit_review") {
-      if (response?.reason === "review_incomplete_retry") {
-        metadata.review = "unobserved";
-        metadata.reviewer_prompt = null;
-        metadata.reviewer_call_id = null;
-        metadata.recovery_action = null;
-      } else if (["blocked", "rejected", "failed"].includes(String(response?.state))) {
-        metadata.review = "rejected";
-        const recovery = response?.recovery_action ?? response?.next_action;
-        metadata.recovery_action = typeof recovery === "string" ? recovery : null;
-      } else {
-        metadata.review = "unobserved";
-        metadata.reviewer_prompt = null;
-        metadata.reviewer_call_id = null;
-        metadata.recovery_action = null;
-      }
-    }
-    if (NATIVE_OPERATIONS.has(event.operation) && ["blocked", "cancelled", "rejected", "failed"].includes(String(response?.state)))
-      await observeNativeFailure(host, metadata, correlated, root, `${event.operation} did not apply ${NATIVE_FAILURE_LIMIT} times under this entry; inspect the same-Host recovery`);
-    if (metadata.state)
-      save(host, sessionId, root, metadata);
-    return { kind: "none" };
-  }
-  if (event.kind === "reviewer" && metadata.state && metadata.reviewer_prompt) {
-    if (event.phase === "dispatch" && event.call_id && event.prompt_digest !== null && event.prompt_digest === metadata.reviewer_prompt) {
-      if (metadata.reviewer_call_id) {
-        metadata.review = "rejected";
-      } else {
-        metadata.reviewer_call_id = event.call_id;
-        metadata.review = "running";
-      }
-      save(host, sessionId, root, metadata);
-    }
-    if (event.phase === "return" && event.call_id === metadata.reviewer_call_id) {
-      if (event.asynchronous)
-        metadata.reviewer_agent_id = event.agent_id;
-      else
-        metadata.review = "returned";
-      save(host, sessionId, root, metadata);
-    }
-    return { kind: "none" };
-  }
-  if (event.kind === "reviewer_stop") {
-    if (metadata.reviewer_agent_id && event.agent_id === metadata.reviewer_agent_id) {
-      metadata.review = "returned";
-      save(host, sessionId, root, metadata);
-    }
-    return { kind: "none" };
-  }
-  if (event.kind !== "stop" || !metadata.state)
-    return { kind: "none" };
-  if (!host.entry_state(sessionId)?.run_live) {
-    drop(host, statePath2(host, sessionId, root), root);
-    return { kind: "none" };
-  }
-  if (metadata.state.binding.workspace !== workspace) {
-    drop(host, statePath2(host, sessionId, root), root);
-    return { kind: "paused", reason: "workspace changed; enter drive explicitly in this workspace" };
-  }
-  const boundary = event.boundary();
-  if (!boundary)
-    return { kind: "none" };
-  metadata.sequence++;
-  const taskId = metadata.state.binding.kind === "task" ? metadata.state.binding.task_id : metadata.state.binding.initiative_slug;
-  let observation;
-  if (metadata.state.binding.kind === "parent")
-    observation = await observeParentRun(metadata.state.binding, boundary, metadata.review, metadata.recovery_action ?? undefined);
-  else {
-    const status = await projectTaskStatus(workspace, taskId);
-    const record = readTaskRecordRaw(workspace, taskId);
-    observation = {
-      kind: "task",
-      workspace,
-      session_id: sessionId,
-      boundary_id: boundary,
-      status,
-      source_digest: record.record ? scopedSourceDigest(workspace, record.record.intent_snapshot.scope_hint) : "terminal",
-      review: metadata.review,
-      recovery_action: metadata.recovery_action ?? undefined
-    };
-  }
-  const decision = decideRunContinuation(metadata.state, observation);
-  if (decision.action === "unbound" || decision.action === "settled") {
-    if (decision.action === "settled")
-      host.revoke_entry(sessionId);
-    drop(host, statePath2(host, sessionId, root), root);
-    return { kind: "none" };
-  }
-  if (decision.action === "wait") {
-    metadata.state = decision.state;
-    save(host, sessionId, root, metadata);
-    return { kind: "none" };
-  }
-  if (decision.action === "pause" && decision.stalled) {
-    metadata.state = decision.state;
-    metadata.stop_blocks = 0;
-    save(host, sessionId, root, metadata);
-    return { kind: "none" };
-  }
-  if (!event.stop_hook_active)
-    metadata.stop_blocks = 0;
-  metadata.state = decision.state;
-  metadata.stop_blocks++;
-  if (decision.action === "pause" || metadata.stop_blocks >= 7) {
-    const hostName = host.host_name ?? "Claude";
-    const reason = decision.action === "pause" ? decision.reason : `${hostName} consecutive Stop boundary reached; resume explicitly in the same Host`;
-    pauseRun(host, metadata, sessionId, root, reason);
-    return { kind: "paused", reason: metadata.paused };
-  }
-  save(host, sessionId, root, metadata);
-  return { kind: "continue", label: taskId, next_action: decision.next_action };
-}
-
-// plugins/immune-brain/runtime/antigravity/run_continuation.ts
 var IMMUNE_BRAIN_DIRECT_TOOL = /^(?:mcp__.*immune-brain.*__|immune-brain__)?(\w+)$/;
 var IMMUNE_BRAIN_SERVERS = new Set(["immune-brain", "immune-brain_immune-brain"]);
 var antigravityContinuationHost = (root) => ({
@@ -27324,7 +27341,7 @@ async function antigravityRunContinuationPreToolUse(payload, root = tmpdir8()) {
     if (outcome.kind === "deny") {
       return {
         decision: "deny",
-        reason: `Run paused: ${outcome.reason}; enter drive explicitly before another native gate`
+        reason: `Run paused: ${outcome.reason}; ${PAUSED_GATE_GUIDANCE}`
       };
     }
     return null;
@@ -27786,9 +27803,13 @@ function recordPhaseEntryPrompt(conversationId, prompt, cwd, locations = {}) {
   dropConversationConfirmations(conversationId, storeRoot);
   const recognized = recognizePhaseEntry(prompt, antigravityLocalNames(cwd, locations.home ?? homedir3()), "antigravity");
   const entry = releasesRunBinding(prompt, recognized === "plan" ? "planner" : null) ? "plan" : recognized;
+  const contPath = join41(cacheDir(storeRoot, ANTIGRAVITY_CACHE_DIR), `${sessionHash(conversationId)}.continuation`);
   if (releasesRunBinding(prompt, recognized === "plan" ? "planner" : null) || recognized === "run") {
-    const contPath = join41(cacheDir(storeRoot, ANTIGRAVITY_CACHE_DIR), `${sessionHash(conversationId)}.continuation`);
     dropPrivate(contPath);
+  } else if (existsSync25(contPath)) {
+    try {
+      resumeSuspendedRun({ cache_name: ANTIGRAVITY_CACHE_DIR }, storeRoot, conversationId);
+    } catch {}
   }
   let workspace = null;
   if (entry === "run") {
@@ -27966,7 +27987,7 @@ function evaluatePreToolUseSync(payload, locations = {}) {
       done: true,
       result: {
         decision: "deny",
-        reason: paused.startsWith("continuation facts could not be verified") ? paused : `Run paused: ${paused}; enter drive explicitly before another native gate`
+        reason: paused.startsWith("continuation facts could not be verified") ? paused : `Run paused: ${paused}; ${PAUSED_GATE_GUIDANCE}`
       }
     };
   }

@@ -2,7 +2,7 @@
 
 Initiative simplifying interactive `/immune-brain:drive` session continuation, single-task `checkout_delivery` and shared Spec provisioning safety, non-`critical` single-task final verification defaults with bounded transient Lane error recovery, and `/immune-brain:revisit` session parser accuracy. Spec: [docs/specs/workflow-friction-simplification.spec.md](../specs/workflow-friction-simplification.spec.md).
 
-## S1: non-terminal user-wait pauses preserve the session entry token across Claude, Pi, and Antigravity and started batches reset native failure counts
+## S1: non-terminal pauses suspend instead of revoking the session entry token across Claude, Pi, and Antigravity, a plain user reply resumes, and applied native operations reset failure counts
 Tasks:
 - workflow-friction-simplification-s1-session-continuation
 

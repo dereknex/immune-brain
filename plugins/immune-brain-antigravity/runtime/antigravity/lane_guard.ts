@@ -45,6 +45,7 @@ import {
 	sessionHash,
 	writePrivate,
 } from "../host-core/private_file";
+import { PAUSED_GATE_GUIDANCE, resumeSuspendedRun } from "../host-core/run_continuation_session";
 import { AntigravityRuntime } from "./kernel_ports";
 import { ANTIGRAVITY_CACHE_DIR } from "./review_host";
 import { matchesMcpAllowRule, readAntigravityAllowRules } from "./tool_permission";
@@ -391,9 +392,13 @@ export function recordPhaseEntryPrompt(
 	dropConversationConfirmations(conversationId, storeRoot);
 	const recognized = recognizePhaseEntry(prompt, antigravityLocalNames(cwd, locations.home ?? homedir()), "antigravity");
 	const entry = releasesRunBinding(prompt, recognized === "plan" ? "planner" : null) ? "plan" : recognized;
+	const contPath = join(cacheDir(storeRoot, ANTIGRAVITY_CACHE_DIR), `${sessionHash(conversationId)}.continuation`);
 	if (releasesRunBinding(prompt, recognized === "plan" ? "planner" : null) || recognized === "run") {
-		const contPath = join(cacheDir(storeRoot, ANTIGRAVITY_CACHE_DIR), `${sessionHash(conversationId)}.continuation`);
 		dropPrivate(contPath);
+	} else if (existsSync(contPath)) {
+		// A plain reply resumes a suspended run without a new entry (Spec workflow-friction-simplification D1.1);
+		// unreadable metadata stays paused and fails closed at the next gate.
+		try { resumeSuspendedRun({ cache_name: ANTIGRAVITY_CACHE_DIR }, storeRoot, conversationId); } catch {}
 	}
 	let workspace: string | null = null;
 	if (entry === "run") {
@@ -664,7 +669,7 @@ function evaluatePreToolUseSync(
 				decision: "deny",
 				reason: paused.startsWith("continuation facts could not be verified")
 					? paused
-					: `Run paused: ${paused}; enter drive explicitly before another native gate`,
+					: `Run paused: ${paused}; ${PAUSED_GATE_GUIDANCE}`,
 			},
 		};
 	}

@@ -7,7 +7,7 @@
 // `selectedClaudeParent`.
 // Invariants: every continuation decision re-reads the actual Kernel; the
 // transport connection ID is never a Hook session; the entry token ends with its
-// session, a pause or a settlement.
+// session, a settlement or a lost bound identity, never with a suspending pause.
 // Side Effects: through the core, writes private session metadata and Hook output.
 // Verification: `bun test tests/claude-run-continuation.test.ts`.
 
@@ -17,7 +17,7 @@ import { digestOfReviewerBytes } from "../assurance/review_mediation";
 import { recognizePhaseEntry } from "../assurance/phase_entry";
 import { releasesRunBinding, USER_WAIT_GUIDANCE } from "../assurance/run_continuation";
 import { claudeLocalNames, dropPhaseEntryLog, readPhaseEntryState, revokeEntryToken } from "./lane_guard";
-import { applyRunContinuationEvent, readSessionToolCall, selectedParentSession,
+import { applyRunContinuationEvent, PAUSED_GATE_GUIDANCE, readSessionToolCall, selectedParentSession,
 	type RunContinuationEvent, type RunContinuationHost } from "../host-core/run_continuation_session";
 import { CLAUDE_CACHE_DIR } from "./review_host";
 
@@ -109,7 +109,7 @@ function continuationEvent(payload: Record<string, unknown>, workspace: string):
 function render(outcome: Awaited<ReturnType<typeof applyRunContinuationEvent>>): string | null {
 	switch (outcome.kind) {
 		case "deny": return JSON.stringify({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny",
-			permissionDecisionReason: `Run paused: ${outcome.reason}; enter drive explicitly before another native gate` } });
+			permissionDecisionReason: `Run paused: ${outcome.reason}; ${PAUSED_GATE_GUIDANCE}` } });
 		case "paused": return warning(outcome.reason);
 		case "continue": return JSON.stringify({ decision: "block",
 			reason: `Explicit drive is bound to ${outcome.label}; Kernel settlement is incomplete. ${outcome.next_action}. Continue the authorized Loop. ${USER_WAIT_GUIDANCE}` });
