@@ -117,9 +117,9 @@ flowchart LR
 ### D3. Scripted model and Host pinning (`BR-DEC-E5`, `BR-DEC-E7`, `BR-DEC-E14`, `BR-DEC-E15`)
 
 - **Mock model** (`tests/e2e/harness/mock-model.ts`): an Anthropic Messages-compatible HTTP server on a free port serving streamed responses from a cassette. Inputs: the request body. Output: the next scripted assistant turn. Matching key: (turn index within the conversation, ordered tool names of the expected `tool_use` blocks). A request whose key does not match fails the journey with `cassette_mismatch` naming the turn and expected tools — never a silent fallback. Unknown endpoints return 404 and fail the journey.
-- **Cassettes** (`tests/e2e/cassettes/<journey>/<host>.jsonl`): one line per turn; secrets, home paths and timestamps are redacted at record time by the recorder. Until a journey has a recorded cassette, the Executor may author one by hand in the same format; `S9`'s live run records replacements.
+- **Cassettes** (`tests/e2e/cassettes/<journey>/<host>.jsonl`): one line per turn `{ turn, after, tools, content, stop_reason }` (`after` = ordered tool_use names the request answers, `tools` = ordered tool_use names of `content`, which the request must offer); secrets, home paths and timestamps are redacted at record time by the recorder. Until a journey has a recorded cassette, the Executor may author one by hand in the same format; `S9`'s live run records replacements.
 - **Recorder** (`bun run e2e:record <journey>`, delivered in `S2`): a pass-through proxy between the Host and the real API that writes a cassette. Running it needs the maintainer's credentials and is a maintainer action, never a QA descriptor.
-- **Pi**: `S2` probes whether Pi 1.5.2 can direct its Anthropic provider at the mock. If yes, Pi journeys use the real `pi` binary; if no, a PATH stand-in replays the same cassette and the Spec records the decision and its residual risk (Pi launch flags and extension loading then remain L2-only).
+- **Pi** (S2 probe, resolved): Pi 1.5.2 **can** target a custom Anthropic base URL, so Pi journeys use the real `pi` binary and no PATH stand-in is needed. Recipe: point `PI_CODING_AGENT_DIR` at a temp directory whose `models.json` declares one provider `{ "baseUrl": "<mock url>", "api": "anthropic-messages", "apiKey": "<placeholder>", "models": [{ "id": "mock-model", ... }] }`, then run `pi -p --model <provider>/mock-model --no-session --offline`. Evidence: `pi -p "say ping"` against a local server answered through `POST /v1/messages` with `user-agent: pi/1.5.2` and `x-api-key`, and printed the scripted text. Residual risk: the probe used `-p` (print mode) with `--no-extensions --no-skills`; interactive-mode launch flags and loading the immune-brain extension from the tarball are exercised by the Pi journeys (S4 and later), not by S2's smoke, which runs Claude Code only.
 - **Antigravity**: no Host binary in L1; the harness speaks MCP stdio to `plugins/immune-brain-antigravity/mcp_config.json`'s server and runs its `hooks.json` commands directly.
 - **Pinning**: `tests/e2e/hosts.json` holds `{ claude: { pinned, minimum }, pi: { pinned } }`. CI installs the pinned versions; J4 additionally installs `claude` at `minimum`.
 
@@ -236,10 +236,10 @@ L1 journey acceptances (`S2`–`S7`) run `bun run e2e <journey>` and need the pi
 
 ## Assumptions (to resolve in the named slice)
 
-- `A1` (`S2`): Pi 1.5.2 can target a custom Anthropic base URL. Fallback recorded in D3.
+- `A1` (`S2`): Pi 1.5.2 can target a custom Anthropic base URL. Resolved in S2: confirmed, recipe and residual risk recorded in D3 (Pi); the PATH stand-in fallback is not needed.
 - `A2` (`S2`): real `herdr` cannot run headless on Linux CI; L1 uses fake-herdr. Revisit only with new evidence.
 - `A3` (`S1`): the documented `git-subdir` + `ref` source installs and updates as documented on `claude 2.1.330`; the minimum supported version is confirmed or raised.
-- `A4` (`S2`): the pinned `claude` binary installs on `ubuntu-latest` through npm and runs non-interactively against the mock without a login.
+- `A4` (`S2`): the pinned `claude` binary installs on `ubuntu-latest` through npm and runs non-interactively against the mock without a login. Partly resolved in S2: `claude 2.1.330 -p` runs against the mock with only `ANTHROPIC_API_KEY` (placeholder) and a temp `HOME`/`CLAUDE_CONFIG_DIR`, no login, and loads the plugin from the tarball extract; the `ubuntu-latest` npm install remains for S8's CI job to confirm.
 
 ## Out of scope
 

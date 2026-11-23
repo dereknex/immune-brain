@@ -1,0 +1,331 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "e2e-gate-s10-bump-and-metric",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "e2e-gate-s10-bump-and-metric",
+    "goal": "A weekly workflow opens a PR bumping the pinned claude and pi versions in tests/e2e/hosts.json and runs L1, and a report script counts post-release fixes within 7 days with a v8.6-v9.1 baseline (Spec D3, D10) (Initiative e2e-release-gate slice S10; Spec docs/specs/e2e-release-gate.spec.md).",
+    "acceptance": [
+      {
+        "id": "S10-AC1",
+        "assertion": "scripts/bump-e2e-hosts.ts rewrites tests/e2e/hosts.json from stubbed registry versions and leaves it byte-identical when versions are current; the weekly workflow file schedules it and opens a PR. Done looks like: tests/e2e-host-bump.test.ts covers the bump, the no-change case and the workflow contract.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/e2e-host-bump.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "S10-AC2",
+        "assertion": "scripts/release-escape-report.ts counts fix and repair commits and issues landing within 7 days after each fixture release tag and attributes them to that version; a fix after 7 days is not counted. Done looks like: tests/release-escape-report.test.ts covers in-window, out-of-window and baseline output.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/release-escape-report.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".github/workflows/e2e-host-bump.yml",
+      "docs/evidence/release-escape-baseline.md",
+      "docs/plans/e2e-gate-s10-bump-and-metric.intent.json",
+      "scripts/bump-e2e-hosts.ts",
+      "scripts/release-escape-report.ts",
+      "tests/e2e-host-bump.test.ts",
+      "tests/e2e/hosts.json",
+      "tests/release-escape-report.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/e2e-gate-s10-bump-and-metric.intent.json",
+    "content_hash": "sha256:ee75592816536c6197efd872fc5895ab568708d28bdf1231258ccfd7bdbf40ec"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:ee75592816536c6197efd872fc5895ab568708d28bdf1231258ccfd7bdbf40ec",
+  "git_base_head": "e582faf6d682c696bbe3318fbfc5fdff0dd9c0cd",
+  "attestations": [
+    {
+      "id": "approval-qa-aa472cfb",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ee75592816536c6197efd872fc5895ab568708d28bdf1231258ccfd7bdbf40ec",
+      "diff_hash": "sha256:c121c6c135161cdcf90213d3d1775d9569f8ac26e9829dd9be38781b1a0199f5",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:1f03e92b63d01c6af9876b0d73211b8c57a90a6f902b17069182239667ee8155",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S10-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:1f03e92b63d01c6af9876b0d73211b8c57a90a6f902b17069182239667ee8155"
+        },
+        {
+          "acceptance_id": "S10-AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:1f03e92b63d01c6af9876b0d73211b8c57a90a6f902b17069182239667ee8155"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-3e2bf9f1",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ee75592816536c6197efd872fc5895ab568708d28bdf1231258ccfd7bdbf40ec",
+      "diff_hash": "sha256:2c49cc5fe4bcb51077ff1ce8c941fa6b15147ce1663a8c4110820fa0a3fbbe53",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:92803960e75b54b6a519177a7f9fb3842c57b0f71bedca71cdc221d240781f85",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S10-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:92803960e75b54b6a519177a7f9fb3842c57b0f71bedca71cdc221d240781f85"
+        },
+        {
+          "acceptance_id": "S10-AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:92803960e75b54b6a519177a7f9fb3842c57b0f71bedca71cdc221d240781f85"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-ee3d0aa1",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ee75592816536c6197efd872fc5895ab568708d28bdf1231258ccfd7bdbf40ec",
+      "diff_hash": "sha256:564bad218e7c9810885001cf3a98797b60312241fb23721ab3a61188a9cba778",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:89484d61ff83a58647704c949d8cc652f436355f221fe15f6ea25c65c0456e76",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S10-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:89484d61ff83a58647704c949d8cc652f436355f221fe15f6ea25c65c0456e76"
+        },
+        {
+          "acceptance_id": "S10-AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:89484d61ff83a58647704c949d8cc652f436355f221fe15f6ea25c65c0456e76"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-56a2fb8b",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ee75592816536c6197efd872fc5895ab568708d28bdf1231258ccfd7bdbf40ec",
+      "diff_hash": "sha256:564bad218e7c9810885001cf3a98797b60312241fb23721ab3a61188a9cba778",
+      "actor_id": "cli:antigravity:511a86bb-14ff-4e5e-a172-f3fe75e7f814",
+      "summary": "Round-3 delta closes the pipe-masking gap: the bump step runs under shell bash (-eo pipefail) with its script redirected rather than piped, the PR-existence check drops its grep pipeline, and the workflow test pins both; blast radius low (new weekly workflow and its contract test only, no persisted shape).",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "e582faf6d682c696bbe3318fbfc5fdff0dd9c0cd",
+        "review_commit": "51270ee998ad09e3c91bc8f17577e5385d64b968"
+      },
+      "reviewer_verdict_sha256": "sha256:cb63b1eebd2e428766f05fbd5502778d800bb9946d6b641b0883e06c78da5003"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-fd5a6b8411a0-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S10-AC2",
+      "source": "review",
+      "review_round": 1,
+      "summary": "readCommits passes --diff-filter=A to git log, which drops every commit that adds no file, so fix/repair commits that only modify files are never counted and the committed baseline undercounts escapes.",
+      "anchor": "sha256:04a7b3c4ae5623259f3d9534a4a9f3fc17f7a49f7d5c0900c6514aae1138111a",
+      "evidence": {
+        "trigger": "A fix commit inside a tag's 7-day window that only modifies existing files (e.g. d979c219c75 'fix(no-touch): retire the docs/agents/no-touch.json declaration', 2026-11-22, inside the v9.1.0 window closing 2026-11-24) -> git log --no-merges --diff-filter=A omits it (verified: the filtered listing skips d979c219c75 while the unfiltered listing includes it), so buildReport never sees it and v9.1.0 reports 1 fix commit instead of at least 2; docs/evidence/release-escape-baseline.md records this undercount. The git-reader test only makes commits that add new paths, so it cannot catch the omission. Fix: read added changesets separately (or drop --diff-filter from commit selection) and add a test with a modify-only fix commit.",
+        "caller_chain": [
+          "scripts/release-escape-report.ts:import.meta.main",
+          "scripts/release-escape-report.ts:readCommits",
+          "scripts/release-escape-report.ts:buildReport",
+          "tests/release-escape-report.test.ts:git readers",
+          "docs/evidence/release-escape-baseline.md"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S10-AC2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-bcb249d72c75-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S10-AC1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "The workflow's bump step pipes the script into tee without pipefail, so the script's exit 1 on a registry failure or pre-release 'latest' is swallowed and the weekly job reports success with no PR (unknown-error suppression / fabricated success). Fix: set shell: bash or 'set -o pipefail', and add a workflow-contract test that pins it.",
+      "anchor": "sha256:7ea95bfee7ff2da8493925de7f0bacb4e9ee5ec88f1b37eb8b9fae5ac0416f3a",
+      "evidence": {
+        "trigger": "Weekly run where registryLookup throws (HTTP error, or a latest dist-tag like 2.2.0-beta.1 makes compareVersions throw) → scripts/bump-e2e-hosts.ts exits 1, but step 'Bump tests/e2e/hosts.json' runs `bun scripts/bump-e2e-hosts.ts | tee bump.log` under the GitHub default `bash -e {0}` with no pipefail, so the pipeline status is tee's 0. git diff --quiet then sees no change, changed=false, every later step is skipped and the job finishes green: the bump silently never happened and no failure is visible. tests/e2e-host-bump.test.ts 'e2e-host-bump workflow' does not assert that the bump failure propagates.",
+        "caller_chain": [
+          ".github/workflows/e2e-host-bump.yml#jobs.bump.steps[Bump tests/e2e/hosts.json]",
+          "scripts/bump-e2e-hosts.ts#import.meta.main",
+          "scripts/bump-e2e-hosts.ts#run",
+          "scripts/bump-e2e-hosts.ts#registryLookup"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S10-AC1"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:e2e-gate-s10-bump-and-metric:2026-11-23T13:22:25.658Z",
+      "at": "2026-11-23T13:22:25.658Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/e2e-gate-s10-bump-and-metric.intent.json"
+    },
+    {
+      "id": "record_approval:e2e-gate-s10-bump-and-metric:2026-11-23T13:22:35.959Z",
+      "at": "2026-11-23T13:22:35.959Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-aa472cfb\naction_v2_sha256:e8672b38432a479e578f3794e7afcacdd04588fd7d3d69e6b25af24462d96211",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-11-23T13:22:35.959Z"
+      }
+    },
+    {
+      "id": "request_rework:e2e-gate-s10-bump-and-metric:2026-11-23T13:23:48.782Z",
+      "at": "2026-11-23T13:23:48.782Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:6828df986f3c8d5790661cb54e1d3cc64d4a4c0b6ada7e198fe417276b7e4c02",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:antigravity:9cb7fa13-958d-429a-a7cb-1fc2c421cb45",
+        "confirmation_ref": "claude:cli:antigravity:9cb7fa13-958d-429a-a7cb-1fc2c421cb45",
+        "issued_at": "2026-11-23T13:23:48.782Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "e582faf6d682c696bbe3318fbfc5fdff0dd9c0cd",
+        "review_commit": "659cbb8addded45b7c3349a2454d5c0878d60104"
+      },
+      "review_started_at": "2026-11-23T13:22:38.949Z",
+      "review_submitted_at": "2026-11-23T13:23:48.031Z",
+      "reviewer_model": "claude-opus-5-5-medium"
+    },
+    {
+      "id": "resolve_finding:e2e-gate-s10-bump-and-metric:2026-11-23T13:24:20.691Z",
+      "at": "2026-11-23T13:24:20.691Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-fd5a6b8411a0-1-review-1\naction_v2_sha256:b883a2560a77b017e6b4c6aaecd7df7acc5ecd8936773185faca6bc3d4a3a181"
+    },
+    {
+      "id": "freeze_artifacts:e2e-gate-s10-bump-and-metric:2026-11-23T13:24:26.467Z",
+      "at": "2026-11-23T13:24:26.467Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/e2e-gate-s10-bump-and-metric.intent.json"
+    },
+    {
+      "id": "record_approval:e2e-gate-s10-bump-and-metric:2026-11-23T13:24:51.555Z",
+      "at": "2026-11-23T13:24:51.555Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-3e2bf9f1\naction_v2_sha256:48358007b479a9d3351a30dc6a99f6b82fdb15a7e1de8d4cf81ab46f181ff87d",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-11-23T13:24:51.555Z"
+      }
+    },
+    {
+      "id": "request_rework:e2e-gate-s10-bump-and-metric:2026-11-23T13:26:03.524Z",
+      "at": "2026-11-23T13:26:03.524Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:b418ea51f2790a86c1f77053d384b3ee2fe62c3a21f15b970b85f58b751ec758",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:antigravity:c26f80f2-17dd-44dc-996a-b179e89dfec6",
+        "confirmation_ref": "claude:cli:antigravity:c26f80f2-17dd-44dc-996a-b179e89dfec6",
+        "issued_at": "2026-11-23T13:26:03.524Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "e582faf6d682c696bbe3318fbfc5fdff0dd9c0cd",
+        "review_commit": "42442c4a1e2a299ba0f4f7a19db88149ccb29e0e"
+      },
+      "review_started_at": "2026-11-23T13:24:59.496Z",
+      "review_submitted_at": "2026-11-23T13:26:02.737Z",
+      "reviewer_model": "claude-opus-5-5-medium"
+    },
+    {
+      "id": "resolve_finding:e2e-gate-s10-bump-and-metric:2026-11-23T13:26:25.558Z",
+      "at": "2026-11-23T13:26:25.558Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-bcb249d72c75-1-review-1\naction_v2_sha256:d11318c87d522433c5dad52270fe17dd8102578db26e4c4ec9d9c6801cc01575"
+    },
+    {
+      "id": "freeze_artifacts:e2e-gate-s10-bump-and-metric:2026-11-23T13:26:28.368Z",
+      "at": "2026-11-23T13:26:28.368Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/e2e-gate-s10-bump-and-metric.intent.json"
+    },
+    {
+      "id": "record_approval:e2e-gate-s10-bump-and-metric:2026-11-23T13:26:41.370Z",
+      "at": "2026-11-23T13:26:41.370Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-ee3d0aa1\naction_v2_sha256:35ad7066ec342b73d6a98d1414f3b42ee0401a9036472578a721587c66675315",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-11-23T13:26:41.370Z"
+      }
+    },
+    {
+      "id": "record_approval:e2e-gate-s10-bump-and-metric:2026-11-23T13:27:26.263Z",
+      "at": "2026-11-23T13:27:26.263Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-56a2fb8b\naction_v2_sha256:082ec6b7253292a3cbdc3deb0659403b45a324da5c09ff3a302e74758eb688cb",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:antigravity:511a86bb-14ff-4e5e-a172-f3fe75e7f814",
+        "confirmation_ref": "claude:cli:antigravity:511a86bb-14ff-4e5e-a172-f3fe75e7f814",
+        "issued_at": "2026-11-23T13:27:26.263Z"
+      },
+      "review_started_at": "2026-11-23T13:26:45.803Z",
+      "review_submitted_at": "2026-11-23T13:27:24.330Z",
+      "reviewer_model": "claude-opus-5-5-medium"
+    },
+    {
+      "id": "complete:e2e-gate-s10-bump-and-metric:2026-11-23T13:27:31.656Z",
+      "at": "2026-11-23T13:27:31.656Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:485b549f1f7a5f1aebf9586ec4062cb9859ce03ad17cd6e4599d71c1d6564ee9"
+    }
+  ]
+}

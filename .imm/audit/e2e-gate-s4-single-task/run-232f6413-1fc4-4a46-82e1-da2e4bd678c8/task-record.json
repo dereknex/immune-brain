@@ -1,0 +1,174 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "e2e-gate-s4-single-task",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "e2e-gate-s4-single-task",
+    "goal": "J1: a scripted single-task drive reaches a terminal TaskRecord with audit and delivered commit on Claude Code and Pi (Spec D2, J1) (Initiative e2e-release-gate slice S4; Spec docs/specs/e2e-release-gate.spec.md).",
+    "acceptance": [
+      {
+        "id": "S4-AC1",
+        "assertion": "bun run e2e single-task drives one scripted task from enrollment through Executor launch, implementation, QA and Review to a terminal TaskRecord with an audit directory and a delivered commit, for the claude and pi Executors. Negative cases: an Executor launch lacking --plugin-dir and an entry that is not the /immune-brain:drive slash command each fail the journey with a named assertion. Done looks like: tests/e2e/single-task.e2e.ts passes with both negatives asserted. Prerequisite: the pinned claude binary from tests/e2e/hosts.json is installed on the QA host (maintainer machine provides claude 2.1.330); an absent binary fails the check rather than skipping.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"run\",\n      \"e2e\",\n      \"single-task\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 600000,\n    \"max_output_bytes\": 262144\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/e2e-gate-s4-single-task.intent.json",
+      "tests/e2e/cassettes/single-task/claude.jsonl",
+      "tests/e2e/cassettes/single-task/pi.jsonl",
+      "tests/e2e/single-task.e2e.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/e2e-gate-s4-single-task.intent.json",
+    "content_hash": "sha256:afde1c281da85ea405eb0aafc18de591dfe006d7eb0e7e36fb18bd9a03bb239b"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:afde1c281da85ea405eb0aafc18de591dfe006d7eb0e7e36fb18bd9a03bb239b",
+  "git_base_head": "6bc933c2bdb71f30b490540390f1f70e8b6666dd",
+  "attestations": [
+    {
+      "id": "approval-qa-816560b7",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:afde1c281da85ea405eb0aafc18de591dfe006d7eb0e7e36fb18bd9a03bb239b",
+      "diff_hash": "sha256:ad5141838b717768bee03630f828e45ee67b0fe13700e807603fe09586ca7b91",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:8e1191d86bf854b764ca871cdd45c37bdce61b9f5829041ef7a11b1d58985fce",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S4-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:8e1191d86bf854b764ca871cdd45c37bdce61b9f5829041ef7a11b1d58985fce"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-c9ef71d0",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:afde1c281da85ea405eb0aafc18de591dfe006d7eb0e7e36fb18bd9a03bb239b",
+      "diff_hash": "sha256:ad5141838b717768bee03630f828e45ee67b0fe13700e807603fe09586ca7b91",
+      "actor_id": "cli:claude-code:aa7def72-00f3-4bdf-9b48-85669567ebb1",
+      "summary": "single-task.e2e.ts drives claude and pi Executor journeys to a done TaskRecord, audit dir and imm(hello-task) commit, with named entry_not_drive_command and executor_plugin_dir_missing assertions; blast radius tier low, load-bearing paths tests/e2e/harness/mock-model.ts and the shared tests/fixtures/fake-herdr/herdr fixture",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "6bc933c2bdb71f30b490540390f1f70e8b6666dd",
+        "review_commit": "5b5c879192bbf8d6830c8837465d3622b2a3fbf0"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-63e726ac3bf2-1-review-1",
+          "acceptance_id": "S4-AC1",
+          "summary": "In-journey assertDriveEntry checks the harness's own literal entry (parentCommand -p arg) rather than the entry the Parent observed; the negatives are exercised only as helper unit tests, never as a journey run with a bad entry",
+          "anchor": "sha256:f8a7b50763f38ce75a2324c09877ac541bd9267551109a568a682fb01ba730e6",
+          "evidence": {
+            "trigger": "runJourney(executor, entry) is never called with a non-drive entry; assertDriveEntry(run.parentCommand[...]) re-validates the default '/immune-brain:drive hello-task' string the harness itself wrote, so a regression in how the entry reaches the Parent (e.g. mock-model main conversation first user text) would not be caught by this assertion",
+            "caller_chain": [
+              "tests/e2e/single-task.e2e.ts:runJourney",
+              "tests/e2e/single-task.e2e.ts:assertDriveEntry",
+              "tests/e2e/harness/hosts.ts:claudeLaunch"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S4-AC1"
+            }
+          }
+        },
+        {
+          "id": "review-63e726ac3bf2-2-review-2",
+          "acceptance_id": "S4-AC1",
+          "summary": "Claude Executor launch is selected as the first claude launch carrying --model, which would also match the claude Reviewer launch if ordering changed",
+          "anchor": "sha256:fe9ada2e7127360991dfcc192f3edd10045810ceee27c97767a797c85fbcdc6f",
+          "evidence": {
+            "trigger": "launches.jsonl where the Review session's claude launch is appended before the Executor's → assertExecutorPluginDir validates the Reviewer's args and the Executor's --plugin-dir goes unchecked",
+            "caller_chain": [
+              "tests/e2e/harness/host-shim.ts:record",
+              "tests/e2e/single-task.e2e.ts:readLaunches",
+              "tests/e2e/single-task.e2e.ts:assertExecutorPluginDir"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S4-AC1"
+            }
+          }
+        },
+        {
+          "id": "review-63e726ac3bf2-3-review-3",
+          "acceptance_id": "S4-AC1",
+          "summary": "fake-herdr now passes FAKE_HERDR_STATE to every spawned Host and host-shim requires python3 for the Pi pty; both are unstated harness prerequisites shared with unit tests using the fixture",
+          "anchor": "sha256:bd01a0a7e8c3ac245d8ad83a063f1ed0d68a8676b4e162ee06d164f7beea514e",
+          "evidence": {
+            "trigger": "a unit test using tests/fixtures/fake-herdr/herdr with spawn:true now has its child processes inherit FAKE_HERDR_STATE (previously filtered), and a QA host without python3 → Pi Executor journey fails with a pty spawn error rather than a named host_binary_missing",
+            "caller_chain": [
+              "tests/fixtures/fake-herdr/herdr:agent start",
+              "tests/e2e/harness/host-shim.ts:piCommand"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S4-AC1"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:bb3bb35026b723ca94321f4539ab4ce9f6cb514d04465ca1897e377fd39763b4"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:e2e-gate-s4-single-task:2026-11-23T12:24:37.906Z",
+      "at": "2026-11-23T12:24:37.906Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/e2e-gate-s4-single-task.intent.json"
+    },
+    {
+      "id": "record_approval:e2e-gate-s4-single-task:2026-11-23T12:28:56.843Z",
+      "at": "2026-11-23T12:28:56.843Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-816560b7\naction_v2_sha256:7524db8e3eaed53d9406e2b8ea65e1d0def3febcab7f4e29b15e3babfae4ee39",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-11-23T12:28:56.843Z"
+      }
+    },
+    {
+      "id": "record_approval:e2e-gate-s4-single-task:2026-11-23T12:30:17.406Z",
+      "at": "2026-11-23T12:30:17.406Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-c9ef71d0\naction_v2_sha256:23f3235737e2416a95fa256d9def58324aca21b77ae699b5a9e73bce2e9adc64",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:aa7def72-00f3-4bdf-9b48-85669567ebb1",
+        "confirmation_ref": "claude:cli:claude-code:aa7def72-00f3-4bdf-9b48-85669567ebb1",
+        "issued_at": "2026-11-23T12:30:17.406Z"
+      },
+      "review_started_at": "2026-11-23T12:28:59.793Z",
+      "review_submitted_at": "2026-11-23T12:30:16.721Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:e2e-gate-s4-single-task:2026-11-23T12:30:19.238Z",
+      "at": "2026-11-23T12:30:19.238Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:0ceefc8130f9f603dd27fdb3e194daf0aa94f09dca9f02bbba80720f59fdf774"
+    }
+  ]
+}

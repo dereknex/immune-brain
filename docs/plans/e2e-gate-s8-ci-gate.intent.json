@@ -1,0 +1,31 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "e2e-gate-s8-ci-gate",
+  "owner": "user",
+  "goal": "ci.yml gains an e2e job running bun run e2e within 10 minutes, a CI rule requires fix pull requests touching plugin runtime to change tests/e2e/ or declare e2e-exempt with a reason, and the legacy roadmap-e2e tests are renamed as contract tests (Spec D5, D8, D9) (Initiative e2e-release-gate slice S8; Spec docs/specs/e2e-release-gate.spec.md).",
+  "acceptance": [
+    {
+      "id": "S8-AC1",
+      "assertion": ".github/workflows/ci.yml defines a job named e2e that runs bun run e2e with timeout-minutes 10 beside the verify job; the legacy roadmap Plan tests live under contract-test names and pass. Done looks like: tests/ci-e2e-job-contract.test.ts asserts the job and the renamed tests/roadmap-plan-contract.test.ts passes.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/ci-e2e-job-contract.test.ts\",\n      \"tests/roadmap-plan-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "S8-AC2",
+      "assertion": "scripts/check-e2e-escape-rule.ts decides: a fix-titled PR changing plugins/immune-brain/runtime without a tests/e2e/ change fails; the same PR with a tests/e2e/ change passes; with a body line e2e-exempt: <reason> passes; with e2e-exempt: and an empty reason fails; a non-fix title passes. Done looks like: tests/e2e-escape-rule.test.ts covers the five cases.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/e2e-escape-rule.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".github/workflows/ci.yml",
+    "docs/plans/e2e-gate-s8-ci-gate.intent.json",
+    "scripts/check-e2e-escape-rule.ts",
+    "tests/ci-e2e-job-contract.test.ts",
+    "tests/e2e-escape-rule.test.ts",
+    "tests/helpers/roadmap-contract-harness.ts",
+    "tests/helpers/roadmap-e2e-harness.ts",
+    "tests/roadmap-plan-contract.test.ts",
+    "tests/roadmap-plan-e2e.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

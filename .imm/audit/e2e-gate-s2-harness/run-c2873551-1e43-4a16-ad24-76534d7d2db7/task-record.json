@@ -1,0 +1,196 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "e2e-gate-s2-harness",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "e2e-gate-s2-harness",
+    "goal": "bun run e2e builds an npm pack tarball install root, serves a scripted mock model from cassettes, launches the pinned real claude binary against it through an extended fake-herdr that spawns Host processes, and completes a smoke journey; e2e files are black-box (no runtime imports) and excluded from bun test; the Pi mock-model feasibility result is recorded in the Spec (Spec D2-D5) (Initiative e2e-release-gate slice S2; Spec docs/specs/e2e-release-gate.spec.md).",
+    "acceptance": [
+      {
+        "id": "S2-AC1",
+        "assertion": "bun run e2e smoke packs the package, installs it into a temp root, starts the mock model, launches the pinned claude with ANTHROPIC_BASE_URL at the mock and the built plugin loaded, and completes a one-turn scripted exchange; a cassette whose recorded tool name does not match the requested turn fails with cassette_mismatch. Done looks like: tests/e2e/smoke.e2e.ts passes and its mismatch case asserts cassette_mismatch. Prerequisite: the pinned claude binary from tests/e2e/hosts.json is installed on the QA host (maintainer machine provides claude 2.1.330); an absent binary fails the check rather than skipping.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"run\",\n      \"e2e\",\n      \"smoke\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 600000,\n    \"max_output_bytes\": 262144\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "S2-AC2",
+        "assertion": "A file under tests/e2e/ that imports a plugins/immune-brain/runtime module fails the boundary test naming the file and the import specifier, and bun test collects no file under tests/e2e/. Done looks like: tests/e2e-black-box-boundary.test.ts asserts both against fixtures.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/e2e-black-box-boundary.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "bunfig.toml",
+      "docs/plans/e2e-gate-s2-harness.intent.json",
+      "docs/specs/e2e-release-gate.spec.md",
+      "package.json",
+      "tests/e2e-black-box-boundary.test.ts",
+      "tests/e2e/cassettes/smoke/claude.jsonl",
+      "tests/e2e/harness/hosts.ts",
+      "tests/e2e/harness/install-root.ts",
+      "tests/e2e/harness/mock-model.ts",
+      "tests/e2e/harness/recorder.ts",
+      "tests/e2e/hosts.json",
+      "tests/e2e/run.ts",
+      "tests/e2e/smoke.e2e.ts",
+      "tests/fixtures/fake-herdr/herdr",
+      "tests/helpers/fake-herdr.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/e2e-gate-s2-harness.intent.json",
+    "content_hash": "sha256:5d79aa6ee02909407f632db72740d98c930e16a2aeccdf65d8c9f1af9abce214"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:5d79aa6ee02909407f632db72740d98c930e16a2aeccdf65d8c9f1af9abce214",
+  "git_base_head": "a349df1baf7980b33f87d05961eb375061975bfc",
+  "attestations": [
+    {
+      "id": "approval-qa-770c1912",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5d79aa6ee02909407f632db72740d98c930e16a2aeccdf65d8c9f1af9abce214",
+      "diff_hash": "sha256:99965ae233bf2901049e59704feac7ec783356199c07bcaa08b1f6d3df8bddc0",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:baba902052d56f3f958a3d5e1d91d9a56ae9f533c87e812eb7dd34fee0388331",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S2-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:baba902052d56f3f958a3d5e1d91d9a56ae9f533c87e812eb7dd34fee0388331"
+        },
+        {
+          "acceptance_id": "S2-AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:baba902052d56f3f958a3d5e1d91d9a56ae9f533c87e812eb7dd34fee0388331"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-ba1c8745",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5d79aa6ee02909407f632db72740d98c930e16a2aeccdf65d8c9f1af9abce214",
+      "diff_hash": "sha256:99965ae233bf2901049e59704feac7ec783356199c07bcaa08b1f6d3df8bddc0",
+      "actor_id": "cli:antigravity:b7b54c19-2f3d-4768-8dc0-f812e21e1d00",
+      "summary": "S2-AC1 smoke (tarball extract, loopback mock, pinned claude with ANTHROPIC_BASE_URL/--plugin-dir via spawning fake-herdr, cassette_mismatch negative, absent binary fails in beforeAll) and S2-AC2 boundary/collection tests with controls conform; blast radius medium: bunfig.toml pathIgnorePatterns changes global bun test collection and tests/fixtures/fake-herdr/herdr is a shared fixture whose non-spawn paths stay behavior-equivalent.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "a349df1baf7980b33f87d05961eb375061975bfc",
+        "review_commit": "b6492d1f6df44ad8bd7034e7b017a356ca09db5d"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-0e79e18ddb46-1-review-1",
+          "acceptance_id": "S2-AC1",
+          "summary": "Supervisor writes <state>.<pane>.exit before appending the exit event, so waitForExit can observe done via settleExits and read the event log before the exit line lands.",
+          "anchor": "sha256:0812a3ab22da8fbb6ff42a2322564a7a7de6ed9076c37c2968f8a02b654a4a28",
+          "evidence": {
+            "trigger": "agent wait returns as soon as the .exit file exists (settleExits) while the supervisor has not yet run emit(log, exit) -> FakeHerdr.waitForExit finds no exit event and returns null -> smoke test sees exitCode null instead of 0 (rare flake)",
+            "caller_chain": [
+              "tests/e2e/smoke.e2e.ts:runClaude",
+              "tests/e2e/harness/hosts.ts:FakeHerdr.waitForExit",
+              "tests/fixtures/fake-herdr/herdr:--supervise finish"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S2-AC1"
+            }
+          }
+        },
+        {
+          "id": "review-0e79e18ddb46-2-review-2",
+          "acceptance_id": "S2-AC1",
+          "summary": "Under bun run e2e:record smoke, both claude tests route through the recorder: the mismatch test ignores its hand-built turns and rewrites cassettes/smoke/claude.jsonl, and mock-based assertions fail.",
+          "anchor": "sha256:1c2fdea38fda752cf85e30736620f945059121d976e5a88b87c64a16c3878f71",
+          "evidence": {
+            "trigger": "E2E_RECORD=1 with tests/e2e/smoke.e2e.ts -> startJourneyModel returns a recorder with mock undefined -> expect(run.model.mock?.requests).toHaveLength(1) fails and the mismatch case overwrites the smoke cassette with a second real-API recording",
+            "caller_chain": [
+              "tests/e2e/run.ts",
+              "tests/e2e/smoke.e2e.ts:runClaude",
+              "tests/e2e/harness/recorder.ts:startJourneyModel"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S2-AC1"
+            }
+          }
+        },
+        {
+          "id": "review-0e79e18ddb46-3-review-3",
+          "acceptance_id": "S2-AC2",
+          "summary": "Boundary resolver ignores package self-reference through package.json exports, so a bare immune-brain/extensions/* import into .pi-extension is not reported (runtime/* itself is not exported, so the acceptance case stays covered).",
+          "anchor": "sha256:79526a3e2fe7acafc58b3cd61e32f902235336ac45cdcc244f9211dfdbdfcbd8",
+          "evidence": {
+            "trigger": "tests/e2e/x.ts containing import immune-brain/extensions/index (package.json exports ./extensions/* -> ./plugins/immune-brain/.pi-extension/*) -> resolveSpecifier returns undefined -> boundaryViolations reports nothing",
+            "caller_chain": [
+              "tests/e2e-black-box-boundary.test.ts:boundaryViolations",
+              "tests/e2e-black-box-boundary.test.ts:resolveSpecifier",
+              "package.json:exports"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S2-AC2"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:8789c02780f71aef7781eac8f67553831d822bb892954295407f0104e889f104"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:e2e-gate-s2-harness:2026-11-23T04:36:02.433Z",
+      "at": "2026-11-23T04:36:02.433Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/e2e-gate-s2-harness.intent.json"
+    },
+    {
+      "id": "record_approval:e2e-gate-s2-harness:2026-11-23T04:36:16.488Z",
+      "at": "2026-11-23T04:36:16.488Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-770c1912\naction_v2_sha256:b0c40394c3770b64103f11d0df2c3156fe07804d0accff8a079e7689e25175c9",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-11-23T04:36:16.489Z"
+      }
+    },
+    {
+      "id": "record_approval:e2e-gate-s2-harness:2026-11-23T04:38:37.868Z",
+      "at": "2026-11-23T04:38:37.868Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-ba1c8745\naction_v2_sha256:fb098b03c772d4eca14c0936b1b6823055535d624170e646e194403e1482da8e",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:antigravity:b7b54c19-2f3d-4768-8dc0-f812e21e1d00",
+        "confirmation_ref": "claude:cli:antigravity:b7b54c19-2f3d-4768-8dc0-f812e21e1d00",
+        "issued_at": "2026-11-23T04:38:37.868Z"
+      },
+      "review_started_at": "2026-11-23T04:36:20.070Z",
+      "review_submitted_at": "2026-11-23T04:38:34.093Z",
+      "reviewer_model": "claude-opus-5-5-medium"
+    },
+    {
+      "id": "complete:e2e-gate-s2-harness:2026-11-23T04:38:44.242Z",
+      "at": "2026-11-23T04:38:44.242Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:9da60fb41c1f7f2575c963ecc03882a0565433dafa43e645b827a593ca9738fe"
+    }
+  ]
+}

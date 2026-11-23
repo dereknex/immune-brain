@@ -34,7 +34,9 @@
     "changeset:publish": "bun run verify:release && changeset publish --tag next",
     "release": "bun run changeset:publish",
     "release:promote": "bun scripts/release-promote.ts",
-    "typecheck": "tsc -p tsconfig.json"
+    "typecheck": "tsc -p tsconfig.json",
+    "e2e": "bun tests/e2e/run.ts",
+    "e2e:record": "bun tests/e2e/run.ts --record"
   },
   "devDependencies": {
     "@changesets/changelog-github": "^0.5.2",

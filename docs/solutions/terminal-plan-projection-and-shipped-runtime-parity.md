@@ -5,7 +5,7 @@ key_files:
   - docs/plans/2026-07-29-002-feat-roadmap-plan-boundary-successor-phase4-plan.md
   - plugins/immune-brain/runtime/immune_brain_runtime.ts
   - tests/roadmap-plan-terminal-runtime.test.ts
-  - tests/roadmap-plan-e2e.test.ts
+  - tests/roadmap-plan-contract.test.ts
   - tests/roadmap-plan-host-acceptance.test.ts
 next_reuse_scenarios:
   - A file-backed workflow needs a terminal local checkpoint after explicit closure without claiming global project completion.

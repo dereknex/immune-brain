@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "e2e-gate-s3-install",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:e2e-gate-s3-install:2026-11-23T05:50:46.032Z",
+  "final_record_hash": "sha256:2ad5b5a69b1c3a6dfc8cecb5f560fe07a69ede322e5e7d5262f56dfb0c9eb4df",
+  "terminalized_at": "2026-11-23T05:50:46.032Z"
+}

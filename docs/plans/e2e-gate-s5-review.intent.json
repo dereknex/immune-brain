@@ -1,0 +1,20 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "e2e-gate-s5-review",
+  "owner": "user",
+  "goal": "J3: a material-risk scripted task dispatches a reviewer whose receipt arrives through the MCP tool and is recorded as a verdict (Spec D2, J3) (Initiative e2e-release-gate slice S5; Spec docs/specs/e2e-release-gate.spec.md).",
+  "acceptance": [
+    {
+      "id": "S5-AC1",
+      "assertion": "bun run e2e review runs a material-risk scripted task whose reviewer submits its receipt through the MCP review tool and the verdict is recorded on the TaskRecord. Negative case: a reviewer that ends without submitting a receipt yields the named refusal and no verdict. Done looks like: tests/e2e/review.e2e.ts passes with the negative asserted. Prerequisite: the pinned claude binary from tests/e2e/hosts.json is installed on the QA host (maintainer machine provides claude 2.1.330); an absent binary fails the check rather than skipping.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"run\",\n      \"e2e\",\n      \"review\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 600000,\n    \"max_output_bytes\": 262144\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/e2e-gate-s5-review.intent.json",
+    "tests/e2e/cassettes/review/claude.jsonl",
+    "tests/e2e/review.e2e.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

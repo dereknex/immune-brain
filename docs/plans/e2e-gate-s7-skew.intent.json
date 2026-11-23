@@ -1,0 +1,20 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "e2e-gate-s7-skew",
+  "owner": "user",
+  "goal": "J5: a stale plugin cache or too-old runtime produces the named skew diagnostic and its single recovery action without parking a Lane (Spec D2, J5) (Initiative e2e-release-gate slice S7; Spec docs/specs/e2e-release-gate.spec.md).",
+  "acceptance": [
+    {
+      "id": "S7-AC1",
+      "assertion": "bun run e2e skew enters drive with a stale plugin cache against newer source, and separately with a runtime older than the required contract; each shows its named skew diagnostic and one recovery action. Negative case: neither run leaves a Lane parked as batch_lane_lost or batch_lane_unreadable. Done looks like: tests/e2e/skew.e2e.ts passes asserting both diagnostics and no parked Lane. Prerequisite: the pinned claude binary from tests/e2e/hosts.json is installed on the QA host (maintainer machine provides claude 2.1.330); an absent binary fails the check rather than skipping.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"run\",\n      \"e2e\",\n      \"skew\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 600000,\n    \"max_output_bytes\": 262144\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/e2e-gate-s7-skew.intent.json",
+    "tests/e2e/cassettes/skew/claude.jsonl",
+    "tests/e2e/skew.e2e.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

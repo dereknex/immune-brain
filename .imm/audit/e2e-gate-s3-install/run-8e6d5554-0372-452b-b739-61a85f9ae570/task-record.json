@@ -1,0 +1,140 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "e2e-gate-s3-install",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "e2e-gate-s3-install",
+    "goal": "J4: each Host (Claude Code, Pi, Antigravity) loads the packed plugin and exposes its Skills, slash commands and MCP tools, including the minimum supported claude version (Spec D2, J4) (Initiative e2e-release-gate slice S3; Spec docs/specs/e2e-release-gate.spec.md).",
+    "acceptance": [
+      {
+        "id": "S3-AC1",
+        "assertion": "bun run e2e install lists the expected Skills, slash commands and MCP tools for Claude Code, Pi and Antigravity from the packed tarball, and also loads under the minimum claude version from tests/e2e/hosts.json. Negative cases: a tarball with one declared plugin file removed fails naming that path; a claude version below the minimum fails with the version diagnostic. Done looks like: tests/e2e/install.e2e.ts passes with both negatives asserted. Prerequisite: the pinned claude binary from tests/e2e/hosts.json is installed on the QA host (maintainer machine provides claude 2.1.330); an absent binary fails the check rather than skipping.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"run\",\n      \"e2e\",\n      \"install\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 600000,\n    \"max_output_bytes\": 262144\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/e2e-gate-s3-install.intent.json",
+      "tests/e2e/cassettes/install/claude.jsonl",
+      "tests/e2e/cassettes/install/pi.jsonl",
+      "tests/e2e/install.e2e.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/e2e-gate-s3-install.intent.json",
+    "content_hash": "sha256:588060d9debf792c6b9357fef2bccc7937007b35b2d79b60275bf14b010facf1"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:588060d9debf792c6b9357fef2bccc7937007b35b2d79b60275bf14b010facf1",
+  "git_base_head": "6bc933c2bdb71f30b490540390f1f70e8b6666dd",
+  "attestations": [
+    {
+      "id": "approval-qa-91c2ccd0",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:588060d9debf792c6b9357fef2bccc7937007b35b2d79b60275bf14b010facf1",
+      "diff_hash": "sha256:580ea8e78005cf06c127149bdd319aec3bee77bc0deee5578100d871ac3b3c5a",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:9ba027f7075c59b0eba9c48987d43529e7ad95053cc8a0b11da295d4598a69e2",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S3-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:9ba027f7075c59b0eba9c48987d43529e7ad95053cc8a0b11da295d4598a69e2"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-20e452f2",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:588060d9debf792c6b9357fef2bccc7937007b35b2d79b60275bf14b010facf1",
+      "diff_hash": "sha256:580ea8e78005cf06c127149bdd319aec3bee77bc0deee5578100d871ac3b3c5a",
+      "actor_id": "cli:antigravity:8cf57811-3df3-4bcd-b37e-17943518b4a5",
+      "summary": "install.e2e.ts covers S3-AC1 for Claude Code (pinned and minimum), Pi and Antigravity from the packed install root, asserts both negatives (removed declared file named via declared_file_missing plus Host mcp_not_connected; below-minimum shim yields host_version_mismatch diagnostic), and absent binaries throw host_binary_missing rather than skip; blast radius tier low, test-only additions (tests/e2e/install.e2e.ts, two install cassettes, intent json), no production or persisted shape touched.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "6bc933c2bdb71f30b490540390f1f70e8b6666dd",
+        "review_commit": "8c6c9d7a51210849b07ba2f92d1586d829b98306"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-b9c8a6aff4c6-1-review-1",
+          "acceptance_id": "S3-AC1",
+          "summary": "The below-minimum version is derived as patch-1 clamped at 0, so a hosts.json minimum with patch 0 (e.g. 2.2.0) makes the shim report the minimum itself and the negative test fails instead of exercising the diagnostic.",
+          "anchor": "sha256:f2ddf956f9da352568ca180d0dd4c18c1a7ddb4f9d7e4852bef7e9120bbb8387",
+          "evidence": {
+            "trigger": "tests/e2e/hosts.json claude.minimum = X.Y.0 -> below computed as X.Y.0 -> assertClaudeMinimum resolves instead of throwing -> negative test fails with a non-HostError",
+            "caller_chain": [
+              "tests/e2e/install.e2e.ts:a claude version below the minimum fails with the version diagnostic",
+              "tests/e2e/install.e2e.ts:versionParts",
+              "tests/e2e/install.e2e.ts:assertClaudeMinimum",
+              "tests/e2e/install.e2e.ts:versionBelow"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S3-AC1"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:e811d891d884bca2f545644f7601b3f0dd276a8d0d0c2138944efedceefa0397"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:e2e-gate-s3-install:2026-11-23T05:49:23.677Z",
+      "at": "2026-11-23T05:49:23.677Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/e2e-gate-s3-install.intent.json"
+    },
+    {
+      "id": "record_approval:e2e-gate-s3-install:2026-11-23T05:49:43.242Z",
+      "at": "2026-11-23T05:49:43.242Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-91c2ccd0\naction_v2_sha256:11e79a01ea4c15b4c3fedd39f179be7d09459b67c8e589e4ab40a569d56731d5",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-11-23T05:49:43.243Z"
+      }
+    },
+    {
+      "id": "record_approval:e2e-gate-s3-install:2026-11-23T05:50:44.063Z",
+      "at": "2026-11-23T05:50:44.063Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-20e452f2\naction_v2_sha256:857740c4262a6dbc7df42db3b72cdfe196ddd23cb9b8f57beb71115e261ea1ad",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:antigravity:8cf57811-3df3-4bcd-b37e-17943518b4a5",
+        "confirmation_ref": "claude:cli:antigravity:8cf57811-3df3-4bcd-b37e-17943518b4a5",
+        "issued_at": "2026-11-23T05:50:44.063Z"
+      },
+      "review_started_at": "2026-11-23T05:49:46.394Z",
+      "review_submitted_at": "2026-11-23T05:50:43.359Z",
+      "reviewer_model": "claude-opus-5-5-medium"
+    },
+    {
+      "id": "complete:e2e-gate-s3-install:2026-11-23T05:50:46.032Z",
+      "at": "2026-11-23T05:50:46.032Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:496184c982a49bad4dc156ef7c023882bdb319df7591f3812d849c82b91161ad"
+    }
+  ]
+}
