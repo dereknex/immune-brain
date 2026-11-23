@@ -1,0 +1,20 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "e2e-gate-s6-batch",
+  "owner": "user",
+  "goal": "J2: a two-child Initiative runs as parallel Lanes, integrates and passes final verification, or retains the branch when final verification fails (Spec D2, J2) (Initiative e2e-release-gate slice S6; Spec docs/specs/e2e-release-gate.spec.md).",
+  "acceptance": [
+    {
+      "id": "S6-AC1",
+      "assertion": "bun run e2e batch runs a two-child Initiative through parallel Lanes, integration and final verification to an integrated delivery. Negative case: a forced final-verification failure retains the integration branch and delivers nothing. Done looks like: tests/e2e/batch.e2e.ts passes with the negative asserted. Prerequisite: the pinned claude binary from tests/e2e/hosts.json is installed on the QA host (maintainer machine provides claude 2.1.330); an absent binary fails the check rather than skipping.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"run\",\n      \"e2e\",\n      \"batch\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 600000,\n    \"max_output_bytes\": 262144\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/e2e-gate-s6-batch.intent.json",
+    "tests/e2e/batch.e2e.ts",
+    "tests/e2e/cassettes/batch/claude.jsonl"
+  ],
+  "risk": "material",
+  "revision": 1
+}
