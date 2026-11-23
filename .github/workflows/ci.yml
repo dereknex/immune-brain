@@ -5,6 +5,8 @@ name: CI
 # plugin that way. Everything here must pass before a pull request can merge.
 on:
   pull_request:
+    # `edited` re-runs the e2e escape rule when a title or an `e2e-exempt:` body line changes.
+    types: [opened, synchronize, reopened, edited]
   push:
     branches: [main]
 
@@ -60,3 +62,58 @@ jobs:
         # worker and the CLI timeout governs later files, so pass the same
         # 30000 ms default that tests/helpers/test-timeout.ts sets.
         run: bun test --parallel=4 --no-isolate --timeout=30000
+
+  # L1 Host journeys (Spec e2e-release-gate D8): parallel with `verify`, never a dependency of it.
+  # Making this a required status check is a repository setting the maintainer applies.
+  e2e:
+    name: Host e2e journeys
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Configure Git identity for tests
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Install the pinned Hosts
+        # The versions come from tests/e2e/hosts.json, the same file the journeys check, so a
+        # bump is one edit. An absent or differently-versioned Host fails a journey, never skips.
+        run: |
+          claude_version="$(jq -r .claude.pinned tests/e2e/hosts.json)"
+          pi_version="$(jq -r .pi.pinned tests/e2e/hosts.json)"
+          npm install --global "@anthropic-ai/claude-code@${claude_version}" "@earendil-works/pi-coding-agent@${pi_version}"
+
+      - name: Run the e2e journeys
+        run: bun run e2e
+
+  # Escape rule (Spec e2e-release-gate D9): a `fix` pull request that changes plugin runtime must
+  # change tests/e2e/ or state `e2e-exempt: <reason>`. The script skips every non-PR event.
+  e2e-escape-rule:
+    name: e2e escape rule
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Check the e2e escape rule
+        run: bun scripts/check-e2e-escape-rule.ts
