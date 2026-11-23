@@ -36,7 +36,8 @@
     "release:promote": "bun scripts/release-promote.ts",
     "typecheck": "tsc -p tsconfig.json",
     "e2e": "bun tests/e2e/run.ts",
-    "e2e:record": "bun tests/e2e/run.ts --record"
+    "e2e:record": "bun tests/e2e/run.ts --record",
+    "e2e:live": "bun tests/e2e/live/run-live.ts"
   },
   "devDependencies": {
     "@changesets/changelog-github": "^0.5.2",

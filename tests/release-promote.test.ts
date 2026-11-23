@@ -59,6 +59,18 @@ function latest(): string {
   return readFileSync(join(fx.npmDir, "latest.txt"), "utf8").trim();
 }
 
+const attempt = (result: "pass" | "fail") => ({ result, duration_ms: 1200, log_sha256: "a".repeat(64) });
+const LIVE_PAIRS: [string, string][] = [["J1", "claude"], ["J1", "pi"], ["J2", "claude"], ["J2", "pi"], ["J4", "claude"], ["J4", "pi"], ["J4", "antigravity"]];
+
+/** Live-mode journeys: every required pair passing on its first attempt, unless `change` rewrites one. */
+function liveJourneys(change: (id: string, host: string) => unknown | undefined = () => undefined): unknown[] {
+  return LIVE_PAIRS.flatMap(([id, host]) => {
+    const changed = change(id, host);
+    if (changed === null) return [];
+    return [changed ?? { id, host, result: "pass", attempts: [attempt("pass")] }];
+  });
+}
+
 function writeEvidence(version: string, overrides: Record<string, unknown> = {}): void {
   const dir = join(fx.work, "docs/evidence/e2e-live");
   mkdirSync(dir, { recursive: true });
@@ -68,10 +80,10 @@ function writeEvidence(version: string, overrides: Record<string, unknown> = {})
       contract: "immune_brain/e2e_release_evidence/v1",
       version,
       commit: fx.commits[version],
-      mode: "checklist",
-      hosts: {},
-      journeys: [],
-      checklist: [{ item: "dogfooded on next", checked: true }, { item: "marketplace install checked", checked: true }],
+      mode: "live",
+      hosts: { claude: "2.1.330", pi: "1.5.2", herdr: "0.9.5" },
+      journeys: liveJourneys(),
+      checklist: [],
       ...overrides,
     }),
   );
@@ -151,6 +163,16 @@ describe("release-promote promote mode", () => {
     expect(distTagAdds()).toHaveLength(1);
   });
 
+  it("promotes live evidence whose J1 passed on its retry", () => {
+    pushStable("9.0.0");
+    writeEvidence("9.1.0", { journeys: liveJourneys((id, host) => (id === "J1" && host === "pi" ? { id, host, result: "pass", attempts: [attempt("fail"), attempt("pass")] } : undefined)) });
+
+    const result = run("9.1.0");
+    expect(result.stderr).toBe("");
+    expect(result.status).toBe(0);
+    expect(latest()).toBe("9.1.0");
+  });
+
   it("finishes only the missing steps after a run that stopped before npm", () => {
     pushStable("9.0.0");
     writeEvidence("9.1.0");
@@ -173,9 +195,44 @@ describe("release-promote promote mode", () => {
       arrange: () => (writeEvidence("9.1.0", { version: "9.0.0" }), "9.1.0"),
     },
     {
-      name: "a checklist item is unchecked",
-      code: "checklist_unchecked",
-      arrange: () => (writeEvidence("9.1.0", { checklist: [{ item: "dogfooded on next", checked: true }, { item: "marketplace install checked", checked: false }] }), "9.1.0"),
+      name: "the evidence is checklist mode with every item checked",
+      code: "evidence_mode_unsupported",
+      arrange: () => (writeEvidence("9.1.0", { mode: "checklist", hosts: {}, journeys: [], checklist: [{ item: "dogfooded on next", checked: true }, { item: "marketplace install checked", checked: true }] }), "9.1.0"),
+    },
+    {
+      name: "live evidence has a failing J1 result",
+      code: "live_journey_failed",
+      arrange: () => (writeEvidence("9.1.0", { journeys: liveJourneys((id, host) => (id === "J1" && host === "pi" ? { id, host, result: "fail", attempts: [attempt("fail"), attempt("fail")] } : undefined)) }), "9.1.0"),
+    },
+    {
+      name: "live evidence has a failing J2 result",
+      code: "live_journey_failed",
+      arrange: () => (writeEvidence("9.1.0", { journeys: liveJourneys((id, host) => (id === "J2" && host === "claude" ? { id, host, result: "fail", attempts: [attempt("fail"), attempt("fail")] } : undefined)) }), "9.1.0"),
+    },
+    {
+      name: "live evidence has a failing J4 result",
+      code: "live_journey_failed",
+      arrange: () => (writeEvidence("9.1.0", { journeys: liveJourneys((id, host) => (id === "J4" && host === "antigravity" ? { id, host, result: "fail", attempts: [attempt("fail"), attempt("fail")] } : undefined)) }), "9.1.0"),
+    },
+    {
+      name: "live evidence has no J1 record for claude",
+      code: "live_journey_missing",
+      arrange: () => (writeEvidence("9.1.0", { journeys: liveJourneys((id, host) => (id === "J1" && host === "claude" ? null : undefined)) }), "9.1.0"),
+    },
+    {
+      name: "live evidence has no J2 or J4 records at all",
+      code: "live_journey_missing",
+      arrange: () => (writeEvidence("9.1.0", { journeys: liveJourneys((id) => (id === "J1" ? undefined : null)) }), "9.1.0"),
+    },
+    {
+      name: "a recorded pass is contradicted by its failing attempt",
+      code: "evidence_invalid",
+      arrange: () => (writeEvidence("9.1.0", { journeys: liveJourneys((id, host) => (id === "J1" && host === "claude" ? { id, host, result: "pass", attempts: [attempt("fail")] } : undefined)) }), "9.1.0"),
+    },
+    {
+      name: "live evidence records no Host versions",
+      code: "evidence_invalid",
+      arrange: () => (writeEvidence("9.1.0", { hosts: {} }), "9.1.0"),
     },
     {
       name: "the immune-brain-vX tag is missing",
@@ -201,9 +258,9 @@ describe("release-promote promote mode", () => {
       arrange: () => "9.1",
     },
     {
-      name: "the evidence is still in an unsupported mode",
+      name: "the evidence mode is unknown",
       code: "evidence_mode_unsupported",
-      arrange: () => (writeEvidence("9.1.0", { mode: "live" }), "9.1.0"),
+      arrange: () => (writeEvidence("9.1.0", { mode: "dry-run" }), "9.1.0"),
     },
     {
       name: "the -stable tag already points at another commit",

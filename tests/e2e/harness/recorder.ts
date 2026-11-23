@@ -45,6 +45,22 @@ export function assembleTurn(body: string, contentType: string): { content: Cass
 	return content.length ? { content, stop_reason: stop } : undefined;
 }
 
+/**
+ * The low-cost model tier of a live run (Spec e2e-release-gate D6): `E2E_LIVE_MODEL` names the model
+ * the proxy sends upstream in place of whatever the Host asked for. A body that is not a JSON object
+ * with a string `model` passes through unchanged.
+ */
+export function rewriteRequestModel(raw: string, model: string | undefined): string {
+	if (!model) return raw;
+	try {
+		const body = JSON.parse(raw);
+		if (!body || typeof body !== "object" || typeof body.model !== "string") return raw;
+		return JSON.stringify({ ...body, model });
+	} catch {
+		return raw;
+	}
+}
+
 export interface Recorder {
 	url: string;
 	/** Stops the proxy and writes the cassette. */
@@ -54,6 +70,8 @@ export interface Recorder {
 export interface RecorderOptions {
 	cassettePath: string;
 	upstream?: string;
+	/** Model the proxy substitutes in every upstream request (default: the Host's own). */
+	model?: string;
 }
 
 export async function startRecorder(options: RecorderOptions): Promise<Recorder> {
@@ -65,7 +83,8 @@ export async function startRecorder(options: RecorderOptions): Promise<Recorder>
 		port: 0,
 		async fetch(request) {
 			const target = new URL(request.url);
-			const raw = request.method === "GET" || request.method === "HEAD" ? undefined : await request.text();
+			const sent = request.method === "GET" || request.method === "HEAD" ? undefined : await request.text();
+			const raw = sent === undefined ? undefined : rewriteRequestModel(sent, options.model);
 			const headers = new Headers(request.headers);
 			for (const name of ["host", "content-length", "accept-encoding"]) headers.delete(name);
 			const response = await fetch(`${upstream}${target.pathname}${target.search}`, { method: request.method, headers, body: raw });
@@ -114,7 +133,7 @@ export async function startJourneyModel(journey: string, host: string, turns?: P
 	if (process.env.E2E_RECORD === "1") {
 		const apiKey = process.env.ANTHROPIC_API_KEY;
 		if (!apiKey) throw new Error("record_credentials_missing: bun run e2e:record needs ANTHROPIC_API_KEY in the maintainer's environment");
-		const recorder = await startRecorder({ cassettePath: cassettePath(journey, host), upstream: process.env.E2E_UPSTREAM });
+		const recorder = await startRecorder({ cassettePath: cassettePath(journey, host), upstream: process.env.E2E_UPSTREAM, model: process.env.E2E_LIVE_MODEL || undefined });
 		return { url: recorder.url, apiKey, stop: recorder.stop };
 	}
 	const mock = await startMockModel({ turns: turns ?? loadCassette(cassettePath(journey, host)) });

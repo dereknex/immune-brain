@@ -5,8 +5,10 @@
 // (release.yml). This script, run by the manual promote workflow, is the only writer of the
 // `stable` branch, the `immune-brain-vX-stable` tags and the npm `latest` dist-tag:
 //
-//   release-promote.ts <X>             fast-forward stable to the commit tagged immune-brain-vX,
-//                                      tag immune-brain-vX-stable, run npm dist-tag add ... latest
+//   release-promote.ts <X>             check the live evidence for X (D6: mode "live", J1, J2 and J4
+//                                      passing on every required Host), fast-forward stable to the
+//                                      commit tagged immune-brain-vX, tag immune-brain-vX-stable,
+//                                      run npm dist-tag add ... latest
 //   release-promote.ts --rollback      move stable and npm latest back to the newest
 //                                      immune-brain-v*-stable tag below the current stable commit
 //
@@ -30,7 +32,8 @@ export type PromoteCode =
   | "evidence_version_mismatch"
   | "evidence_commit_mismatch"
   | "evidence_mode_unsupported"
-  | "checklist_unchecked"
+  | "live_journey_missing"
+  | "live_journey_failed"
   | "release_tag_missing"
   | "stable_not_fast_forward"
   | "stable_tag_conflict"
@@ -101,7 +104,75 @@ interface Evidence {
   version: string;
   commit: string;
   mode: string;
-  checklist: { item: string; checked: boolean }[];
+  record: Record<string, unknown>;
+}
+
+/** Spec D6 live mode: J1 and J2 on claude and pi, J4 on claude, pi and antigravity. */
+export const REQUIRED_LIVE_JOURNEYS: ReadonlyArray<readonly [string, readonly string[]]> = [
+  ["J1", ["claude", "pi"]],
+  ["J2", ["claude", "pi"]],
+  ["J4", ["claude", "pi", "antigravity"]],
+];
+const REQUIRED_LIVE_HOSTS = ["claude", "pi", "herdr"];
+const MAX_LIVE_ATTEMPTS = 2;
+
+export interface LiveFindings {
+  /** The record is not well-formed live evidence. */
+  invalid: string[];
+  /** Required journey/host pairs with no record. */
+  missing: string[];
+  /** Required pairs whose recorded result is not a pass. */
+  failed: string[];
+}
+
+/** Checks a live-mode evidence record against Spec D6; the live runner's output and promote share this one rule. */
+export function liveEvidenceFindings(record: Record<string, unknown>): LiveFindings {
+  const findings: LiveFindings = { invalid: [], missing: [], failed: [] };
+  const hosts = record.hosts as Record<string, unknown> | null | undefined;
+  for (const name of REQUIRED_LIVE_HOSTS) {
+    if (!hosts || typeof hosts !== "object" || typeof hosts[name] !== "string" || !hosts[name]) findings.invalid.push(`hosts.${name} must be a version string`);
+  }
+  if (!Array.isArray(record.journeys)) {
+    findings.invalid.push("journeys must be an array");
+    return findings;
+  }
+  const results = new Map<string, string>();
+  for (const [index, journey] of record.journeys.entries()) {
+    const entry = journey as Record<string, unknown> | null;
+    const label = `journeys[${index}]`;
+    if (!entry || typeof entry !== "object" || typeof entry.id !== "string" || typeof entry.host !== "string") {
+      findings.invalid.push(`${label} needs string id and host`);
+      continue;
+    }
+    const key = `${entry.id}/${entry.host}`;
+    const attempts = entry.attempts;
+    const wellFormed =
+      (entry.result === "pass" || entry.result === "fail") &&
+      Array.isArray(attempts) &&
+      attempts.length >= 1 &&
+      attempts.length <= MAX_LIVE_ATTEMPTS &&
+      attempts.every((attempt) => attempt && (attempt.result === "pass" || attempt.result === "fail") && typeof attempt.duration_ms === "number" && typeof attempt.log_sha256 === "string" && attempt.log_sha256 !== "");
+    if (!wellFormed) {
+      findings.invalid.push(`${label} (${key}) needs a pass/fail result and 1..${MAX_LIVE_ATTEMPTS} attempts with result, duration_ms and log_sha256`);
+      continue;
+    }
+    // The result must follow from the attempts: a pass is the last attempt passing, a fail is every attempt failing.
+    const attemptList = attempts as { result: string }[];
+    if (entry.result !== attemptList.at(-1)?.result || (entry.result === "fail" && attemptList.some((attempt) => attempt.result === "pass"))) {
+      findings.invalid.push(`${label} (${key}) result ${entry.result} disagrees with its attempts`);
+      continue;
+    }
+    if (results.has(key)) findings.invalid.push(`${key} is recorded twice`);
+    results.set(key, entry.result as string);
+  }
+  for (const [id, journeyHosts] of REQUIRED_LIVE_JOURNEYS) {
+    for (const host of journeyHosts) {
+      const result = results.get(`${id}/${host}`);
+      if (result === undefined) findings.missing.push(`${id}/${host}`);
+      else if (result !== "pass") findings.failed.push(`${id}/${host}`);
+    }
+  }
+  return findings;
 }
 
 function readEvidence(path: string): Evidence {
@@ -119,11 +190,7 @@ function readEvidence(path: string): Evidence {
   if (typeof record.version !== "string" || typeof record.commit !== "string" || typeof record.mode !== "string") {
     throw new PromoteError("evidence_invalid", "evidence needs string version, commit and mode");
   }
-  const checklist = record.checklist ?? [];
-  if (!Array.isArray(checklist) || checklist.some((entry) => !entry || typeof entry.item !== "string" || typeof entry.checked !== "boolean")) {
-    throw new PromoteError("evidence_invalid", "evidence checklist entries need a string item and a boolean checked");
-  }
-  return { version: record.version, commit: record.commit, mode: record.mode, checklist };
+  return { version: record.version, commit: record.commit, mode: record.mode, record };
 }
 
 function remoteRef(runner: Runner, remote: string, ref: string): string | null {
@@ -183,13 +250,13 @@ export function promote(version: string, options: PromoteOptions): PromoteResult
   if (evidence.version !== version) {
     throw new PromoteError("evidence_version_mismatch", `evidence version ${evidence.version} is not ${version}`);
   }
-  if (evidence.mode !== "checklist") {
-    throw new PromoteError("evidence_mode_unsupported", `evidence mode ${JSON.stringify(evidence.mode)} is not accepted by this promote`);
+  if (evidence.mode !== "live") {
+    throw new PromoteError("evidence_mode_unsupported", `evidence mode ${JSON.stringify(evidence.mode)} is not accepted: promote needs mode "live" evidence from bun run e2e:live`);
   }
-  const unchecked = evidence.checklist.filter((entry) => !entry.checked).map((entry) => entry.item);
-  if (evidence.checklist.length === 0 || unchecked.length > 0) {
-    throw new PromoteError("checklist_unchecked", unchecked.length ? `unchecked: ${unchecked.join("; ")}` : "checklist has no items");
-  }
+  const findings = liveEvidenceFindings(evidence.record);
+  if (findings.invalid.length) throw new PromoteError("evidence_invalid", `live evidence is malformed: ${findings.invalid.join("; ")}`);
+  if (findings.missing.length) throw new PromoteError("live_journey_missing", `no live result for: ${findings.missing.join(", ")}`);
+  if (findings.failed.length) throw new PromoteError("live_journey_failed", `live journeys not passing: ${findings.failed.join(", ")}`);
   if (stableSha && !isAncestor(runner, stableSha, release)) {
     throw new PromoteError("stable_not_fast_forward", `${options.branch} (${stableSha}) is not an ancestor of ${release}`);
   }
