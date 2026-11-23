@@ -6930,7 +6930,9 @@ function validateLaneRecordShape(value, batchId) {
       const handledOk = handled === undefined || Array.isArray(handled) && handled.every((d) => typeof d === "string" && d.length > 0);
       const refusals = s.open_refusals;
       const refusalsOk = refusals === undefined || typeof refusals === "number" && Number.isSafeInteger(refusals) && refusals >= 0;
-      if (!keyOk || !generationOk || !baselineOk || !handleOk || !entryOk || !attentionOk || !progressOk || !proofOk || !handledOk || !refusalsOk)
+      const recoveries = s.error_recoveries;
+      const recoveriesOk = recoveries === undefined || isObject(recoveries) && typeof recoveries.baseline === "string" && Number.isSafeInteger(recoveries.count) && recoveries.count >= 0;
+      if (!keyOk || !generationOk || !baselineOk || !handleOk || !entryOk || !attentionOk || !progressOk || !proofOk || !handledOk || !refusalsOk || !recoveriesOk)
         throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid session`);
     }
     if (child.tracker_closed === true && child.state !== "integrated" && child.state !== "released" && !deliveryParked)
@@ -18677,6 +18679,8 @@ async function reconcileChildSession(input) {
   if (state === "blocked")
     return { session: { ...session, attention: "blocked" }, action: holdAction };
   session = session.attention === null ? session : { ...session, attention: null };
+  if (state === "error")
+    return await recoverFromError(port, session, { batchId, taskId, kernel, interactionMode, entry, laneCwd, onWriteAhead, holdAction });
   if (state === "working" || state === "unknown")
     return { session, action: holdAction };
   if (!session.entry_submitted) {
@@ -18736,6 +18740,46 @@ async function reconcileChildSession(input) {
   if (kernel.settled || kernel.hasOpenDecision || kernel.hasReplan)
     return { session, action: "held" };
   return await stallOrProgress(port, session, { batchId, taskId, kernel, interactionMode, entry, laneCwd, state, onWriteAhead, adopted, stallExempt: input.stallExempt === true });
+}
+var MAX_ERROR_RECOVERIES = 2;
+async function recoverFromError(port, session, opts) {
+  const { batchId, taskId, kernel, interactionMode, entry, laneCwd, onWriteAhead, holdAction } = opts;
+  const flagged = { ...session, attention: "error" };
+  if (kernel.settled || kernel.hasOpenDecision || kernel.hasReplan)
+    return { session: flagged, action: holdAction };
+  const prior = session.error_recoveries?.baseline === kernel.recordRevision ? session.error_recoveries.count : 0;
+  if (prior >= MAX_ERROR_RECOVERIES)
+    return { session: flagged, action: "parked_error", parkedReason: "lane_executor_error" };
+  const closed = await port.closeWithProof(session.handle, session.key);
+  if (isPortRefusal(closed))
+    return { session: flagged, action: holdAction };
+  const nextGeneration = session.generation + 1;
+  const writeAhead = {
+    ...session,
+    key: laneSessionKey(batchId, taskId, nextGeneration),
+    generation: nextGeneration,
+    baseline: kernel.recordRevision,
+    handle: null,
+    entry_submitted: false,
+    attention: null,
+    no_progress: kernel.recordRevision === session.baseline ? session.no_progress : 0,
+    exit_proof: null,
+    error_recoveries: { baseline: kernel.recordRevision, count: prior + 1 }
+  };
+  onWriteAhead?.({ ...writeAhead });
+  const opened = await port.open({
+    key: writeAhead.key,
+    cwd: laneCwd,
+    label: laneSessionLabel(taskId),
+    entry,
+    ...openEnv(interactionMode) ? { env: openEnv(interactionMode) } : {}
+  });
+  if (isPortRefusal(opened))
+    return refusedOpen({ ...writeAhead, exit_proof: closed }, opened);
+  return {
+    session: resetOpenRefusals({ ...writeAhead, handle: opened.handle, entry_submitted: opened.entry_submitted, attention: opened.attention ?? null }),
+    action: "recovered_error"
+  };
 }
 async function stallOrProgress(port, session, opts) {
   const { batchId, taskId, kernel, interactionMode, entry, laneCwd, state, onWriteAhead, adopted } = opts;
@@ -20064,6 +20108,8 @@ async function runLaneBatchEngine(input, persisted) {
       if (result.action === "parked_no_progress") {
         parkChild(child.task_id, "lane_executor_no_progress: two consecutive stalls without Kernel progress");
       }
+      if (result.action === "parked_error")
+        parkChild(child.task_id, "lane_executor_error: the Executor stopped on an error again after automatic recovery at this Kernel revision");
       if (result.action === "open_refused")
         refusals.push({ task_id: child.task_id, path: child.lane.path, reason: result.parkedReason ?? "lane_session_open_refused" });
       if (result.action === "parked_open_rejected")
@@ -20933,7 +20979,7 @@ function versionAtLeast(version, minimum) {
 
 // plugins/immune-brain/runtime/session/supervised_session_port.ts
 var SUPERVISED_SESSION_PROTOCOL = 1;
-var SESSION_STATES = ["working", "blocked", "idle", "done", "unknown"];
+var SESSION_STATES = ["working", "blocked", "idle", "done", "error", "unknown"];
 var EXECUTOR_HOSTS2 = ["claude-code", "pi", "antigravity"];
 var SESSION_KEY_PATTERN = /^[a-z0-9-]{1,64}$/;
 function refuse4(code, reason, handle) {
@@ -21609,7 +21655,7 @@ function herdrCoreName(label, token) {
   return `${prefix}-${suffix}`;
 }
 function coreState(word) {
-  if (typeof word === "string" && word !== "error" && isSessionState(word) && word !== "unknown")
+  if (typeof word === "string" && isSessionState(word) && word !== "unknown")
     return { state: word, provenance: "reported" };
   return { state: "unknown", provenance: "none" };
 }
@@ -22154,7 +22200,7 @@ class SessionPortAdapter {
         return { ok: true, state: "exited" };
       return { ok: true, state: "unknown" };
     }
-    if (result.state === "working" || result.state === "blocked" || result.state === "idle" || result.state === "done" || result.state === "unknown") {
+    if (result.state === "working" || result.state === "blocked" || result.state === "idle" || result.state === "done" || result.state === "error" || result.state === "unknown") {
       return { ok: true, state: result.state };
     }
     return { ok: true, state: "unknown" };

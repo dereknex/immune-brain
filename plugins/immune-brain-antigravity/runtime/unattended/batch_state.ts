@@ -227,6 +227,8 @@ export interface BatchChildSession {
 	handled_interventions?: string[];
 	/** Consecutive provider `open` refusals; the second one parks the child (Spec D10). */
 	open_refusals?: number;
+	/** Automatic recoveries from an observed `error` stop at one Kernel `record_revision` (workflow-friction-simplification D3.2). */
+	error_recoveries?: { baseline: string; count: number };
 }
 
 export interface BatchLaneChildRun {
@@ -1099,7 +1101,10 @@ function validateLaneRecordShape(value: unknown, batchId: string): asserts value
 			const handledOk = handled === undefined || (Array.isArray(handled) && handled.every((d) => typeof d === "string" && d.length > 0));
 			const refusals = s.open_refusals;
 			const refusalsOk = refusals === undefined || (typeof refusals === "number" && Number.isSafeInteger(refusals) && refusals >= 0);
-			if (!keyOk || !generationOk || !baselineOk || !handleOk || !entryOk || !attentionOk || !progressOk || !proofOk || !handledOk || !refusalsOk)
+			const recoveries = s.error_recoveries;
+			const recoveriesOk = recoveries === undefined || (isObject(recoveries) && typeof (recoveries as { baseline?: unknown }).baseline === "string" &&
+				Number.isSafeInteger((recoveries as { count?: unknown }).count) && ((recoveries as { count: number }).count) >= 0);
+			if (!keyOk || !generationOk || !baselineOk || !handleOk || !entryOk || !attentionOk || !progressOk || !proofOk || !handledOk || !refusalsOk || !recoveriesOk)
 				throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid session`);
 		}
 		if (child.tracker_closed === true && child.state !== "integrated" && child.state !== "released" && !deliveryParked)

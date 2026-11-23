@@ -11,7 +11,7 @@
     },
     {
       "id": "S3-AC2",
-      "assertion": "Source BR-REQ-3; meet D3.2 in docs/specs/workflow-friction-simplification.spec.md. Agreed seam: tests/supervised-session-conformance.test.ts, tests/batch-session-port.test.ts. Dependency direction: runtime/unattended depends only on BatchSessionPort while runtime/lane_sessions bridges SupervisedSessionPort implemented by fake, herdr, and herdr-core. Done looks like: fake, herdr, and herdr-core report state: \"error\" through SupervisedSessionPort and SessionPortAdapter; when an unfinished child with entry_submitted: true and no open decision or replan observes state: \"error\" for the first time at its current recordRevision in a generation, reconcileChildSession sends one recovery prompt and records the baseline marker, resetting on recordRevision progress. Negative: a second \"error\" at the same recordRevision in that generation sends no second prompt and escalates/parks; settled children or children with hasOpenDecision or hasReplan receive zero automatic recovery prompts.",
+      "assertion": "Source BR-REQ-3; meet D3.2 in docs/specs/workflow-friction-simplification.spec.md. Agreed seam: tests/supervised-session-conformance.test.ts, tests/batch-session-port.test.ts. Dependency direction: runtime/unattended depends only on BatchSessionPort while runtime/lane_sessions bridges SupervisedSessionPort implemented by fake, herdr, and herdr-core. Done looks like: fake, herdr, and herdr-core report state: \"error\" through SupervisedSessionPort and SessionPortAdapter, and no provider sends an instruction to an error session; when an unsettled child with no open decision or replan observes state: \"error\", reconcileChildSession closes the session with proof and opens the next generation from the same entry, at most twice per Kernel recordRevision, persisting error_recoveries and restarting the count when the revision moves. Negative: the third \"error\" at one recordRevision opens nothing and the batch parks the child lane_executor_error; settled children or children with hasOpenDecision or hasReplan are held with attention \"error\" and receive no close, open or send.",
       "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/supervised-session-conformance.test.ts tests/batch-session-port.test.ts && bun scripts/sync-dist-docs.ts --check && bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
     }
   ],
@@ -57,6 +57,7 @@
     "tests/single-task-lane-batch.test.ts",
     "tests/single-task-lane-decision.test.ts",
     "tests/supervised-session-conformance.test.ts",
+    "tests/supervised-session-herdr-core.test.ts",
     "tests/unattended-contracts.test.ts"
   ],
   "scope_size_reason": "Propagating the \"error\" session state requires touching SupervisedSessionPort, its three providers, SessionPortAdapter, BatchSessionPort, child_session_reconciler, and its synced dist reference doc together alongside single-task final_verification config.",

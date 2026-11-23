@@ -12,7 +12,7 @@ A supervised session keeps the four guarantees the Loop contract defines: it is 
 - **Provider**: an implementation, named by a literal (`herdr`, `fake`; later `herdr-core`). Adding one adds a literal, not a port change.
 - **Selection**: every `imm-session` call names its provider with `--provider`. Nothing is auto-detected, and one provider never stands in for another. This is not a Host registry or dispatcher (ADR 0004 Decision 5): it chooses where one already-decided Executor session runs, and owns no routing.
 - **Handle**: opaque; only the adapter that minted it decodes it. Handles are not persisted by the runtime and are not authority.
-- **State**: `working | blocked | idle | done | unknown`, each with a provenance `detected | reported | none`.
+- **State**: `working | blocked | idle | done | error | unknown`, each with a provenance `detected | reported | none`. `error` is a Host that stopped on an error it reported (a usage limit, a crashed turn); like `blocked` it accepts no instruction.
 
 ### Required capabilities
 
@@ -83,7 +83,7 @@ Each call admits and probes the provider, runs one verb and prints one JSON obje
 
 `runtime/session/herdr_provider.ts`, pinned to Herdr protocol `22` (Herdr 0.9.x). Admission requires `HERDR_ENV=1`, `HERDR_WORKSPACE_ID`, a `herdr` executable and `herdr api schema --json` stating a pinned top-level `protocol`. A handle names the Parent's workspace, tab, pane and a random token that is also written into the tab label at creation (`<label> [imm:<token>]`). Every verb first reads `pane get` (the pane is in that workspace and tab) and `tab get` (the label carries the token); any other pane, including the Parent's own, is `not_owned`. A session whose pane is gone is only observed (`unknown`), awaited (`exited`), stopped or closed; nothing is sent to it. The adapter's `HERDR_CLI` table is the one place a command is spelled.
 
-Every spelling and response shape below is checked against the Herdr 0.9.5 CLI reference and API schema (`docs/reports/issue-426-herdr-provider-probe.md`). A success prints `{"id","result":{...}}` on stdout; a server error prints `{"id","error":{"code","message"}}` on stderr and exits `1`. State is read from `.result.agent.agent_status`, whose vocabulary is the port's own five states.
+Every spelling and response shape below is checked against the Herdr 0.9.5 CLI reference and API schema (`docs/reports/issue-426-herdr-provider-probe.md`). A success prints `{"id","result":{...}}` on stdout; a server error prints `{"id","error":{"code","message"}}` on stderr and exits `1`. State is read from `.result.agent.agent_status`; a word in the port's vocabulary passes through and anything else is `unknown`.
 
 | Port | Herdr command |
 | --- | --- |
@@ -115,7 +115,7 @@ Admission requires `hc schema --json` to state version 0.1.19 or newer, protocol
 | `sendInstruction` | `send <t> <text> --if idle` when observed `idle`; plain `send <t> <text>` when observed `done`, because `--if` cannot name `done` | Core itself refuses `blocked` (and, with `--if idle`, any other state) and sends nothing. The `done` case keeps a check-then-act race against a turn starting in between. `--force`, which may answer a dialog, is never sent |
 | `awaitTransition` | `wait <t> [--timeout <seconds>]` | `reason` `exit` is `exited`; `timeout` is `timeout` when the Parent set a bound, otherwise core's own 180-second check-in and the wait continues; a `message` to a waiting Parent also continues |
 | `readOutput` | `read <t> --lines 0` (visible) or `--lines 200` (scrollback) | |
-| `observeState` | `get <t>` | Provenance `reported`; no report, `error` or a finished terminal is `unknown` |
+| `observeState` | `get <t>` | Provenance `reported`; `error` is reported as `error`; no report or a finished terminal is `unknown` |
 | `stopSession` | `interrupt <t>`, then `kill <t>` | |
 | `closeSession` | `kill <t>` when live, then `rm <t>` | |
 | `reconcile` | `get` per owned handle | |
@@ -151,6 +151,7 @@ On `herdr`, all three Hosts pass G1, G2 and G4. G3 holds for workspace trust (Cl
 - No session handle or heartbeat is written to the batch record.
 - An instruction reaches only an `idle` or `done` session; a dialog is never answered by the Parent.
 - `unknown` is a wake and ordering signal only, never terminal proof.
+- `error` is never terminal proof either: the batch reconciler closes an `error` session with proof and opens the next generation at most twice per Kernel `record_revision`, then parks the child `lane_executor_error` (workflow-friction-simplification D3.2).
 
 ## Side Effects
 

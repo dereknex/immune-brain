@@ -9,7 +9,7 @@
 import { createHash } from "node:crypto";
 
 /** Observation vocabulary owned by this port. */
-export type SessionObservation = "working" | "blocked" | "idle" | "done" | "exited" | "unknown";
+export type SessionObservation = "working" | "blocked" | "idle" | "done" | "error" | "exited" | "unknown";
 
 /** Structural proof that no live session carries `(handle, key)`. */
 export interface SessionExitProof {

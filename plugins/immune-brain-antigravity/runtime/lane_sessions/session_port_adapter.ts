@@ -87,7 +87,7 @@ export class SessionPortAdapter implements BatchSessionPort {
 			if (isPaneNotFound(reason)) return { ok: true as const, state: "exited" as const };
 			return { ok: true as const, state: "unknown" as const };
 		}
-		if (result.state === "working" || result.state === "blocked" || result.state === "idle" || result.state === "done" || result.state === "unknown") {
+		if (result.state === "working" || result.state === "blocked" || result.state === "idle" || result.state === "done" || result.state === "error" || result.state === "unknown") {
 			return { ok: true as const, state: result.state };
 		}
 		return { ok: true as const, state: "unknown" as const };

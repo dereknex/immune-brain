@@ -1799,6 +1799,8 @@ async function runLaneBatchEngine(
 			if (result.action === "parked_no_progress") {
 				parkChild(child.task_id, "lane_executor_no_progress: two consecutive stalls without Kernel progress");
 			}
+			if (result.action === "parked_error")
+				parkChild(child.task_id, "lane_executor_error: the Executor stopped on an error again after automatic recovery at this Kernel revision");
 			// D8/D10: a provider-refused create keeps the child enrolled with no
 			// handle and retries at the next advance; only the second consecutive
 			// refusal parks it, and the report always names the provider's reason.

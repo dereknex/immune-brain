@@ -9,7 +9,10 @@
 // before its `open` runs; a `label` is bounded to the port's 32 characters; a
 // refused `open` keeps the child enrolled with no handle and parks it only on
 // the second consecutive refusal (Spec D10); an observed `blocked` is written
-// into `attention`, and any other observation or a successful resume clears it.
+// into `attention`, and any other observation or a successful resume clears it;
+// an observed `error` stop of an unsettled child with no open decision or
+// replan closes with proof and opens the next generation at most
+// `MAX_ERROR_RECOVERIES` times per Kernel `record_revision`, then parks it.
 // Side Effects: calls the port's `find`/`open`/`resume`/`send`/`closeWithProof`
 // and the caller's `onWriteAhead`; the caller persists the returned session.
 // Verification: `bun test tests/batch-session-port.test.ts`.
@@ -71,6 +74,8 @@ export interface ReconcileChildResult {
 		| "stalled_idle"
 		| "parked_no_progress"
 		| "parked_open_rejected"
+		| "parked_error"
+		| "recovered_error"
 		| "open_refused";
 	parkedReason?: string | null;
 }
@@ -194,6 +199,7 @@ export async function reconcileChildSession(input: ReconcileChildInput): Promise
 	if (state === "blocked") return { session: { ...session, attention: "blocked" }, action: holdAction };
 	// Any other observation, including a successful resume below, clears a held attention.
 	session = session.attention === null ? session : { ...session, attention: null };
+	if (state === "error") return await recoverFromError(port, session, { batchId, taskId, kernel, interactionMode, entry, laneCwd, onWriteAhead, holdAction });
 	if (state === "working" || state === "unknown") return { session, action: holdAction };
 
 	// Startup dialog hold: an unsubmitted entry resumes once idle or done.
@@ -261,6 +267,65 @@ export async function reconcileChildSession(input: ReconcileChildInput): Promise
 	if (kernel.settled || kernel.hasOpenDecision || kernel.hasReplan) return { session, action: "held" };
 
 	return await stallOrProgress(port, session, { batchId, taskId, kernel, interactionMode, entry, laneCwd, state, onWriteAhead, adopted, stallExempt: input.stallExempt === true });
+}
+
+/** Automatic recoveries from an `error` stop allowed at one Kernel revision (workflow-friction-simplification D3.2). */
+export const MAX_ERROR_RECOVERIES = 2;
+
+/**
+ * A Host that stopped on an error (a usage limit, a crashed turn) accepts no
+ * instruction, so recovery is a fresh generation from the same entry. Settled
+ * children and children waiting on a decision or replan are never recovered;
+ * the count resets once the Kernel revision moves.
+ */
+async function recoverFromError(
+	port: BatchSessionPort,
+	session: BatchChildSession,
+	opts: {
+		batchId: string;
+		taskId: string;
+		kernel: ChildKernelFacts;
+		interactionMode: ChildInteractionMode;
+		entry: string;
+		laneCwd: string;
+		onWriteAhead?: (session: BatchChildSession) => void;
+		holdAction: "held" | "adopted";
+	},
+): Promise<ReconcileChildResult> {
+	const { batchId, taskId, kernel, interactionMode, entry, laneCwd, onWriteAhead, holdAction } = opts;
+	const flagged = { ...session, attention: "error" };
+	if (kernel.settled || kernel.hasOpenDecision || kernel.hasReplan) return { session: flagged, action: holdAction };
+	const prior = session.error_recoveries?.baseline === kernel.recordRevision ? session.error_recoveries.count : 0;
+	if (prior >= MAX_ERROR_RECOVERIES)
+		return { session: flagged, action: "parked_error", parkedReason: "lane_executor_error" };
+	const closed = await port.closeWithProof(session.handle!, session.key!);
+	if (isPortRefusal(closed)) return { session: flagged, action: holdAction };
+	const nextGeneration = session.generation + 1;
+	const writeAhead: BatchChildSession = {
+		...session,
+		key: laneSessionKey(batchId, taskId, nextGeneration),
+		generation: nextGeneration,
+		baseline: kernel.recordRevision,
+		handle: null,
+		entry_submitted: false,
+		attention: null,
+		no_progress: kernel.recordRevision === session.baseline ? session.no_progress : 0,
+		exit_proof: null,
+		error_recoveries: { baseline: kernel.recordRevision, count: prior + 1 },
+	};
+	onWriteAhead?.({ ...writeAhead });
+	const opened = await port.open({
+		key: writeAhead.key!,
+		cwd: laneCwd,
+		label: laneSessionLabel(taskId),
+		entry,
+		...(openEnv(interactionMode) ? { env: openEnv(interactionMode) } : {}),
+	});
+	if (isPortRefusal(opened)) return refusedOpen({ ...writeAhead, exit_proof: closed as SessionExitProof }, opened);
+	return {
+		session: resetOpenRefusals({ ...writeAhead, handle: opened.handle, entry_submitted: opened.entry_submitted, attention: opened.attention ?? null }),
+		action: "recovered_error",
+	};
 }
 
 async function stallOrProgress(
