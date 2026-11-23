@@ -40,6 +40,18 @@ const REJECTED = [
 ];
 const SKILLS = publicSkillNames();
 
+/** The marketplace plugin source must be the git-subdir form pinned to the promoted `stable` branch. */
+function stablePluginSourceViolations(source: unknown): string[] {
+  if (typeof source !== "object" || source === null) return ["source must be an object, not a relative path string"];
+  const record = source as Record<string, unknown>;
+  const violations: string[] = [];
+  if (record.source !== "git-subdir") violations.push("source must be git-subdir");
+  if (record.url !== "https://github.com/dereknex/immune-brain.git") violations.push("url must be the immune-brain repository");
+  if (record.path !== "plugins/immune-brain") violations.push("path must be plugins/immune-brain");
+  if (record.ref !== "stable") violations.push("ref must be stable");
+  return violations;
+}
+
 function withPackageFixture<T>(run: (root: string) => T): T {
   const root = mkdtempSync(join(tmpdir(), "claude-package-"));
   try {
@@ -243,7 +255,7 @@ describe("claude host package", () => {
     expect(manifest.files).toContain("plugins/immune-brain/runtime/claude");
     expect(manifest.files).toContain("plugins/immune-brain/runtime/plugin_version.ts");
     expect(manifest.scripts["changeset:version"]).toContain("build-claude-plugin.ts");
-    expect(manifest.scripts["changeset:publish"]).toBe("bun run verify:release && changeset publish");
+    expect(manifest.scripts["changeset:publish"]).toBe("bun run verify:release && changeset publish --tag next");
     expect(listMcpTools().map((tool) => tool.name)).toEqual([
       "status",
       "advance_assurance",
@@ -303,6 +315,28 @@ describe("claude host package", () => {
     if (claude.status !== 0) {
       throw new Error(`claude plugin validate failed: ${claude.stderr || claude.stdout}`);
     }
+  });
+
+  it("the marketplace installs the plugin from the stable branch through git-subdir", () => {
+    const marketplace = JSON.parse(readFileSync(resolve(ROOT, ".claude-plugin/marketplace.json"), "utf8"));
+    const entry = marketplace.plugins.find((plugin: { name: string }) => plugin.name === "immune-brain");
+    expect(stablePluginSourceViolations(entry.source)).toEqual([]);
+    expect(entry.source).toEqual({
+      source: "git-subdir",
+      url: "https://github.com/dereknex/immune-brain.git",
+      path: "plugins/immune-brain",
+      ref: "stable",
+    });
+  });
+
+  it("the stable source contract rejects a relative path and a git-subdir source without ref", () => {
+    expect(stablePluginSourceViolations("./plugins/immune-brain")).not.toEqual([]);
+    expect(
+      stablePluginSourceViolations({ source: "git-subdir", url: "https://github.com/dereknex/immune-brain.git", path: "plugins/immune-brain" }),
+    ).toContain("ref must be stable");
+    expect(
+      stablePluginSourceViolations({ source: "git-subdir", url: "https://github.com/dereknex/immune-brain.git", path: "plugins/immune-brain", ref: "main" }),
+    ).toContain("ref must be stable");
   });
 
   it("npm pack includes the Claude plugin and keeps Pi files", () => {

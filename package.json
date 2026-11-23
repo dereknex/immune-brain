@@ -31,8 +31,9 @@
     "changeset": "changeset",
     "changeset:version": "changeset version && bun scripts/build-claude-plugin.ts && bun scripts/build-antigravity-plugin.ts && bun scripts/plugin_versioning.ts validate",
     "verify:release": "bun scripts/plugin_versioning.ts validate && bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun scripts/sync-dist-docs.ts --check && bun run typecheck && bun test && npm pack --dry-run --ignore-scripts",
-    "changeset:publish": "bun run verify:release && changeset publish",
+    "changeset:publish": "bun run verify:release && changeset publish --tag next",
     "release": "bun run changeset:publish",
+    "release:promote": "bun scripts/release-promote.ts",
     "typecheck": "tsc -p tsconfig.json"
   },
   "devDependencies": {

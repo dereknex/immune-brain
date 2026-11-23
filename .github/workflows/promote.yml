@@ -1,0 +1,65 @@
+name: Promote
+
+# Moves a published version from the `next` channel to the default channels: the `stable` branch
+# (Claude Code marketplace and Antigravity installs), the `immune-brain-vX-stable` tag and npm
+# `latest`. `--rollback` moves them back to the previous -stable tag. Spec D7.
+#
+# One-time repository setup (maintainer, outside this workflow):
+#   - Environment `release` with a required reviewer.
+#   - Secret `STABLE_PUSH_TOKEN`: a token allowed to push the protected `stable` branch and tags.
+#   - Secret `NPM_TOKEN`: an npm token allowed to run `npm dist-tag add`.
+#   - Create `stable` at the latest released commit before the first promote.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to promote, for example 9.2.0 (ignored when rollback is set)"
+        required: false
+        type: string
+      rollback:
+        description: "Move stable and npm latest back to the previous -stable tag"
+        required: false
+        type: boolean
+        default: false
+
+concurrency: promote
+
+permissions:
+  contents: write
+
+jobs:
+  promote:
+    name: Promote or roll back
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - name: Checkout main with tags
+        uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.STABLE_PUSH_TOKEN }}
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: Promote
+        if: ${{ !inputs.rollback }}
+        run: bun scripts/release-promote.ts "$VERSION"
+        env:
+          VERSION: ${{ inputs.version }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Roll back
+        if: ${{ inputs.rollback }}
+        run: bun scripts/release-promote.ts --rollback
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

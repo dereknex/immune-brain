@@ -56,6 +56,8 @@ Pi discovers Skills and extensions from `package.json` (or your global Pi config
 
 No extra server config is needed. Installing the package via Pi makes all 8 Skills available automatically.
 
+New versions reach the `latest` npm dist-tag only after they are promoted; install `immune-brain@next` to try a published version before then.
+
 ### In Claude Code
 
 Add the plugin from the marketplace:
@@ -65,6 +67,9 @@ claude plugin marketplace add dereknex/immune-brain
 claude plugin install immune-brain
 ```
 
+The marketplace entry installs the plugin from the `stable` branch, which advances only when a
+release is promoted; `claude plugin update immune-brain` picks up the next promoted version.
+
 Or load the local directory directly:
 
 ```bash
@@ -73,11 +78,12 @@ claude --plugin-dir ./plugins/immune-brain
 
 ### In Antigravity
 
-Install the self-contained directory `plugins/immune-brain-antigravity/` (not `plugins/immune-brain/`):
+Install the self-contained directory `plugins/immune-brain-antigravity/` (not `plugins/immune-brain/`) from the `stable` branch:
 
 ```bash
-agy plugin install ./plugins/immune-brain-antigravity
-agy plugin validate ./plugins/immune-brain-antigravity --strict
+git clone -b stable https://github.com/dereknex/immune-brain.git
+agy plugin install ./immune-brain/plugins/immune-brain-antigravity
+agy plugin validate ./immune-brain/plugins/immune-brain-antigravity --strict
 ```
 
 Earlier releases discovered Antigravity components from `plugins/immune-brain/`; reinstall from the new directory when upgrading. See [its README](plugins/immune-brain-antigravity/README.md).

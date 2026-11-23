@@ -1,0 +1,169 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "e2e-gate-s1-release-channel",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "e2e-gate-s1-release-channel",
+    "goal": "Merging the version PR publishes the release to npm dist-tag next only; the Claude marketplace plugin source points at the stable branch through git-subdir with ref stable; Antigravity installs from stable; a manual promote workflow fast-forwards stable, tags immune-brain-vX-stable and moves npm latest after validating checklist-mode evidence, and a rollback mode moves both back to the previous -stable tag (Spec D7) (Initiative e2e-release-gate slice S1; Spec docs/specs/e2e-release-gate.spec.md).",
+    "acceptance": [
+      {
+        "id": "S1-AC1",
+        "assertion": "The changeset:publish script publishes with --tag next and release.yml contains no step that moves npm latest; .claude-plugin/marketplace.json sets the immune-brain plugin source to {source: git-subdir, url: https://github.com/dereknex/immune-brain.git, path: plugins/immune-brain, ref: stable}. Negative cases: a relative-path source string and a git-subdir source without ref each fail the contract tests. Done looks like: tests/pi-only-release-contract.test.ts and tests/claude-host-package.test.ts assert the next tag and the stable git-subdir source.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-only-release-contract.test.ts\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "S1-AC2",
+        "assertion": "scripts/release-promote.ts promote mode, run against a temp Git repository with a bare remote and a stub npm through its --git and --npm seams, fast-forwards stable to the commit tagged immune-brain-vX, creates immune-brain-vX-stable and runs npm dist-tag add immune-brain@X latest; a second run performs no write. Negative cases each refused with a named code before any write: evidence commit differs from the release commit, evidence version differs from X, a checklist item unchecked, immune-brain-vX tag missing, stable not an ancestor of the release commit (non-fast-forward), malformed version string. Done looks like: tests/release-promote.test.ts covers the success, rerun and six refusals.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/release-promote.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "S1-AC3",
+        "assertion": "release-promote.ts --rollback moves stable to the newest immune-brain-v*-stable tag below the current stable commit and sets npm latest to that version; with no previous -stable tag it refuses before any write. Done looks like: tests/release-promote.test.ts covers rollback success and the no-previous-tag refusal.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/release-promote.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/e2e-release-channel.md",
+      ".claude-plugin/marketplace.json",
+      ".github/workflows/promote.yml",
+      ".github/workflows/release.yml",
+      "README.md",
+      "docs/evidence/e2e-live/README.md",
+      "docs/plans/e2e-gate-s1-release-channel.intent.json",
+      "docs/specs/e2e-release-gate.spec.md",
+      "package.json",
+      "plugins/immune-brain-antigravity/README.md",
+      "scripts/release-promote.ts",
+      "tests/claude-host-package.test.ts",
+      "tests/pi-only-release-contract.test.ts",
+      "tests/release-promote.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/e2e-gate-s1-release-channel.intent.json",
+    "content_hash": "sha256:9302d25656134ad93f94c32d74f8e93d526bee0191c28f1719a7bb881f2222db"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:9302d25656134ad93f94c32d74f8e93d526bee0191c28f1719a7bb881f2222db",
+  "git_base_head": "a349df1baf7980b33f87d05961eb375061975bfc",
+  "attestations": [
+    {
+      "id": "approval-qa-e829ca13",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:9302d25656134ad93f94c32d74f8e93d526bee0191c28f1719a7bb881f2222db",
+      "diff_hash": "sha256:82db40cc5e452144b6fdf3874e8ba9d4ee8334b040f77e5b57b50ee7de7b5945",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:8d84335dd6b27f9fe792ddb8aa681a98f019b440114814280b1215b345c3ecb1",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S1-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:8d84335dd6b27f9fe792ddb8aa681a98f019b440114814280b1215b345c3ecb1"
+        },
+        {
+          "acceptance_id": "S1-AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:8d84335dd6b27f9fe792ddb8aa681a98f019b440114814280b1215b345c3ecb1"
+        },
+        {
+          "acceptance_id": "S1-AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:8d84335dd6b27f9fe792ddb8aa681a98f019b440114814280b1215b345c3ecb1"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-ec926cb1",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:9302d25656134ad93f94c32d74f8e93d526bee0191c28f1719a7bb881f2222db",
+      "diff_hash": "sha256:82db40cc5e452144b6fdf3874e8ba9d4ee8334b040f77e5b57b50ee7de7b5945",
+      "actor_id": "cli:antigravity:95254172-e30e-4a5b-8b4f-b0d25c2bc0a5",
+      "summary": "S1-AC1..AC3 met: publish uses --tag next, release.yml (unchanged, read for AC1) moves no latest, marketplace source is git-subdir ref stable with negative contract tests; release-promote.ts checks every refusal before its first write, peels annotated release tags, writes idempotently and rolls back npm-first with force-with-lease, and tests cover success, rerun and all named refusals; blast radius high (release pipeline: package.json changeset:publish, .claude-plugin/marketplace.json, .github/workflows/promote.yml, scripts/release-promote.ts).",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "a349df1baf7980b33f87d05961eb375061975bfc",
+        "review_commit": "03a4196f3c9622be5eef2c950d94ce473109a215"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-c8c408b9f64b-1-review-1",
+          "acceptance_id": "S1-AC2",
+          "summary": "tests/release-promote.test.ts passes --npm but never --git, so the --git command seam named by S1-AC2 and Spec D7 is not exercised (real git is used against the temp repo).",
+          "anchor": "sha256:b73c48be8da6278aa923551631c33aa5ac185ff35c301f88449b81160591f78f",
+          "evidence": {
+            "trigger": "parseArgs maps --git to options.git → a regression that ignores options.git in makeRunner would still pass every test, because run() never passes --git",
+            "caller_chain": [
+              "tests/release-promote.test.ts:run",
+              "scripts/release-promote.ts:parseArgs",
+              "scripts/release-promote.ts:makeRunner"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S1-AC2"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:050176d401a4743492e98e0326d280687ff9b17be7dcacad8fb1863868632378"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:e2e-gate-s1-release-channel:2026-11-23T03:41:49.608Z",
+      "at": "2026-11-23T03:41:49.608Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/e2e-gate-s1-release-channel.intent.json"
+    },
+    {
+      "id": "record_approval:e2e-gate-s1-release-channel:2026-11-23T03:42:25.641Z",
+      "at": "2026-11-23T03:42:25.641Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-e829ca13\naction_v2_sha256:86ee6501ed28c889b5b74c66c77fe6957b25c6239dee1774912ba0526c1cc94e",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-11-23T03:42:25.642Z"
+      }
+    },
+    {
+      "id": "record_approval:e2e-gate-s1-release-channel:2026-11-23T05:47:35.594Z",
+      "at": "2026-11-23T05:47:35.594Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-ec926cb1\naction_v2_sha256:aa54d78ce6ea61012515f5fbcd261ba6de499311235813f14cef5332ad7820cd",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:antigravity:95254172-e30e-4a5b-8b4f-b0d25c2bc0a5",
+        "confirmation_ref": "claude:cli:antigravity:95254172-e30e-4a5b-8b4f-b0d25c2bc0a5",
+        "issued_at": "2026-11-23T05:47:35.594Z"
+      },
+      "review_started_at": "2026-11-23T05:44:36.942Z",
+      "review_submitted_at": "2026-11-23T05:47:34.491Z",
+      "reviewer_model": "claude-opus-5-5-medium"
+    },
+    {
+      "id": "complete:e2e-gate-s1-release-channel:2026-11-23T05:47:39.370Z",
+      "at": "2026-11-23T05:47:39.370Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:969daae176ec8683acbbcb56c2bb121358b4e5581954cea3faeca93bdd2171bc"
+    }
+  ]
+}
