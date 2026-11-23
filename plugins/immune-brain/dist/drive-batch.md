@@ -577,8 +577,10 @@ Spec drive-always-lanes D1 to D11 and ADR 0027 own the details below.
   `imm/<task_id>`, the runtime delivers into the user's checkout by the `Git
   integration` preference: `manual` stages the delivered delta, uncommitted, and
   moves no HEAD; `auto` fast-forwards the current branch when HEAD is an ancestor
-  of the delivery. If any dirty entry in the checkout (staged, unstaged,
-  untracked, deleted or renamed) overlaps a delivered path, the task parks
+  of the delivery. A staged or untracked regular file that already matches the
+  delivered bytes and executable mode counts as delivered (an untracked copy is
+  staged once every check passes). If any other dirty entry in the checkout
+  (staged, unstaged, untracked, deleted or renamed) overlaps a delivered path, the task parks
   `needs_human` with `checkout_delivery_overlap: <paths>` and writes nothing; a
   delivery that cannot apply parks as `checkout_delivery_conflict`. Unrelated
   user edits are never blocked and stay byte-identical.

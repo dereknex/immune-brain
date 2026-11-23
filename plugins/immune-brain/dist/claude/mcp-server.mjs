@@ -6342,7 +6342,7 @@ function ensureReservedLaneWorktree(root, reservation) {
   }
   return path;
 }
-function copyLanePlanningInput(root, lane, taskId, kind) {
+function copyLanePlanningInput(root, lane, taskId, kind, baseHead) {
   const read = observeEnrollmentTaskIntent(root, taskId);
   const input = kind === "intent" ? { path: read.intent_ref.path, content: readSecureProjectFile(root, read.intent_ref.path) } : readBoundActiveSpec(root, read.intent);
   if (!input)
@@ -6360,8 +6360,14 @@ function copyLanePlanningInput(root, lane, taskId, kind) {
   const stat = lstatSync8(target, { throwIfNoEntry: false });
   if (stat && (!stat.isFile() || stat.isSymbolicLink()))
     throw new Error("batch_worktree_failed: planning input is not a regular file");
+  if (kind === "spec" && stat && baseHead && unchangedSince(root, baseHead, input.path, input.content))
+    return;
   writeFileSync4(target, input.content);
   git2(lane, ["add", "--", input.path]);
+}
+function unchangedSince(root, baseHead, path, content) {
+  const committed = spawnSync6("git", ["-C", root, "cat-file", "blob", `${baseHead}:${path}`], { encoding: "utf8" });
+  return committed.status === 0 && committed.stdout === content;
 }
 async function withParentWorktree(root, head, use) {
   const path = mkdtempSync(join6(worktreeDirectory(root), "verify-"));
@@ -15875,41 +15881,46 @@ function deliveredPaths(root, base, head) {
   }
   return paths;
 }
-function pathSatisfied(root, entry) {
+function pathState(root, entry) {
   const staged = gitIn(root, "--literal-pathspecs", "ls-files", "--stage", "-z", "--", entry.path);
   if (staged.status !== 0)
-    return false;
+    return "unsatisfied";
   if (entry.deleted) {
     if (staged.stdout.length)
-      return false;
+      return "unsatisfied";
     try {
       lstatSync15(join23(root, entry.path));
-      return false;
+      return "unsatisfied";
     } catch {
-      return true;
+      return "satisfied";
     }
   }
-  const indexed = /^(\d+) ([0-9a-f]+) \d\t/.exec(staged.stdout);
-  if (!indexed || indexed[1] !== entry.newMode || indexed[2] !== entry.newBlob)
-    return false;
+  if (staged.stdout.length) {
+    const indexed = /^(\d+) ([0-9a-f]+) \d\t/.exec(staged.stdout);
+    if (!indexed || indexed[1] !== entry.newMode || indexed[2] !== entry.newBlob)
+      return "unsatisfied";
+  } else if (entry.newMode !== "100644" && entry.newMode !== "100755")
+    return "unsatisfied";
   let stat;
   try {
     stat = lstatSync15(join23(root, entry.path));
   } catch {
-    return false;
+    return "unsatisfied";
   }
   const worktreeMode = stat.isSymbolicLink() ? "120000" : stat.isFile() ? stat.mode & 73 ? "100755" : "100644" : "";
   if (worktreeMode !== entry.newMode)
-    return false;
+    return "unsatisfied";
   const hashed = gitIn(root, "hash-object", "--no-filters", "--", entry.path);
-  return hashed.status === 0 && hashed.stdout.trim() === entry.newBlob;
+  if (hashed.status !== 0 || hashed.stdout.trim() !== entry.newBlob)
+    return "unsatisfied";
+  return staged.stdout.length ? "satisfied" : "unindexed";
 }
 function deliveryAlreadyApplied(root, base, head) {
   const { mode } = readGitIntegrationPreference(root);
   if (mode === "auto")
     return gitIn(root, "merge-base", "--is-ancestor", head, "HEAD").status === 0;
   const paths = deliveredPaths(root, base, head);
-  return !!paths?.length && paths.every((entry) => pathSatisfied(root, entry));
+  return !!paths?.length && paths.every((entry) => pathState(root, entry) === "satisfied");
 }
 function deliverSingleTask(root, base, head) {
   const { mode } = readGitIntegrationPreference(root);
@@ -15921,22 +15932,38 @@ function deliverSingleTask(root, base, head) {
   const dirty = porcelainEntries(root);
   if (!changed || !dirty)
     return blocked("coordinator_status_unreadable");
-  const pending = (mode === "auto" ? changed : changed.filter((entry) => !pathSatisfied(root, entry))).map((entry) => entry.path);
+  const states = changed.map((entry) => ({ path: entry.path, state: pathState(root, entry) }));
+  const pending = states.filter((entry) => entry.state === "unsatisfied").map((entry) => entry.path);
+  const unindexed = states.filter((entry) => entry.state === "unindexed").map((entry) => entry.path);
   const overlaps = dirty.map((entry) => entry.path).filter((path) => pending.some((file) => path === file || path.startsWith(`${file}/`) || file.startsWith(`${path}/`)));
   if (overlaps.length)
     return blocked(`checkout_delivery_overlap: ${[...new Set(overlaps)].sort().join(", ")}`);
+  const stage = () => !unindexed.length || git("--literal-pathspecs", "add", "-f", "--", ...unindexed).status === 0;
+  const unstage = () => {
+    if (unindexed.length)
+      git("--literal-pathspecs", "reset", "-q", "--", ...unindexed);
+  };
+  const failed = (reason) => {
+    unstage();
+    return blocked(reason);
+  };
   if (mode === "auto") {
     if (git("symbolic-ref", "--quiet", "HEAD").status !== 0)
       return blocked("coordinator_branch_unavailable");
     if (git("merge-base", "--is-ancestor", "HEAD", head).status !== 0)
       return blocked("coordinator_head_diverged");
+    if (!stage())
+      return failed("checkout_delivery_conflict: cannot stage identical untracked paths");
     const merge = git("merge", "--ff-only", "--no-edit", head);
     if (merge.status !== 0)
-      return blocked(`checkout_delivery_conflict: ${merge.stderr.trim()}`);
+      return failed(`checkout_delivery_conflict: ${merge.stderr.trim()}`);
     return { mode, status: "fast_forwarded", reason: null };
   }
-  if (!pending.length)
+  if (!pending.length) {
+    if (!stage())
+      return failed("checkout_delivery_conflict: cannot stage identical untracked paths");
     return { mode, status: "staged", reason: null };
+  }
   const patch = spawnSync14("git", ["--no-optional-locks", "--literal-pathspecs", "-C", root, "diff", "--binary", "--full-index", "--no-renames", base, head, "--", ...pending], { maxBuffer: 128 * 1024 * 1024 });
   if (patch.status !== 0)
     return blocked("checkout_delivery_conflict: cannot read delivery delta");
@@ -15946,9 +15973,11 @@ function deliverSingleTask(root, base, head) {
   const checked = apply(true);
   if (checked.status !== 0)
     return blocked(`checkout_delivery_conflict: ${checked.stderr.trim()}`);
+  if (!stage())
+    return failed("checkout_delivery_conflict: cannot stage identical untracked paths");
   const applied = apply(false);
   if (applied.status !== 0)
-    return blocked(`checkout_delivery_conflict: ${applied.stderr.trim()}`);
+    return failed(`checkout_delivery_conflict: ${applied.stderr.trim()}`);
   return { mode, status: "staged", reason: null };
 }
 var gitIn = (root, ...args) => spawnSync14("git", ["--no-optional-locks", "-C", root, ...args], { encoding: "utf8" });
@@ -19717,7 +19746,7 @@ async function runLaneBatchEngine(input, persisted) {
         batch: { registry: input.registry, capability: input.capability, binding: { batch_id: record.batch_id, expected_head: lane.base_head } }
       });
       if (isParentBranch(record.branch))
-        copyLanePlanningInput(input.root, lane.path, taskId, "spec");
+        copyLanePlanningInput(input.root, lane.path, taskId, "spec", record.base_head);
       const fresh = await readLaneProjection(input, lane.path, taskId);
       if (fresh.error !== null)
         throw new Error(laneUnreadableReason(fresh.error, taskId, lane.run_id));
@@ -19783,7 +19812,7 @@ async function runLaneBatchEngine(input, persisted) {
     if (child.state === "lane_admitted") {
       if (holdsClaim) {
         if (isParentBranch(record.branch))
-          copyLanePlanningInput(input.root, child.lane.path, child.task_id, "spec");
+          copyLanePlanningInput(input.root, child.lane.path, child.task_id, "spec", record.base_head);
         record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "enrolled", reason: "adopted existing lane claim after interruption", lane: { ...child.lane, run_id: fresh.projection.run_id } } : c);
         persist();
       } else {

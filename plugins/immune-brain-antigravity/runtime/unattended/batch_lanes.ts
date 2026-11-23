@@ -1426,7 +1426,7 @@ async function runLaneBatchEngine(
 				batch: { registry: input.registry, capability: input.capability, binding: { batch_id: record.batch_id, expected_head: lane.base_head } },
 			});
 			// Deliver the bound Spec after Enrollment so it is task work, not baseline user dirt.
-			if (isParentBranch(record.branch)) copyLanePlanningInput(input.root, lane.path, taskId, "spec");
+			if (isParentBranch(record.branch)) copyLanePlanningInput(input.root, lane.path, taskId, "spec", record.base_head);
 			const fresh = await readLaneProjection(input, lane.path, taskId);
 			if (fresh.error !== null) throw new Error(laneUnreadableReason(fresh.error, taskId, lane.run_id));
 			if (!fresh.projection.run_id || fresh.claim?.task_id !== taskId)
@@ -1498,7 +1498,7 @@ async function runLaneBatchEngine(
 		if (child.state === "lane_admitted") {
 			// A crash between admission and enrollment adopts an existing claim or enrolls now.
 			if (holdsClaim) {
-				if (isParentBranch(record.branch)) copyLanePlanningInput(input.root, child.lane.path, child.task_id, "spec");
+				if (isParentBranch(record.branch)) copyLanePlanningInput(input.root, child.lane.path, child.task_id, "spec", record.base_head);
 				record.children = record.children.map((c) =>
 					c.task_id === child.task_id ? { ...c, state: "enrolled", reason: "adopted existing lane claim after interruption", lane: { ...child.lane!, run_id: fresh.projection.run_id } } : c,
 				);

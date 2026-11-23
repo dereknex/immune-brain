@@ -10,6 +10,7 @@ import { createBatchKernelPort } from "../plugins/immune-brain/runtime/unattende
 import { createEnrollmentAuthorityRegistry } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
 import { createDefaultBatchGitPort, type BatchRunnerGitPort } from "../plugins/immune-brain/runtime/unattended/batch_git";
 import { createDefaultLaneGitPort, runLaneBatch } from "../plugins/immune-brain/runtime/unattended/batch_lanes";
+import { copyLanePlanningInput } from "../plugins/immune-brain/runtime/unattended/batch_worktrees";
 import { relayLaneDecision } from "../plugins/immune-brain/runtime/unattended/lane_decision";
 import type { BatchRunnerKernelPort } from "../plugins/immune-brain/runtime/unattended/batch_kernel_port";
 import type { StartBatchInput } from "../plugins/immune-brain/runtime/unattended/batch_lanes";
@@ -711,5 +712,41 @@ describe("single-task final verification and checkout delivery", () => {
 		expect(record.return_policy).toBe("checkout_delivery");
 		expect(record.interaction_mode).toBe("interactive_host");
 		expect(typeof record.final_verification_required).toBe("boolean");
+	});
+});
+
+describe("shared Spec provisioning for a later Slice", () => {
+	const SLICE = "shared-spec-slice";
+	const SPEC = "docs/specs/shared.spec.md";
+	function fixture() {
+		const root = mkdtempSync(join(tmpdir(), "shared-spec-"));
+		mkdirSync(join(root, "docs/plans"), { recursive: true }); mkdirSync(join(root, "docs/specs"), { recursive: true });
+		git(root, "init", "-q", "-b", "main");
+		writeFileSync(join(root, `docs/plans/${SLICE}.intent.json`), `${JSON.stringify({
+			contract: "assurance_kernel/task_intent/v1", task_id: SLICE, owner: "user", goal: "later slice",
+			acceptance: [{ id: "A1", assertion: "one", verification: "verify" }],
+			scope_hint: ["docs/plans", SPEC, "docs/specs/archive/shared.spec.md"], risk: "routine", revision: 1,
+		}, null, 2)}\n`);
+		writeFileSync(join(root, SPEC), "# shared v1\n");
+		git(root, "add", "-A"); git(root, "-c", "user.name=T", "-c", "user.email=t@example.com", "commit", "-qm", "base");
+		const base = git(root, "rev-parse", "HEAD");
+		const lane = join(mkdtempSync(join(tmpdir(), "shared-spec-lane-")), "lane");
+		git(root, "worktree", "add", "-q", "-b", "imm/shared", lane, base);
+		writeFileSync(join(lane, SPEC), "# shared v2 from an earlier Slice\n");
+		git(lane, "-c", "user.name=T", "-c", "user.email=t@example.com", "commit", "-qam", "earlier slice");
+		return { root, lane, base };
+	}
+	test("keeps the Lane's newer Spec when the coordinator copy is unchanged since base_head", () => {
+		const f = fixture();
+		copyLanePlanningInput(f.root, f.lane, SLICE, "spec", f.base);
+		expect(readFileSync(join(f.lane, SPEC), "utf8")).toBe("# shared v2 from an earlier Slice\n");
+		expect(git(f.lane, "status", "--porcelain=v1")).toBe("");
+	});
+	test("copies and stages a coordinator Spec that differs from base_head", () => {
+		const f = fixture();
+		writeFileSync(join(f.root, SPEC), "# shared candidate\n");
+		copyLanePlanningInput(f.root, f.lane, SLICE, "spec", f.base);
+		expect(readFileSync(join(f.lane, SPEC), "utf8")).toBe("# shared candidate\n");
+		expect(git(f.lane, "show", `:${SPEC}`)).toBe("# shared candidate");
 	});
 });

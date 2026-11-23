@@ -24,24 +24,30 @@ function deliveredPaths(root: string, base: string, head: string): DeliveredPath
 }
 
 /**
- * Per-path identity (D1): the path already carries exactly its delivered identity. Index mode+blob equal the
- * delivered entry and worktree bytes hash to that blob with a matching mode; a deletion is absent from index and worktree.
+ * Per-path identity (D1): "satisfied" when the index mode+blob equal the delivered entry and the worktree bytes
+ * hash to that blob with a matching mode; a deletion is absent from index and worktree. "unindexed" when the
+ * worktree carries that exact regular-file identity but the index has no entry for the path (an untracked copy):
+ * delivery only has to stage it. Anything else, including symlinks and mode or byte drift, is "unsatisfied".
  */
-function pathSatisfied(root: string, entry: DeliveredPath): boolean {
+type PathState = "satisfied" | "unindexed" | "unsatisfied";
+function pathState(root: string, entry: DeliveredPath): PathState {
 	const staged = gitIn(root, "--literal-pathspecs", "ls-files", "--stage", "-z", "--", entry.path);
-	if (staged.status !== 0) return false;
+	if (staged.status !== 0) return "unsatisfied";
 	if (entry.deleted) {
-		if (staged.stdout.length) return false;
-		try { lstatSync(join(root, entry.path)); return false; } catch { return true; }
+		if (staged.stdout.length) return "unsatisfied";
+		try { lstatSync(join(root, entry.path)); return "unsatisfied"; } catch { return "satisfied"; }
 	}
-	const indexed = /^(\d+) ([0-9a-f]+) \d\t/.exec(staged.stdout);
-	if (!indexed || indexed[1] !== entry.newMode || indexed[2] !== entry.newBlob) return false;
+	if (staged.stdout.length) {
+		const indexed = /^(\d+) ([0-9a-f]+) \d\t/.exec(staged.stdout);
+		if (!indexed || indexed[1] !== entry.newMode || indexed[2] !== entry.newBlob) return "unsatisfied";
+	} else if (entry.newMode !== "100644" && entry.newMode !== "100755") return "unsatisfied";
 	let stat;
-	try { stat = lstatSync(join(root, entry.path)); } catch { return false; }
+	try { stat = lstatSync(join(root, entry.path)); } catch { return "unsatisfied"; }
 	const worktreeMode = stat.isSymbolicLink() ? "120000" : stat.isFile() ? (stat.mode & 0o111 ? "100755" : "100644") : "";
-	if (worktreeMode !== entry.newMode) return false;
+	if (worktreeMode !== entry.newMode) return "unsatisfied";
 	const hashed = gitIn(root, "hash-object", "--no-filters", "--", entry.path);
-	return hashed.status === 0 && hashed.stdout.trim() === entry.newBlob;
+	if (hashed.status !== 0 || hashed.stdout.trim() !== entry.newBlob) return "unsatisfied";
+	return staged.stdout.length ? "satisfied" : "unindexed";
 }
 
 /**
@@ -53,7 +59,7 @@ export function deliveryAlreadyApplied(root: string, base: string, head: string)
 	const { mode } = readGitIntegrationPreference(root);
 	if (mode === "auto") return gitIn(root, "merge-base", "--is-ancestor", head, "HEAD").status === 0;
 	const paths = deliveredPaths(root, base, head);
-	return !!paths?.length && paths.every(entry => pathSatisfied(root, entry));
+	return !!paths?.length && paths.every(entry => pathState(root, entry) === "satisfied");
 }
 
 /** Deliver exactly the Lane's integrated delta, preserving unrelated checkout changes. */
@@ -65,26 +71,38 @@ export function deliverSingleTask(root: string, base: string, head: string): Bat
 	const changed = deliveredPaths(root, base, head);
 	const dirty = porcelainEntries(root);
 	if (!changed || !dirty) return blocked("coordinator_status_unreadable");
-	// Manual mode delivers only paths that do not already carry their delivered identity (D1/D2); auto is a lineage fast-forward (D3).
-	const pending = (mode === "auto" ? changed : changed.filter(entry => !pathSatisfied(root, entry))).map(entry => entry.path);
+	// Both modes skip paths that already carry their delivered identity, staged or as an untracked copy (D1/D2);
+	// every other overlap with checkout dirt fails closed. Auto is then a lineage fast-forward (D3).
+	const states = changed.map(entry => ({ path: entry.path, state: pathState(root, entry) }));
+	const pending = states.filter(entry => entry.state === "unsatisfied").map(entry => entry.path);
+	const unindexed = states.filter(entry => entry.state === "unindexed").map(entry => entry.path);
 	const overlaps = dirty.map(entry => entry.path).filter(path => pending.some(file =>
 		path === file || path.startsWith(`${file}/`) || file.startsWith(`${path}/`)));
 	if (overlaps.length) return blocked(`checkout_delivery_overlap: ${[...new Set(overlaps)].sort().join(", ")}`);
+	// Identical untracked copies enter the index only once every refusal has been ruled out, and leave it again on failure.
+	const stage = () => !unindexed.length || git("--literal-pathspecs", "add", "-f", "--", ...unindexed).status === 0;
+	const unstage = () => { if (unindexed.length) git("--literal-pathspecs", "reset", "-q", "--", ...unindexed); };
+	const failed = (reason: string) => { unstage(); return blocked(reason); };
 	if (mode === "auto") {
 		if (git("symbolic-ref", "--quiet", "HEAD").status !== 0) return blocked("coordinator_branch_unavailable");
 		if (git("merge-base", "--is-ancestor", "HEAD", head).status !== 0) return blocked("coordinator_head_diverged");
+		if (!stage()) return failed("checkout_delivery_conflict: cannot stage identical untracked paths");
 		const merge = git("merge", "--ff-only", "--no-edit", head);
-		if (merge.status !== 0) return blocked(`checkout_delivery_conflict: ${merge.stderr.trim()}`);
+		if (merge.status !== 0) return failed(`checkout_delivery_conflict: ${merge.stderr.trim()}`);
 		return { mode, status: "fast_forwarded", reason: null };
 	}
-	if (!pending.length) return { mode, status: "staged", reason: null };
+	if (!pending.length) {
+		if (!stage()) return failed("checkout_delivery_conflict: cannot stage identical untracked paths");
+		return { mode, status: "staged", reason: null };
+	}
 	const patch = spawnSync("git", ["--no-optional-locks", "--literal-pathspecs", "-C", root, "diff", "--binary", "--full-index", "--no-renames", base, head, "--", ...pending], { maxBuffer: 128 * 1024 * 1024 });
 	if (patch.status !== 0) return blocked("checkout_delivery_conflict: cannot read delivery delta");
 	if (!patch.stdout.length) return { mode, status: "staged", reason: null };
 	const apply = (check: boolean) => spawnSync("git", ["--no-optional-locks", "-C", root, "apply", "--index", ...(check ? ["--check"] : [])], { input: patch.stdout, encoding: "utf8" });
 	const checked = apply(true);
 	if (checked.status !== 0) return blocked(`checkout_delivery_conflict: ${checked.stderr.trim()}`);
+	if (!stage()) return failed("checkout_delivery_conflict: cannot stage identical untracked paths");
 	const applied = apply(false);
-	if (applied.status !== 0) return blocked(`checkout_delivery_conflict: ${applied.stderr.trim()}`);
+	if (applied.status !== 0) return failed(`checkout_delivery_conflict: ${applied.stderr.trim()}`);
 	return { mode, status: "staged", reason: null };
 }
