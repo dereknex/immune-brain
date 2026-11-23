@@ -1,0 +1,118 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "e2e-gate-s7-skew",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "e2e-gate-s7-skew",
+    "goal": "J5: a stale plugin cache or too-old runtime produces the named skew diagnostic and its single recovery action without parking a Lane (Spec D2, J5) (Initiative e2e-release-gate slice S7; Spec docs/specs/e2e-release-gate.spec.md).",
+    "acceptance": [
+      {
+        "id": "S7-AC1",
+        "assertion": "bun run e2e skew enters drive with a stale plugin cache against newer source, and separately with a runtime older than the required contract; each shows its named skew diagnostic and one recovery action. Negative case: neither run leaves a Lane parked as batch_lane_lost or batch_lane_unreadable. Done looks like: tests/e2e/skew.e2e.ts passes asserting both diagnostics and no parked Lane. Prerequisite: the pinned claude binary from tests/e2e/hosts.json is installed on the QA host (maintainer machine provides claude 2.1.330); an absent binary fails the check rather than skipping.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"run\",\n      \"e2e\",\n      \"skew\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 600000,\n    \"max_output_bytes\": 262144\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/e2e-gate-s7-skew.intent.json",
+      "tests/e2e/cassettes/skew/claude.jsonl",
+      "tests/e2e/skew.e2e.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/e2e-gate-s7-skew.intent.json",
+    "content_hash": "sha256:fe6929df58de08495413661ebb6e546ef37368983d449352a976d37d6484b14f"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:fe6929df58de08495413661ebb6e546ef37368983d449352a976d37d6484b14f",
+  "git_base_head": "6bc933c2bdb71f30b490540390f1f70e8b6666dd",
+  "attestations": [
+    {
+      "id": "approval-qa-e7ac64fb",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:fe6929df58de08495413661ebb6e546ef37368983d449352a976d37d6484b14f",
+      "diff_hash": "sha256:93093d0733424385e4cac4bf1ebf0c1b4de0d214c0b863bfcb13b67ab5ba30dd",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:fe8cd1f45f8a2b971a0625466f84de12bfe4a0e4f4a0b79625fac98aee8a8d08",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S7-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:fe8cd1f45f8a2b971a0625466f84de12bfe4a0e4f4a0b79625fac98aee8a8d08"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-49e23ce5",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:fe6929df58de08495413661ebb6e546ef37368983d449352a976d37d6484b14f",
+      "diff_hash": "sha256:93093d0733424385e4cac4bf1ebf0c1b4de0d214c0b863bfcb13b67ab5ba30dd",
+      "actor_id": "cli:antigravity:9f1fb3f0-e4b3-4ed6-8d4e-e8594aa619a4",
+      "summary": "S7-AC1 met: skew.e2e.ts drives the pinned claude through /immune-brain:drive with a 3-turn cassette and checks loaded_plugin_differs_from_workspace with a single 'reload the Host' action for the stale cache, batch_runtime_too_old with one recovery_action and the record left unrewritten for the older runtime, plus a no-skew control run; every scenario asserts no batch_lane_lost/unreadable, one worktree, no imm worktree dir and no Lane tab; resolveClaude in beforeAll fails when the binary is absent. Blast radius: low, only test, cassette and intent files were added, with no production, migration or persisted-shape paths.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "6bc933c2bdb71f30b490540390f1f70e8b6666dd",
+        "review_commit": "6d09e03caacd626aa60d250209b9f8417e52160b"
+      },
+      "reviewer_verdict_sha256": "sha256:b17b33b96e2afc9fa8aa5166493e3bc365fb751258d826d201ccbb88f28b76f6"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:e2e-gate-s7-skew:2026-11-23T05:55:23.219Z",
+      "at": "2026-11-23T05:55:23.219Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/e2e-gate-s7-skew.intent.json"
+    },
+    {
+      "id": "record_approval:e2e-gate-s7-skew:2026-11-23T05:55:47.166Z",
+      "at": "2026-11-23T05:55:47.166Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-e7ac64fb\naction_v2_sha256:bcda586b735c4d04020e1e912627ee5f0b47dbe5ad8e15ffe01950fee6c91b55",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-11-23T05:55:47.167Z"
+      }
+    },
+    {
+      "id": "record_approval:e2e-gate-s7-skew:2026-11-23T05:56:47.066Z",
+      "at": "2026-11-23T05:56:47.066Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-49e23ce5\naction_v2_sha256:8f57a3df83ec0aa6c5774d614675c8fbcbd6f393a9262a2e1bf942ba73c6d023",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:antigravity:9f1fb3f0-e4b3-4ed6-8d4e-e8594aa619a4",
+        "confirmation_ref": "claude:cli:antigravity:9f1fb3f0-e4b3-4ed6-8d4e-e8594aa619a4",
+        "issued_at": "2026-11-23T05:56:47.066Z"
+      },
+      "review_started_at": "2026-11-23T05:55:51.886Z",
+      "review_submitted_at": "2026-11-23T05:56:45.860Z",
+      "reviewer_model": "claude-opus-5-5-medium"
+    },
+    {
+      "id": "complete:e2e-gate-s7-skew:2026-11-23T05:56:50.650Z",
+      "at": "2026-11-23T05:56:50.650Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:e3791261474fd54d86cc84d661349b1cf30647d7ec192321a6be518b7d68d98f"
+    }
+  ]
+}
