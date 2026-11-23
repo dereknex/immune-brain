@@ -13,13 +13,16 @@ const MAX_REPR_DEPTH = 64;
 // Host-injected pseudo-user frames (F3): whole envelopes and fixed Host notices with no
 // human text left once they are removed. A notice is matched whole, so a human line
 // typed after it keeps the turn human.
-const HOST_ENVELOPE = /<(task-notification|system-reminder|local-command-[a-z-]+|command-name)\b[^>]*>[\s\S]*?<\/\1>/gi;
+const HOST_ENVELOPE = /<(task-notification|system-reminder|local-command-[a-z-]+|command-name|bash-stdout|bash-stderr)\b[^>]*>[\s\S]*?<\/\1>/gi;
 const HOST_NOTICE = new RegExp([
 	String.raw`Tool loaded\.`,
 	String.raw`Your claude\.ai usage limit has reset\.(?:[ \t]*Continue the task you were working on when the limit was reached; do not repeat work that is already complete\.)?`,
 	String.raw`\[Earlier usage-limit notes no longer apply\.[^\]\n]*\]`,
 	String.raw`\[plan review[^\]\n]*\]`,
+	String.raw`\[Request interrupted by user(?: for tool use)?\]`,
 ].join("|"), "gi");
+// Claude Code's Stop hook output, fed back as a user frame: no human wrote any of it.
+const STOP_HOOK_FEEDBACK = /^Stop hook feedback:/;
 // A Claude Code skill expansion: the skill's own text, then the human's `ARGUMENTS:` when any.
 const SKILL_PREAMBLE = /^Base directory for this skill:/i;
 const SKILL_ARGUMENTS = "\nARGUMENTS:";
@@ -32,11 +35,12 @@ const EDIT_TOOLS_BY_HOST: Record<Host, ReadonlySet<string>> = {
 
 /**
  * A `/skill` block, a skill expansion carrying `ARGUMENTS:`, or any text outside a
- * Host envelope or notice means a human wrote the turn.
+ * Host envelope or notice means a human wrote the turn; Stop hook feedback never does.
  */
 function isSyntheticInput(text: string): boolean {
 	if (/<skill\b/i.test(text)) return false;
 	const trimmed = text.trim();
+	if (STOP_HOOK_FEEDBACK.test(trimmed)) return true;
 	if (SKILL_PREAMBLE.test(trimmed)) {
 		const at = trimmed.lastIndexOf(SKILL_ARGUMENTS);
 		return at < 0 || !trimmed.slice(at + SKILL_ARGUMENTS.length).trim();
@@ -245,7 +249,9 @@ export type SessionEvent = Pointer & ({ type: "user_input"; skill: string | null
 export type SessionFilter = { cutMs: number; untilMs?: number; project: string; exclude: string[] };
 export type SessionRead = { host: Host; cwd: string; session_id: string; used: boolean; skipped: number; turns: number; edits: number; tools: Map<string, number>; events: SessionEvent[] };
 
-type CallRecord = { line: number; task: string; run: string; op: string | null; review: boolean };
+type RegistrationEvent = Extract<SessionEvent, { type: "registration" }>;
+/** `registration`: a `submit_review` with no verdict in hand yet; a completed Kernel result settles it (CliReviewHost reads the reviewer's result slot). */
+type CallRecord = { line: number; task: string; run: string; op: string | null; review: boolean; registration?: RegistrationEvent };
 type ReaderState = { editor: string | null; receipt: Record<string, any> | null; registrationIndex: number; calls: Map<string, CallRecord> };
 
 function makeRead(host: Host): { out: SessionRead; state: ReaderState } {
@@ -282,6 +288,9 @@ function emitToolResult(out: SessionRead, state: ReaderState, base: Pointer, id:
 	const call = id ? state.calls.get(id) : undefined;
 	const result = norm(textOf(content));
 	if (call?.review) state.receipt = observedVerdict(content);
+	// Review states that record a verdict (`completed`, or `rework` from blocking findings);
+	// `blocked`, `review_incomplete` and `settlement_unknown` record none.
+	if (call?.registration?.without_verdict && !isError && (result.state === "completed" || result.state === "rework")) call.registration.without_verdict = false;
 	const stopOp = call?.op === "request_stop" || call?.op === "stop";
 	const stopApplied = stopOp && result.lifecycle === "stopped" && (result.state === "applied" || result.state === undefined);
 	out.events.push({
@@ -331,7 +340,10 @@ function emitToolCall(
 		const verdict = rawVerdict === undefined ? state.receipt : norm(rawVerdict);
 		if (op === "submit_review") {
 			state.registrationIndex++;
-			out.events.push({ ...pointer, type: "registration", author, taskId: String(payload.task_id ?? ""), without_verdict: rawVerdict === undefined && !state.receipt });
+			const registration: RegistrationEvent = { ...pointer, type: "registration", author, taskId: String(payload.task_id ?? ""), without_verdict: rawVerdict === undefined && !state.receipt };
+			out.events.push(registration);
+			const record = id ? state.calls.get(id) : undefined;
+			if (record && registration.without_verdict) record.registration = registration;
 			state.receipt = null;
 		}
 		const findings = op === "record_finding" ? [rawFinding] : Array.isArray(verdict?.findings) ? verdict.findings : [];
