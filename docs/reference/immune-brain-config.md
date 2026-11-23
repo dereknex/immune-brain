@@ -54,7 +54,7 @@ file:
 {
   "contract": "immune_brain/project_config/v2",
   "agents": { "executor": "opus" },
-  "batch": { "max_parallel": 2, "final_verification": ["bun run typecheck", "bun test"] },
+  "batch": { "max_parallel": 2, "final_verification": ["bun run typecheck", "bun test"], "single_task_final_verification": ["bun run typecheck"] },
   "decision_models": { "bindings": { "a4_finding_equivalence": "off" } },
   "initiative_carrier": "local",
   "loop": { "interaction": { "channel": "local" } }
@@ -84,7 +84,13 @@ file:
   Authority Review and its findings verification
   always run in a Herdr session; the Loop roles always run as processes.
 - `batch.max_parallel` is an integer in 1..8 (default 1).
-  `batch.final_verification` holds at most 8 plain command strings.
+  `batch.final_verification` and `batch.single_task_final_verification` each
+  hold at most 8 plain command strings. A new single-task `drive` that names no
+  commands uses `batch.final_verification` only for a `critical` task; any other
+  task uses `batch.single_task_final_verification`, and with neither set its
+  final verification is optional. Declared derived-file checks
+  (`docs/agents/derived-files.json`) still run and gate checkout delivery when
+  no commands are set. Initiative batches always need `batch.final_verification`.
 - `loop.interaction.channel` is `"github"` or `"local"` and defaults to `"github"`: it selects where the Loop
   daemon asks you a question. With `local` the daemon writes its requests under
   `.imm/state/loop/interactions/`, your own Host session lists them with `loop_interactions` and answers one
@@ -152,7 +158,7 @@ value winning. **Request** values come from the literal current request (see
 | `agents.<role>` | per role; a whole profile from one layer |
 | `decision_models.default_profile`, `decision_models.bindings.<point>` | per key |
 | `decision_models.egress.<kind>` | per provider kind |
-| `session_providers`, `batch.max_parallel`, `batch.final_verification`, `initiative_carrier`, `review_verifier` | first set value |
+| `session_providers`, `batch.max_parallel`, `batch.final_verification`, `batch.single_task_final_verification`, `initiative_carrier`, `review_verifier` | first set value |
 | `git_integration` | stricter wins: `manual` if either file sets it |
 | `loop.auto_enroll_max_risk` | stricter wins: the lower risk |
 | `loop.allowed_actors`, `loop.allowed_associations` | stricter wins: the intersection of the layers that set them |

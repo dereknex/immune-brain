@@ -2,12 +2,12 @@
   "contract": "assurance_kernel/task_intent/v1",
   "task_id": "workflow-friction-simplification-s3-single-task-lane-recovery",
   "owner": "user",
-  "goal": "Skip inheriting project-wide batch.final_verification by default on non-critical standalone single_task runs unless explicitly passed or configured via batch.single_task_final_verification, and surface SupervisedSessionPort / BatchSessionPort \"error\" observations so child_session_reconciler dispatches at most one automatic recovery prompt per generation for an unfinished Lane with no pending gate or conflict, per D3 of docs/specs/workflow-friction-simplification.spec.md.",
+  "goal": "Skip inheriting project-wide batch.final_verification by default on non-critical standalone single_task runs unless explicitly passed or configured via batch.single_task_final_verification, and surface SupervisedSessionPort / BatchSessionPort \"error\" observations so child_session_reconciler dispatches at most two automatic recovery prompts per Kernel record revision for an unfinished Lane with no pending gate or conflict, per D3 of docs/specs/workflow-friction-simplification.spec.md.",
   "acceptance": [
     {
       "id": "S3-AC1",
-      "assertion": "Source BR-DEC-2; meet D3.1 and BR-SCN-3 in docs/specs/workflow-friction-simplification.spec.md. Agreed seam: tests/single-task-lane-batch.test.ts, tests/layered-config.test.ts. Done looks like: a routine or material plan_source === \"single_task\" run started without an explicit final_verification argument and without batch.single_task_final_verification configured does not copy batch.final_verification, sets final_verification.required to false, and completes delivery after QA Acceptance Descriptors, typecheck, and declared derived-file checks. Negative: a critical single_task run still inherits batch.final_verification with required: true; an explicit final_verification argument or configured batch.single_task_final_verification runs and gates delivery; multi-child Initiative batches still require batch.final_verification; malformed batch.single_task_final_verification (>8 items, empty string, or non-array) emits a config diagnostic.",
-      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/single-task-lane-batch.test.ts tests/layered-config.test.ts && bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      "assertion": "Source BR-DEC-2; meet D3.1 and BR-SCN-3 in docs/specs/workflow-friction-simplification.spec.md. Agreed seam: tests/single-task-lane-decision.test.ts, tests/single-task-lane-batch.test.ts, tests/layered-config.test.ts, tests/unattended-contracts.test.ts. Done looks like: a routine or material plan_source === \"single_task\" run started without an explicit final_verification argument records batch.single_task_final_verification when configured (required) and otherwise records no commands with final_verification_required false, ignoring batch.final_verification; with no commands, declared derived-file checks still run and a failing one blocks checkout delivery; dist/drive-batch.md tells the Parent to pass only literally requested commands for a single task. Negative: a critical single_task run still inherits batch.final_verification as required; an explicit final_verification argument wins over config; multi-child Initiative batches still require batch.final_verification; malformed batch.single_task_final_verification (>8 items, empty string, or non-array) emits a config diagnostic and refuses lane_config_invalid.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/single-task-lane-decision.test.ts tests/single-task-lane-batch.test.ts tests/layered-config.test.ts tests/unattended-contracts.test.ts && bun scripts/sync-dist-docs.ts --check && bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
     },
     {
       "id": "S3-AC2",
@@ -16,12 +16,16 @@
     }
   ],
   "scope_hint": [
-    ".changeset/workflow-friction-simplification-s3.md",
+    ".changeset/workflow-friction-simplification-s3a.md",
+    ".changeset/workflow-friction-simplification-s3b.md",
     "docs/plans/workflow-friction-simplification-s3-single-task-lane-recovery.intent.json",
+    "docs/reference/immune-brain-config.md",
     "docs/reference/supervised-session-port.md",
     "docs/specs/workflow-friction-simplification.spec.md",
     "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+    "plugins/immune-brain-antigravity/dist/docs/reference/immune-brain-config.md",
     "plugins/immune-brain-antigravity/dist/docs/reference/supervised-session-port.md",
+    "plugins/immune-brain-antigravity/dist/drive-batch.md",
     "plugins/immune-brain-antigravity/runtime/config/layered_config.ts",
     "plugins/immune-brain-antigravity/runtime/host-core/runtime.ts",
     "plugins/immune-brain-antigravity/runtime/lane_sessions/session_port_adapter.ts",
@@ -29,11 +33,14 @@
     "plugins/immune-brain-antigravity/runtime/session/herdr_core_provider.ts",
     "plugins/immune-brain-antigravity/runtime/session/herdr_provider.ts",
     "plugins/immune-brain-antigravity/runtime/session/supervised_session_port.ts",
+    "plugins/immune-brain-antigravity/runtime/unattended/batch_lanes.ts",
     "plugins/immune-brain-antigravity/runtime/unattended/batch_session_port.ts",
     "plugins/immune-brain-antigravity/runtime/unattended/batch_state.ts",
     "plugins/immune-brain-antigravity/runtime/unattended/child_session_reconciler.ts",
     "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/docs/reference/immune-brain-config.md",
     "plugins/immune-brain/dist/docs/reference/supervised-session-port.md",
+    "plugins/immune-brain/dist/drive-batch.md",
     "plugins/immune-brain/runtime/config/layered_config.ts",
     "plugins/immune-brain/runtime/host-core/runtime.ts",
     "plugins/immune-brain/runtime/lane_sessions/session_port_adapter.ts",
@@ -41,13 +48,16 @@
     "plugins/immune-brain/runtime/session/herdr_core_provider.ts",
     "plugins/immune-brain/runtime/session/herdr_provider.ts",
     "plugins/immune-brain/runtime/session/supervised_session_port.ts",
+    "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
     "plugins/immune-brain/runtime/unattended/batch_session_port.ts",
     "plugins/immune-brain/runtime/unattended/batch_state.ts",
     "plugins/immune-brain/runtime/unattended/child_session_reconciler.ts",
     "tests/batch-session-port.test.ts",
     "tests/layered-config.test.ts",
     "tests/single-task-lane-batch.test.ts",
-    "tests/supervised-session-conformance.test.ts"
+    "tests/single-task-lane-decision.test.ts",
+    "tests/supervised-session-conformance.test.ts",
+    "tests/unattended-contracts.test.ts"
   ],
   "scope_size_reason": "Propagating the \"error\" session state requires touching SupervisedSessionPort, its three providers, SessionPortAdapter, BatchSessionPort, child_session_reconciler, and its synced dist reference doc together alongside single-task final_verification config.",
   "risk": "material",

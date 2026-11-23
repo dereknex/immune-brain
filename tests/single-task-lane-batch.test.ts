@@ -51,7 +51,7 @@ test("single-task batch records retain their source and reject a different child
 const roots: string[] = [];
 afterAll(() => { for (const root of roots) rmSync(root, { recursive: true, force: true }); });
 
-function fixture(options: { mode?: "manual" | "auto"; untrackedIntent?: boolean } = {}) {
+function fixture(options: { mode?: "manual" | "auto"; untrackedIntent?: boolean; derivedExit?: number } = {}) {
 	const dir = realpathSync(mkdtempSync(join(tmpdir(), "imm-single-task-")));
 	roots.push(dir);
 	writeFileSync(join(dir, ".gitignore"), ".imm/state/\n");
@@ -60,6 +60,12 @@ function fixture(options: { mode?: "manual" | "auto"; untrackedIntent?: boolean 
 	if (options.mode) {
 		mkdirSync(join(dir, ".imm"), { recursive: true });
 		writeFileSync(join(dir, ".imm/config.json"), JSON.stringify({ contract: "immune_brain/project_config/v2", git_integration: options.mode }));
+	}
+	if (options.derivedExit !== undefined) {
+		const invocation = { executable: "bun", argv: ["-e", `process.exit(${options.derivedExit})`] };
+		mkdirSync(join(dir, "docs/agents"), { recursive: true });
+		writeFileSync(join(dir, "docs/agents/derived-files.json"), `${JSON.stringify({ contract: "immune_brain/derived_files/v1",
+			entries: [{ id: "mirror", sources: ["src/**"], outputs: ["out/a"], generate: invocation, check: invocation }] }, null, 2)}\n`);
 	}
 	git(dir, "init", "-q", "-b", "main");
 	git(dir, "add", "-A");
@@ -279,7 +285,7 @@ describe("single-task status", () => {
 });
 
 describe("single-task Lane delivery", () => {
-	function owned(options: { mode?: "manual" | "auto"; untrackedIntent?: boolean; extra?: Partial<StartBatchInput> & { confirmedAt?: string } } = {}) {
+	function owned(options: { mode?: "manual" | "auto"; untrackedIntent?: boolean; derivedExit?: number; extra?: Partial<StartBatchInput> & { confirmedAt?: string } } = {}) {
 		const { repo, base } = fixture(options);
 		const port = createDefaultLaneGitPort();
 		const k = kernel();
@@ -483,7 +489,7 @@ describe("single-task final verification and checkout delivery", () => {
 	type Fixture = ReturnType<typeof ownedFixture>;
 	const ownedFixture = (options: Parameters<typeof owned>[0] = {}) => owned(options);
 	// `owned` lives in the sibling describe; rebuild the same wiring here.
-	function owned(options: { mode?: "manual" | "auto"; untrackedIntent?: boolean; extra?: Partial<StartBatchInput> & { confirmedAt?: string } } = {}) {
+	function owned(options: { mode?: "manual" | "auto"; untrackedIntent?: boolean; derivedExit?: number; extra?: Partial<StartBatchInput> & { confirmedAt?: string } } = {}) {
 		const { repo, base } = fixture(options);
 		const port = createDefaultLaneGitPort();
 		const k = kernel();
@@ -698,6 +704,22 @@ describe("single-task final verification and checkout delivery", () => {
 		expect(git(f.repo, "rev-parse", "HEAD")).toBe(f.base);
 		expect(git(f.repo, "rev-parse", `refs/heads/imm/${TASK}`)).toBe(parked.commits[0]!);
 		expect(parked.commits).toHaveLength(1);
+	});
+
+	it.each([
+		["a passing", 0, "completed", null],
+		["a failing", 1, "needs_human", "final_verification_failed: mirror"],
+	] as const)("workflow-friction D3.1: with no commands, %s declared derived check gates checkout delivery", async (_name, derivedExit, state, reason) => {
+		const f = owned({ derivedExit, extra: { final_verification: [], final_verification_required: false } });
+		await settled(f);
+		const report = laneReport(await startBatch(f.args()));
+		expect(report.batch_state).toBe(state);
+		const record = read(f);
+		expect(record.final_verification_required).toBe(false);
+		expect(record.final_report!.final_verification!.derived_checks).toMatchObject([{ id: "mirror", passed: derivedExit === 0 }]);
+		expect(record.final_report!.return_to_coordinator).toMatchObject(reason ? { status: "blocked", reason } : { status: "staged", reason: null });
+		// A blocked delivery leaves the coordinator checkout untouched.
+		if (reason) expect(git(f.repo, "status", "--porcelain")).toBe("");
 	});
 
 	it("AGR-A5: new single-task records are v3 with policies, null sessions; v2 refused", async () => {

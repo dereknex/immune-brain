@@ -1833,7 +1833,8 @@ async function runLaneBatchEngine(
 			persist(); // Keep the report even if the return step is interrupted.
 			if (isCheckout) {
 				const required = (record as { final_verification_required?: boolean }).final_verification_required;
-				const mustPass = required !== false;
+				// Declared derived-file checks gate delivery even when commands are optional (workflow-friction D3.1).
+				const mustPass = required !== false || (final?.derived_checks?.length ?? 0) > 0;
 				const failedChecks = final ? [...final.results, ...(final.derived_checks ?? []).map(item => ({ ...item, command: item.id }))].filter(item => !item.passed).map(item => item.command) : [];
 				// D4: delivery needs a pass bound to this exact tip when verification is required; a failure keeps the integration and touches no checkout.
 				const unverified = mustPass && final && (!final.passed || final.head !== record.final_report.head)

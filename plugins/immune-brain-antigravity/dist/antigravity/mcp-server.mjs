@@ -8549,9 +8549,11 @@ function resolveConfig(root, options = {}) {
       diag("retired_key", "warning", file, "herdr", "herdr is retired and ignored; remove it (imm-kernel config migrate --write deletes it)");
   const sessionProviders = pick((o) => o.session_providers, "session_providers", (v) => Array.isArray(v) && v.length > 0 && v.every((name) => REGISTERED_SESSION_PROVIDERS.includes(name)) && new Set(v).size === v.length, `expected a non-empty list of distinct registered providers (${REGISTERED_SESSION_PROVIDERS.join(", ")})`, ["herdr"]);
   for (const [, o, file] of layers)
-    knownKeys(part(o, file, "batch"), ["max_parallel", "final_verification"], file, "batch");
+    knownKeys(part(o, file, "batch"), ["max_parallel", "final_verification", "single_task_final_verification"], file, "batch");
   const maxParallel = pick((o) => o.batch?.max_parallel, "batch.max_parallel", (v) => integerWithin(v, BATCH_MAX_PARALLEL.min, BATCH_MAX_PARALLEL.max), `expected an integer between ${BATCH_MAX_PARALLEL.min} and ${BATCH_MAX_PARALLEL.max}`, BATCH_MAX_PARALLEL.default);
-  const finalVerification = pick((o) => o.batch?.final_verification, "batch.final_verification", (v) => Array.isArray(v) && v.length <= 8 && v.every((c) => typeof c === "string" && c.length > 0), "expected at most eight command strings");
+  const commandList = (v) => Array.isArray(v) && v.length <= 8 && v.every((c) => typeof c === "string" && c.length > 0);
+  const finalVerification = pick((o) => o.batch?.final_verification, "batch.final_verification", commandList, "expected at most eight command strings");
+  const singleTaskFinalVerification = pick((o) => o.batch?.single_task_final_verification, "batch.single_task_final_verification", commandList, "expected at most eight command strings");
   const reviewVerifier = pick((o) => o.review_verifier, "review_verifier", oneOf(["off", "on"]), "expected off or on", "off");
   const carrier = pick((o) => o.initiative_carrier, "initiative_carrier", oneOf(["github", "local"]), "expected github or local");
   const git = valid((o) => o.git_integration, "git_integration", oneOf(["manual", "auto"]), "expected manual or auto");
@@ -8681,7 +8683,7 @@ function resolveConfig(root, options = {}) {
     files: { user: userPath, project: projectPath },
     agents,
     session_providers: sessionProviders,
-    batch: { valid: !errorsUnder("batch"), max_parallel: maxParallel, final_verification: finalVerification },
+    batch: { valid: !errorsUnder("batch"), max_parallel: maxParallel, final_verification: finalVerification, single_task_final_verification: singleTaskFinalVerification },
     decision_models: decisionModels,
     git_integration: leaf(gitIntegration.value, gitIntegration.source),
     initiative_carrier: carrier,
@@ -20083,7 +20085,7 @@ async function runLaneBatchEngine(input, persisted) {
       persist();
       if (isCheckout) {
         const required = record.final_verification_required;
-        const mustPass = required !== false;
+        const mustPass = required !== false || (final?.derived_checks?.length ?? 0) > 0;
         const failedChecks = final ? [...final.results, ...(final.derived_checks ?? []).map((item) => ({ ...item, command: item.id }))].filter((item) => !item.passed).map((item) => item.command) : [];
         const unverified = mustPass && final && (!final.passed || final.head !== record.final_report.head) ? `final_verification_failed: ${failedChecks.join(", ") || (final.head !== record.final_report.head ? "head_mismatch" : "workspace_changed")}` : null;
         if (record.children.length === 1) {
@@ -26689,7 +26691,9 @@ class HostRuntime {
     }
     const isResuming = preflight.projection.is_resuming;
     if (options.plan_source === "single_task" && !isResuming && !options.final_verification?.length) {
-      const configured = resolveConfig(this.cwd).batch.final_verification.value;
+      const critical = Object.values(preflight.projection.risk_by_task ?? {}).includes("critical");
+      const batchConfig = resolveConfig(this.cwd).batch;
+      const configured = batchConfig[critical ? "final_verification" : "single_task_final_verification"].value;
       if (Array.isArray(configured) && configured.length > 0)
         options = { ...options, final_verification: configured.map(String) };
     }
