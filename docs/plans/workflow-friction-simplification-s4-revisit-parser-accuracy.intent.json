@@ -1,0 +1,23 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "workflow-friction-simplification-s4-revisit-parser-accuracy",
+  "owner": "user",
+  "goal": "Eliminate false-positive human user_resume and review_without_verdict counts in /immune-brain:revisit by marking synthetic Claude hook, bash-output, and user-interrupt frames as synthetic: true and recognizing non-error CliReviewHost submit_review completions in session_evidence.ts, per D4 of docs/specs/workflow-friction-simplification.spec.md.",
+  "acceptance": [
+    {
+      "id": "S4-AC1",
+      "assertion": "Source BR-REQ-4; meet D4.1-D4.2 and BR-SCN-4 in docs/specs/workflow-friction-simplification.spec.md. Agreed seam: tests/review-retro-analyzer.test.ts. Done looks like: Claude session user frames beginning with \"Stop hook feedback:\", \"<bash-stdout>\", or \"<bash-stderr>\", or equaling \"[Request interrupted by user]\", are classified synthetic: true and excluded from human user_resume chains, and CliReviewHost submit_review tool completions with is_error !== true and a completed review state are not counted under review_without_verdict. Negative: genuine human plain-text follow-ups (such as \"继续\") after non-error assistant turns still count as user_resume, and submit_review calls with is_error: true, rejected/blocked/review_incomplete states, or legacy Review subagent calls missing a verdict still count as review_without_verdict.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/review-retro-analyzer.test.ts && bun scripts/build-antigravity-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/workflow-friction-simplification-s4.md",
+    "docs/plans/workflow-friction-simplification-s4-revisit-parser-accuracy.intent.json",
+    "docs/specs/workflow-friction-simplification.spec.md",
+    "plugins/immune-brain-antigravity/skills/revisit/scripts/session_evidence.ts",
+    "plugins/immune-brain/skills/revisit/scripts/session_evidence.ts",
+    "tests/review-retro-analyzer.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}
