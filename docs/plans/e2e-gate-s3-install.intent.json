@@ -1,0 +1,21 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "e2e-gate-s3-install",
+  "owner": "user",
+  "goal": "J4: each Host (Claude Code, Pi, Antigravity) loads the packed plugin and exposes its Skills, slash commands and MCP tools, including the minimum supported claude version (Spec D2, J4) (Initiative e2e-release-gate slice S3; Spec docs/specs/e2e-release-gate.spec.md).",
+  "acceptance": [
+    {
+      "id": "S3-AC1",
+      "assertion": "bun run e2e install lists the expected Skills, slash commands and MCP tools for Claude Code, Pi and Antigravity from the packed tarball, and also loads under the minimum claude version from tests/e2e/hosts.json. Negative cases: a tarball with one declared plugin file removed fails naming that path; a claude version below the minimum fails with the version diagnostic. Done looks like: tests/e2e/install.e2e.ts passes with both negatives asserted. Prerequisite: the pinned claude binary from tests/e2e/hosts.json is installed on the QA host (maintainer machine provides claude 2.1.330); an absent binary fails the check rather than skipping.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"run\",\n      \"e2e\",\n      \"install\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 600000,\n    \"max_output_bytes\": 262144\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/e2e-gate-s3-install.intent.json",
+    "tests/e2e/cassettes/install/claude.jsonl",
+    "tests/e2e/cassettes/install/pi.jsonl",
+    "tests/e2e/install.e2e.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}
