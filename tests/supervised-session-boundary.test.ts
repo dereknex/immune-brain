@@ -100,11 +100,13 @@ describe("session exec", () => {
 		const { runCommand } = await import("../plugins/immune-brain/runtime/session/exec");
 		const controller = new AbortController();
 		const started = Date.now();
-		const running = runCommand(process.env, "sleep", ["30"], controller.signal);
+		// A per-process duration keeps pgrep from matching another file's sleep in a parallel run.
+		const duration = `30.${process.pid}`;
+		const running = runCommand(process.env, "sleep", [duration], controller.signal);
 		setTimeout(() => controller.abort(), 100);
 		expect(await running).toMatchObject({ aborted: true, code: null });
 		expect(Date.now() - started).toBeLessThan(3_000);
-		const lingering = Bun.spawnSync(["pgrep", "-x", "-f", "sleep 30"]).stdout.toString().trim();
+		const lingering = Bun.spawnSync(["pgrep", "-x", "-f", `sleep ${duration}`]).stdout.toString().trim();
 		expect(lingering).toBe("");
 	});
 });
