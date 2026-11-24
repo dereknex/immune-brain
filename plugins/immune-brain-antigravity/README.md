@@ -7,9 +7,12 @@ Everything it references resolves inside this directory; install this directory,
 
 ## Install
 
+Install from the `stable` branch, which advances only when a release is promoted:
+
 ```sh
-agy plugin install ./plugins/immune-brain-antigravity
-agy plugin validate ./plugins/immune-brain-antigravity --strict
+git clone -b stable https://github.com/dereknex/immune-brain.git
+agy plugin install ./immune-brain/plugins/immune-brain-antigravity
+agy plugin validate ./immune-brain/plugins/immune-brain-antigravity --strict
 ```
 
 The npm package ships this directory as `plugins/immune-brain-antigravity/`. Existing

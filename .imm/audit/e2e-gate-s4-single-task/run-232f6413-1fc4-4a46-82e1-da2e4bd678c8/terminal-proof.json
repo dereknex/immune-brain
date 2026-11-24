@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "e2e-gate-s4-single-task",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:e2e-gate-s4-single-task:2026-11-23T12:30:19.238Z",
+  "final_record_hash": "sha256:4c8b261e2729c0c897ea0ceb007d0c8d256eaafd47832ef1bad169cdb661ec09",
+  "terminalized_at": "2026-11-23T12:30:19.238Z"
+}

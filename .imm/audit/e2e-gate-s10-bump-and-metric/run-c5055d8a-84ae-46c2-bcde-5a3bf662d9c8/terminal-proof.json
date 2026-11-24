@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "e2e-gate-s10-bump-and-metric",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:e2e-gate-s10-bump-and-metric:2026-11-23T13:27:31.656Z",
+  "final_record_hash": "sha256:48f5bc4b5eb561628feac018267f0ae7d664487911131e47e1845ec6a2ff95b8",
+  "terminalized_at": "2026-11-23T13:27:31.656Z"
+}

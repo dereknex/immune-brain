@@ -1,0 +1,118 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "e2e-gate-s6-batch",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "e2e-gate-s6-batch",
+    "goal": "J2: a two-child Initiative runs as parallel Lanes, integrates and passes final verification, or retains the branch when final verification fails (Spec D2, J2) (Initiative e2e-release-gate slice S6; Spec docs/specs/e2e-release-gate.spec.md).",
+    "acceptance": [
+      {
+        "id": "S6-AC1",
+        "assertion": "bun run e2e batch runs a two-child Initiative through parallel Lanes, integration and final verification to an integrated delivery. Negative case: a forced final-verification failure retains the integration branch and delivers nothing. Done looks like: tests/e2e/batch.e2e.ts passes with the negative asserted. Prerequisite: the pinned claude binary from tests/e2e/hosts.json is installed on the QA host (maintainer machine provides claude 2.1.330); an absent binary fails the check rather than skipping.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"run\",\n      \"e2e\",\n      \"batch\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 600000,\n    \"max_output_bytes\": 262144\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/e2e-gate-s6-batch.intent.json",
+      "tests/e2e/batch.e2e.ts",
+      "tests/e2e/cassettes/batch/claude.jsonl"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/e2e-gate-s6-batch.intent.json",
+    "content_hash": "sha256:49a979ee245e5c308be6da8a43afde77b72be0a0a92a038cb4271471b3d04b80"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:49a979ee245e5c308be6da8a43afde77b72be0a0a92a038cb4271471b3d04b80",
+  "git_base_head": "6bc933c2bdb71f30b490540390f1f70e8b6666dd",
+  "attestations": [
+    {
+      "id": "approval-qa-0fb6f623",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:49a979ee245e5c308be6da8a43afde77b72be0a0a92a038cb4271471b3d04b80",
+      "diff_hash": "sha256:3ff458e877d52f0c9b492f92bde140c63ff947c0c4fc5b95c6bb7aef9b117d40",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:d613f987dab54adb1e647d8c4f728f314f54bd428c5794ab19aec850784cfc97",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S6-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:d613f987dab54adb1e647d8c4f728f314f54bd428c5794ab19aec850784cfc97"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-24c10b55",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:49a979ee245e5c308be6da8a43afde77b72be0a0a92a038cb4271471b3d04b80",
+      "diff_hash": "sha256:3ff458e877d52f0c9b492f92bde140c63ff947c0c4fc5b95c6bb7aef9b117d40",
+      "actor_id": "cli:antigravity:28d63437-d257-4f7a-8d1d-aa078beafecd",
+      "summary": "S6-AC1 satisfied: batch.e2e.ts drives a real pinned-claude Parent plus two Lane sessions via cassette, asserts Lane overlap, integrated delivery on main with batch_run_report integrated/completed, and the negative (failed final verification names the command, main stays at base, imm/e2e-batch retained with both files); resolveClaude in beforeAll fails rather than skips; blast radius low (test-only additions: intent, e2e test, cassette).",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "6bc933c2bdb71f30b490540390f1f70e8b6666dd",
+        "review_commit": "7c07bdedc043769148c88c68f3eafcfbc3647997"
+      },
+      "reviewer_verdict_sha256": "sha256:d1c18e62722e0c5db006053cfdd6b208304eb34e2f13be5ea4b5012a68d23057"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:e2e-gate-s6-batch:2026-11-23T12:40:41.439Z",
+      "at": "2026-11-23T12:40:41.439Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/e2e-gate-s6-batch.intent.json"
+    },
+    {
+      "id": "record_approval:e2e-gate-s6-batch:2026-11-23T12:41:28.276Z",
+      "at": "2026-11-23T12:41:28.276Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-0fb6f623\naction_v2_sha256:2e6f496f2bc521320e804b41b20fa2e3bde8fca0d47ab27c41acb91ca07c4f02",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-11-23T12:41:28.276Z"
+      }
+    },
+    {
+      "id": "record_approval:e2e-gate-s6-batch:2026-11-23T12:42:32.782Z",
+      "at": "2026-11-23T12:42:32.782Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-24c10b55\naction_v2_sha256:6459e2e9104b0a4abaca9d2a7b997b12e35cd4a13648bbb7d4188cae85ad209a",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:antigravity:28d63437-d257-4f7a-8d1d-aa078beafecd",
+        "confirmation_ref": "claude:cli:antigravity:28d63437-d257-4f7a-8d1d-aa078beafecd",
+        "issued_at": "2026-11-23T12:42:32.782Z"
+      },
+      "review_started_at": "2026-11-23T12:41:30.463Z",
+      "review_submitted_at": "2026-11-23T12:42:32.101Z",
+      "reviewer_model": "claude-opus-5-5-medium"
+    },
+    {
+      "id": "complete:e2e-gate-s6-batch:2026-11-23T12:42:34.682Z",
+      "at": "2026-11-23T12:42:34.682Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:f31c0ef30dbd03cdcff388421ea1aae8ba26503576b998386568dc76bbad4cdf"
+    }
+  ]
+}

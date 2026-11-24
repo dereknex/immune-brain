@@ -9,7 +9,12 @@
   "plugins": [
     {
       "name": "immune-brain",
-      "source": "./plugins/immune-brain",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/dereknex/immune-brain.git",
+        "path": "plugins/immune-brain",
+        "ref": "stable"
+      },
       "description": "Kernel-governed Assurance for local interactive Claude Code."
     }
   ]

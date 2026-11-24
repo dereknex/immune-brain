@@ -1,0 +1,136 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "e2e-gate-s5-review",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "e2e-gate-s5-review",
+    "goal": "J3: a material-risk scripted task dispatches a reviewer whose receipt arrives through the MCP tool and is recorded as a verdict (Spec D2, J3) (Initiative e2e-release-gate slice S5; Spec docs/specs/e2e-release-gate.spec.md).",
+    "acceptance": [
+      {
+        "id": "S5-AC1",
+        "assertion": "bun run e2e review runs a material-risk scripted task whose reviewer submits its receipt through the MCP review tool and the verdict is recorded on the TaskRecord. Negative case: a reviewer that ends without submitting a receipt yields the named refusal and no verdict. Done looks like: tests/e2e/review.e2e.ts passes with the negative asserted. Prerequisite: the pinned claude binary from tests/e2e/hosts.json is installed on the QA host (maintainer machine provides claude 2.1.330); an absent binary fails the check rather than skipping.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"run\",\n      \"e2e\",\n      \"review\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 600000,\n    \"max_output_bytes\": 262144\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/e2e-gate-s5-review.intent.json",
+      "tests/e2e/cassettes/review/claude.jsonl",
+      "tests/e2e/review.e2e.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/e2e-gate-s5-review.intent.json",
+    "content_hash": "sha256:2b3eb65e0b8797ab11c29fa2dbc8182922f66592bed8b76712bf859145256783"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:2b3eb65e0b8797ab11c29fa2dbc8182922f66592bed8b76712bf859145256783",
+  "git_base_head": "6bc933c2bdb71f30b490540390f1f70e8b6666dd",
+  "attestations": [
+    {
+      "id": "approval-qa-cf9012b5",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:2b3eb65e0b8797ab11c29fa2dbc8182922f66592bed8b76712bf859145256783",
+      "diff_hash": "sha256:d7a0976d5b602328bfef091996403b3788aab034d4e5f12843a4a3c9d2ad0f50",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:e127cfd659bf44ddfc541a32b6045af6fa5aebed6fcd0710adc891a1aa8a7052",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S5-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:e127cfd659bf44ddfc541a32b6045af6fa5aebed6fcd0710adc891a1aa8a7052"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-526897ac",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:2b3eb65e0b8797ab11c29fa2dbc8182922f66592bed8b76712bf859145256783",
+      "diff_hash": "sha256:d7a0976d5b602328bfef091996403b3788aab034d4e5f12843a4a3c9d2ad0f50",
+      "actor_id": "cli:antigravity:5e7053f9-9f32-477c-9db0-66d0d9c15b33",
+      "summary": "review.e2e.ts drives a material-risk task to Review, plays the pinned claude reviewer through imm-session against the cassette, asserts the MCP receipt is recorded (submit completed, review approval present, lifecycle done) and the no-receipt negative yields review_session_aborted with no verdict; blast radius tier low, test-only paths (tests/e2e/review.e2e.ts, its cassette, the intent).",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "6bc933c2bdb71f30b490540390f1f70e8b6666dd",
+        "review_commit": "f1b99a88b7735a4aa60e4e31a99bc2a93e1eeb3e"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-67df6d1c78c1-1-review-1",
+          "acceptance_id": "S5-AC1",
+          "summary": "The await result is parsed by slicing stdout up to the first closing brace, which breaks if imm-session await ever emits a nested object before its top-level close.",
+          "anchor": "sha256:8499f19f8f8f6cf9c4e4fa27e0ba6f25d1b4e9142b42404179a1c2a1286dbf3c",
+          "evidence": {
+            "trigger": "imm-session await stdout whose first JSON object contains a nested object → JSON.parse throws on the truncated slice and the test fails loudly (no false pass)",
+            "caller_chain": [
+              "tests/e2e/review.e2e.ts:runJourney"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S5-AC1"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:e651270a18c48f67329456d46f95f53bc5d42cb146f1761a75fba5ef91735c8e"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:e2e-gate-s5-review:2026-11-23T06:23:00.125Z",
+      "at": "2026-11-23T06:23:00.125Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/e2e-gate-s5-review.intent.json"
+    },
+    {
+      "id": "record_approval:e2e-gate-s5-review:2026-11-23T06:23:24.352Z",
+      "at": "2026-11-23T06:23:24.352Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-cf9012b5\naction_v2_sha256:8629db8d64e68eafccfd169c83e687cc7d3961f1a2a71464a3d514fe17075fb0",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-11-23T06:23:24.352Z"
+      }
+    },
+    {
+      "id": "record_approval:e2e-gate-s5-review:2026-11-23T12:33:31.175Z",
+      "at": "2026-11-23T12:33:31.175Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-526897ac\naction_v2_sha256:7da3bb0d63e1bb0bf21512c892285b1db92c809373b64fe73ecccddaf9556ece",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:antigravity:5e7053f9-9f32-477c-9db0-66d0d9c15b33",
+        "confirmation_ref": "claude:cli:antigravity:5e7053f9-9f32-477c-9db0-66d0d9c15b33",
+        "issued_at": "2026-11-23T12:33:31.175Z"
+      },
+      "review_started_at": "2026-11-23T12:32:40.442Z",
+      "review_submitted_at": "2026-11-23T12:33:30.411Z",
+      "reviewer_model": "claude-opus-5-5-medium"
+    },
+    {
+      "id": "complete:e2e-gate-s5-review:2026-11-23T12:33:33.385Z",
+      "at": "2026-11-23T12:33:33.385Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:8d893c5634586cc6c07c272ff94b1bfb54ca374650fb5a71473b212e017b3cc3"
+    }
+  ]
+}

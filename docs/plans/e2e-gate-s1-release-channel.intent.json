@@ -1,0 +1,41 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "e2e-gate-s1-release-channel",
+  "owner": "user",
+  "goal": "Merging the version PR publishes the release to npm dist-tag next only; the Claude marketplace plugin source points at the stable branch through git-subdir with ref stable; Antigravity installs from stable; a manual promote workflow fast-forwards stable, tags immune-brain-vX-stable and moves npm latest after validating checklist-mode evidence, and a rollback mode moves both back to the previous -stable tag (Spec D7) (Initiative e2e-release-gate slice S1; Spec docs/specs/e2e-release-gate.spec.md).",
+  "acceptance": [
+    {
+      "id": "S1-AC1",
+      "assertion": "The changeset:publish script publishes with --tag next and release.yml contains no step that moves npm latest; .claude-plugin/marketplace.json sets the immune-brain plugin source to {source: git-subdir, url: https://github.com/dereknex/immune-brain.git, path: plugins/immune-brain, ref: stable}. Negative cases: a relative-path source string and a git-subdir source without ref each fail the contract tests. Done looks like: tests/pi-only-release-contract.test.ts and tests/claude-host-package.test.ts assert the next tag and the stable git-subdir source.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-only-release-contract.test.ts\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "S1-AC2",
+      "assertion": "scripts/release-promote.ts promote mode, run against a temp Git repository with a bare remote and a stub npm through its --git and --npm seams, fast-forwards stable to the commit tagged immune-brain-vX, creates immune-brain-vX-stable and runs npm dist-tag add immune-brain@X latest; a second run performs no write. Negative cases each refused with a named code before any write: evidence commit differs from the release commit, evidence version differs from X, a checklist item unchecked, immune-brain-vX tag missing, stable not an ancestor of the release commit (non-fast-forward), malformed version string. Done looks like: tests/release-promote.test.ts covers the success, rerun and six refusals.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/release-promote.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "S1-AC3",
+      "assertion": "release-promote.ts --rollback moves stable to the newest immune-brain-v*-stable tag below the current stable commit and sets npm latest to that version; with no previous -stable tag it refuses before any write. Done looks like: tests/release-promote.test.ts covers rollback success and the no-previous-tag refusal.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/release-promote.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/e2e-release-channel.md",
+    ".claude-plugin/marketplace.json",
+    ".github/workflows/promote.yml",
+    ".github/workflows/release.yml",
+    "README.md",
+    "docs/evidence/e2e-live/README.md",
+    "docs/plans/e2e-gate-s1-release-channel.intent.json",
+    "docs/specs/e2e-release-gate.spec.md",
+    "package.json",
+    "plugins/immune-brain-antigravity/README.md",
+    "scripts/release-promote.ts",
+    "tests/claude-host-package.test.ts",
+    "tests/pi-only-release-contract.test.ts",
+    "tests/release-promote.test.ts"
+  ],
+  "risk": "critical",
+  "revision": 1
+}

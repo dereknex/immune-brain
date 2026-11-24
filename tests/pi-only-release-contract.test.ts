@@ -65,6 +65,23 @@ describe("Pi-only release contract", () => {
     expect(manifest.files).toContain("plugins/immune-brain/skills");
   });
 
+  it("publishes to the next dist-tag only and leaves latest to the promote workflow", () => {
+    const manifest = JSON.parse(readFileSync(resolve(ROOT, "package.json"), "utf8"));
+    expect(manifest.scripts["changeset:publish"]).toMatch(/changeset publish --tag next$/);
+    expect(manifest.scripts.release).toBe("bun run changeset:publish");
+
+    const release = readFileSync(resolve(ROOT, ".github/workflows/release.yml"), "utf8");
+    expect(release).toContain("publish: bun run changeset:publish");
+    expect(release).not.toMatch(/dist-tag/);
+    expect(release).not.toMatch(/--tag\s+latest/);
+    expect(release).not.toMatch(/npm\s+publish/);
+
+    const promote = readFileSync(resolve(ROOT, ".github/workflows/promote.yml"), "utf8");
+    expect(promote).toContain("workflow_dispatch:");
+    expect(promote).toContain("environment: release");
+    expect(promote).toContain("bun scripts/release-promote.ts");
+  });
+
   it("uses Changesets as the only version and publish entrypoint", () => {
     const manifest = JSON.parse(readFileSync(resolve(ROOT, "package.json"), "utf8"));
     expect(existsSync(resolve(ROOT, "scripts/plugin_release.ts"))).toBe(false);
@@ -72,7 +89,7 @@ describe("Pi-only release contract", () => {
       "changeset version && bun scripts/build-claude-plugin.ts && bun scripts/build-antigravity-plugin.ts && bun scripts/plugin_versioning.ts validate",
     );
     expect(manifest.scripts["changeset:publish"]).toBe(
-      "bun run verify:release && changeset publish",
+      "bun run verify:release && changeset publish --tag next",
     );
 
     const bump = spawnSync("bun", ["scripts/plugin_versioning.ts", "bump", "patch"], {

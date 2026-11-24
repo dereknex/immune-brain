@@ -12,7 +12,7 @@ import {
 	runPlugin,
 	seedExternalSentinels,
 	type CliResult,
-} from "./helpers/roadmap-e2e-harness";
+} from "./helpers/roadmap-contract-harness";
 
 const PRED = E2E_PATHS.predecessor;
 const TERMINAL = E2E_PATHS.terminal;

@@ -1,0 +1,37 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "e2e-gate-s2-harness",
+  "owner": "user",
+  "goal": "bun run e2e builds an npm pack tarball install root, serves a scripted mock model from cassettes, launches the pinned real claude binary against it through an extended fake-herdr that spawns Host processes, and completes a smoke journey; e2e files are black-box (no runtime imports) and excluded from bun test; the Pi mock-model feasibility result is recorded in the Spec (Spec D2-D5) (Initiative e2e-release-gate slice S2; Spec docs/specs/e2e-release-gate.spec.md).",
+  "acceptance": [
+    {
+      "id": "S2-AC1",
+      "assertion": "bun run e2e smoke packs the package, installs it into a temp root, starts the mock model, launches the pinned claude with ANTHROPIC_BASE_URL at the mock and the built plugin loaded, and completes a one-turn scripted exchange; a cassette whose recorded tool name does not match the requested turn fails with cassette_mismatch. Done looks like: tests/e2e/smoke.e2e.ts passes and its mismatch case asserts cassette_mismatch. Prerequisite: the pinned claude binary from tests/e2e/hosts.json is installed on the QA host (maintainer machine provides claude 2.1.330); an absent binary fails the check rather than skipping.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"run\",\n      \"e2e\",\n      \"smoke\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 600000,\n    \"max_output_bytes\": 262144\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "S2-AC2",
+      "assertion": "A file under tests/e2e/ that imports a plugins/immune-brain/runtime module fails the boundary test naming the file and the import specifier, and bun test collects no file under tests/e2e/. Done looks like: tests/e2e-black-box-boundary.test.ts asserts both against fixtures.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/e2e-black-box-boundary.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "bunfig.toml",
+    "docs/plans/e2e-gate-s2-harness.intent.json",
+    "docs/specs/e2e-release-gate.spec.md",
+    "package.json",
+    "tests/e2e-black-box-boundary.test.ts",
+    "tests/e2e/cassettes/smoke/claude.jsonl",
+    "tests/e2e/harness/hosts.ts",
+    "tests/e2e/harness/install-root.ts",
+    "tests/e2e/harness/mock-model.ts",
+    "tests/e2e/harness/recorder.ts",
+    "tests/e2e/hosts.json",
+    "tests/e2e/run.ts",
+    "tests/e2e/smoke.e2e.ts",
+    "tests/fixtures/fake-herdr/herdr",
+    "tests/helpers/fake-herdr.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

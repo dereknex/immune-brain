@@ -1,0 +1,30 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "e2e-gate-s10-bump-and-metric",
+  "owner": "user",
+  "goal": "A weekly workflow opens a PR bumping the pinned claude and pi versions in tests/e2e/hosts.json and runs L1, and a report script counts post-release fixes within 7 days with a v8.6-v9.1 baseline (Spec D3, D10) (Initiative e2e-release-gate slice S10; Spec docs/specs/e2e-release-gate.spec.md).",
+  "acceptance": [
+    {
+      "id": "S10-AC1",
+      "assertion": "scripts/bump-e2e-hosts.ts rewrites tests/e2e/hosts.json from stubbed registry versions and leaves it byte-identical when versions are current; the weekly workflow file schedules it and opens a PR. Done looks like: tests/e2e-host-bump.test.ts covers the bump, the no-change case and the workflow contract.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/e2e-host-bump.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "S10-AC2",
+      "assertion": "scripts/release-escape-report.ts counts fix and repair commits and issues landing within 7 days after each fixture release tag and attributes them to that version; a fix after 7 days is not counted. Done looks like: tests/release-escape-report.test.ts covers in-window, out-of-window and baseline output.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/release-escape-report.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".github/workflows/e2e-host-bump.yml",
+    "docs/evidence/release-escape-baseline.md",
+    "docs/plans/e2e-gate-s10-bump-and-metric.intent.json",
+    "scripts/bump-e2e-hosts.ts",
+    "scripts/release-escape-report.ts",
+    "tests/e2e-host-bump.test.ts",
+    "tests/e2e/hosts.json",
+    "tests/release-escape-report.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

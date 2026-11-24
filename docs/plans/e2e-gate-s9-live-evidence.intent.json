@@ -1,0 +1,30 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "e2e-gate-s9-live-evidence",
+  "owner": "user",
+  "goal": "bun run e2e:live records cassettes and writes schema-valid live evidence for the release commit, and promote accepts only live evidence with passing required journeys J1, J2 and J4 (Spec D6, D7) (Initiative e2e-release-gate slice S9; Spec docs/specs/e2e-release-gate.spec.md).",
+  "acceptance": [
+    {
+      "id": "S9-AC1",
+      "assertion": "The live runner, exercised with the mock model standing in for the real model, writes docs/evidence/e2e-live/<version>.json matching immune_brain/e2e_release_evidence/v1 with version, commit, Host versions, per-journey results and each retry recorded. Negative case: a journey that fails twice is recorded as failed with both attempts. Done looks like: tests/e2e-live-evidence.test.ts validates the written file and the double-failure record.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/e2e-live-evidence.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "S9-AC2",
+      "assertion": "release-promote.ts promote mode refuses checklist-mode evidence and refuses live evidence whose J1, J2 or J4 result is failing or missing, each before any write, while passing live evidence promotes. Done looks like: tests/release-promote.test.ts covers the checklist refusal, the failing and missing journey refusals and the passing case.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/release-promote.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/evidence/e2e-live/README.md",
+    "docs/plans/e2e-gate-s9-live-evidence.intent.json",
+    "package.json",
+    "scripts/release-promote.ts",
+    "tests/e2e-live-evidence.test.ts",
+    "tests/e2e/harness/recorder.ts",
+    "tests/e2e/live/run-live.ts",
+    "tests/release-promote.test.ts"
+  ],
+  "risk": "critical",
+  "revision": 1
+}
