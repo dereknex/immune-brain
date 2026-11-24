@@ -81,7 +81,7 @@ export function deliverSingleTask(root: string, base: string, head: string): Bat
 	if (overlaps.length) return blocked(`checkout_delivery_overlap: ${[...new Set(overlaps)].sort().join(", ")}`);
 	// Identical untracked copies enter the index only once every refusal has been ruled out, and leave it again on failure.
 	const stage = () => !unindexed.length || git("--literal-pathspecs", "add", "-f", "--", ...unindexed).status === 0;
-	const unstage = () => { if (unindexed.length) git("--literal-pathspecs", "reset", "-q", "--", ...unindexed); };
+	const unstage = () => { if (unindexed.length) git("--literal-pathspecs", "rm", "--cached", "-f", "--ignore-unmatch", "-q", "--", ...unindexed); };
 	const failed = (reason: string) => { unstage(); return blocked(reason); };
 	if (mode === "auto") {
 		if (git("symbolic-ref", "--quiet", "HEAD").status !== 0) return blocked("coordinator_branch_unavailable");

@@ -197,6 +197,41 @@ describe("single-task checkout delivery", () => {
 			} finally { rmSync(lock); }
 			expect(snapshot(f.root)).toEqual(before);
 		});
+		test("auto rollback on merge failure does not restore HEAD for a path staged as deleted with an untracked copy", () => {
+			const f = fixture("auto");
+			git(f.root, "checkout", "-q", "main");
+			writeFileSync(join(f.root, "conflict"), "base conflict\n");
+			git(f.root, "add", "conflict");
+			git(f.root, "commit", "-qm", "base with conflict");
+			const base = git(f.root, "rev-parse", "HEAD");
+			git(f.root, "checkout", "-qb", "delivery-conflict");
+			git(f.root, "merge", "-q", "--no-edit", f.head);
+			writeFileSync(join(f.root, "conflict"), "delivered conflict\n");
+			git(f.root, "add", "conflict");
+			git(f.root, "commit", "-qm", "deliver conflict");
+			const head = git(f.root, "rev-parse", "HEAD");
+			git(f.root, "checkout", "-q", "main");
+
+			// `changed` is staged for deletion while holding an identical untracked worktree copy;
+			// `new` is a brand-new identical untracked copy.
+			git(f.root, "rm", "-q", "--cached", "changed");
+			writeFileSync(join(f.root, "changed"), "delivered\n");
+			writeFileSync(join(f.root, "new"), "new delivery\n");
+			// Local change hidden from `git status` so overlap checks pass and `git merge --ff-only` fails atomically.
+			writeFileSync(join(f.root, "conflict"), "local conflict\n");
+			git(f.root, "update-index", "--assume-unchanged", "conflict");
+
+			const before = snapshot(f.root);
+			const result = deliverSingleTask(f.root, base, head);
+			expect(result.status).toBe("blocked");
+			expect(result.reason).toContain("checkout_delivery_conflict");
+			expect(result.reason).not.toContain("cannot stage");
+			expect(git(f.root, "ls-files", "--stage", "changed")).toBe("");
+			expect(git(f.root, "ls-files", "--stage", "new")).toBe("");
+			expect(readFileSync(join(f.root, "changed"), "utf8")).toBe("delivered\n");
+			expect(readFileSync(join(f.root, "new"), "utf8")).toBe("new delivery\n");
+			expect(snapshot(f.root)).toEqual(before);
+		});
 	});
 	/** The standard delivery plus a deletion of the tracked `gone` file. */
 	function deletionFixture() {

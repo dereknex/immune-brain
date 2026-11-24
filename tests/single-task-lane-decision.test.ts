@@ -4,7 +4,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSy
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { computeBatchPlanDigest, createBatchAuthorityRegistry } from "../plugins/immune-brain/runtime/kernel/batch_authority";
-import { canonicalIntentHash, intentAuthorityHash, readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
+import { canonicalIntentHash, intentAuthorityHash, readTaskIntent, setIntentReaderTestHook } from "../plugins/immune-brain/runtime/kernel/intent";
 import type { AssuranceProjectionResult } from "../plugins/immune-brain/runtime/kernel/assurance_projection";
 import { createBatchKernelPort } from "../plugins/immune-brain/runtime/unattended/batch_kernel_port";
 import { createEnrollmentAuthorityRegistry } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
@@ -22,7 +22,7 @@ import { laneDecisionRequestPath, readLaneDecisionRequest, writeLaneDecisionRequ
 import type { BatchPlanChild } from "../plugins/immune-brain/runtime/unattended/types";
 import { batchReason } from "../plugins/immune-brain/runtime/unattended/batch_reasons";
 import { findLaneRelayTarget } from "../plugins/immune-brain/runtime/unattended/lane_decision";
-import { findActiveLaneBatchForTask, findExistingActiveBatch } from "../plugins/immune-brain/runtime/unattended/batch_preflight";
+import { findActiveLaneBatchForTask, findExistingActiveBatch, prepareBatchPreflight } from "../plugins/immune-brain/runtime/unattended/batch_preflight";
 import { readTaskTombstone } from "../plugins/immune-brain/runtime/kernel/backend_claim";
 import { prepareBatchLaneRunState, writeBatchLaneRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
 import { hasContiguousLaneRebind } from "../plugins/immune-brain/runtime/assurance/run_continuation";
@@ -1237,6 +1237,35 @@ describe("LEL-AC3 / workflow-friction D3.1: a new single-task start takes layere
 		writeConfig({ single_task_final_verification: ["bun run lint"] });
 		expect((await h.start({ agents: { executor: "claude-code" } })).state).toBe("started");
 		expect(recorded()).toEqual(CONFIGURED);
+		await h.stopBatch();
+	});
+
+	it("treats an unreadable intent risk as critical and keeps batch.final_verification", async () => {
+		const { f, h, recorded, record } = configuredHost({ final_verification: CONFIGURED, single_task_final_verification: ["bun run lint"] }, "material");
+		let reads = 0;
+		try {
+			setIntentReaderTestHook({ onBeforeDescriptorRead: () => { if (++reads === 2) throw new Error("transient intent read failure"); } });
+			const preflight = await prepareBatchPreflight({ root: f.root, initiative_slug: TASK, plan_source: "single_task", now });
+			expect(reads).toBeGreaterThanOrEqual(2);
+			expect(preflight).toMatchObject({ ok: true, projection: { risk_by_task: {} } });
+		} finally {
+			setIntentReaderTestHook(null);
+		}
+		reads = 0;
+		let started: any;
+		try {
+			setIntentReaderTestHook({ onBeforeDescriptorRead: () => { if (++reads === 2) throw new Error("transient intent read failure"); } });
+			started = await h.start({ agents: { executor: "claude-code" } });
+		} finally {
+			setIntentReaderTestHook(null);
+		}
+		expect(reads).toBeGreaterThanOrEqual(2);
+		expect(started.state).toBe("started");
+		expect(recorded()).toEqual(CONFIGURED);
+		expect(record().final_verification_required).toBe(true);
+		expect(h.gates).toHaveLength(1);
+		for (const command of CONFIGURED) expect(h.gates[0]!.text).toContain(command);
+		expect(h.gates[0]!.text).not.toContain("bun run lint");
 		await h.stopBatch();
 	});
 });

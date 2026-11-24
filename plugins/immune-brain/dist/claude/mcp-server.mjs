@@ -15945,7 +15945,7 @@ function deliverSingleTask(root, base, head) {
   const stage = () => !unindexed.length || git("--literal-pathspecs", "add", "-f", "--", ...unindexed).status === 0;
   const unstage = () => {
     if (unindexed.length)
-      git("--literal-pathspecs", "reset", "-q", "--", ...unindexed);
+      git("--literal-pathspecs", "rm", "--cached", "-f", "--ignore-unmatch", "-q", "--", ...unindexed);
   };
   const failed = (reason) => {
     unstage();
