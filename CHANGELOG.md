@@ -1,5 +1,266 @@
 # Changelog
 
+## 10.0.0
+
+### Major Changes
+
+- [#581](https://github.com/dereknex/immune-brain/pull/581) [`49fe1fc`](https://github.com/dereknex/immune-brain/commit/49fe1fcb0a57dadb206890b83d1dcd26b697f50d) Thanks [@dereknex](https://github.com/dereknex)! - Unified Lane sessions: v2 batch records are refused, the `herdr` config key is retired, and the Loop daemon drives Lanes through the session port, which regresses daemon execution outside Herdr.
+
+### Minor Changes
+
+- [#581](https://github.com/dereknex/immune-brain/pull/581) [`0fc2c7e`](https://github.com/dereknex/immune-brain/commit/0fc2c7ea2dbe9f9e0f6b00b4a4b7a5c1bd519118) Thanks [@dereknex](https://github.com/dereknex)! - Add BatchAgreement and Lane record v3 (unified-lane-sessions S3, #570): `authorizeBatch` issues `BatchAgreement` (`confirmation`, `final_verification { required, commands }`, `return_policy checkout_delivery | retain_branch`, `interaction_mode interactive_host | parent_relayed`) refusing unknown fields with `batch_agreement_invalid`; Lane records are `batch_run_state/v3` with agreement policies, `session_provider` null and per-child `session` null until S4, refusing v2 with `batch_record_retired`; completion follows `final_verification.required` and return follows `return_policy` for 1- and 2-child agreements with `plan_source` removed from batch lanes, git, cleanup and run continuation; record-level `rebindBatchChildIdentity` and `hasContiguousLaneRebind` are proven for Initiative children.
+
+- [#581](https://github.com/dereknex/immune-brain/pull/581) [`2467c04`](https://github.com/dereknex/immune-brain/commit/2467c047ed1a184fc626a16e55fd85e350624521) Thanks [@dereknex](https://github.com/dereknex)! - Add BatchSessionPort and child session reconciler (unified-lane-sessions S4, #570): `runtime/unattended/batch_session_port.ts` owns `SessionObservation`, structural `SessionExitProof` and bounded `laneSessionKey` with `LANE_EXECUTOR_ENV=headless` for parent-relayed opens; `child_session_reconciler.ts` drives write-ahead keys, `find` recovery, dialog holds, revision progress and `interaction_mode`-dependent stalls with recorded instruction/correction handling; `advanceBatch` records `session_provider`, refuses provider mismatch with `lane_session_unavailable` and persists per-child sessions.
+
+- [#591](https://github.com/dereknex/immune-brain/pull/591) [`a81536e`](https://github.com/dereknex/immune-brain/commit/a81536e410973caafcc19b8d611f55d750781832) Thanks [@dereknex](https://github.com/dereknex)! - Publish new versions to the npm `next` dist-tag only, add the L1 black-box `e2e` CI gate and
+  `e2e-escape-rule`, and add a manual `promote` workflow that advances the default channels. A merged
+  version PR no longer moves npm `latest`. `scripts/release-promote.ts` (run by
+  `.github/workflows/promote.yml`) fast-forwards the `stable` branch to the `immune-brain-vX` release
+  commit, tags `immune-brain-vX-stable` and sets npm `latest`, but only for a version whose committed
+  live evidence (`docs/evidence/e2e-live/<version>.json` with `mode: "live"` from `bun run e2e:live`)
+  names that commit; `--rollback` restores the previous `-stable` version. The Claude Code marketplace
+  entry now installs the plugin from the `stable` branch through a `git-subdir` source, and
+  Antigravity installs from a `stable` checkout. Pi users who want a version before it is promoted
+  install `immune-brain@next`.
+
+- [#581](https://github.com/dereknex/immune-brain/pull/581) [`a882fa8`](https://github.com/dereknex/immune-brain/commit/a882fa80b0280de819d9d5eb2cdfc07cde36cb27) Thanks [@dereknex](https://github.com/dereknex)! - Add Lane sessions composition root (unified-lane-sessions S5, #570): `runtime/lane_sessions/` (`startLanes`, `advanceLanes`, `observeLanes`, `SessionPortAdapter`) is the sole module importing both `runtime/session/` and `runtime/unattended/`; Host entries switch to `authorizeBatch` plus `startLanes` on creation and `advanceLanes` on continuation, removing Host calls to `startBatch` and `executor_mode`; `v4_runtime.ts` routes read-only `imm-session await --batch` with D20 `next_action` (`advance`, `relay_dialog`, `ask_user`, `wait`, `complete`) while rejecting ungated `send|stop --batch`; `SessionPortAdapter` maps provider `pane_not_found` to `exited` and other failures to `unknown`.
+
+- [#585](https://github.com/dereknex/immune-brain/pull/585) [`c9ad35f`](https://github.com/dereknex/immune-brain/commit/c9ad35fd05b3ee768913478d230aafe6472d6e35) Thanks [@dereknex](https://github.com/dereknex)! - The Kernel's hard no-touch set is now exactly its own worktree authority root `.imm/state`, imported from `kernel/storage_paths.ts` (kernel-owned-no-touch D1). Credential-type filename patterns, `.github/workflows`, `.changeset/config.json` and their siblings leave the built-in set, so settlement, batch integration, `policy_auto` Enrollment, Loop guard G3 and repair validation all accept them, while `.imm/state/**` keeps refusing with `no_touch_path_changed`. The repository declaration `docs/agents/no-touch.json` (`immune_brain/no_touch/v1`) is retired: it is no longer read, a leftover file is ordinary content, and `readNoTouch`, `readNoTouchAt`, `parseNoTouch` and `NO_TOUCH_PATH` are removed; `noTouchPaths`/`assertNoTouch` take only the paths. A project that wants stronger Review on CI or credential paths declares them in `.imm/risk-floor.json`. ADR 0028 Decision 4 is amended in place.
+
+- [#585](https://github.com/dereknex/immune-brain/pull/585) [`c9ad35f`](https://github.com/dereknex/immune-brain/commit/c9ad35fd05b3ee768913478d230aafe6472d6e35) Thanks [@dereknex](https://github.com/dereknex)! - Refuse a Lane batch only on runtime contract identifiers (Spec lane-runtime-contract-check D1-D4): `laneRuntimeContractRefusal` no longer refuses on `pluginSourceSkewWarning`, so a loaded plugin build that differs byte-wise from the workspace plugin stays the non-blocking `loaded_plugin_differs_from_workspace` status warning; a claude-code Lane Executor gets `--plugin-dir <runtimeClaudePluginDir()>` in its argv so it loads the coordinator's own plugin; and `batch_runtime_contract_mismatch` becomes its own batch reason with a same-Host recovery action, leaving `batch_run_rejected` unchanged.
+
+- [#581](https://github.com/dereknex/immune-brain/pull/581) [`52f374d`](https://github.com/dereknex/immune-brain/commit/52f374d715dde5582b3d5b06fe67c235449c6068) Thanks [@dereknex](https://github.com/dereknex)! - Loop daemon drives via the session port (unified-lane-sessions S8, #570): daemon `drive` builds its agreement via `authorizeBatch` (`LOOP_DAEMON_ACTOR_ID`, `tracker_approval` or `policy_auto`, `return_policy` `retain_branch`, `interaction_mode` `parent_relayed`) plus `startLanes` on creation and `advanceLanes` on every tick, escalating startup-blocked and entry-unsubmitted dialogs via `planEscalation`, and gates pull requests on the settled v3 Batch Record commit plus the `.imm/audit/` verification digest; deletes `startBatch`, `batch_runner.ts`, `lane_supervisor.ts`, `exit_recorder.ts`, `tests/lane-supervisor.test.ts` and `.imm/state/lane-supervisors/`, renames `ExecutorPreferences` keys to `host`/`model`/`effort`, and surfaces `lane_decision_required` on engine reports.
+
+- [#574](https://github.com/dereknex/immune-brain/pull/574) [`7413bc8`](https://github.com/dereknex/immune-brain/commit/7413bc879ead26ba9bbc4c50fb94856e8267534c) Thanks [@dereknex](https://github.com/dereknex)! - Add the project loop role catalog (`loop.roles` in `.imm/config.json`, Slice
+  `S1` of Spec `loop-leader`): each role binds one closed base (`leader`,
+  `clarify`, `plan`, `execute`, `repair`, `analyze`) with a Host, model, effort, an
+  advisory `when`, an advisory `instructions` file and `turn_budget` /
+  `timeout_s` / `max_parallel` limits. `imm-kernel config --json` lists the
+  resolved catalog under `loop.value.roles` and reports one diagnostic per refused
+  role (`role_base_unknown`, `role_name_invalid`, `role_host_unknown`,
+  `role_limit_out_of_range`, `role_instructions_outside_repo`,
+  `role_instructions_missing`, `leader_role_duplicate`); a refused role is excluded
+  without stopping the daemon, and with no `loop.roles` every base keeps a built-in
+  `claude-code` role at 40 turns / 900 s / 1 slot.
+
+  The Loop's `clarify`, `plan` and `repair` sessions now take Host, model, effort,
+  turn budget and timeout from that catalog and append a role's instructions as
+  advisory prompt text. `agents.planner` and `agents.executor` no longer choose
+  those sessions: each affected role reports one `deprecated_config_source`
+  warning naming the ignored binding and `loop.roles`. `agents.executor` still
+  selects the Lane Executor's Host, `agents.triage` still runs Loop judging, and a
+  missing Host binary now fails the session as `role_host_unavailable` instead of
+  falling back to another Host.
+
+  Migration: move any `agents.planner` binding for `clarify`/`plan` and the Host
+  `repair` should use into `loop.roles` in `.imm/config.json`.
+
+- [#574](https://github.com/dereknex/immune-brain/pull/574) [`f6e611a`](https://github.com/dereknex/immune-brain/commit/f6e611ac00ff62f0af2ce7cdbba50f3f22e73450) Thanks [@dereknex](https://github.com/dereknex)! - Add the resident read-only Loop leader (Slice `S2` of Spec `loop-leader`). Every
+  `imm-loop` tick compiles a local briefing — open work items, batch summaries,
+  pending interactions, the last 20 handler and worker outcomes, the role catalog,
+  owner hints and budget availability — and serializes it canonically. Its digest
+  is the briefing fingerprint: the tick wakes one bounded read-only leader session
+  only when that digest differs from the last journaled wake, the leader is not
+  disabled or out of wakes, and the dispatch budget has room. A wake counts once
+  against both `loop.budget.max_leader_wakes_per_day` (new: integer 0..500,
+  default 48, `0` disables the leader) and `loop.budget.max_dispatches_per_day`.
+  `--dry-run` and `loop.mode: "observe"` compile and report the briefing but never
+  wake.
+
+  The session runs on the catalog `leader` role in a disposable worktree holding
+  only `.imm-loop/briefing.json` and `.imm-loop/journal-tail.jsonl`, with no GitHub
+  credential, and answers with `loop_leader_proposal/v1`. The daemon parses it
+  strictly: a non-JSON reply, a wrong contract or a stale fingerprint refuses the
+  whole proposal, while an unknown target, unknown handler, unknown role, a brief
+  over 16 KiB or `ask_owner` without context refuses only that item. Accepted items
+  and refusals are journaled under `.imm/state/loop/leader/journal.jsonl` (mode
+  0600, rotated at 2 MiB keeping one previous file). `S2` executes nothing:
+  proposals have no effect until `S3`, so there is no user-visible change yet, and
+  deleting `leader/` costs exactly one wake.
+
+- [#574](https://github.com/dereknex/immune-brain/pull/574) [`4628d92`](https://github.com/dereknex/immune-brain/commit/4628d92879a7d74124d16fdfda0b8d6f6384ba0e) Thanks [@dereknex](https://github.com/dereknex)! - Execute accepted leader proposal items behind code guards (Slice `S3` of Spec
+  `loop-leader`). A legal `next` runs its handler through the daemon's own
+  dispatch path and moves the work item; `priority` stores `WorkItem.leader_rank`,
+  used only as a tie-break inside one `SCHEDULE_PRIORITY` class. `shape` runs in
+  `triage` or `planning` only: `task` is the default, while `initiative` runs the
+  plan role once and writes the Local carrier `docs/initiatives/<slug>.md` plus
+  one Kernel-authored TaskIntent per slice, recording `binding.initiative_slug`
+  so `driving` observes the carrier. `dispatch` starts one catalog role session —
+  read-only bases in an empty directory, `repair` in the daemon's own PR
+  worktree — and takes completion from the session record, never its text.
+  `imm-loop status --json` lists running sessions with `target`, `role`, `base`
+  and `started_at`. Every refused item journals one reason with zero side
+  effects: illegal transitions, `execute` without Enrollment authority, `repair`
+  outside the daemon branch, shape after plan publication, unknown or
+  over-parallel roles, and spent budgets.
+
+  The Tier-3 judging agent is retired: a `needs_judging` outcome applies the D12
+  point baseline, and `imm-loop reconcile` collects model-skipped decisions and
+  baselines as leader reconcile candidates instead of starting sessions. Each
+  pass retires what it reported, so candidates never accumulate; started sessions
+  — failed ones included — count against `max_dispatches_per_day`, and a session
+  a dead tick left running is reaped on the next tick instead of blocking its
+  role forever. A
+  retired `roles.judging` preset binding is tolerated with one
+  `deprecated_config_source` diagnostic and never invalidates `agents`. ADR 0042
+  records the leader plus catalog replacing ADR 0039 Decisions 2, 6 and 7.
+
+- [#574](https://github.com/dereknex/immune-brain/pull/574) [`c733787`](https://github.com/dereknex/immune-brain/commit/c733787bdabec527c6951d823a80d1ed37d94de5) Thanks [@dereknex](https://github.com/dereknex)! - Resolve blocked work in place and cap replanning (Slice `S4` of Spec
+  `loop-leader`). A leader `resolve` item acts only on an `escalated` target and
+  only across orchestration-level blockers: `resume` returns a transiently
+  escalated target to its still-running batch without asking the owner, `release`
+  moves `escalated -> triage`, and `replan` runs a fresh plan session whose
+  published plan is a new digest (and, for an Initiative, a new plan approval).
+  Every accepted round increments `WorkItem.replan_rounds`; at three the target is
+  forced to `ask_owner` with reason `replan_cap_reached`. A pending
+  `material`/`critical` approval, a breaking Intent revision, an open user
+  decision, a parked batch or a pending `literal_user` Lane decision rejects
+  `resume`, `release` and `replan`, and only `ask_owner` is accepted.
+
+  `InteractionRequest.context` carries the optional context pack — `blocked_on`,
+  `tried[]`, `options[{id, label, consequence}]` and `evidence[{label, ref}]` —
+  sanitized (HTML comments stripped, `@` mentions neutralized) and rendered at
+  most 8 KiB with a truncation marker. The `github` channel posts it on the
+  request's own Issue or PR and edits it in place through the new
+  `annotate(interaction_id, context)` operation; the `local` channel stores it and
+  `loop_interactions` returns it. One pending advisory question per subject and
+  binding: a new advisory request supersedes the older one, while a pending
+  `plan_approval` or `lane_decision` is only annotated — never withdrawn,
+  superseded, or stripped of its answer semantics. `imm-loop status --json` lists
+  `waiting[]` `{ target, kind, channel, link }`, and the Status Issue renders a
+  "Waiting on owner" list of links without question text; a failed post is
+  reported and leaves local transitions unblocked.
+
+- [#574](https://github.com/dereknex/immune-brain/pull/574) [`2eccf01`](https://github.com/dereknex/immune-brain/commit/2eccf01c1d8393ff326308e858e1a960f23dae37) Thanks [@dereknex](https://github.com/dereknex)! - Owner steering and status (Slice `S5` of Spec `loop-leader`). Verified
+  `@imm-loop focus <text>` and `@imm-loop priority <high|normal|low>` comments
+  become `owner_hint` leader-journal entries the next briefing carries; an
+  unverified author or an edited comment is still ignored, and a hint moves no
+  work item.
+
+  The privileged `steer_loop_work_item` Host tool (`{ target, action:
+pause|resume|abandon, reason? }`) joins `PRIVILEGED_OPERATIONS` and is registered
+  on Claude Code, Antigravity and Pi, always under the native confirmation. It
+  writes one request under `.imm/state/loop/steering/`, which the daemon applies
+  on its next tick and removes: `pause` sets `WorkItem.paused`, `resume` clears
+  it, and `abandon` reaches the new terminal `abandoned` state without touching a
+  running Kernel run. Before any candidate is built — Tier-1/2 dispatch, leader
+  dispatch and scheduler admission — a paused or abandoned target yields no
+  candidate and is recorded `skipped` with reason `work_item_paused` or
+  `work_item_abandoned`; fact transitions are still recorded.
+
+  GitHub `@imm-loop pause`, `resume` and `abandon` lose their daemon-wide effect
+  (`BR-DEC-11` / `D3.4` of Spec `loop-daemon`) and post one `notice` naming the
+  local action instead. Daemon-wide pause stays local through `imm-loop
+pause|resume`, and the Status Issue keeps showing it. `imm-loop status --json`
+  adds `paused_items[]` and `leader { last_wake_at, wakes_today,
+last_proposal_items }`.
+
+- [#574](https://github.com/dereknex/immune-brain/pull/574) [`64b90c5`](https://github.com/dereknex/immune-brain/commit/64b90c569511ddff3723ea8ae6f842195c7de2ba) Thanks [@dereknex](https://github.com/dereknex)! - Loop daemon Initiative entry through the session port (loop-leader ULS S2, D2 of docs/specs/loop-leader-uls-alignment.spec.md): replaces the S1 `lane_initiative_entry_pending` refusal with a real `driveInitiativeLane` that authorizes one v3 batch via `authorizeBatch` (`retain_branch`, `parent_relayed`, required final verification from the project's `batch.final_verification` commands) and starts it with `startLanes`, then advances it with `advanceLanes` on every tick. The batch id is written to `WorkItem.binding.batch_id` once and re-entered, never re-minted; a completed batch settles only with a passing final verification, and a rejected start is refused with its reason and leaves no record. Widens `entry_kind`, `batch_lanes` and `lane_sessions` to carry `initiative` alongside `single_task`.
+
+- [#574](https://github.com/dereknex/immune-brain/pull/574) [`1e9d9f6`](https://github.com/dereknex/immune-brain/commit/1e9d9f6c34d785dcabf5d617079832f66df8ef06) Thanks [@dereknex](https://github.com/dereknex)! - Gate the daemon's Initiative pull request on the whole batch (Slice `S3` of Spec
+  `loop-leader-uls-alignment`). `batchDeliveryEvidence` reads a v3 batch record and
+  passes only when it is `completed` with a passing final verification, the retained
+  `imm/<slug>` branch still contains the batch commit, and every child is integrated
+  with a tracked `.imm/audit/` pair at that commit; each refusal names its reason.
+  `open_pr` uses it when the work item records an Initiative batch and opens one PR
+  from `imm/<slug>` listing every child's acceptance ids and audit digest. A repeated
+  E13 finds the existing PR by head branch. Single-task delivery from
+  `refs/heads/imm/<task_id>` is unchanged. This amends ULS Spec D13 as recorded in
+  the new Spec.
+
+- [#574](https://github.com/dereknex/immune-brain/pull/574) [`4719c5c`](https://github.com/dereknex/immune-brain/commit/4719c5c78b137b891386fe5134259f2be51edc24) Thanks [@dereknex](https://github.com/dereknex)! - Make loop steering act on the item's unified-lane-sessions batch (Slice `S4` of
+  Spec `loop-leader-uls-alignment`). Abandoning a WorkItem now discards its batch:
+  each tick runs the new `discardLanes` until the record is terminal, stopping each
+  child session and closing it with `closeWithProof`, removing the Lane worktree and
+  `imm-lane/` branch of every child whose exit is proven and whose worktree is clean,
+  and deleting `imm/<slug>` only once every Lane is gone, then recording `discarded`.
+  A session whose ownership does not match, an unusable session provider or a dirty
+  worktree retains that Lane with a named `batch_lane_retained` condition and leaves
+  the record `discarding`, so the next tick retries only the retained parts. A
+  terminal batch's retained branch is never deleted, and Host `retire_stale_batch` is
+  unchanged.
+
+  `pause` now skips the item's batch on every drive pass and relayed advance, spending
+  no drive deadline and leaving sessions as they are. `resume` of an item with a batch
+  observes it first and exempts exactly one stall judgment, so an idle session at an
+  unchanged baseline is neither closed nor rotated on the first pass and is judged by
+  the normal `parent_relayed` rule on the second; an exited session is still handled
+  as exited.
+
+- [#574](https://github.com/dereknex/immune-brain/pull/574) [`71a4aa1`](https://github.com/dereknex/immune-brain/commit/71a4aa1a8c1601128461f0a013c6a3aac1503b03) Thanks [@dereknex](https://github.com/dereknex)! - Loop leader resolve alignment with unified lane sessions (loop-leader ULS S5, D5 of docs/specs/loop-leader-uls-alignment.spec.md): `resume` now applies only to an escalated WorkItem with no batch blocker, while a `needs_human` batch or a child parked `lane_executor_no_progress` admits only `ask_owner` (the recorded amendment of loop-leader D4 and S4-AC1). A Lane dialog is asked once, as a labelled `lane_entry_blocked` escalation that a leader `ask_owner` annotates in place and that the briefing lists as a pending interaction. `lane_session_unavailable` never counts as a refusal or replan round, never changes the briefing fingerprint or leader wake count, and shows as `environment_blocked_items` in `imm-loop status --json`. Batch lookup goes through `findActiveLaneBatchForTask` (two active batches for one task refuse), and briefing batches carry each child's `v3` session generation, `no_progress` and `attention`.
+
+- [#581](https://github.com/dereknex/immune-brain/pull/581) [`201aa1f`](https://github.com/dereknex/immune-brain/commit/201aa1fe26334dca9dd054ed27800183280c546d) Thanks [@dereknex](https://github.com/dereknex)! - Add per-child Lane decisions (unified-lane-sessions S7, #570): `findActiveLaneBatchForTask(root, taskId)` fails closed on corrupt or ambiguous matches so `findLaneRelayTarget` and breaking-revision approval reach any child of a single-task or Initiative batch through `rebindBatchChildIdentity` and `hasContiguousLaneRebind`; relayed decisions trigger `advanceLanes` resetting `no_progress` while siblings are untouched, native-gated stop closes only that child's session via `BatchSessionPort.stop` parking `lane_executor_stopped` and retaining its Lane, and `coordinator: correct` rotates to `g(n+1)`. Also persist the entry kind opaquely through the session composition root so single-task re-entry matches, and resume parked batches against the fresh authorization and the record's identities.
+
+- [#581](https://github.com/dereknex/immune-brain/pull/581) [`df81410`](https://github.com/dereknex/immune-brain/commit/df81410d95a402f820c429b69163c8a2c83cd62a) Thanks [@dereknex](https://github.com/dereknex)! - Add two-tier proof-based Lane cleanup (unified-lane-sessions S6, #570): for every integrated child `advanceBatch` calls `BatchSessionPort.closeWithProof(handle, key)`; only a proven `exited` bound to `(handle, key)` plus clean-Lane Git checks removes the worktree and `imm-lane/<slug>/<task_id>` recording `lane_removed` with the `SessionExitProof`, leaving siblings and `refs/heads/imm/<slug>` untouched; whole-batch `checkout_delivery` success deletes `refs/heads/imm/<slug>` (kept under `retain_branch`); any failed proof or Git condition retains with `batch_lane_retained`, parked/stopped/redo never removed; `session_closes` and `closeRecordUnproven` retire, `imm-session close` takes `--session-key`.
+
+- [#581](https://github.com/dereknex/immune-brain/pull/581) [`8144003`](https://github.com/dereknex/immune-brain/commit/8144003da29b3bf560c0f72eac5a8420b646d2cf) Thanks [@dereknex](https://github.com/dereknex)! - Retire the top-level `herdr` configuration key (unified-lane-sessions S1, #570): setting it in either file produces one non-blocking `retired_key` warning, is ignored by the resolver, and is omitted from the effective configuration, and `imm-kernel config migrate --write` deletes it while preserving every other key. Add top-level `session_providers`, a non-empty ordered list of distinct registered provider names (`herdr`, `herdr-core`) defaulting to `["herdr"]` with the project file replacing the user file; empty, unknown, test-only (`fake`, `process`), duplicated, or non-array values are blocking `config_invalid` errors. Inside Herdr (`HERDR_ENV=1`) single-task Lane Executors run in interactive Herdr tabs with no configuration gate.
+
+- [#581](https://github.com/dereknex/immune-brain/pull/581) [`e3320ba`](https://github.com/dereknex/immune-brain/commit/e3320ba6ccbf979ede51c69f94684fc6334ef7c7) Thanks [@dereknex](https://github.com/dereknex)! - Add the role-indexed session provider registry (unified-lane-sessions S2, #570): `runtime/session/provider_registry.ts` with pure `resolveSessionProvider({ role, providers, host, env, registry })` selecting the first configured provider whose env check holds and whose executor role admits the host with `find_by_key` and `local_path` workspace, else `lane_session_unavailable`; `herdr` admits `claude-code`, `pi`, `antigravity` with exit proof, `herdr-core` admits none until #495. Extend the port with optional `session_key` (`[a-z0-9-]{1,64}`), trailing-12-char `herdrAgentName`, `findSession`, and idempotent `closeWithProof`, enforced across the conformance suite with a registry-descriptor check.
+
+### Patch Changes
+
+- [#574](https://github.com/dereknex/immune-brain/pull/574) [`0401f62`](https://github.com/dereknex/immune-brain/commit/0401f62407f7c4e74e09dedb928f6ecd0e764f68) Thanks [@dereknex](https://github.com/dereknex)! - Make a Lane Executor session start ready to work. A `claude-code` Executor now opens
+  and resumes with `--plugin-dir` set to the Claude plugin root the runtime was loaded
+  from (as Review sessions already do), and its entry is submitted as
+  `/immune-brain:drive <task_id>`, so it no longer idles on `phase_entry_required` or
+  fails Review with `batch_runtime_too_old`. A new single-task start that names no
+  `final_verification` takes the layered `batch.final_verification`, which the native
+  confirmation lists and the batch records, so single-task batches run the project's
+  final verification; `drive-batch.md` states the shared resolution order.
+
+- [#587](https://github.com/dereknex/immune-brain/pull/587) [`d27b97c`](https://github.com/dereknex/immune-brain/commit/d27b97c195641260175cdcee534495305ed62121) Thanks [@dereknex](https://github.com/dereknex)! - Follow-up fixes from PR #574 review:
+
+  - Fail closed on unreadable Kernel projections during leader `resolve`: an error or
+    exception from `projectAssurance` records `kernel_projection_unreadable:<task_id>` as
+    an authority blocker so `resume`, `release` and `replan` are rejected with zero side
+    effects while `ask_owner` remains admissible.
+  - Persist GitHub interaction comment URLs across ticks in daemon `stateDir` and
+    capture URLs returned by `editComment` or observed `RawComment.url`, so in-place
+    `annotate` and `already_posted` still record `waiting[]` pointers on fresh channel
+    instances.
+  - Propagate `needs_judging: true` when `a18_event_prefilter` or
+    `a20_issue_duplicate_pair` falls back to its baseline before a downstream classifier
+    decides, so `reconcile` surfaces those decisions to the leader (ADR 0042 Decision 1).
+  - Surface `loop.roles` diagnostics in `imm-loop status` (text and `--json`
+    `role_catalog_diagnostics`), remove unused `READ_ONLY_LOOP_BASES` and retired
+    `judging_agent_used` / `"judging_agent"` leftovers, and sync ADR 0041 and ADR 0042.
+
+- [#574](https://github.com/dereknex/immune-brain/pull/574) [`8561123`](https://github.com/dereknex/immune-brain/commit/8561123da5d81360994e2c5fd64d52b4b587c077) Thanks [@dereknex](https://github.com/dereknex)! - Fix the review findings of the Loop Leader. A `replan` resolve now invalidates the
+  published plan instead of starting a plan session: it starts no session and reads no
+  dispatch budget, removes the plan publication, clears the work item's plan binding and
+  the plan's drafts and Initiative carrier, and returns the item to `triage` with
+  `replan_rounds` + 1, so the next shape re-plans with the same task ids. A nonterminal
+  batch (`replan_batch_active`) or a draft or carrier edited since publication
+  (`replan_draft_changed`) refuses the replan and changes nothing. Initiative
+  `blocked_by` entries are slice ids resolved to task ids in the carrier, and an
+  unknown, self or duplicate slice reference is rejected before anything is written.
+  Shaping an Initiative is all-or-nothing: a failed slice or carrier write removes what
+  the shape created and never touches a pre-existing file. Annotating a pending
+  `plan_approval` or Lane decision records its waiting pointer, so `imm-loop status`
+  lists the item as waiting with a link. An over-long `blocked_on` is cut by bytes in
+  one pass to a valid UTF-8 prefix. A bound `agents.triage` now warns as a deprecated
+  config source. The leader's batch-state dependency is renamed from `resumeBatch`, and
+  the discard host no longer needs an `as never` cast.
+
+- [#574](https://github.com/dereknex/immune-brain/pull/574) [`010c7fa`](https://github.com/dereknex/immune-brain/commit/010c7fa418f938dcaa2caab9964363a0c2347ceb) Thanks [@dereknex](https://github.com/dereknex)! - Restore compilation and the loop-daemon boundary contract after the unified Lane
+  session rebase (Slice `S1` of Spec `loop-leader-uls-alignment`). An
+  Initiative-shaped dispatch now fails its job with `lane_initiative_entry_pending`
+  and leaves the WorkItem retryable until the daemon's Initiative entry lands in
+  `S2`; the retired `executor_model` and `executor_effort` request fields leave
+  `loop_daemon/`. The loop-leader ADR is renumbered to ADR 0042 (it shared 0041
+  with the simplified-configuration ADR), and ADR 0041 no longer names the retired
+  judging role as a live one. No other user-visible change.
+
+- [#590](https://github.com/dereknex/immune-brain/pull/590) [`7ef83a4`](https://github.com/dereknex/immune-brain/commit/7ef83a498b3cb674c6eb7d2aba7ce4e4a7a9a6fa) Thanks [@dereknex](https://github.com/dereknex)! - A paused drive run no longer loses its entry token. Only settlement, `SessionEnd`, an explicit cancel or `/draw-up`/`/clarify` entry, and a lost or terminal bound identity (batch or task identity change, a stopped task, missing Kernel authority) revoke it. Every other pause — a user decision or authorization wait, a blocked Parent, `host_failure`, `review_incomplete`, the third native failure, the 7-stop limit and an interrupted Pi turn — only suspends the run: native gates refuse until a plain reply in the same session (Claude, Pi or Antigravity) resumes it, with no `run_entry_required` and no new `/drive`. A reply and every applied native operation also restore the native retry budget.
+
+- [#590](https://github.com/dereknex/immune-brain/pull/590) [`2452b2e`](https://github.com/dereknex/immune-brain/commit/2452b2e36c23b3e7a1a0faffe29d38dad1cf6054) Thanks [@dereknex](https://github.com/dereknex)! - Single-task `checkout_delivery` no longer refuses coordinator copies that already match the delivery. A staged or untracked regular file whose bytes and executable mode equal the delivered blob counts as delivered in both `manual` and `auto` modes; untracked copies are staged only after every refusal check passes (and unstaged again if staging or the fast-forward fails), so a `staged` result always means the paths are in the index. Byte, mode, symlink and deletion mismatches still fail closed with `checkout_delivery_overlap`, and the replay guard still requires indexed paths. A later Slice's Lane now keeps a shared Spec that an earlier Slice updated on the Parent branch when the coordinator copy is unchanged since the batch `base_head`.
+
+- [#590](https://github.com/dereknex/immune-brain/pull/590) [`ff1a409`](https://github.com/dereknex/immune-brain/commit/ff1a409137fffae3dfa6639690a531748ee4a044) Thanks [@dereknex](https://github.com/dereknex)! - A non-`critical` single-task `drive` no longer inherits the project-wide `batch.final_verification`. It uses the new `batch.single_task_final_verification` list when configured and otherwise records no commands with final verification optional; `critical` tasks still inherit `batch.final_verification`, and commands passed by the caller still win. With no commands, declared derived-file checks still run and now block checkout delivery when they fail. The drive contract tells the Parent to pass only literally requested commands for a single task, leaving the full suite to the PR's CI.
+
+- [#590](https://github.com/dereknex/immune-brain/pull/590) [`3e02180`](https://github.com/dereknex/immune-brain/commit/3e021809121ad16e935535aff7e5eba18f2fbd18) Thanks [@dereknex](https://github.com/dereknex)! - Lane Executors that stop on an `error` state (a usage limit, a crashed turn) now recover on their own: the batch closes the session and opens a fresh generation from the same entry, at most twice per Kernel revision, then parks the child `lane_executor_error`. herdr-core reports `error` instead of `unknown`.
+
+- [#590](https://github.com/dereknex/immune-brain/pull/590) [`ea44966`](https://github.com/dereknex/immune-brain/commit/ea4496675d9ed5c4f687ee1e0e0cb8e5d367fdf1) Thanks [@dereknex](https://github.com/dereknex)! - `/immune-brain:revisit` no longer counts Claude Code's Stop hook feedback, `<bash-stdout>`/`<bash-stderr>` frames or `[Request interrupted by user]` markers as human input, and a bare `submit_review` whose Kernel result is `completed` or `rework` (the CLI Review path, where the verdict comes from the reviewer's result slot) is no longer reported as `review_without_verdict`.
+
 ## 9.1.0
 
 ### Minor Changes
