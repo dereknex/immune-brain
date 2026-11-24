@@ -7,11 +7,14 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { liveEvidenceFindings } from "../scripts/release-promote";
+import { join, resolve } from "node:path";
+import { REQUIRED_LIVE_JOURNEYS, liveEvidenceFindings } from "../scripts/release-promote";
 import { LIVE_MODEL_TIER, LIVE_PLAN, type JourneyRunner, judgeBunTest, main, runLive } from "./e2e/live/run-live";
+import { parseCassette } from "./e2e/harness/mock-model";
 import { startMockModel } from "./e2e/harness/mock-model";
 import { rewriteRequestModel, startRecorder } from "./e2e/harness/recorder";
+
+const ROOT = resolve(import.meta.dir, "..");
 
 const scratch: string[] = [];
 const tempDir = (): string => {
@@ -148,5 +151,64 @@ describe("bun run e2e:live evidence", () => {
 			if (saved !== undefined) process.env.ANTHROPIC_API_KEY = saved;
 		}
 		expect(String(errors[0])).toContain("record_credentials_missing");
+	});
+
+	test("LIVE_PLAN matches REQUIRED_LIVE_JOURNEYS and every host pattern selects a unique test in its journey file", () => {
+		const livePairs = LIVE_PLAN.flatMap((plan) => Object.keys(plan.hosts).map((host) => `${plan.id}/${host}`)).sort();
+		const requiredPairs = REQUIRED_LIVE_JOURNEYS.flatMap(([id, hosts]) => hosts.map((host) => `${id}/${host}`)).sort();
+		expect(livePairs).toEqual(requiredPairs);
+
+		for (const plan of LIVE_PLAN) {
+			const source = readFileSync(join(ROOT, "tests/e2e", `${plan.file}.e2e.ts`), "utf8");
+			const titles = [...source.matchAll(/^\s*(?:test|it)\(\s*(["'`])((?:\\.|(?!\1).)+)\1/gm)].map((match) => match[2]);
+			const matchedSets = Object.entries(plan.hosts).map(([host, pattern]) => {
+				const regex = new RegExp(pattern);
+				const hits = titles.filter((title) => regex.test(title));
+				expect({ journey: `${plan.id}/${host}`, pattern, hits }).toMatchObject({ hits: expect.arrayContaining([expect.any(String)]) });
+				return { host, hits };
+			});
+			for (let i = 0; i < matchedSets.length; i += 1) {
+				for (let j = i + 1; j < matchedSets.length; j += 1) {
+					const overlap = matchedSets[i].hits.filter((title) => matchedSets[j].hits.includes(title));
+					expect({ journey: plan.id, hosts: [matchedSets[i].host, matchedSets[j].host], overlap }).toMatchObject({ overlap: [] });
+				}
+			}
+		}
+	});
+
+	test("multi-session recording keeps distinct sessions separate and captures offeredTools on recorder.requests", async () => {
+		const upstream = await startMockModel({
+			turns: [
+				{ turn: 0, after: [], tools: [], conv: "main", content: [{ type: "text", text: "from-session-a" }], stop_reason: "end_turn" },
+				{ turn: 0, after: [], tools: [], conv: "exec", entry: "second", content: [{ type: "text", text: "from-session-b" }], stop_reason: "end_turn" },
+			],
+		});
+		const cassette = join(tempDir(), "multi", "claude.jsonl");
+		const recorder = await startRecorder({ cassettePath: cassette, upstream: upstream.url });
+		try {
+			await fetch(`${recorder.url}/v1/messages`, {
+				method: "POST",
+				headers: { "x-claude-code-session-id": "sess-a" },
+				body: JSON.stringify({ model: "m", messages: [{ role: "user", content: "first" }], tools: [{ name: "ToolA" }] }),
+			});
+			await fetch(`${recorder.url}/v1/messages`, {
+				method: "POST",
+				headers: { "x-claude-code-session-id": "sess-b" },
+				body: JSON.stringify({ model: "m", messages: [{ role: "user", content: "second" }], tools: [{ name: "ToolB" }] }),
+			});
+		} finally {
+			await recorder.stop();
+			await upstream.stop();
+		}
+		expect(recorder.requests.map((req) => ({ conv: req.conv, turn: req.turn, offeredTools: req.offeredTools }))).toEqual([
+			{ conv: "main", turn: 0, offeredTools: ["ToolA"] },
+			{ conv: "conv-2", turn: 0, offeredTools: ["ToolB"] },
+		]);
+		const recorded = parseCassette(readFileSync(cassette, "utf8"));
+		expect(recorded).toHaveLength(2);
+		expect(recorded.map((turn) => [turn.conv, turn.content[0].text])).toEqual([
+			["main", "from-session-a"],
+			["conv-2", "from-session-b"],
+		]);
 	});
 });

@@ -107,6 +107,8 @@ describe("e2e-host-bump workflow", () => {
 		expect(install).toBeGreaterThan(bump);
 		expect(journeys).toBeGreaterThan(install);
 		expect(pullRequest).toBeGreaterThan(journeys);
+		expect(steps[install].run).toContain(".claude.minimum");
+		expect(steps[install].run).toContain("E2E_CLAUDE_MIN_BIN");
 	});
 
 	test("a registry failure fails the bump step: its script is not piped, and any piped step runs under bash pipefail", () => {

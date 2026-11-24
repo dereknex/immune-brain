@@ -181,7 +181,7 @@ export interface MockModelOptions {
 }
 
 /** Which Host session a request belongs to: Claude Code names it in a header; otherwise its first user message does. */
-function sessionKey(request: Request, body: { metadata?: { user_id?: string }; messages?: Message[] }): string {
+export function sessionKey(request: Request, body: { metadata?: { user_id?: string }; messages?: Message[] }): string {
 	const header = request.headers.get("x-claude-code-session-id");
 	if (header) return header;
 	try {

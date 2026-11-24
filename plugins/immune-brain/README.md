@@ -3,7 +3,7 @@
 Lifecycle skills for agentic engineering: planning, execution, review, QA, and
 learning capture, backed by a deterministic TypeScript workflow runtime.
 
-Each of the eight public Skills is a compact `skills/<name>/SKILL.md`
+Each of the nine public Skills is a compact `skills/<name>/SKILL.md`
 trigger shim that loads its full instructions from `dist/<name>.md` only on
 invocation. Execution, review, QA, and learning capabilities remain internal
 runtime roles or tools. `fix-pr` is the standalone host-native repair
@@ -19,12 +19,12 @@ and repair roles; it is not a QA or style-only gate.
 
 ## Public Skill surface
 
-The package exposes eight Skills: `clarify`, `draw-up`, `drive`,
-`fix-pr`, `prune-docs`, `slim`, `prune-tests`, and `revisit`. The first three enter or continue the Managed Path;
+The package exposes nine Skills: `clarify`, `draw-up`, `drive`,
+`fix-pr`, `prune-docs`, `slim`, `prune-tests`, `revisit`, and `imm-loop`. The first three enter or continue the Managed Path;
 `fix-pr` repairs one PR directly, `prune-docs` prunes stale current
 documentation, `slim` minimizes tracked agent-instruction
 context, `prune-tests` prunes redundant tests without weakening assertions,
-and `revisit` reports workflow health from session logs, all without Managed authority. Internal roles
+`revisit` reports workflow health from session logs, and `imm-loop` manages the background Loop daemon, all without Managed authority. Internal roles
 are dispatched by the runtime through packaged prompts under
 `dist/role-prompts/`; Loop never discovers them through Skill loading. Skills use the project's existing files and create only the artifacts
 the user explicitly requested.
@@ -135,7 +135,7 @@ in the next major release.
 <!-- END GENERATED: skill-registry-role-map -->
 
 The authoritative public role manifest is [`skills/registry.yaml`](skills/registry.yaml).
-It contains the seven user-facing Skill entries; internal role authority
+It contains the nine user-facing Skill entries; internal role authority
 and transitions live in the runtime bridge.
 
 ## Review gates

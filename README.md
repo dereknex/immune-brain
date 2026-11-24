@@ -1,6 +1,6 @@
 # Immune-Brain
 
-> Deterministic workflow & quality engine for [Pi](https://github.com/badlogic/pi) and [Claude Code](https://claude.ai/code) — turn vague ideas into shipped code with planning, execution, QA, and review.
+> Deterministic workflow & quality engine for [Pi](https://github.com/badlogic/pi), [Claude Code](https://claude.ai/code), and [Antigravity](plugins/immune-brain-antigravity/README.md) — turn vague ideas into shipped code with planning, execution, QA, and review.
 
 **Language:** **English** | [中文](./README.zh-CN.md)
 
@@ -8,7 +8,7 @@
 
 ## What Is This?
 
-Immune-Brain brings a structured engineering workflow to AI coding assistants (**Pi** and **Claude Code**):
+Immune-Brain brings a structured engineering workflow to AI coding assistants (**Pi**, **Claude Code**, and **Antigravity**):
 
 - **Zero overhead for normal chat & coding** — Ordinary questions, quick edits, and exploratory chat stay 100% host-native. Immune-Brain never interrupts normal conversation.
 - **Explicit trigger when rigor matters** — When you want engineering discipline, invoke `clarify`, `draw-up`, or `drive`.
@@ -16,7 +16,7 @@ Immune-Brain brings a structured engineering workflow to AI coding assistants (*
 - **Quality is enforced by code, not promises** — Automated QA and isolated review subagents must pass before a task can complete.
 - **Ready Initiatives can run as a batch through Lanes** — One confirmed batch authorization lets the batch advance published children without manual handoffs per task; capacity 1 runs one Lane at a time, while larger capacities allow scope-disjoint children to run concurrently in isolated Git worktrees with integration verification guards. Every child is still enrolled, QA'd, reviewed, and settled on its own.
 
-Pi and Claude Code are the supported hosts. Undeclared adapters remain unsupported. Minimum Claude Code is `2.1.236`, the lowest version verified with interactive server-initiated MCP elicitation. Current real-Host evidence is recorded in [Claude native elicitation conformance](docs/verification/claude-native-elicitation-authority-conformance.md); historical reports remain under [docs/verification/archive/](docs/verification/archive/). Either host can use the model provider you configure — Immune-Brain works on top of Kernel authority, not a vendor chat.
+Pi, Claude Code, and Antigravity (`plugins/immune-brain-antigravity/`) are the supported hosts. Undeclared adapters remain unsupported. Minimum Claude Code is `2.1.236` for interactive server-initiated MCP elicitation (`2.1.295` for `herdr-core` OSC 7501 status; L1 CI e2e pins are in [`tests/e2e/hosts.json`](tests/e2e/hosts.json)). Current real-Host evidence is recorded in [Claude native elicitation conformance](docs/verification/claude-native-elicitation-authority-conformance.md); historical reports remain under [docs/verification/archive/](docs/verification/archive/). For Antigravity Review limitations and native gate behavior, see [the Antigravity plugin README](plugins/immune-brain-antigravity/README.md). Either host can use the model provider you configure — Immune-Brain works on top of Kernel authority, not a vendor chat.
 
 ---
 
@@ -28,7 +28,7 @@ Pi and Claude Code are the supported hosts. Undeclared adapters remain unsupport
 - [Recommended Workflows: Composing with mattpocock/skills](#recommended-workflows-composing-with-mattpocockskills)
 - [Real-World Case Studies](#real-world-case-studies)
 - [Core Philosophy: Turn "Judgment" into "Table Lookup"](#core-philosophy-turn-judgment-into-table-lookup-harnessing-multi-model-tiers-with-determinism)
-- [The 8 Skills](#the-8-skills)
+- [The 9 Skills](#the-9-skills)
 - [Lifecycle](#lifecycle)
 - [Unattended Batch Runs](#unattended-batch-runs)
 - [Configuration](#configuration)
@@ -40,23 +40,30 @@ Pi and Claude Code are the supported hosts. Undeclared adapters remain unsupport
 
 ## Installation
 
-**Prerequisites:** [Pi](https://github.com/badlogic/pi) or [Claude Code](https://claude.ai/code) (>= 2.1.236), Node.js 20+, `bun` for tests.
+**Prerequisites:** [Pi](https://github.com/badlogic/pi), [Claude Code](https://claude.ai/code) (>= `2.1.236` for MCP elicitation; `>= 2.1.295` for `herdr-core`), or Antigravity (`agy`), plus Node.js 20+ and `bun`.
+
+| Host | Default (`stable` / `latest`) channel | Pre-release / local dogfood channel |
+|---|---|---|
+| **Pi** | `pi install npm:immune-brain` | `pi install npm:immune-brain@next` |
+| **Claude Code** | `claude plugin marketplace add dereknex/immune-brain` + `claude plugin install immune-brain` (`stable` branch) | `claude --plugin-dir ./plugins/immune-brain` (from `main`) |
+| **Antigravity** | `git clone -b stable ...` + `agy plugin install ./immune-brain/plugins/immune-brain-antigravity` | `main` checkout or `node_modules/immune-brain/plugins/immune-brain-antigravity` from `@next` |
 
 ### In Pi
 
-Pi discovers Skills and extensions from `package.json` (or your global Pi configuration):
+Install from npm (Pi discovers Skills and extensions from `package.json` → `pi.skills` / `pi.extensions`):
 
-```json
-// package.json → pi.skills / pi.extensions
-"pi": {
-  "skills": ["./plugins/immune-brain/skills"],
-  "extensions": ["./plugins/immune-brain/.pi-extension"]
-}
+```bash
+pi install npm:immune-brain       # promoted stable release (npm latest)
+pi update npm:immune-brain        # upgrade to the next promoted version
 ```
 
-No extra server config is needed. Installing the package via Pi makes all 8 Skills available automatically.
+New versions reach the `latest` npm dist-tag only after they are promoted; install `immune-brain@next` to try a published version before then:
 
-New versions reach the `latest` npm dist-tag only after they are promoted; install `immune-brain@next` to try a published version before then.
+```bash
+pi install npm:immune-brain@next
+```
+
+No extra server config is needed. Installing the package via Pi makes all 9 public Skills available automatically.
 
 ### In Claude Code
 
@@ -70,7 +77,7 @@ claude plugin install immune-brain
 The marketplace entry installs the plugin from the `stable` branch, which advances only when a
 release is promoted; `claude plugin update immune-brain` picks up the next promoted version.
 
-Or load the local directory directly:
+Or load a local `main` checkout directly:
 
 ```bash
 claude --plugin-dir ./plugins/immune-brain
@@ -86,14 +93,24 @@ agy plugin install ./immune-brain/plugins/immune-brain-antigravity
 agy plugin validate ./immune-brain/plugins/immune-brain-antigravity --strict
 ```
 
-Earlier releases discovered Antigravity components from `plugins/immune-brain/`; reinstall from the new directory when upgrading. See [its README](plugins/immune-brain-antigravity/README.md).
+To upgrade to the next promoted release, pull `stable` and reinstall:
+
+```bash
+git -C immune-brain pull --ff-only
+agy plugin install ./immune-brain/plugins/immune-brain-antigravity
+```
+
+To try an unreleased or pre-release build before promotion, check out `main` or install `plugins/immune-brain-antigravity` from the `immune-brain@next` npm package. Earlier releases discovered Antigravity components from `plugins/immune-brain/`; reinstall from the new directory when upgrading. See [its README](plugins/immune-brain-antigravity/README.md).
 
 ### Verification
 
 ```bash
-bun test                          # run all tests
-mise run check-plugin              # verify package structure
-mise run check-dist-sync           # verify generated docs are in sync
+bun run typecheck                               # TypeScript check
+bun test                                        # unit & contract tests (excludes tests/e2e/)
+bun scripts/build-claude-plugin.ts --check      # verify built Claude plugin bundle & agents
+bun scripts/build-antigravity-plugin.ts --check # verify built Antigravity plugin artifact
+bun scripts/sync-dist-docs.ts --check           # verify generated dist docs are in sync
+bun run e2e                                     # black-box L1 Host journeys (requires pinned claude & pi)
 ```
 
 ---
@@ -683,7 +700,7 @@ See [`docs/reference/immune-brain-config.md`](docs/reference/immune-brain-config
 package.json                          # Pi package manifest (skills + extensions)
 plugins/immune-brain/
 ├── .pi-extension/                    # Pi TUI + Kernel authority extension
-├── skills/                           # 8 public Skills (trigger shims)
+├── skills/                           # 9 public Skills (trigger shims)
 ├── dist/                             # Built skill contracts & references
 ├── runtime/                          # Bun + TypeScript runtime & Kernel
 └── bin/                              # CLI wrappers (→ runtime/v4_runtime.ts)
@@ -701,7 +718,7 @@ docs/specs/                           # Living specs (updated in place)
 
 ## FAQ
 
-**Do I need to learn all 8 skills?** No. Most of the time you only need `/draw-up` (to plan and enroll a task) and `/drive` (to build and verify it). Use `clarify` when requirements need clarifying first, and the maintenance skills (`fix-pr`, etc.) only when specific repair needs arise. Ordinary chat and simple edits don't need any skills at all.
+**Do I need to learn all 9 skills?** No. Most of the time you only need `/draw-up` (to plan and enroll a task) and `/drive` (to build and verify it). Use `clarify` when requirements need clarifying first, and the maintenance skills (`fix-pr`, `imm-loop`, etc.) only when specific repair or daemon needs arise. Ordinary chat and simple edits don't need any skills at all.
 
 **What if I interrupt or close the session mid-task?** State is safely stored on disk (`.imm/` + TaskIntent). In Pi or Claude Code, simply re-enter `/drive` to resume — the Kernel projection is authoritative.
 
@@ -725,35 +742,34 @@ docs/specs/                           # Living specs (updated in place)
 
 **Do I need to install `mattpocock/skills` to use Immune-Brain?** No. Immune-Brain is completely self-contained and functions out of the box with built-in `clarify`. Composing with `mattpocock/skills` is an optional, highly recommended power workflow for teams seeking maximal engineering discipline.
 
-**Which AI coding assistants are supported?** Pi and Claude Code are the supported hosts (Claude Code version >= `2.1.236`). Both hosts run on the exact same Kernel authority, assurance guarantees, and multi-skill pipeline.
+**Which AI coding assistants are supported?** Pi, Claude Code (minimum `2.1.236` for MCP elicitation, `2.1.295` for `herdr-core`), and Antigravity (`plugins/immune-brain-antigravity/`, see [its README](plugins/immune-brain-antigravity/README.md) for Review boundaries) are the supported hosts. All three share the exact same Kernel authority and assurance pipeline.
 
 ---
 
 ## Release
 
-This repo uses [Changesets](https://github.com/changesets/changesets) for versioning and publishing.
+This repo uses [Changesets](https://github.com/changesets/changesets) with a two-stage **`next` → `stable` / `latest`** release pipeline (see [Release Evidence & Setup](docs/evidence/e2e-live/README.md)).
 
 | Task | Command |
 |------|---------|
-| Add a changeset | `bunx changeset` — pick bump (patch/minor/major) and write summary |
-| Bump version | `bun run changeset:version` — updates `package.json` + `CHANGELOG.md`, then syncs and validates the Claude and Antigravity plugin manifests |
-| Publish (local) | `bun run changeset:publish` — validates manifest versions, then publishes to npm (needs `NPM_TOKEN` or `npm login`) |
+| Add a changeset | `bunx changeset` — pick bump (`patch`/`minor`/`major`) and write summary (add `Fixes-release: <version>` if fixing a recent release without a `fix` commit prefix) |
+| Bump version | `bun run changeset:version` — updates `package.json` + `CHANGELOG.md`, rebuilds Claude & Antigravity plugins, and validates manifests |
+| Verify release artifacts | `bun run verify:release` — validates versions, plugin builds, dist-doc sync, typecheck, `bun test`, and `npm pack --dry-run` |
+| Publish to `next` | `bun run changeset:publish` — runs `verify:release` and publishes to npm under `--tag next` |
+| Run L2 live smoke | `bun run e2e:live` — runs J1/J2/J4 against real `claude`/`pi` + API (`ANTHROPIC_API_KEY`) on tag `immune-brain-v<version>` and writes `docs/evidence/e2e-live/<version>.json` |
+| Promote / roll back | `bun run release:promote <version>` / `bun run release:promote -- --rollback` — validates live evidence, fast-forwards `stable`, tags `immune-brain-v<version>-stable`, and sets npm `latest` |
 
-**Automated flow (recommended):**
-1. Push changesets to `main` → workflow opens a “Version Packages” PR.
-2. Merge that PR → workflow publishes to npm, creates GitHub Release, and tags `immune-brain-vX.Y.Z`.
+**Two-stage automated flow:**
+1. Push changesets to `main` → [`.github/workflows/release.yml`](.github/workflows/release.yml) (`changesets/action@v1`) opens a `chore: version packages` PR.
+2. Merge that PR → `release.yml` publishes to npm **`next`** (via npm OIDC Trusted Publishing), creates the GitHub Release, and tags `immune-brain-vX.Y.Z`. Default channels (`stable` branch and npm `latest`) do **not** move yet.
+3. Maintainer dogfoods `next`, checks out `immune-brain-vX.Y.Z`, runs `bun run e2e:live`, and commits `docs/evidence/e2e-live/X.Y.Z.json` (plus updated cassettes) to `main`.
+4. Trigger [`.github/workflows/promote.yml`](.github/workflows/promote.yml) (`workflow_dispatch`, protected by the `release` GitHub Environment) → `scripts/release-promote.ts` verifies the `mode: "live"` evidence, fast-forwards `stable`, tags `immune-brain-vX.Y.Z-stable`, and updates npm `latest`. Use `rollback: true` in `promote.yml` (or `--rollback`) to step `stable` and `latest` back to the previous `-stable` tag.
 
-Setup: add `NPM_TOKEN` (npm access token with publish permission) to GitHub repo secrets. Workflow is `.github/workflows/release.yml` using `changesets/action@v1`.
+**Repository setup:**
+- `release.yml`: npm Trusted Publishing (OIDC, `id-token: write`, `npm@11`) or `NPM_TOKEN`.
+- `promote.yml`: GitHub Environment `release` (with required reviewer), secret `STABLE_PUSH_TOKEN` (allowed to push protected `stable` and tags), and secret `NPM_TOKEN` (allowed to run `npm dist-tag add`). See [docs/evidence/e2e-live/README.md](docs/evidence/e2e-live/README.md) for the one-time setup order.
 
-**Manual publish (fallback):**
-```bash
-npm publish --access public   # requires npm login / NPM_TOKEN
-# or
-bun run changeset:publish
-```
-The package publishes to npm as `immune-brain` (current release `4.6.0`) with `publishConfig.access=public` already set. After the initial publish, all future releases go through changesets.
-
-See `CHANGELOG.md` and `.changeset/config.json` (changelog: `@changesets/changelog-github`, repo: `dereknex/immune-brain`).
+See `CHANGELOG.md` and `.changeset/config.json` (`publishConfig.access=public`, repo: `dereknex/immune-brain`).
 
 ---
 
@@ -762,11 +778,17 @@ See `CHANGELOG.md` and `.changeset/config.json` (changelog: `@changesets/changel
 For contributors working on Immune-Brain itself:
 
 ```bash
-bun test                    # full test suite (canonical check is bun test, not tsc)
-mise run check-plugin       # plugin structure + version
-mise run check-dist-sync    # generated dist docs sync
+bun run typecheck                               # TypeScript typecheck
+bun test                                        # unit & contract suite (excludes tests/e2e/)
+bun run e2e                                     # black-box L1 Host journeys against npm pack tarball
+bun run e2e:record <journey>                    # re-record L1 cassettes (needs ANTHROPIC_API_KEY)
+bun scripts/build-claude-plugin.ts --check      # verify built Claude plugin & agents
+bun scripts/build-antigravity-plugin.ts --check # verify built Antigravity plugin
+bun scripts/sync-dist-docs.ts --check           # verify generated dist docs sync
 ```
 
+- **PR E2E escape rule**: CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs `Host e2e journeys` (`bun run e2e`) and `e2e escape rule` ([`scripts/check-e2e-escape-rule.ts`](scripts/check-e2e-escape-rule.ts)) in parallel with `verify`. Any PR titled `fix...` that touches `plugins/immune-brain/runtime/`, `.pi-extension/`, or `hooks/` must also update `tests/e2e/` or declare `e2e-exempt: <reason>` in the PR body.
+- **Weekly Host bumps**: [`.github/workflows/e2e-host-bump.yml`](.github/workflows/e2e-host-bump.yml) checks npm weekly and opens a PR bumping `tests/e2e/hosts.json` pinned Host versions with L1 results.
 - Runtime is `runtime/v4_runtime.ts` (Bun + TypeScript). Python under `scripts/` is reference-only.
 - Production CLI: `plugins/immune-brain/bin/imm-kernel` — see [`plugins/immune-brain/README.md`](plugins/immune-brain/README.md) for the full command table.
 

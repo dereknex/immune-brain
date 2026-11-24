@@ -119,7 +119,7 @@ describe("host runtime cutover", () => {
 		expect(offenders).toEqual([]);
 
 		const readme = readFileSync(resolve(REPO_ROOT, "README.md"), "utf-8");
-		expect(readme).toContain("Pi and Claude Code are the supported hosts");
+		expect(readme).toContain("Pi, Claude Code, and Antigravity (`plugins/immune-brain-antigravity/`) are the supported hosts");
 		expect(readme).toContain(
 			"Pi discovers Skills and extensions from `package.json`",
 		);

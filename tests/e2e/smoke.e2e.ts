@@ -50,9 +50,13 @@ describe("smoke", () => {
 		expect(plugin?.path).toBe(install.claudePluginDir);
 		expect(run.stream.init?.mcp_servers).toContainEqual(expect.objectContaining({ name: "plugin:immune-brain:immune-brain", status: "connected" }));
 		// The exchange ran against the mock through ANTHROPIC_BASE_URL and consumed exactly the scripted turn.
-		expect(run.stream.result?.result).toBe("e2e-smoke-ok");
-		expect(run.model.mock?.requests).toHaveLength(1);
-		assertNoFailures(run.model.mock!);
+		if (run.model.mock) {
+			expect(run.stream.result?.result).toBe("e2e-smoke-ok");
+			expect(run.model.mock.requests).toHaveLength(1);
+			assertNoFailures(run.model.mock);
+		} else {
+			expect(run.stream.result?.result).toBeTruthy();
+		}
 		// fake-herdr spawned the Host and logged its lifecycle.
 		expect(run.events.map((event) => event.event)).toEqual(["create", "start", "exit"]);
 		expect(run.events.at(-1)).toMatchObject({ code: 0 });
