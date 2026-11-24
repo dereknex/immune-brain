@@ -62,9 +62,11 @@ therefore must not be the only literal-user act behind starting execution.
    Lane revision delegation, which the batch gate collects — stay.
 3. **The token lives as long as the run, with no time limit.** It survives
    compaction and same-session continuation. `SessionEnd` drops it; a call
-   from another workspace realpath, another session, or after the run paused
-   at the Stop boundary is refused with `run_entry_required`; a terminal run
-   revokes it. A new literal entry replaces it.
+   from another workspace realpath, another session, or after the bound
+   identity was lost is refused with `run_entry_required`; a terminal run
+   revokes it. A new literal entry replaces it. *Amended by
+   [workflow-friction-simplification](../specs/workflow-friction-simplification.spec.md)
+   D1.1:* an ordinary pause no longer revokes it — see §6.
 4. **A confirmed batch start returns a manifest** listing each child's task
    id, Slice, risk, scope and verification commands. The Loop prints it before
    working; it never blocks.
@@ -82,6 +84,15 @@ therefore must not be the only literal-user act behind starting execution.
    background work no longer forces a new typed entry, and ends the token on
    every pause and on an interrupted Pi turn, so a paused run is refused by the
    MCP server itself and not only by the continuation hook (Spec D12, D13).
+   *Amended by [workflow-friction-simplification](../specs/workflow-friction-simplification.spec.md)
+   D1.1–D1.2:* revocation is now a closed list — settlement, `SessionEnd`, a
+   releasing prompt (explicit cancel, `/draw-up`, `/clarify`) and a lost or
+   terminal bound identity. Every other pause, including `review_incomplete`,
+   the third native failure, the 7-stop limit and an interrupted Pi turn, only
+   suspends the run: the continuation hook refuses native gates until a plain
+   reply in the same session resumes it, and the token stays live. Each
+   applied native operation, and each plain reply, restores the retry budget.
+   Native gates are unchanged, so a kept token still cannot start work alone.
 
 ### Deviations from the Spec
 

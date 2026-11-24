@@ -674,15 +674,14 @@ async function projectPlanSurface(input: {
 		planDigest = computeBatchPlanDigest(plan.enrollable);
 
 		for (const c of plan.children.filter((item) => item.status === "enrollable")) {
-			let childRisk = "material";
 			try {
-				childRisk = (input.preparing
+				riskByTask.set(c.task_id, (input.preparing
 					? observeEnrollmentTaskIntent(root, c.task_id)
-					: readTaskIntent(root, c.task_id, c.intent_path ?? undefined)).intent.risk;
+					: readTaskIntent(root, c.task_id, c.intent_path ?? undefined)).intent.risk);
 			} catch {
-				// fallback
+				// An unread risk stays unrecorded: projections default it to "material", while
+				// single-task final verification treats it as "critical" (workflow-friction D3.1).
 			}
-			riskByTask.set(c.task_id, childRisk);
 		}
 		excluded = plan.children
 			.filter((c) => c.status !== "enrollable")

@@ -609,4 +609,46 @@ describe("review-retro analyzer", () => {
 		} finally { cleanup(); }
 	});
 
+	test("classifies Claude Stop hook, bash output and interrupt frames as synthetic and keeps a reply after them human", async () => {
+		const frames = [
+			"Stop hook feedback:\n[bun run lint]: 2 problems",
+			"<bash-stdout>ok</bash-stdout><bash-stderr></bash-stderr>",
+			"<bash-stderr>command not found</bash-stderr>",
+			"[Request interrupted by user]",
+			"[Request interrupted by user for tool use]",
+		];
+		const humans = ["继续", "[Request interrupted by user]\n继续", "<bash-input>git status</bash-input>"];
+		const { root, cleanup } = sessionRoot([
+			JSON.stringify({ type: "session", cwd: "/project" }),
+			...frames.flatMap((text, i) => [turnEnd(i * 3, "stop"), userInput(i * 3 + 1, text), kernelCall(i * 3 + 2, `n${i}`, { op: "status" })]),
+			...humans.flatMap((text, i) => [turnEnd(15 + i * 3, "stop"), userInput(16 + i * 3, text), kernelCall(17 + i * 3, `h${i}`, { op: "status" })]),
+		]);
+		try {
+			const doc = JSON.parse(await run(["--since", stamp(0), "--until", stamp(30), "--root", root, "--json"]));
+			const inputs = doc.events.filter((e: any) => e.type === "user_input");
+			expect(inputs.map((e: any) => e.synthetic)).toEqual([...frames.map(() => true), ...humans.map(() => false)]);
+			expect(doc.candidates.map((g: any) => [g.kind, g.key, g.occurrences])).toEqual([["user_resume", "/project / t", humans.length]]);
+		} finally { cleanup(); }
+	});
+
+	test("a bare submit_review settled by a completed Kernel result is not review_without_verdict; errors and verdict-less states still are", async () => {
+		const settled = (n: number, id: string, task: string, value: object, isError = false) =>
+			[kernelCall(n, id, { op: "submit_review" }, task), toolResult(n + 1, id, value, isError)];
+		const { root, cleanup } = sessionRoot([
+			JSON.stringify({ type: "session", cwd: "/project" }),
+			...settled(0, "c", "completed", { state: "completed" }),
+			...settled(2, "w", "rework", { state: "rework", operation: "review" }),
+			...settled(4, "e", "error", { state: "completed" }, true),
+			...settled(6, "b", "blocked", { state: "blocked", reason: "verdict missing" }),
+			...settled(8, "i", "incomplete", { state: "review_incomplete" }),
+			...settled(10, "u", "unknown", { state: "settlement_unknown" }),
+			kernelCall(12, "n", { op: "submit_review" }, "noresult"),
+		]);
+		try {
+			const doc = JSON.parse(await run(["--since", stamp(0), "--until", stamp(20), "--root", root, "--json"]));
+			const flagged = doc.candidates.filter((g: any) => g.kind === "review_without_verdict").map((g: any) => g.key).sort();
+			expect(flagged).toEqual(["/project / blocked", "/project / error", "/project / incomplete", "/project / noresult", "/project / unknown"]);
+		} finally { cleanup(); }
+	});
+
 });

@@ -10,6 +10,7 @@ import { createBatchKernelPort } from "../plugins/immune-brain/runtime/unattende
 import { createEnrollmentAuthorityRegistry } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
 import { createDefaultBatchGitPort, type BatchRunnerGitPort } from "../plugins/immune-brain/runtime/unattended/batch_git";
 import { createDefaultLaneGitPort, runLaneBatch } from "../plugins/immune-brain/runtime/unattended/batch_lanes";
+import { copyLanePlanningInput } from "../plugins/immune-brain/runtime/unattended/batch_worktrees";
 import { relayLaneDecision } from "../plugins/immune-brain/runtime/unattended/lane_decision";
 import type { BatchRunnerKernelPort } from "../plugins/immune-brain/runtime/unattended/batch_kernel_port";
 import type { StartBatchInput } from "../plugins/immune-brain/runtime/unattended/batch_lanes";
@@ -50,7 +51,7 @@ test("single-task batch records retain their source and reject a different child
 const roots: string[] = [];
 afterAll(() => { for (const root of roots) rmSync(root, { recursive: true, force: true }); });
 
-function fixture(options: { mode?: "manual" | "auto"; untrackedIntent?: boolean } = {}) {
+function fixture(options: { mode?: "manual" | "auto"; untrackedIntent?: boolean; derivedExit?: number } = {}) {
 	const dir = realpathSync(mkdtempSync(join(tmpdir(), "imm-single-task-")));
 	roots.push(dir);
 	writeFileSync(join(dir, ".gitignore"), ".imm/state/\n");
@@ -59,6 +60,12 @@ function fixture(options: { mode?: "manual" | "auto"; untrackedIntent?: boolean 
 	if (options.mode) {
 		mkdirSync(join(dir, ".imm"), { recursive: true });
 		writeFileSync(join(dir, ".imm/config.json"), JSON.stringify({ contract: "immune_brain/project_config/v2", git_integration: options.mode }));
+	}
+	if (options.derivedExit !== undefined) {
+		const invocation = { executable: "bun", argv: ["-e", `process.exit(${options.derivedExit})`] };
+		mkdirSync(join(dir, "docs/agents"), { recursive: true });
+		writeFileSync(join(dir, "docs/agents/derived-files.json"), `${JSON.stringify({ contract: "immune_brain/derived_files/v1",
+			entries: [{ id: "mirror", sources: ["src/**"], outputs: ["out/a"], generate: invocation, check: invocation }] }, null, 2)}\n`);
 	}
 	git(dir, "init", "-q", "-b", "main");
 	git(dir, "add", "-A");
@@ -278,7 +285,7 @@ describe("single-task status", () => {
 });
 
 describe("single-task Lane delivery", () => {
-	function owned(options: { mode?: "manual" | "auto"; untrackedIntent?: boolean; extra?: Partial<StartBatchInput> & { confirmedAt?: string } } = {}) {
+	function owned(options: { mode?: "manual" | "auto"; untrackedIntent?: boolean; derivedExit?: number; extra?: Partial<StartBatchInput> & { confirmedAt?: string } } = {}) {
 		const { repo, base } = fixture(options);
 		const port = createDefaultLaneGitPort();
 		const k = kernel();
@@ -482,7 +489,7 @@ describe("single-task final verification and checkout delivery", () => {
 	type Fixture = ReturnType<typeof ownedFixture>;
 	const ownedFixture = (options: Parameters<typeof owned>[0] = {}) => owned(options);
 	// `owned` lives in the sibling describe; rebuild the same wiring here.
-	function owned(options: { mode?: "manual" | "auto"; untrackedIntent?: boolean; extra?: Partial<StartBatchInput> & { confirmedAt?: string } } = {}) {
+	function owned(options: { mode?: "manual" | "auto"; untrackedIntent?: boolean; derivedExit?: number; extra?: Partial<StartBatchInput> & { confirmedAt?: string } } = {}) {
 		const { repo, base } = fixture(options);
 		const port = createDefaultLaneGitPort();
 		const k = kernel();
@@ -699,6 +706,22 @@ describe("single-task final verification and checkout delivery", () => {
 		expect(parked.commits).toHaveLength(1);
 	});
 
+	it.each([
+		["a passing", 0, "completed", null],
+		["a failing", 1, "needs_human", "final_verification_failed: mirror"],
+	] as const)("workflow-friction D3.1: with no commands, %s declared derived check gates checkout delivery", async (_name, derivedExit, state, reason) => {
+		const f = owned({ derivedExit, extra: { final_verification: [], final_verification_required: false } });
+		await settled(f);
+		const report = laneReport(await startBatch(f.args()));
+		expect(report.batch_state).toBe(state);
+		const record = read(f);
+		expect(record.final_verification_required).toBe(false);
+		expect(record.final_report!.final_verification!.derived_checks).toMatchObject([{ id: "mirror", passed: derivedExit === 0 }]);
+		expect(record.final_report!.return_to_coordinator).toMatchObject(reason ? { status: "blocked", reason } : { status: "staged", reason: null });
+		// A blocked delivery leaves the coordinator checkout untouched.
+		if (reason) expect(git(f.repo, "status", "--porcelain")).toBe("");
+	});
+
 	it("AGR-A5: new single-task records are v3 with policies, null sessions; v2 refused", async () => {
 		const f = owned({});
 		await settled(f);
@@ -711,5 +734,41 @@ describe("single-task final verification and checkout delivery", () => {
 		expect(record.return_policy).toBe("checkout_delivery");
 		expect(record.interaction_mode).toBe("interactive_host");
 		expect(typeof record.final_verification_required).toBe("boolean");
+	});
+});
+
+describe("shared Spec provisioning for a later Slice", () => {
+	const SLICE = "shared-spec-slice";
+	const SPEC = "docs/specs/shared.spec.md";
+	function fixture() {
+		const root = mkdtempSync(join(tmpdir(), "shared-spec-"));
+		mkdirSync(join(root, "docs/plans"), { recursive: true }); mkdirSync(join(root, "docs/specs"), { recursive: true });
+		git(root, "init", "-q", "-b", "main");
+		writeFileSync(join(root, `docs/plans/${SLICE}.intent.json`), `${JSON.stringify({
+			contract: "assurance_kernel/task_intent/v1", task_id: SLICE, owner: "user", goal: "later slice",
+			acceptance: [{ id: "A1", assertion: "one", verification: "verify" }],
+			scope_hint: ["docs/plans", SPEC, "docs/specs/archive/shared.spec.md"], risk: "routine", revision: 1,
+		}, null, 2)}\n`);
+		writeFileSync(join(root, SPEC), "# shared v1\n");
+		git(root, "add", "-A"); git(root, "-c", "user.name=T", "-c", "user.email=t@example.com", "commit", "-qm", "base");
+		const base = git(root, "rev-parse", "HEAD");
+		const lane = join(mkdtempSync(join(tmpdir(), "shared-spec-lane-")), "lane");
+		git(root, "worktree", "add", "-q", "-b", "imm/shared", lane, base);
+		writeFileSync(join(lane, SPEC), "# shared v2 from an earlier Slice\n");
+		git(lane, "-c", "user.name=T", "-c", "user.email=t@example.com", "commit", "-qam", "earlier slice");
+		return { root, lane, base };
+	}
+	test("keeps the Lane's newer Spec when the coordinator copy is unchanged since base_head", () => {
+		const f = fixture();
+		copyLanePlanningInput(f.root, f.lane, SLICE, "spec", f.base);
+		expect(readFileSync(join(f.lane, SPEC), "utf8")).toBe("# shared v2 from an earlier Slice\n");
+		expect(git(f.lane, "status", "--porcelain=v1")).toBe("");
+	});
+	test("copies and stages a coordinator Spec that differs from base_head", () => {
+		const f = fixture();
+		writeFileSync(join(f.root, SPEC), "# shared candidate\n");
+		copyLanePlanningInput(f.root, f.lane, SLICE, "spec", f.base);
+		expect(readFileSync(join(f.lane, SPEC), "utf8")).toBe("# shared candidate\n");
+		expect(git(f.lane, "show", `:${SPEC}`)).toBe("# shared candidate");
 	});
 });

@@ -1426,7 +1426,7 @@ async function runLaneBatchEngine(
 				batch: { registry: input.registry, capability: input.capability, binding: { batch_id: record.batch_id, expected_head: lane.base_head } },
 			});
 			// Deliver the bound Spec after Enrollment so it is task work, not baseline user dirt.
-			if (isParentBranch(record.branch)) copyLanePlanningInput(input.root, lane.path, taskId, "spec");
+			if (isParentBranch(record.branch)) copyLanePlanningInput(input.root, lane.path, taskId, "spec", record.base_head);
 			const fresh = await readLaneProjection(input, lane.path, taskId);
 			if (fresh.error !== null) throw new Error(laneUnreadableReason(fresh.error, taskId, lane.run_id));
 			if (!fresh.projection.run_id || fresh.claim?.task_id !== taskId)
@@ -1498,7 +1498,7 @@ async function runLaneBatchEngine(
 		if (child.state === "lane_admitted") {
 			// A crash between admission and enrollment adopts an existing claim or enrolls now.
 			if (holdsClaim) {
-				if (isParentBranch(record.branch)) copyLanePlanningInput(input.root, child.lane.path, child.task_id, "spec");
+				if (isParentBranch(record.branch)) copyLanePlanningInput(input.root, child.lane.path, child.task_id, "spec", record.base_head);
 				record.children = record.children.map((c) =>
 					c.task_id === child.task_id ? { ...c, state: "enrolled", reason: "adopted existing lane claim after interruption", lane: { ...child.lane!, run_id: fresh.projection.run_id } } : c,
 				);
@@ -1799,6 +1799,8 @@ async function runLaneBatchEngine(
 			if (result.action === "parked_no_progress") {
 				parkChild(child.task_id, "lane_executor_no_progress: two consecutive stalls without Kernel progress");
 			}
+			if (result.action === "parked_error")
+				parkChild(child.task_id, "lane_executor_error: the Executor stopped on an error again after automatic recovery at this Kernel revision");
 			// D8/D10: a provider-refused create keeps the child enrolled with no
 			// handle and retries at the next advance; only the second consecutive
 			// refusal parks it, and the report always names the provider's reason.
@@ -1833,7 +1835,8 @@ async function runLaneBatchEngine(
 			persist(); // Keep the report even if the return step is interrupted.
 			if (isCheckout) {
 				const required = (record as { final_verification_required?: boolean }).final_verification_required;
-				const mustPass = required !== false;
+				// Declared derived-file checks gate delivery even when commands are optional (workflow-friction D3.1).
+				const mustPass = required !== false || (final?.derived_checks?.length ?? 0) > 0;
 				const failedChecks = final ? [...final.results, ...(final.derived_checks ?? []).map(item => ({ ...item, command: item.id }))].filter(item => !item.passed).map(item => item.command) : [];
 				// D4: delivery needs a pass bound to this exact tip when verification is required; a failure keeps the integration and touches no checkout.
 				const unverified = mustPass && final && (!final.passed || final.head !== record.final_report.head)

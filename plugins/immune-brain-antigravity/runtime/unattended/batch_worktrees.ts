@@ -125,7 +125,12 @@ export function ensureReservedLaneWorktree(root: string, reservation: { path: st
 }
 
 /** Carry only planning inputs, never arbitrary coordinator edits or its index. */
-export function copyLanePlanningInput(root: string, lane: string, taskId: string, kind: "intent" | "spec"): void {
+/**
+ * Stage the coordinator's planning input in the Lane. A shared Spec the coordinator still holds exactly as
+ * committed at `baseHead` carries no news: the Lane's own copy, possibly updated by an earlier Slice on the
+ * Parent branch, is kept instead of being reverted to the older coordinator copy.
+ */
+export function copyLanePlanningInput(root: string, lane: string, taskId: string, kind: "intent" | "spec", baseHead?: string): void {
 	const read = observeEnrollmentTaskIntent(root, taskId);
 	const input = kind === "intent"
 		? { path: read.intent_ref.path, content: readSecureProjectFile(root, read.intent_ref.path) }
@@ -143,8 +148,14 @@ export function copyLanePlanningInput(root: string, lane: string, taskId: string
 	const stat = lstatSync(target, { throwIfNoEntry: false });
 	if (stat && (!stat.isFile() || stat.isSymbolicLink()))
 		throw new Error("batch_worktree_failed: planning input is not a regular file");
+	if (kind === "spec" && stat && baseHead && unchangedSince(root, baseHead, input.path, input.content)) return;
 	writeFileSync(target, input.content);
 	git(lane, ["add", "--", input.path]);
+}
+
+function unchangedSince(root: string, baseHead: string, path: string, content: string): boolean {
+	const committed = spawnSync("git", ["-C", root, "cat-file", "blob", `${baseHead}:${path}`], { encoding: "utf8" });
+	return committed.status === 0 && committed.stdout === content;
 }
 
 /** The detached checkout is disposable, including files produced by verification. */

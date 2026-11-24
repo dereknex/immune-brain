@@ -117,9 +117,9 @@ export function herdrCoreName(label: string, token: string): string {
 	return `${prefix}-${suffix}`;
 }
 
-/** A status word as reported; `error` and anything unnamed are `unknown`. */
+/** A status word as reported; anything unnamed is `unknown`. */
 export function coreState(word: unknown): Observation {
-	if (typeof word === "string" && word !== "error" && isSessionState(word) && word !== "unknown") return { state: word, provenance: "reported" };
+	if (typeof word === "string" && isSessionState(word) && word !== "unknown") return { state: word, provenance: "reported" };
 	return { state: "unknown", provenance: "none" };
 }
 

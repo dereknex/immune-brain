@@ -180,9 +180,12 @@ export function resolveConfig(root: string, options: { userConfigPath?: string; 
 		`expected a non-empty list of distinct registered providers (${REGISTERED_SESSION_PROVIDERS.join(", ")})`, ["herdr"]);
 
 	// batch
-	for (const [, o, file] of layers) knownKeys(part(o, file, "batch"), ["max_parallel", "final_verification"], file, "batch");
+	for (const [, o, file] of layers) knownKeys(part(o, file, "batch"), ["max_parallel", "final_verification", "single_task_final_verification"], file, "batch");
 	const maxParallel = pick((o) => o.batch?.max_parallel, "batch.max_parallel", (v) => integerWithin(v, BATCH_MAX_PARALLEL.min, BATCH_MAX_PARALLEL.max), `expected an integer between ${BATCH_MAX_PARALLEL.min} and ${BATCH_MAX_PARALLEL.max}`, BATCH_MAX_PARALLEL.default);
-	const finalVerification = pick((o) => o.batch?.final_verification, "batch.final_verification", (v) => Array.isArray(v) && v.length <= 8 && v.every((c) => typeof c === "string" && c.length > 0), "expected at most eight command strings");
+	const commandList = (v: unknown) => Array.isArray(v) && v.length <= 8 && v.every((c) => typeof c === "string" && c.length > 0);
+	const finalVerification = pick((o) => o.batch?.final_verification, "batch.final_verification", commandList, "expected at most eight command strings");
+	// Non-critical single tasks use this list instead of batch.final_verification (workflow-friction D3.1).
+	const singleTaskFinalVerification = pick((o) => o.batch?.single_task_final_verification, "batch.single_task_final_verification", commandList, "expected at most eight command strings");
 
 	// plain keys
 	const reviewVerifier = pick((o) => o.review_verifier, "review_verifier", oneOf(["off", "on"]), "expected off or on", "off");
@@ -317,7 +320,7 @@ export function resolveConfig(root: string, options: { userConfigPath?: string; 
 		files: { user: userPath, project: projectPath },
 		agents,
 		session_providers: sessionProviders,
-		batch: { valid: !errorsUnder("batch"), max_parallel: maxParallel, final_verification: finalVerification },
+		batch: { valid: !errorsUnder("batch"), max_parallel: maxParallel, final_verification: finalVerification, single_task_final_verification: singleTaskFinalVerification },
 		decision_models: decisionModels,
 		git_integration: leaf(gitIntegration.value, gitIntegration.source),
 		initiative_carrier: carrier,

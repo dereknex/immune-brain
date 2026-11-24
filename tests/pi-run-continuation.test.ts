@@ -90,7 +90,7 @@ describe("Pi run continuation boundary", () => {
 			expect(await agent("second prompt", "review-2")).toBeUndefined();
 			await result("submit_review", { state: "review_incomplete", reason: "unfinished", recovery_action: "reduce scope and enter drive" }, "submit-2");
 			expect(await h.settle()).toMatchObject({ entries: [{ customType: "immune-brain-run-paused" }] });
-			expect(h.revoked).toEqual(["session-a"]);
+			expect(h.revoked).toEqual([]);
 			expect(await h.settle()).toBeUndefined();
 		} finally { h.dispose(); }
 	});
@@ -127,11 +127,15 @@ describe("Pi run continuation boundary", () => {
 		} finally { h.dispose(); }
 	});
 
-	test("an aborted turn and session shutdown cannot auto-resume", async () => {
+	test("an aborted turn suspends until a plain reply; session shutdown cannot auto-resume", async () => {
 		const h = fixture(); try {
 			await h.enter();
 			await h.emit("agent_before_settle", { outcome: "aborted", continue: false, context: { canContinue: false, pendingMessages: [] } });
+			expect(await h.settle()).toMatchObject({ entries: [{ customType: "immune-brain-run-paused", content: expect.stringContaining("Pi turn aborted") }] });
 			expect(await h.settle()).toBeUndefined();
+			expect(h.revoked).toEqual([]);
+			await h.emit("input", { text: "Carry on", source: "interactive" });
+			expect(await h.settle()).toMatchObject({ continue: true });
 			await h.enter(); await h.emit("session_shutdown", {});
 			expect(await h.settle()).toBeUndefined();
 		} finally { h.dispose(); }
@@ -155,7 +159,7 @@ describe("Pi run continuation boundary", () => {
 	test.each([
 		["imm_kernel_canary", "request_authorization"],
 		["imm_kernel_canary", "approve_breaking_intent_revision"], ["imm_kernel_canary", "request_stop"],
-	])("%s %s: two failures stay retryable, the third suppresses gate retries until explicit entry (D9)", async (name, op) => {
+	])("%s %s: two failures stay retryable, the third suppresses gate retries until the user replies (D9)", async (name, op) => {
 		const h = fixture(); try {
 			await h.enter();
 			const call = (id: string) => ({ toolName: name, toolCallId: id, input: { task_id: "slice-a", action: { op } } });
@@ -170,7 +174,7 @@ describe("Pi run continuation boundary", () => {
 			expect(await h.settle()).toMatchObject({ entries: [{ customType: "immune-brain-run-paused" }] });
 			expect(await h.emit("tool_call", call("retry-after"))).toMatchObject({ block: true });
 			await h.emit("input", { text: "What remains?", source: "interactive" });
-			expect(await h.emit("tool_call", call("ordinary-input"))).toMatchObject({ block: true });
+			expect(await h.emit("tool_call", call("ordinary-input"))).toBeUndefined();
 			await h.enter(); await fail("new-entry-1"); await fail("new-entry-2");
 			expect(await h.emit("tool_call", call("new-entry-3"))).toBeUndefined();
 		} finally { h.dispose(); }
@@ -189,15 +193,16 @@ describe("Pi run continuation boundary", () => {
 	});
 
 	test.each([["aborted", false], ["aborted", true], ["completed", false]] as const)(
-		"a %s turn with canContinue %p revokes the live entry token (AC4)", async (outcome, canContinue) => {
+		"a %s turn with canContinue %p suspends without spending the entry token (AC4, workflow-friction D1.1)", async (outcome, canContinue) => {
 		const h = fixture(); try {
 			await h.enter();
 			await h.emit("agent_before_settle", { outcome, continue: false, context: { canContinue, pendingMessages: [] } });
-			expect(h.revoked).toEqual(["session-a"]);
+			expect(h.revoked).toEqual([]);
+			expect(await h.settle()).toMatchObject({ entries: [{ customType: "immune-brain-run-paused" }] });
 		} finally { h.dispose(); }
 	});
 
-	test("a pause ends the session's entry token; a continuing run keeps it", async () => {
+	test("a suspending pause and a continuing run both keep the session's entry token", async () => {
 		const h = fixture(); try {
 			await h.enter();
 			expect(await h.settle()).toMatchObject({ continue: true });
@@ -207,11 +212,11 @@ describe("Pi run continuation boundary", () => {
 				await h.emit("tool_result", { toolName: "imm_kernel_canary", toolCallId: id, isError: true, details: { reason: "cancelled" } });
 			}
 			expect(await h.settle()).toMatchObject({ entries: [{ customType: "immune-brain-run-paused" }] });
-			expect(h.revoked).toEqual(["session-a"]);
+			expect(h.revoked).toEqual([]);
 		} finally { h.dispose(); }
 	});
 
-	test("pauses on the seventh consecutive settle boundary with progress and tells user to resume explicitly in the same Host (D6)", async () => {
+	test("pauses on the seventh consecutive settle boundary with progress and tells the user to reply in the same session (D6)", async () => {
 		const h = fixture(); try {
 			await h.enter();
 			for (let attempt = 1; attempt <= 6; attempt++) {
@@ -223,10 +228,10 @@ describe("Pi run continuation boundary", () => {
 			expect(seventh).toMatchObject({
 				entries: [{
 					customType: "immune-brain-run-paused",
-					content: expect.stringContaining("Pi consecutive Stop boundary reached; resume explicitly in the same Host"),
+					content: expect.stringContaining("Pi consecutive Stop boundary reached; reply in this session to resume"),
 				}],
 			});
-			expect(h.revoked).toEqual(["session-a"]);
+			expect(h.revoked).toEqual([]);
 			expect(await h.settle()).toBeUndefined();
 		} finally { h.dispose(); }
 	});
@@ -301,7 +306,7 @@ describe("Pi run continuation boundary", () => {
 		} finally { h.dispose(); }
 	});
 
-	test("Pi run pause revokes the in-process entry token", async () => {
+	test("Pi run pause keeps the in-process entry token for a plain reply", async () => {
 		const h = fixture(); try {
 			await h.enter();
 			expect(piEntryToken(h.ctx)).toBeTruthy();
@@ -315,8 +320,11 @@ describe("Pi run continuation boundary", () => {
 			await result("advance_assurance", { state: "review_ready", agent_params: { prompt: "p2" } }, "adv-2");
 			await h.emit("tool_call", { toolName: "Agent", toolCallId: "rev-2", input: { prompt: "p2", subagent_type: "Review", run_in_background: false } });
 			await result("submit_review", { state: "review_incomplete", reason: "unfinished", recovery_action: "pause" }, "sub-2");
+			const token = piEntryToken(h.ctx);
 			expect(await h.settle()).toMatchObject({ entries: [{ customType: "immune-brain-run-paused" }] });
-			expect(piEntryToken(h.ctx)).toBeNull();
+			expect(piEntryToken(h.ctx)).toBe(token);
+			await h.emit("input", { text: "Reduce scope and continue", source: "interactive" });
+			expect(piEntryToken(h.ctx)).toBe(token);
 		} finally { h.dispose(); }
 	});
 });

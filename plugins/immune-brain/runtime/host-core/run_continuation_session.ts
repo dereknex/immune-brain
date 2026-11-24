@@ -9,7 +9,9 @@
 // `selectedParentSession`, `applyRunContinuationEvent`.
 // Invariants: every continuation decision re-reads the Kernel; a private file
 // past `MAX_METADATA_BYTES` carries no metadata; a correlation recorded for one
-// workspace never answers another; a paused or settled entry spends its token.
+// workspace never answers another; a settled run or a lost bound identity spends its
+// token, while every other pause only suspends the run until the user replies in the
+// same session (Spec docs/specs/workflow-friction-simplification.spec.md D1.1).
 // Side Effects: writes and removes private session files under the cache directory.
 // Verification: `bun test tests/claude-run-continuation.test.ts` and
 // `bun test tests/antigravity-assurance-conformance.test.ts -t 'Run Continuation Hook'`.
@@ -26,9 +28,13 @@ import { digestOfReviewerBytes } from "../assurance/review_mediation";
 import { appendPrivate, cacheDir, ensurePrivateDir, ownedByUs, readPrivate, sessionHash } from "./private_file";
 
 const NATIVE_OPERATIONS = new Set(["start_unattended_batch", "retire_stale_batch", "request_authorization", "approve_breaking_intent_revision", "request_stop", "stop"]);
+const PARENT_IDENTITY_LOST = "no matching persisted batch identity";
+const SUSPENDED_REVIEW_OPERATIONS = new Set(["advance_assurance", "submit_review"]);
 const MAX_METADATA_BYTES = 256 * 1024;
 /** Spec D9: the third native-operation failure under one entry pauses; the first two leave the run live for a retry. */
 const NATIVE_FAILURE_LIMIT = 3;
+/** Recovery a paused native gate names: a plain reply in the same session resumes a suspended run. */
+export const PAUSED_GATE_GUIDANCE = "reply in this session to resume before another native gate";
 
 interface Correlation { session_id: string; workspace: string; tool_use_id: string; operation: string; task_id: string | null }
 interface ContinuationMetadata {
@@ -52,7 +58,7 @@ export interface RunContinuationHost {
 	host_name?: string;
 	/** The session's phase-entry state, or null when it cannot be read. */
 	entry_state(session_id: string): { run_live?: boolean; workspace?: string | null } | null;
-	/** Spend the session's entry token: a paused or settled entry needs a new literal entry. */
+	/** Spend the session's entry token: a settled run or lost identity needs a new literal entry. */
 	revoke_entry(session_id: string): void;
 	drop_entry_log(session_id: string): void;
 }
@@ -82,9 +88,9 @@ export interface RunContinuationSession {
 
 const blank = (): ContinuationMetadata => ({ state: null, sequence: 0, review: "unobserved", reviewer_prompt: null,
 	reviewer_call_id: null, reviewer_agent_id: null, recovery_action: null, paused: null, stop_blocks: 0, native_failures: 0 });
-const statePath = (host: RunContinuationHost, sessionId: string, root: string) => join(cacheDir(root, host.cache_name), `${sessionHash(sessionId)}.continuation`);
+const statePath = (host: Pick<RunContinuationHost, "cache_name">, sessionId: string, root: string) => join(cacheDir(root, host.cache_name), `${sessionHash(sessionId)}.continuation`);
 const callPath = (host: RunContinuationHost, toolId: string, root: string) => join(cacheDir(root, host.cache_name), `${sessionHash(toolId)}.continuation-call`);
-function drop(host: RunContinuationHost, path: string, root: string): void {
+function drop(host: Pick<RunContinuationHost, "cache_name">, path: string, root: string): void {
 	// Nothing to drop means no cache directory either: an idle session must leave the store untouched.
 	if (!existsSync(path)) return;
 	if (!ensurePrivateDir(cacheDir(root, host.cache_name))) return;
@@ -107,7 +113,7 @@ function readLast(path: string, dir?: string): unknown {
 	const lines = text.trim().split("\n");
 	return JSON.parse(lines.at(-1) ?? "null");
 }
-function readMetadata(host: RunContinuationHost, sessionId: string, root: string): ContinuationMetadata {
+function readMetadata(host: Pick<RunContinuationHost, "cache_name">, sessionId: string, root: string): ContinuationMetadata {
 	const value = readLast(statePath(host, sessionId, root), cacheDir(root, host.cache_name)) as ContinuationMetadata | null;
 	if (!value) return blank();
 	// Metadata written before the retry budget existed has no failure count.
@@ -130,19 +136,44 @@ function readMetadata(host: RunContinuationHost, sessionId: string, root: string
 export function readSessionMetadata(host: RunContinuationHost, root: string, sessionId: string): ContinuationMetadata {
 	return readMetadata(host, sessionId, root);
 }
-function save(host: RunContinuationHost, sessionId: string, root: string, value: ContinuationMetadata): void {
+function save(host: Pick<RunContinuationHost, "cache_name">, sessionId: string, root: string, value: ContinuationMetadata): void {
 	const path = statePath(host, sessionId, root);
 	const temporary = `${path}.${randomUUID()}`;
 	if (!appendPrivate(temporary, cacheDir(root, host.cache_name), JSON.stringify(value) + "\n")) throw new Error("continuation metadata could not be written");
 	try { renameSync(temporary, path); } finally { drop(host, temporary, root); }
 }
 
-/** ADR 0025: a pause ends the entry token, so the MCP server itself refuses token-backed calls until a new literal entry. */
-function pauseRun(host: RunContinuationHost, metadata: ContinuationMetadata, sessionId: string, root: string, reason: string): void {
+/**
+ * A pause suspends the run: native gates refuse until the user replies in this session.
+ * Only `revoke` (a lost or terminal bound identity) spends the entry token, so the MCP
+ * server itself refuses token-backed calls until a new literal entry (Spec D1.1).
+ */
+function pauseRun(host: RunContinuationHost, metadata: ContinuationMetadata, sessionId: string, root: string, reason: string,
+		revoke = false): void {
 	metadata.paused = reason;
 	save(host, sessionId, root, metadata);
-	// The log has one revocation kind: a paused entry is spent exactly like a settled one.
-	host.revoke_entry(sessionId);
+	if (revoke) host.revoke_entry(sessionId);
+}
+
+/** Suspends a bound run without spending its entry (a Host turn the user interrupted). */
+export function suspendRun(host: Pick<RunContinuationHost, "cache_name">, root: string, sessionId: string, reason: string): void {
+	const metadata = readMetadata(host, sessionId, root);
+	if (!metadata.state || metadata.paused) return;
+	metadata.paused = reason;
+	save(host, sessionId, root, metadata);
+}
+
+/**
+ * A plain user reply resumes a suspended run in the same session: the pause, the native
+ * failure budget and the consecutive Stop count reset; the binding and the entry token stay.
+ */
+export function resumeSuspendedRun(host: Pick<RunContinuationHost, "cache_name">, root: string, sessionId: string): void {
+	const metadata = readMetadata(host, sessionId, root);
+	if (!metadata.paused && !metadata.native_failures && !metadata.stop_blocks) return;
+	metadata.paused = null;
+	metadata.native_failures = 0;
+	metadata.stop_blocks = 0;
+	save(host, sessionId, root, metadata);
 }
 
 async function observeNativeFailure(host: RunContinuationHost, metadata: ContinuationMetadata, correlation: Correlation, root: string, reason: string): Promise<void> {
@@ -179,11 +210,15 @@ export async function applyRunContinuationEvent(host: RunContinuationHost, root:
 	}
 	if (event.kind === "prompt") {
 		if (event.releases) drop(host, statePath(host, sessionId, root), root);
+		else if (existsSync(statePath(host, sessionId, root))) resumeSuspendedRun(host, root, sessionId);
 		return { kind: "none" };
 	}
 	if (event.kind === "tool_call") {
 		const metadata = readMetadata(host, sessionId, root);
-		if (metadata.paused && NATIVE_OPERATIONS.has(event.operation)) return { kind: "deny", reason: metadata.paused };
+		// A suspended run keeps its entry token, so the gate itself refuses the operations that
+		// move authority or Review until the user replies (Spec D1.1).
+		if (metadata.paused && (NATIVE_OPERATIONS.has(event.operation) || SUSPENDED_REVIEW_OPERATIONS.has(event.operation)))
+			return { kind: "deny", reason: metadata.paused };
 		const entry = host.entry_state(sessionId);
 		if (!entry?.run_live) return { kind: "none" };
 		// A drifted shell cwd records no correlation, so its result cannot be read as this run's (D5).
@@ -251,6 +286,8 @@ export async function applyRunContinuationEvent(host: RunContinuationHost, root:
 		}
 		if (NATIVE_OPERATIONS.has(event.operation) && ["blocked", "cancelled", "rejected", "failed"].includes(String(response?.state)))
 			await observeNativeFailure(host, metadata, correlated, root, `${event.operation} did not apply ${NATIVE_FAILURE_LIMIT} times under this entry; inspect the same-Host recovery`);
+		// An applied native operation restores the whole retry budget (Spec D1.2).
+		else if (NATIVE_OPERATIONS.has(event.operation) && metadata.native_failures) { metadata.native_failures = 0; save(host, sessionId, root, metadata); }
 		if (metadata.state) save(host, sessionId, root, metadata);
 		return { kind: "none" };
 	}
@@ -284,8 +321,18 @@ export async function applyRunContinuationEvent(host: RunContinuationHost, root:
 	metadata.sequence++;
 	const taskId = metadata.state.binding.kind === "task" ? metadata.state.binding.task_id : metadata.state.binding.initiative_slug;
 	let observation: Parameters<typeof decideRunContinuation>[1];
-	if (metadata.state.binding.kind === "parent") observation = await observeParentRun(metadata.state.binding,
-		boundary, metadata.review, metadata.recovery_action ?? undefined);
+	if (metadata.state.binding.kind === "parent") {
+		try {
+			observation = await observeParentRun(metadata.state.binding, boundary, metadata.review, metadata.recovery_action ?? undefined);
+		} catch (error) {
+			// A lost persisted batch identity is a lost bound identity: it spends the entry token
+			// in every Host instead of leaving the run live behind a warning (Spec D1.1).
+			if (!(error instanceof Error && error.message.includes(PARENT_IDENTITY_LOST))) throw error;
+			host.revoke_entry(sessionId);
+			drop(host, statePath(host, sessionId, root), root);
+			return { kind: "paused", reason: `${error.message}; enter drive explicitly to rebind the run` };
+		}
+	}
 	else {
 		const status = await projectTaskStatus(workspace, taskId);
 		const record = readTaskRecordRaw(workspace, taskId);
@@ -312,8 +359,8 @@ export async function applyRunContinuationEvent(host: RunContinuationHost, root:
 		const hostName = host.host_name ?? "Claude";
 		const reason = decision.action === "pause"
 			? decision.reason
-			: `${hostName} consecutive Stop boundary reached; resume explicitly in the same Host`;
-		pauseRun(host, metadata, sessionId, root, reason);
+			: `${hostName} consecutive Stop boundary reached; reply in this session to resume`;
+		pauseRun(host, metadata, sessionId, root, reason, decision.action === "pause" && decision.revoke === true);
 		return { kind: "paused", reason: metadata.paused! };
 	}
 	save(host, sessionId, root, metadata);

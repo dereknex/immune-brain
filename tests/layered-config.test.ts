@@ -37,6 +37,7 @@ const PLAIN: Array<[string, (v: unknown) => object, unknown, unknown, unknown, (
 	["session_providers", (v) => ({ session_providers: v }), ["herdr-core"], ["herdr", "herdr-core"], ["herdr"], (c) => c.session_providers],
 	["batch.max_parallel", (v) => ({ batch: { max_parallel: v } }), 3, 5, 1, (c) => c.batch.max_parallel],
 	["batch.final_verification", (v) => ({ batch: { final_verification: v } }), ["bun test"], ["bun run typecheck"], null, (c) => c.batch.final_verification],
+	["batch.single_task_final_verification", (v) => ({ batch: { single_task_final_verification: v } }), ["bun test"], ["bun run typecheck"], null, (c) => c.batch.single_task_final_verification],
 ];
 
 test.each(PLAIN)("%s resolves project over user over default", (_key, set, userValue, projectValue, fallback, get) => {
@@ -56,6 +57,8 @@ test.each([
 	["batch.max_parallel", { batch: { max_parallel: 9 } }, { batch: { max_parallel: 8 } }, (c: Config) => c.batch.max_parallel, { value: 8, source: "user" }],
 	["batch.max_parallel", { batch: { max_parallel: 0 } }, {}, (c: Config) => c.batch.max_parallel, { value: 1, source: "default" }],
 	["batch.final_verification", { batch: { final_verification: [""] } }, {}, (c: Config) => c.batch.final_verification, { value: null, source: "default" }],
+	["batch.single_task_final_verification", { batch: { single_task_final_verification: "bun test" } }, {}, (c: Config) => c.batch.single_task_final_verification, { value: null, source: "default" }],
+	["batch.single_task_final_verification", { batch: { single_task_final_verification: Array(9).fill("bun test") } }, {}, (c: Config) => c.batch.single_task_final_verification, { value: null, source: "default" }],
 ] as const)("an invalid project %s counts as unset and falls to the next layer with an error", (key, project, user, get, expected) => {
 	const f = fixture();
 	f.user(user);

@@ -93,7 +93,7 @@ describe.each(SUBJECTS)("Supervised Session Port conformance: %s", (_name, make)
 		expect(await port.observeState(handle)).toEqual({ ok: true, state: "unknown", provenance: "none" });
 	});
 
-	it.each(["working", "blocked", "unknown"] as const)("sends nothing to a %s session", async state => {
+	it.each(["working", "blocked", "error", "unknown"] as const)("sends nothing to a %s session", async state => {
 		const { port, control } = start();
 		const handle = await created(port);
 		control.setState(handle, state);

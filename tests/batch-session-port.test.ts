@@ -564,6 +564,103 @@ describe("BSP-A3: dialog holds, progress, stalls, interventions", () => {
 	});
 });
 
+describe("S3b: an error stop recovers in a fresh generation, bounded per Kernel revision", () => {
+	const kernelAt = (recordRevision: string, extra: Partial<{ settled: boolean; hasOpenDecision: boolean; hasReplan: boolean }> = {}) =>
+		({ recordRevision, settled: false, hasOpenDecision: false, hasReplan: false, ...extra });
+	const errored = (port: MemPort, handle: string) => port.states.set(handle, "error");
+
+	test("rotates twice at one revision, parks on the third error, and counts again after Kernel progress", async () => {
+		const port = new MemPort("mem-error");
+		errored(port, "h1");
+		const start = { key: laneSessionKey("b", "t", 1), generation: 1, baseline: "r1", handle: "h1", entry_submitted: true, attention: null, no_progress: 0, exit_proof: null };
+		const writes: unknown[] = [];
+		const first = await reconcileChildSession({ port, batchId: "b", taskId: "t", session: start, kernel: kernelAt("r1"), interactionMode: "parent_relayed", entry: "drive t", laneCwd: tmpdir(), onWriteAhead: s => writes.push(s) });
+		expect(first.action).toBe("recovered_error");
+		expect(first.session.generation).toBe(2);
+		expect(first.session.error_recoveries).toEqual({ baseline: "r1", count: 1 });
+		expect(first.session.attention).toBeNull();
+		expect(port.closes).toEqual([{ handle: "h1", key: start.key }]);
+		expect(port.opens.map(o => o.entry)).toEqual(["drive t"]);
+		expect(writes.length).toBe(1);
+
+		errored(port, first.session.handle!);
+		const second = await reconcileChildSession({ port, batchId: "b", taskId: "t", session: first.session, kernel: kernelAt("r1"), interactionMode: "parent_relayed", entry: "drive t", laneCwd: tmpdir() });
+		expect(second.action).toBe("recovered_error");
+		expect(second.session.error_recoveries).toEqual({ baseline: "r1", count: 2 });
+
+		errored(port, second.session.handle!);
+		const third = await reconcileChildSession({ port, batchId: "b", taskId: "t", session: second.session, kernel: kernelAt("r1"), interactionMode: "parent_relayed", entry: "drive t", laneCwd: tmpdir() });
+		expect(third.action).toBe("parked_error");
+		expect(third.parkedReason).toBe("lane_executor_error");
+		expect(third.session.attention).toBe("error");
+		expect(port.opens.length).toBe(2);
+		expect(port.closes.length).toBe(2);
+
+		const progressed = await reconcileChildSession({ port, batchId: "b", taskId: "t", session: second.session, kernel: kernelAt("r2"), interactionMode: "parent_relayed", entry: "drive t", laneCwd: tmpdir() });
+		expect(progressed.action).toBe("recovered_error");
+		expect(progressed.session.error_recoveries).toEqual({ baseline: "r2", count: 1 });
+		expect(progressed.session.baseline).toBe("r2");
+	});
+
+	test("a generation opened for a correction recovers with the correction text", async () => {
+		const port = new MemPort("mem-error-correction");
+		errored(port, "h1");
+		const corrected = await reconcileChildSession({ port, batchId: "b", taskId: "t",
+			session: { key: laneSessionKey("b", "t", 1), generation: 1, baseline: "r1", handle: "h0", entry_submitted: true, attention: null, no_progress: 0, exit_proof: null },
+			kernel: kernelAt("r1"), interactionMode: "parent_relayed", entry: "drive t", laneCwd: tmpdir(), pendingCorrection: "design correction" });
+		port.states.set("h0", "idle");
+		const rotated = corrected.session.handle ? corrected : await reconcileChildSession({ port, batchId: "b", taskId: "t", session: corrected.session,
+			kernel: kernelAt("r1"), interactionMode: "parent_relayed", entry: "drive t", laneCwd: tmpdir(), pendingCorrection: "design correction" });
+		errored(port, rotated.session.handle!);
+		const recovered = await reconcileChildSession({ port, batchId: "b", taskId: "t", session: rotated.session,
+			kernel: kernelAt("r1"), interactionMode: "parent_relayed", entry: "drive t", laneCwd: tmpdir(), pendingCorrection: "design correction" });
+		expect(recovered.action).toBe("recovered_error");
+		expect(port.opens.at(-1)!.entry).toBe("design correction");
+	});
+
+	test.each([["settled", { settled: true }], ["an open decision", { hasOpenDecision: true }], ["a replan", { hasReplan: true }]] as const)(
+		"holds a child with %s on error, flags attention, and never recovers it",
+		async (_label, extra) => {
+			const port = new MemPort("mem-error-hold");
+			errored(port, "h1");
+			const result = await reconcileChildSession({
+				port, batchId: "b", taskId: "t",
+				session: { key: laneSessionKey("b", "t", 1), generation: 1, baseline: "r1", handle: "h1", entry_submitted: true, attention: null, no_progress: 0, exit_proof: null },
+				kernel: kernelAt("r1", extra), interactionMode: "parent_relayed", entry: "drive t", laneCwd: tmpdir(),
+			});
+			expect(result.action).toBe("held");
+			expect(result.session.attention).toBe("error");
+			expect(port.closes.length).toBe(0);
+			expect(port.opens.length).toBe(0);
+			expect(port.sends.length).toBe(0);
+		},
+	);
+
+	test("through the batch the recovery count persists and the third error at one revision parks the child", async () => {
+		const port = new MemPort("mem-error-batch");
+		const fx = mkRepo(["task-a"]);
+		try {
+			const kernel = fakeKernel(new Map([["task-a", "r1"]]));
+			const input = laneInput(fx.repo, fx.base, "batch-s3b", [child("task-a")], kernel, port);
+			await advanceBatch(input, null);
+			for (const count of [1, 2]) {
+				errored(port, port.openHandles.at(-1)!);
+				await advanceBatch(input, readAnyBatchRunState(fx.repo, "batch-s3b"));
+				const stored = readAnyBatchRunState(fx.repo, "batch-s3b") as BatchLaneRunStateRecord;
+				expect(stored.children[0]!.session?.error_recoveries).toEqual({ baseline: "r1", count });
+			}
+			errored(port, port.openHandles.at(-1)!);
+			const parked = (await advanceBatch(input, readAnyBatchRunState(fx.repo, "batch-s3b"))) as unknown as { batch_state: string; children: Array<{ state: string; reason: string | null }> };
+			expect(parked.batch_state).toBe("needs_human");
+			expect(parked.children[0]!.state).toBe("needs_human");
+			expect(parked.children[0]!.reason).toContain("lane_executor_error");
+			expect(port.opens.length).toBe(3);
+		} finally {
+			fx.cleanup();
+		}
+	});
+});
+
 describe("BSP-A4: working, unknown and observe refusal hold", () => {	test.each([["working"], ["unknown"]] as Array<[SessionObservation]>)("observed %s leaves everything unchanged", async (state) => {
 		const port = new MemPort(`mem-${state}`);
 		port.states.set("h1", state);

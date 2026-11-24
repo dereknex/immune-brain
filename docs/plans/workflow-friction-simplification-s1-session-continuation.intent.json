@@ -1,0 +1,51 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "workflow-friction-simplification-s1-session-continuation",
+  "owner": "user",
+  "goal": "Make every non-terminal /immune-brain:drive pause (user wait, blocked batch, host_failure, review_incomplete or rejection, the consecutive-stop limit, native-failure limit, Pi interrupt) suspend the enrolled session without revoking its entry token on the same bound (workspace, batch_id | run_id) across Claude Code, Pi, and Antigravity; revoke only on the closed list (settled run, SessionEnd, explicit cancel, /draw-up or /clarify entry, workspace or bound-identity drift); clear suspension and native_failures on the next plain user prompt; reset native_failures on any applied native operation; and amend ADR 0025 §3/§6 while keeping Host Native Gates intact, per D1 of docs/specs/workflow-friction-simplification.spec.md.",
+  "acceptance": [
+    {
+      "id": "S1-AC1",
+      "assertion": "Source BR-DEC-1; meet D1.1 and BR-SCN-1 in docs/specs/workflow-friction-simplification.spec.md. Agreed seam: tests/run-continuation.test.ts, tests/claude-run-continuation.test.ts, tests/pi-run-continuation.test.ts, tests/antigravity-assurance-conformance.test.ts, tests/claude-phase-entry-gate.test.ts, tests/pi-phase-entry-gate.test.ts. Done looks like: every non-terminal pause of an enrolled batch or task run (user wait, any blocked batch, host_failure, review_incomplete or rejection, the consecutive-stop limit, the native-failure limit, and a Pi interrupted turn) suspends continuation without revoking entry_token, suspension stops automatic continuation, and the next plain-text non-cancelling/non-planning user prompt clears suspension so subsequent immune-brain MCP calls reach their Native Gates without run_entry_required across Claude, Pi, and Antigravity; docs/adr/0025-run-entry-decision-hosting.md §3/§6 documents suspension versus revocation. Negative: a settled run, SessionEnd, explicit cancel (releasesRunBinding), /draw-up or /clarify entry, and workspace or bound batch/task identity drift still revoke entry_token and refuse subsequent token-backed MCP calls with run_entry_required; Native Gates remain required.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/run-continuation.test.ts tests/claude-run-continuation.test.ts tests/pi-run-continuation.test.ts tests/antigravity-assurance-conformance.test.ts tests/claude-phase-entry-gate.test.ts tests/pi-phase-entry-gate.test.ts && bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun scripts/sync-dist-docs.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "S1-AC2",
+      "assertion": "Source BR-REQ-1; meet D1.2 in docs/specs/workflow-friction-simplification.spec.md. Agreed seam: tests/run-continuation.test.ts, tests/claude-run-continuation.test.ts, tests/antigravity-assurance-conformance.test.ts. Done looks like: any applied native operation (including start_unattended_batch with state === \"started\") resets metadata.native_failures to 0, and the next plain user prompt after a suspension also resets it, so two failures followed by a success allow two more failures before NATIVE_FAILURE_LIMIT. Negative: three consecutive failed or non-applied native operations with no intervening success suspend the session (no automatic continuation) without revoking entry_token.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/run-continuation.test.ts tests/claude-run-continuation.test.ts tests/antigravity-assurance-conformance.test.ts && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/workflow-friction-simplification-s1.md",
+    "docs/adr/0025-run-entry-decision-hosting.md",
+    "docs/plans/workflow-friction-simplification-s1-session-continuation.intent.json",
+    "docs/specs/workflow-friction-simplification.spec.md",
+    "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+    "plugins/immune-brain-antigravity/dist/drive.md",
+    "plugins/immune-brain-antigravity/runtime/antigravity/lane_guard.ts",
+    "plugins/immune-brain-antigravity/runtime/antigravity/run_continuation.ts",
+    "plugins/immune-brain-antigravity/runtime/assurance/phase_entry.ts",
+    "plugins/immune-brain-antigravity/runtime/assurance/run_continuation.ts",
+    "plugins/immune-brain-antigravity/runtime/claude/lane_guard.ts",
+    "plugins/immune-brain-antigravity/runtime/claude/run_continuation.ts",
+    "plugins/immune-brain-antigravity/runtime/host-core/run_continuation_session.ts",
+    "plugins/immune-brain/.pi-extension/pi-run-continuation.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/drive.md",
+    "plugins/immune-brain/runtime/antigravity/lane_guard.ts",
+    "plugins/immune-brain/runtime/antigravity/run_continuation.ts",
+    "plugins/immune-brain/runtime/assurance/phase_entry.ts",
+    "plugins/immune-brain/runtime/assurance/run_continuation.ts",
+    "plugins/immune-brain/runtime/claude/lane_guard.ts",
+    "plugins/immune-brain/runtime/claude/run_continuation.ts",
+    "plugins/immune-brain/runtime/host-core/run_continuation_session.ts",
+    "tests/antigravity-assurance-conformance.test.ts",
+    "tests/claude-phase-entry-gate.test.ts",
+    "tests/claude-run-continuation.test.ts",
+    "tests/pi-phase-entry-gate.test.ts",
+    "tests/pi-run-continuation.test.ts",
+    "tests/run-continuation.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

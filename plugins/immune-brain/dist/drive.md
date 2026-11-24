@@ -258,8 +258,10 @@ is recorded as a separate follow-up rather than resolved here.
   Within one entry, only a side-effect-free rejection is retried, at most twice,
   and preflight is rerun before each retry; judge retryability from the
   rejection text and `recovery_action`. `plan_changed`, `head_moved` and a claim
-  conflict are never retried, and a third native-operation failure pauses the
-  run and ends the token — only a new literal entry resumes. When
+  conflict are never retried, and a third native-operation failure suspends
+  the run: native gates refuse until the user replies in the same session,
+  which resumes it with the token intact. Only settlement, `SessionEnd`, a
+  cancel or planner entry, or a lost bound identity end the token. When
   preflight names a deterministic fix (for example a `.gitignore` that ignores
   `.imm/audit/`), apply it, commit the fixed files alone in one commit even under
   `Git integration: manual`, list that commit in the manifest, then retry. Push,

@@ -1347,12 +1347,17 @@ export class HostRuntime {
 			};
 		}
 		const isResuming = preflight.projection.is_resuming;
-		// A new single-task start that names no commands takes the layered
-		// `batch.final_verification` (step 2 of the Parent's resolution order);
-		// resuming keeps the commands recorded on the batch, and an unset config
-		// leaves final verification optional for a single task.
+		// A new single-task start that names no commands takes layered config:
+		// a `critical` task inherits `batch.final_verification`; any other task
+		// uses `batch.single_task_final_verification` (workflow-friction D3.1).
+		// Resuming keeps the commands recorded on the batch; with no commands the
+		// declared derived-file checks still gate checkout delivery.
 		if (options.plan_source === "single_task" && !isResuming && !options.final_verification?.length) {
-			const configured = (resolveConfig(this.cwd).batch.final_verification as { value?: unknown }).value;
+			// An unread intent risk leaves no entry and keeps the full suite (conservative).
+			const risks = preflight.projection.risk_by_task ?? {};
+			const critical = Object.keys(risks).length === 0 || Object.values(risks).includes("critical");
+			const batchConfig = resolveConfig(this.cwd).batch;
+			const configured = (batchConfig[critical ? "final_verification" : "single_task_final_verification"] as { value?: unknown }).value;
 			if (Array.isArray(configured) && configured.length > 0) options = { ...options, final_verification: configured.map(String) };
 		}
 		if (!isResuming && !options.plan_source && !options.final_verification?.length) return {

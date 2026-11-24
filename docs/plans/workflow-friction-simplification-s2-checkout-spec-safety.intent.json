@@ -1,0 +1,33 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "workflow-friction-simplification-s2-checkout-spec-safety",
+  "owner": "user",
+  "goal": "Allow single-task checkout_delivery in both manual and auto modes to treat staged or untracked regular files in the coordinator checkout that match the target commit's blob and executable mode byte-for-byte as satisfied while keeping all mismatches fail-closed, and prevent copyLanePlanningInput from overwriting a newer Spec on the Lane branch when the coordinator copy matches base_head, per D2 of docs/specs/workflow-friction-simplification.spec.md.",
+  "acceptance": [
+    {
+      "id": "S2-AC1",
+      "assertion": "Source BR-DEC-3; meet D2.1 and BR-SCN-2 in docs/specs/workflow-friction-simplification.spec.md. Agreed seam: tests/single-task-checkout-delivery.test.ts, tests/single-task-lane-batch.test.ts. Done looks like: untracked (??) or staged regular files (such as docs/plans/<id>.intent.json and docs/specs/<slug>.spec.md) in the coordinator checkout whose content blob and executable mode match the completed Lane commit byte-for-byte pass inspectSingleTaskDelivery and deliverSingleTask cleanly in both manual and auto modes without checkout_delivery_overlap, with auto mode staging satisfied paths prior to git merge --ff-only. Negative: any byte content difference, executable mode mismatch (100644 vs 100755), symlink at the path, or path deleted by target while modified or untracked in the coordinator checkout refuses with checkout_delivery_overlap and leaves coordinator HEAD untouched.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/single-task-checkout-delivery.test.ts tests/single-task-lane-batch.test.ts && bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "S2-AC2",
+      "assertion": "Source BR-REQ-2; meet D2.2 in docs/specs/workflow-friction-simplification.spec.md. Agreed seam: tests/single-task-lane-batch.test.ts. Done looks like: when an earlier Slice updated a shared docs/specs/*.spec.md on imm/<slug> while the coordinator checkout copy still matches base_head, copyLanePlanningInput for a subsequent Slice preserves the Lane HEAD Spec instead of overwriting and staging the stale coordinator copy. Negative: when the coordinator checkout holds a Spec that differs from base_head (such as an uncommitted candidate Spec), copyLanePlanningInput copies and stages the coordinator Spec into the Lane worktree.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/single-task-lane-batch.test.ts && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/workflow-friction-simplification-s2.md",
+    "docs/plans/workflow-friction-simplification-s2-checkout-spec-safety.intent.json",
+    "docs/specs/workflow-friction-simplification.spec.md",
+    "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+    "plugins/immune-brain-antigravity/runtime/unattended/batch_worktrees.ts",
+    "plugins/immune-brain-antigravity/runtime/unattended/checkout_delivery.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/unattended/batch_worktrees.ts",
+    "plugins/immune-brain/runtime/unattended/checkout_delivery.ts",
+    "tests/single-task-checkout-delivery.test.ts",
+    "tests/single-task-lane-batch.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

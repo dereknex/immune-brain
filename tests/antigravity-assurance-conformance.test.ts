@@ -515,7 +515,7 @@ describe("Antigravity Harness Conformance", () => {
 			}
 		});
 
-		it("positive (BR-SCN-2): pauses on the seventh consecutive Stop and tells user to resume explicitly in the same Host", async () => {
+		it("positive (BR-SCN-2): pauses on the seventh consecutive Stop and tells the user to reply in the same session", async () => {
 			const h = antigravityContinuationFixture();
 			try {
 				await h.enter();
@@ -527,9 +527,9 @@ describe("Antigravity Harness Conformance", () => {
 				writeFileSync(join(h.root, "value.txt"), "progress 7\n");
 				const seventh = await h.stop();
 				expect(seventh.decision).toBeUndefined();
-				expect(seventh.reason).toBe("Antigravity consecutive Stop boundary reached; resume explicitly in the same Host");
-				expect(seventh.systemMessage).toContain("Antigravity consecutive Stop boundary reached; resume explicitly in the same Host");
-				expect(readPhaseEntryState(h.conversationId, h.store)?.run_live).toBe(false);
+				expect(seventh.reason).toBe("Antigravity consecutive Stop boundary reached; reply in this session to resume");
+				expect(seventh.systemMessage).toContain("Antigravity consecutive Stop boundary reached; reply in this session to resume");
+				expect(readPhaseEntryState(h.conversationId, h.store)?.run_live).toBe(true);
 			} finally {
 				h.dispose();
 			}
@@ -557,7 +557,7 @@ describe("Antigravity Harness Conformance", () => {
 				expect(seventh.reason).toContain("Kernel requires a concrete user decision or authorization");
 				expect(seventh.reason).not.toContain("consecutive Stop boundary reached");
 				expect(seventh.systemMessage).toContain("Kernel requires a concrete user decision or authorization");
-				expect(readPhaseEntryState(h.conversationId, h.store)?.run_live).toBe(false);
+				expect(readPhaseEntryState(h.conversationId, h.store)?.run_live).toBe(true);
 			} finally {
 				projection.mockRestore();
 				h.dispose();
@@ -644,8 +644,11 @@ describe("Antigravity Harness Conformance", () => {
 				expect(denial.decision).toBe("deny");
 				expect(denial.reason).toContain("Run paused");
 
-				// Entry token is revoked
-				expect(readPhaseEntryState(h.conversationId, h.store)?.run_live).toBe(false);
+				// The suspended run keeps its entry token for a plain reply (workflow-friction D1.1)
+				expect(readPhaseEntryState(h.conversationId, h.store)?.run_live).toBe(true);
+				h.prompt("Go on with the authorization");
+				const resumed = await h.preTool("call_mcp_tool", { ServerName: "immune-brain", ToolName: "request_authorization", Arguments: { task_id: "slice-a" } });
+				expect(resumed?.reason ?? "").not.toContain("Run paused");
 			} finally {
 				h.dispose();
 			}
@@ -3299,7 +3302,7 @@ describe("verifier via real hook dispatch", () => {
 					}, store);
 					expect(hookOutcome).toEqual({
 						decision: "deny",
-						reason: "Run paused: request_authorization failed 3 times under this entry; no further automatic retry; enter drive explicitly before another native gate",
+						reason: "Run paused: request_authorization failed 3 times under this entry; no further automatic retry; reply in this session to resume before another native gate",
 					});
 				}
 			} finally {

@@ -63,6 +63,12 @@ export type RunContinuationDecision = {
 	state: RunContinuationState;
 	/** The pause is only an unchanged progress digest; a Host may yield the turn instead (Spec D12). */
 	stalled?: true;
+	/**
+	 * The bound identity is gone or terminal, so the entry token is spent (Spec
+	 * docs/specs/workflow-friction-simplification.spec.md D1.1). Every other pause only
+	 * suspends the run until the user replies in the same session.
+	 */
+	revoke?: true;
 };
 
 /** One nudge per unchanged progress digest; the next unchanged boundary pauses. */
@@ -236,7 +242,7 @@ export function decideRunContinuation(previous: RunContinuationState,
 	if (binding.workspace !== observation.workspace || binding.session_id !== observation.session_id)
 		return result("unbound", "Host session or workspace changed", null);
 	if (binding.kind !== observation.kind)
-		return result("pause", "run observation does not match the bound entry", null);
+		return { ...result("pause", "run observation does not match the bound entry", null), revoke: true };
 	if (observation.host_failure)
 		return result("pause", observation.host_failure, null);
 
@@ -247,7 +253,7 @@ export function decideRunContinuation(previous: RunContinuationState,
 	if (binding.kind === "parent" && observation.kind === "parent") {
 		if (binding.initiative_slug !== observation.initiative_slug || binding.batch_id !== observation.batch_id ||
 			(binding.plan_digest !== observation.plan_digest && observation.rebound_from_plan_digest !== binding.plan_digest))
-			return result("pause", "batch identity changed; reread its authorized plan", null);
+			return { ...result("pause", "batch identity changed; reread its authorized plan", null), revoke: true };
 		// An approved contiguous rebind advances the binding without a false identity failure (D3).
 		if (observation.rebound_from_plan_digest === binding.plan_digest && observation.plan_digest !== binding.plan_digest)
 			base = { ...previous, binding: { ...binding, plan_digest: observation.plan_digest } };
@@ -262,13 +268,13 @@ export function decideRunContinuation(previous: RunContinuationState,
 		const { status } = observation;
 		const p = status.projection;
 		if (status.error || status.task_id !== binding.task_id || p.run_id !== binding.run_id)
-			return result("pause", status.error ?? "Kernel task/run identity changed", null);
+			return { ...result("pause", status.error ?? "Kernel task/run identity changed", null), revoke: true };
 		if (p.lifecycle === "done" && p.completion_ready && status.claim === null)
 			return result("settled", "Kernel terminal settlement confirmed", null);
 		if (p.lifecycle === "stopped" && status.claim === null)
-			return result("pause", "Kernel task stopped", null);
+			return { ...result("pause", "Kernel task stopped", null), revoke: true };
 		if (status.claim?.task_id !== binding.task_id || status.claim.lifecycle_status !== "active" || p.lifecycle !== "active")
-			return result("pause", "Kernel authority is missing or contradictory", null);
+			return { ...result("pause", "Kernel authority is missing or contradictory", null), revoke: true };
 		if (p.unresolved_user_decision_ids.length || p.replan_required_ids.length || p.open_user_decision_count ||
 			p.next_obligation === "resolve_user_decision" || p.next_obligation === "revise_intent" || p.authorization.state !== "none" || p.authorization.blocked)
 			return result("pause", "Kernel requires a concrete user decision or authorization", "Use the existing native authorization operation");
@@ -297,7 +303,7 @@ export function decideRunContinuation(previous: RunContinuationState,
 			}
 		}
 	} else {
-		return result("pause", "run observation does not match the bound entry", null);
+		return { ...result("pause", "run observation does not match the bound entry", null), revoke: true };
 	}
 	if (previous.boundary_id === observation.boundary_id)
 		return result("wait", "duplicate Host boundary", null);

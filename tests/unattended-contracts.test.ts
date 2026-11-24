@@ -266,15 +266,16 @@ describe("single-task Lane contract text (Spec drive-always-lanes S6)", () => {
 		expect(flatText(BATCH_CONTRACT)).not.toContain("A standalone task id uses single-task Enrollment");
 	});
 
-	it("states that a single-task start resolves final_verification by the lane-batch order (LEL-AC3)", () => {
+	it("states that a single-task start takes final_verification from the request or risk-selected config (LEL-AC3, workflow-friction D3.1)", () => {
 		const batch = flatText(BATCH_CONTRACT);
 		for (const claim of [
-			"A new single-task start (`start_unattended_batch` with `task_id`) resolves its `final_verification` by this same 1-4 order",
-			"the Host fills step 2 from the layered `batch.final_verification` before the gate",
-			"commands the caller passes win over config",
-			"an invalid `batch.final_verification` refuses `lane_config_invalid`",
-			"completes with `final verification not run`",
+			"passes only commands the current request states literally (step 1) and otherwise passes none",
+			"a `critical` task takes `batch.final_verification`, any other task takes `batch.single_task_final_verification`",
+			"Commands the caller passes win over config",
+			"an invalid key refuses `lane_config_invalid`",
+			"its declared derived-file checks still run and gate checkout delivery",
 		]) expect(batch).toContain(claim);
+		expect(batch).not.toContain("resolves its `final_verification` by this same 1-4 order");
 	});
 
 	it("drives single-task Lanes through the session port on every Host", () => {

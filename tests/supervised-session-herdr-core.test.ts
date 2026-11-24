@@ -74,10 +74,10 @@ describe("herdr-core adapter command spelling", () => {
 		expect(hcCalls(stateFile).filter(call => call[0] === "read")).toEqual([["read", "t1", "--lines", "0", "--json"], ["read", "t1", "--lines", "200", "--json"]]);
 	});
 
-	it("maps reported words to port states, with error and silence as unknown, and derives unique core names", () => {
+	it("maps reported words to port states, error as reported, silence as unknown, and derives unique core names", () => {
 		expect(coreState("blocked")).toEqual({ state: "blocked", provenance: "reported" });
 		expect(coreState("done")).toEqual({ state: "done", provenance: "reported" });
-		expect(coreState("error")).toEqual({ state: "unknown", provenance: "none" });
+		expect(coreState("error")).toEqual({ state: "error", provenance: "reported" });
 		expect(coreState(null)).toEqual({ state: "unknown", provenance: "none" });
 		const tok = "a1b2c3d4e5f6789012345678";
 		expect(herdrCoreName("01 Slice/A", tok)).toBe("01-slice-a-a1b2c3d4e5f6");

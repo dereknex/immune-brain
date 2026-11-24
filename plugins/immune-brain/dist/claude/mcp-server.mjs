@@ -6342,7 +6342,7 @@ function ensureReservedLaneWorktree(root, reservation) {
   }
   return path;
 }
-function copyLanePlanningInput(root, lane, taskId, kind) {
+function copyLanePlanningInput(root, lane, taskId, kind, baseHead) {
   const read = observeEnrollmentTaskIntent(root, taskId);
   const input = kind === "intent" ? { path: read.intent_ref.path, content: readSecureProjectFile(root, read.intent_ref.path) } : readBoundActiveSpec(root, read.intent);
   if (!input)
@@ -6360,8 +6360,14 @@ function copyLanePlanningInput(root, lane, taskId, kind) {
   const stat = lstatSync8(target, { throwIfNoEntry: false });
   if (stat && (!stat.isFile() || stat.isSymbolicLink()))
     throw new Error("batch_worktree_failed: planning input is not a regular file");
+  if (kind === "spec" && stat && baseHead && unchangedSince(root, baseHead, input.path, input.content))
+    return;
   writeFileSync4(target, input.content);
   git2(lane, ["add", "--", input.path]);
+}
+function unchangedSince(root, baseHead, path, content) {
+  const committed = spawnSync6("git", ["-C", root, "cat-file", "blob", `${baseHead}:${path}`], { encoding: "utf8" });
+  return committed.status === 0 && committed.stdout === content;
 }
 async function withParentWorktree(root, head, use) {
   const path = mkdtempSync(join6(worktreeDirectory(root), "verify-"));
@@ -7208,7 +7214,9 @@ function validateLaneRecordShape(value, batchId) {
       const handledOk = handled === undefined || Array.isArray(handled) && handled.every((d) => typeof d === "string" && d.length > 0);
       const refusals = s.open_refusals;
       const refusalsOk = refusals === undefined || typeof refusals === "number" && Number.isSafeInteger(refusals) && refusals >= 0;
-      if (!keyOk || !generationOk || !baselineOk || !handleOk || !entryOk || !attentionOk || !progressOk || !proofOk || !handledOk || !refusalsOk)
+      const recoveries = s.error_recoveries;
+      const recoveriesOk = recoveries === undefined || isObject(recoveries) && typeof recoveries.baseline === "string" && Number.isSafeInteger(recoveries.count) && recoveries.count >= 0;
+      if (!keyOk || !generationOk || !baselineOk || !handleOk || !entryOk || !attentionOk || !progressOk || !proofOk || !handledOk || !refusalsOk || !recoveriesOk)
         throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid session`);
     }
     if (child.tracker_closed === true && child.state !== "integrated" && child.state !== "released" && !deliveryParked)
@@ -10374,9 +10382,11 @@ function resolveConfig(root, options = {}) {
       diag("retired_key", "warning", file, "herdr", "herdr is retired and ignored; remove it (imm-kernel config migrate --write deletes it)");
   const sessionProviders = pick((o) => o.session_providers, "session_providers", (v) => Array.isArray(v) && v.length > 0 && v.every((name) => REGISTERED_SESSION_PROVIDERS.includes(name)) && new Set(v).size === v.length, `expected a non-empty list of distinct registered providers (${REGISTERED_SESSION_PROVIDERS.join(", ")})`, ["herdr"]);
   for (const [, o, file] of layers)
-    knownKeys(part(o, file, "batch"), ["max_parallel", "final_verification"], file, "batch");
+    knownKeys(part(o, file, "batch"), ["max_parallel", "final_verification", "single_task_final_verification"], file, "batch");
   const maxParallel = pick((o) => o.batch?.max_parallel, "batch.max_parallel", (v) => integerWithin(v, BATCH_MAX_PARALLEL.min, BATCH_MAX_PARALLEL.max), `expected an integer between ${BATCH_MAX_PARALLEL.min} and ${BATCH_MAX_PARALLEL.max}`, BATCH_MAX_PARALLEL.default);
-  const finalVerification = pick((o) => o.batch?.final_verification, "batch.final_verification", (v) => Array.isArray(v) && v.length <= 8 && v.every((c) => typeof c === "string" && c.length > 0), "expected at most eight command strings");
+  const commandList = (v) => Array.isArray(v) && v.length <= 8 && v.every((c) => typeof c === "string" && c.length > 0);
+  const finalVerification = pick((o) => o.batch?.final_verification, "batch.final_verification", commandList, "expected at most eight command strings");
+  const singleTaskFinalVerification = pick((o) => o.batch?.single_task_final_verification, "batch.single_task_final_verification", commandList, "expected at most eight command strings");
   const reviewVerifier = pick((o) => o.review_verifier, "review_verifier", oneOf(["off", "on"]), "expected off or on", "off");
   const carrier = pick((o) => o.initiative_carrier, "initiative_carrier", oneOf(["github", "local"]), "expected github or local");
   const git = valid((o) => o.git_integration, "git_integration", oneOf(["manual", "auto"]), "expected manual or auto");
@@ -10506,7 +10516,7 @@ function resolveConfig(root, options = {}) {
     files: { user: userPath, project: projectPath },
     agents,
     session_providers: sessionProviders,
-    batch: { valid: !errorsUnder("batch"), max_parallel: maxParallel, final_verification: finalVerification },
+    batch: { valid: !errorsUnder("batch"), max_parallel: maxParallel, final_verification: finalVerification, single_task_final_verification: singleTaskFinalVerification },
     decision_models: decisionModels,
     git_integration: leaf(gitIntegration.value, gitIntegration.source),
     initiative_carrier: carrier,
@@ -15875,41 +15885,46 @@ function deliveredPaths(root, base, head) {
   }
   return paths;
 }
-function pathSatisfied(root, entry) {
+function pathState(root, entry) {
   const staged = gitIn(root, "--literal-pathspecs", "ls-files", "--stage", "-z", "--", entry.path);
   if (staged.status !== 0)
-    return false;
+    return "unsatisfied";
   if (entry.deleted) {
     if (staged.stdout.length)
-      return false;
+      return "unsatisfied";
     try {
       lstatSync15(join23(root, entry.path));
-      return false;
+      return "unsatisfied";
     } catch {
-      return true;
+      return "satisfied";
     }
   }
-  const indexed = /^(\d+) ([0-9a-f]+) \d\t/.exec(staged.stdout);
-  if (!indexed || indexed[1] !== entry.newMode || indexed[2] !== entry.newBlob)
-    return false;
+  if (staged.stdout.length) {
+    const indexed = /^(\d+) ([0-9a-f]+) \d\t/.exec(staged.stdout);
+    if (!indexed || indexed[1] !== entry.newMode || indexed[2] !== entry.newBlob)
+      return "unsatisfied";
+  } else if (entry.newMode !== "100644" && entry.newMode !== "100755")
+    return "unsatisfied";
   let stat;
   try {
     stat = lstatSync15(join23(root, entry.path));
   } catch {
-    return false;
+    return "unsatisfied";
   }
   const worktreeMode = stat.isSymbolicLink() ? "120000" : stat.isFile() ? stat.mode & 73 ? "100755" : "100644" : "";
   if (worktreeMode !== entry.newMode)
-    return false;
+    return "unsatisfied";
   const hashed = gitIn(root, "hash-object", "--no-filters", "--", entry.path);
-  return hashed.status === 0 && hashed.stdout.trim() === entry.newBlob;
+  if (hashed.status !== 0 || hashed.stdout.trim() !== entry.newBlob)
+    return "unsatisfied";
+  return staged.stdout.length ? "satisfied" : "unindexed";
 }
 function deliveryAlreadyApplied(root, base, head) {
   const { mode } = readGitIntegrationPreference(root);
   if (mode === "auto")
     return gitIn(root, "merge-base", "--is-ancestor", head, "HEAD").status === 0;
   const paths = deliveredPaths(root, base, head);
-  return !!paths?.length && paths.every((entry) => pathSatisfied(root, entry));
+  return !!paths?.length && paths.every((entry) => pathState(root, entry) === "satisfied");
 }
 function deliverSingleTask(root, base, head) {
   const { mode } = readGitIntegrationPreference(root);
@@ -15921,22 +15936,38 @@ function deliverSingleTask(root, base, head) {
   const dirty = porcelainEntries(root);
   if (!changed || !dirty)
     return blocked("coordinator_status_unreadable");
-  const pending = (mode === "auto" ? changed : changed.filter((entry) => !pathSatisfied(root, entry))).map((entry) => entry.path);
+  const states = changed.map((entry) => ({ path: entry.path, state: pathState(root, entry) }));
+  const pending = states.filter((entry) => entry.state === "unsatisfied").map((entry) => entry.path);
+  const unindexed = states.filter((entry) => entry.state === "unindexed").map((entry) => entry.path);
   const overlaps = dirty.map((entry) => entry.path).filter((path) => pending.some((file) => path === file || path.startsWith(`${file}/`) || file.startsWith(`${path}/`)));
   if (overlaps.length)
     return blocked(`checkout_delivery_overlap: ${[...new Set(overlaps)].sort().join(", ")}`);
+  const stage = () => !unindexed.length || git("--literal-pathspecs", "add", "-f", "--", ...unindexed).status === 0;
+  const unstage = () => {
+    if (unindexed.length)
+      git("--literal-pathspecs", "rm", "--cached", "-f", "--ignore-unmatch", "-q", "--", ...unindexed);
+  };
+  const failed = (reason) => {
+    unstage();
+    return blocked(reason);
+  };
   if (mode === "auto") {
     if (git("symbolic-ref", "--quiet", "HEAD").status !== 0)
       return blocked("coordinator_branch_unavailable");
     if (git("merge-base", "--is-ancestor", "HEAD", head).status !== 0)
       return blocked("coordinator_head_diverged");
+    if (!stage())
+      return failed("checkout_delivery_conflict: cannot stage identical untracked paths");
     const merge = git("merge", "--ff-only", "--no-edit", head);
     if (merge.status !== 0)
-      return blocked(`checkout_delivery_conflict: ${merge.stderr.trim()}`);
+      return failed(`checkout_delivery_conflict: ${merge.stderr.trim()}`);
     return { mode, status: "fast_forwarded", reason: null };
   }
-  if (!pending.length)
+  if (!pending.length) {
+    if (!stage())
+      return failed("checkout_delivery_conflict: cannot stage identical untracked paths");
     return { mode, status: "staged", reason: null };
+  }
   const patch = spawnSync14("git", ["--no-optional-locks", "--literal-pathspecs", "-C", root, "diff", "--binary", "--full-index", "--no-renames", base, head, "--", ...pending], { maxBuffer: 128 * 1024 * 1024 });
   if (patch.status !== 0)
     return blocked("checkout_delivery_conflict: cannot read delivery delta");
@@ -15946,9 +15977,11 @@ function deliverSingleTask(root, base, head) {
   const checked = apply(true);
   if (checked.status !== 0)
     return blocked(`checkout_delivery_conflict: ${checked.stderr.trim()}`);
+  if (!stage())
+    return failed("checkout_delivery_conflict: cannot stage identical untracked paths");
   const applied = apply(false);
   if (applied.status !== 0)
-    return blocked(`checkout_delivery_conflict: ${applied.stderr.trim()}`);
+    return failed(`checkout_delivery_conflict: ${applied.stderr.trim()}`);
   return { mode, status: "staged", reason: null };
 }
 var gitIn = (root, ...args) => spawnSync14("git", ["--no-optional-locks", "-C", root, ...args], { encoding: "utf8" });
@@ -17554,11 +17587,9 @@ async function projectPlanSurface(input) {
     });
     planDigest = computeBatchPlanDigest(plan.enrollable);
     for (const c of plan.children.filter((item) => item.status === "enrollable")) {
-      let childRisk = "material";
       try {
-        childRisk = (input.preparing ? observeEnrollmentTaskIntent(root, c.task_id) : readTaskIntent(root, c.task_id, c.intent_path ?? undefined)).intent.risk;
+        riskByTask.set(c.task_id, (input.preparing ? observeEnrollmentTaskIntent(root, c.task_id) : readTaskIntent(root, c.task_id, c.intent_path ?? undefined)).intent.risk);
       } catch {}
-      riskByTask.set(c.task_id, childRisk);
     }
     excluded = plan.children.filter((c) => c.status !== "enrollable").map((c) => ({ task_id: c.task_id, slice_id: c.slice_id, reason: c.reason ?? c.status }));
   }
@@ -18661,6 +18692,17 @@ async function reconcileChildSession(input) {
   if (state === "blocked")
     return { session: { ...session, attention: "blocked" }, action: holdAction };
   session = session.attention === null ? session : { ...session, attention: null };
+  if (state === "error")
+    return await recoverFromError(port, session, {
+      batchId,
+      taskId,
+      kernel,
+      interactionMode,
+      laneCwd,
+      onWriteAhead,
+      holdAction,
+      entry: pendingCorrection && isHandled(session, pendingCorrection.digest) ? pendingCorrection.text : entry
+    });
   if (state === "working" || state === "unknown")
     return { session, action: holdAction };
   if (!session.entry_submitted) {
@@ -18720,6 +18762,46 @@ async function reconcileChildSession(input) {
   if (kernel.settled || kernel.hasOpenDecision || kernel.hasReplan)
     return { session, action: "held" };
   return await stallOrProgress(port, session, { batchId, taskId, kernel, interactionMode, entry, laneCwd, state, onWriteAhead, adopted, stallExempt: input.stallExempt === true });
+}
+var MAX_ERROR_RECOVERIES = 2;
+async function recoverFromError(port, session, opts) {
+  const { batchId, taskId, kernel, interactionMode, entry, laneCwd, onWriteAhead, holdAction } = opts;
+  const flagged = { ...session, attention: "error" };
+  if (kernel.settled || kernel.hasOpenDecision || kernel.hasReplan)
+    return { session: flagged, action: holdAction };
+  const prior = session.error_recoveries?.baseline === kernel.recordRevision ? session.error_recoveries.count : 0;
+  if (prior >= MAX_ERROR_RECOVERIES)
+    return { session: flagged, action: "parked_error", parkedReason: "lane_executor_error" };
+  const closed = await port.closeWithProof(session.handle, session.key);
+  if (isPortRefusal(closed))
+    return { session: flagged, action: holdAction };
+  const nextGeneration = session.generation + 1;
+  const writeAhead = {
+    ...session,
+    key: laneSessionKey(batchId, taskId, nextGeneration),
+    generation: nextGeneration,
+    baseline: kernel.recordRevision,
+    handle: null,
+    entry_submitted: false,
+    attention: null,
+    no_progress: kernel.recordRevision === session.baseline ? session.no_progress : 0,
+    exit_proof: null,
+    error_recoveries: { baseline: kernel.recordRevision, count: prior + 1 }
+  };
+  onWriteAhead?.({ ...writeAhead });
+  const opened = await port.open({
+    key: writeAhead.key,
+    cwd: laneCwd,
+    label: laneSessionLabel(taskId),
+    entry,
+    ...openEnv(interactionMode) ? { env: openEnv(interactionMode) } : {}
+  });
+  if (isPortRefusal(opened))
+    return refusedOpen({ ...writeAhead, exit_proof: closed }, opened);
+  return {
+    session: resetOpenRefusals({ ...writeAhead, handle: opened.handle, entry_submitted: opened.entry_submitted, attention: opened.attention ?? null }),
+    action: "recovered_error"
+  };
 }
 async function stallOrProgress(port, session, opts) {
   const { batchId, taskId, kernel, interactionMode, entry, laneCwd, state, onWriteAhead, adopted } = opts;
@@ -19717,7 +19799,7 @@ async function runLaneBatchEngine(input, persisted) {
         batch: { registry: input.registry, capability: input.capability, binding: { batch_id: record.batch_id, expected_head: lane.base_head } }
       });
       if (isParentBranch(record.branch))
-        copyLanePlanningInput(input.root, lane.path, taskId, "spec");
+        copyLanePlanningInput(input.root, lane.path, taskId, "spec", record.base_head);
       const fresh = await readLaneProjection(input, lane.path, taskId);
       if (fresh.error !== null)
         throw new Error(laneUnreadableReason(fresh.error, taskId, lane.run_id));
@@ -19783,7 +19865,7 @@ async function runLaneBatchEngine(input, persisted) {
     if (child.state === "lane_admitted") {
       if (holdsClaim) {
         if (isParentBranch(record.branch))
-          copyLanePlanningInput(input.root, child.lane.path, child.task_id, "spec");
+          copyLanePlanningInput(input.root, child.lane.path, child.task_id, "spec", record.base_head);
         record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "enrolled", reason: "adopted existing lane claim after interruption", lane: { ...child.lane, run_id: fresh.projection.run_id } } : c);
         persist();
       } else {
@@ -20048,6 +20130,8 @@ async function runLaneBatchEngine(input, persisted) {
       if (result.action === "parked_no_progress") {
         parkChild(child.task_id, "lane_executor_no_progress: two consecutive stalls without Kernel progress");
       }
+      if (result.action === "parked_error")
+        parkChild(child.task_id, "lane_executor_error: the Executor stopped on an error again after automatic recovery at this Kernel revision");
       if (result.action === "open_refused")
         refusals.push({ task_id: child.task_id, path: child.lane.path, reason: result.parkedReason ?? "lane_session_open_refused" });
       if (result.action === "parked_open_rejected")
@@ -20069,7 +20153,7 @@ async function runLaneBatchEngine(input, persisted) {
       persist();
       if (isCheckout) {
         const required = record.final_verification_required;
-        const mustPass = required !== false;
+        const mustPass = required !== false || (final?.derived_checks?.length ?? 0) > 0;
         const failedChecks = final ? [...final.results, ...(final.derived_checks ?? []).map((item) => ({ ...item, command: item.id }))].filter((item) => !item.passed).map((item) => item.command) : [];
         const unverified = mustPass && final && (!final.passed || final.head !== record.final_report.head) ? `final_verification_failed: ${failedChecks.join(", ") || (final.head !== record.final_report.head ? "head_mismatch" : "workspace_changed")}` : null;
         if (record.children.length === 1) {
@@ -20917,7 +21001,7 @@ function versionAtLeast(version, minimum) {
 
 // plugins/immune-brain/runtime/session/supervised_session_port.ts
 var SUPERVISED_SESSION_PROTOCOL = 1;
-var SESSION_STATES = ["working", "blocked", "idle", "done", "unknown"];
+var SESSION_STATES = ["working", "blocked", "idle", "done", "error", "unknown"];
 var EXECUTOR_HOSTS2 = ["claude-code", "pi", "antigravity"];
 var SESSION_KEY_PATTERN = /^[a-z0-9-]{1,64}$/;
 function refuse4(code, reason, handle) {
@@ -21593,7 +21677,7 @@ function herdrCoreName(label, token) {
   return `${prefix}-${suffix}`;
 }
 function coreState(word) {
-  if (typeof word === "string" && word !== "error" && isSessionState(word) && word !== "unknown")
+  if (typeof word === "string" && isSessionState(word) && word !== "unknown")
     return { state: word, provenance: "reported" };
   return { state: "unknown", provenance: "none" };
 }
@@ -22138,7 +22222,7 @@ class SessionPortAdapter {
         return { ok: true, state: "exited" };
       return { ok: true, state: "unknown" };
     }
-    if (result.state === "working" || result.state === "blocked" || result.state === "idle" || result.state === "done" || result.state === "unknown") {
+    if (result.state === "working" || result.state === "blocked" || result.state === "idle" || result.state === "done" || result.state === "error" || result.state === "unknown") {
       return { ok: true, state: result.state };
     }
     return { ok: true, state: "unknown" };
@@ -24715,7 +24799,7 @@ function decideRunContinuation(previous, observation) {
   if (binding.workspace !== observation.workspace || binding.session_id !== observation.session_id)
     return result("unbound", "Host session or workspace changed", null);
   if (binding.kind !== observation.kind)
-    return result("pause", "run observation does not match the bound entry", null);
+    return { ...result("pause", "run observation does not match the bound entry", null), revoke: true };
   if (observation.host_failure)
     return result("pause", observation.host_failure, null);
   let progressDigest;
@@ -24724,7 +24808,7 @@ function decideRunContinuation(previous, observation) {
   let base = previous;
   if (binding.kind === "parent" && observation.kind === "parent") {
     if (binding.initiative_slug !== observation.initiative_slug || binding.batch_id !== observation.batch_id || binding.plan_digest !== observation.plan_digest && observation.rebound_from_plan_digest !== binding.plan_digest)
-      return result("pause", "batch identity changed; reread its authorized plan", null);
+      return { ...result("pause", "batch identity changed; reread its authorized plan", null), revoke: true };
     if (observation.rebound_from_plan_digest === binding.plan_digest && observation.plan_digest !== binding.plan_digest)
       base = { ...previous, binding: { ...binding, plan_digest: observation.plan_digest } };
     if (observation.all_required_integrated && observation.final_passed && !observation.pending_repair)
@@ -24738,13 +24822,13 @@ function decideRunContinuation(previous, observation) {
     const { status } = observation;
     const p = status.projection;
     if (status.error || status.task_id !== binding.task_id || p.run_id !== binding.run_id)
-      return result("pause", status.error ?? "Kernel task/run identity changed", null);
+      return { ...result("pause", status.error ?? "Kernel task/run identity changed", null), revoke: true };
     if (p.lifecycle === "done" && p.completion_ready && status.claim === null)
       return result("settled", "Kernel terminal settlement confirmed", null);
     if (p.lifecycle === "stopped" && status.claim === null)
-      return result("pause", "Kernel task stopped", null);
+      return { ...result("pause", "Kernel task stopped", null), revoke: true };
     if (status.claim?.task_id !== binding.task_id || status.claim.lifecycle_status !== "active" || p.lifecycle !== "active")
-      return result("pause", "Kernel authority is missing or contradictory", null);
+      return { ...result("pause", "Kernel authority is missing or contradictory", null), revoke: true };
     if (p.unresolved_user_decision_ids.length || p.replan_required_ids.length || p.open_user_decision_count || p.next_obligation === "resolve_user_decision" || p.next_obligation === "revise_intent" || p.authorization.state !== "none" || p.authorization.blocked)
       return result("pause", "Kernel requires a concrete user decision or authorization", "Use the existing native authorization operation");
     progressDigest = digest({
@@ -24799,7 +24883,7 @@ function decideRunContinuation(previous, observation) {
       }
     }
   } else {
-    return result("pause", "run observation does not match the bound entry", null);
+    return { ...result("pause", "run observation does not match the bound entry", null), revoke: true };
   }
   if (previous.boundary_id === observation.boundary_id)
     return result("wait", "duplicate Host boundary", null);
@@ -25148,8 +25232,11 @@ import { existsSync as existsSync21, lstatSync as lstatSync20, realpathSync as r
 import { randomUUID as randomUUID14 } from "node:crypto";
 import { join as join36 } from "node:path";
 var NATIVE_OPERATIONS = new Set(["start_unattended_batch", "retire_stale_batch", "request_authorization", "approve_breaking_intent_revision", "request_stop", "stop"]);
+var PARENT_IDENTITY_LOST = "no matching persisted batch identity";
+var SUSPENDED_REVIEW_OPERATIONS = new Set(["advance_assurance", "submit_review"]);
 var MAX_METADATA_BYTES = 256 * 1024;
 var NATIVE_FAILURE_LIMIT = 3;
+var PAUSED_GATE_GUIDANCE = "reply in this session to resume before another native gate";
 var blank = () => ({
   state: null,
   sequence: 0,
@@ -25224,10 +25311,20 @@ function save(host, sessionId, root, value) {
     drop(host, temporary, root);
   }
 }
-function pauseRun(host, metadata, sessionId, root, reason) {
+function pauseRun(host, metadata, sessionId, root, reason, revoke = false) {
   metadata.paused = reason;
   save(host, sessionId, root, metadata);
-  host.revoke_entry(sessionId);
+  if (revoke)
+    host.revoke_entry(sessionId);
+}
+function resumeSuspendedRun(host, root, sessionId) {
+  const metadata = readMetadata(host, sessionId, root);
+  if (!metadata.paused && !metadata.native_failures && !metadata.stop_blocks)
+    return;
+  metadata.paused = null;
+  metadata.native_failures = 0;
+  metadata.stop_blocks = 0;
+  save(host, sessionId, root, metadata);
 }
 async function observeNativeFailure(host, metadata, correlation, root, reason) {
   metadata.native_failures++;
@@ -25261,11 +25358,13 @@ async function applyRunContinuationEvent(host, root, session, event) {
   if (event.kind === "prompt") {
     if (event.releases)
       drop(host, statePath2(host, sessionId, root), root);
+    else if (existsSync21(statePath2(host, sessionId, root)))
+      resumeSuspendedRun(host, root, sessionId);
     return { kind: "none" };
   }
   if (event.kind === "tool_call") {
     const metadata = readMetadata(host, sessionId, root);
-    if (metadata.paused && NATIVE_OPERATIONS.has(event.operation))
+    if (metadata.paused && (NATIVE_OPERATIONS.has(event.operation) || SUSPENDED_REVIEW_OPERATIONS.has(event.operation)))
       return { kind: "deny", reason: metadata.paused };
     const entry = host.entry_state(sessionId);
     if (!entry?.run_live)
@@ -25370,6 +25469,10 @@ async function applyRunContinuationEvent(host, root, session, event) {
     }
     if (NATIVE_OPERATIONS.has(event.operation) && ["blocked", "cancelled", "rejected", "failed"].includes(String(response?.state)))
       await observeNativeFailure(host, metadata, correlated, root, `${event.operation} did not apply ${NATIVE_FAILURE_LIMIT} times under this entry; inspect the same-Host recovery`);
+    else if (NATIVE_OPERATIONS.has(event.operation) && metadata.native_failures) {
+      metadata.native_failures = 0;
+      save(host, sessionId, root, metadata);
+    }
     if (metadata.state)
       save(host, sessionId, root, metadata);
     return { kind: "none" };
@@ -25416,9 +25519,17 @@ async function applyRunContinuationEvent(host, root, session, event) {
   metadata.sequence++;
   const taskId = metadata.state.binding.kind === "task" ? metadata.state.binding.task_id : metadata.state.binding.initiative_slug;
   let observation;
-  if (metadata.state.binding.kind === "parent")
-    observation = await observeParentRun(metadata.state.binding, boundary, metadata.review, metadata.recovery_action ?? undefined);
-  else {
+  if (metadata.state.binding.kind === "parent") {
+    try {
+      observation = await observeParentRun(metadata.state.binding, boundary, metadata.review, metadata.recovery_action ?? undefined);
+    } catch (error) {
+      if (!(error instanceof Error && error.message.includes(PARENT_IDENTITY_LOST)))
+        throw error;
+      host.revoke_entry(sessionId);
+      drop(host, statePath2(host, sessionId, root), root);
+      return { kind: "paused", reason: `${error.message}; enter drive explicitly to rebind the run` };
+    }
+  } else {
     const status = await projectTaskStatus(workspace, taskId);
     const record = readTaskRecordRaw(workspace, taskId);
     observation = {
@@ -25456,8 +25567,8 @@ async function applyRunContinuationEvent(host, root, session, event) {
   metadata.stop_blocks++;
   if (decision.action === "pause" || metadata.stop_blocks >= 7) {
     const hostName = host.host_name ?? "Claude";
-    const reason = decision.action === "pause" ? decision.reason : `${hostName} consecutive Stop boundary reached; resume explicitly in the same Host`;
-    pauseRun(host, metadata, sessionId, root, reason);
+    const reason = decision.action === "pause" ? decision.reason : `${hostName} consecutive Stop boundary reached; reply in this session to resume`;
+    pauseRun(host, metadata, sessionId, root, reason, decision.action === "pause" && decision.revoke === true);
     return { kind: "paused", reason: metadata.paused };
   }
   save(host, sessionId, root, metadata);
@@ -25582,7 +25693,7 @@ function render(outcome) {
       return JSON.stringify({ hookSpecificOutput: {
         hookEventName: "PreToolUse",
         permissionDecision: "deny",
-        permissionDecisionReason: `Run paused: ${outcome.reason}; enter drive explicitly before another native gate`
+        permissionDecisionReason: `Run paused: ${outcome.reason}; ${PAUSED_GATE_GUIDANCE}`
       } });
     case "paused":
       return warning(outcome.reason);
@@ -27182,7 +27293,10 @@ class HostRuntime {
     }
     const isResuming = preflight.projection.is_resuming;
     if (options.plan_source === "single_task" && !isResuming && !options.final_verification?.length) {
-      const configured = resolveConfig(this.cwd).batch.final_verification.value;
+      const risks = preflight.projection.risk_by_task ?? {};
+      const critical = Object.keys(risks).length === 0 || Object.values(risks).includes("critical");
+      const batchConfig = resolveConfig(this.cwd).batch;
+      const configured = batchConfig[critical ? "final_verification" : "single_task_final_verification"].value;
       if (Array.isArray(configured) && configured.length > 0)
         options = { ...options, final_verification: configured.map(String) };
     }

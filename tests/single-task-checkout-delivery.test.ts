@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { deliverSingleTask, deliveryAlreadyApplied } from "../plugins/immune-brain/runtime/unattended/checkout_delivery";
@@ -153,6 +153,85 @@ describe("single-task checkout delivery", () => {
 				expect(existsSync(join(f.root, ".imm/audit/task/run/task-record.json"))).toBe(false);
 			});
 		}
+	});
+	describe("identical coordinator copies (staged or untracked)", () => {
+		/** Planning files drafted in the coordinator: `new` untracked, `changed` staged, both byte-identical to the delivery. */
+		const copy = (root: string) => {
+			writeFileSync(join(root, "new"), "new delivery\n");
+			writeFileSync(join(root, "changed"), "delivered\n"); git(root, "add", "changed");
+		};
+		for (const mode of ["manual", "auto"] as const) {
+			test(`${mode} delivers over identical staged and untracked copies and leaves them indexed`, () => {
+				const f = fixture(mode); copy(f.root);
+				expect(deliverSingleTask(f.root, f.base, f.head)).toEqual({ mode, status: mode === "auto" ? "fast_forwarded" : "staged", reason: null });
+				expect(git(f.root, "rev-parse", "HEAD")).toBe(mode === "auto" ? f.head : f.base);
+				expect(git(f.root, "show", ":new")).toBe("new delivery");
+				expect(git(f.root, "show", ":changed")).toBe("delivered");
+				expect(git(f.root, "status", "--porcelain=v1", "--untracked-files=all")).not.toMatch(/^\?\?|^.\S/m);
+				expect(deliveryAlreadyApplied(f.root, f.base, f.head)).toBe(true);
+			});
+			for (const shape of ["bytes", "mode", "symlink"] as const) {
+				test(`${mode} still parks an untracked copy whose ${shape} differs`, () => {
+					const f = fixture(mode); copy(f.root);
+					if (shape === "bytes") writeFileSync(join(f.root, "new"), "new delivery!\n");
+					else if (shape === "mode") chmodSync(join(f.root, "new"), 0o755);
+					else { rmSync(join(f.root, "new")); symlinkSync("changed", join(f.root, "new")); }
+					const before = snapshot(f.root);
+					expect(deliverSingleTask(f.root, f.base, f.head)).toEqual({ mode, status: "blocked", reason: "checkout_delivery_overlap: new" });
+					expect(snapshot(f.root)).toEqual(before);
+				});
+			}
+		}
+		test("manual replay does not mistake an untracked-only copy for an applied delivery", () => {
+			const f = fixture("manual"); copy(f.root);
+			expect(deliveryAlreadyApplied(f.root, f.base, f.head)).toBe(false);
+		});
+		test("auto refuses without touching the checkout when an identical copy cannot be staged", () => {
+			const f = fixture("auto"); writeFileSync(join(f.root, "new"), "new delivery\n");
+			const before = snapshot(f.root);
+			const lock = join(f.root, ".git/index.lock"); writeFileSync(lock, "");
+			try {
+				const result = deliverSingleTask(f.root, f.base, f.head);
+				expect(result.status).toBe("blocked");
+				expect(result.reason).toContain("checkout_delivery_conflict");
+			} finally { rmSync(lock); }
+			expect(snapshot(f.root)).toEqual(before);
+		});
+		test("auto rollback on merge failure does not restore HEAD for a path staged as deleted with an untracked copy", () => {
+			const f = fixture("auto");
+			git(f.root, "checkout", "-q", "main");
+			writeFileSync(join(f.root, "conflict"), "base conflict\n");
+			git(f.root, "add", "conflict");
+			git(f.root, "commit", "-qm", "base with conflict");
+			const base = git(f.root, "rev-parse", "HEAD");
+			git(f.root, "checkout", "-qb", "delivery-conflict");
+			git(f.root, "merge", "-q", "--no-edit", f.head);
+			writeFileSync(join(f.root, "conflict"), "delivered conflict\n");
+			git(f.root, "add", "conflict");
+			git(f.root, "commit", "-qm", "deliver conflict");
+			const head = git(f.root, "rev-parse", "HEAD");
+			git(f.root, "checkout", "-q", "main");
+
+			// `changed` is staged for deletion while holding an identical untracked worktree copy;
+			// `new` is a brand-new identical untracked copy.
+			git(f.root, "rm", "-q", "--cached", "changed");
+			writeFileSync(join(f.root, "changed"), "delivered\n");
+			writeFileSync(join(f.root, "new"), "new delivery\n");
+			// Local change hidden from `git status` so overlap checks pass and `git merge --ff-only` fails atomically.
+			writeFileSync(join(f.root, "conflict"), "local conflict\n");
+			git(f.root, "update-index", "--assume-unchanged", "conflict");
+
+			const before = snapshot(f.root);
+			const result = deliverSingleTask(f.root, base, head);
+			expect(result.status).toBe("blocked");
+			expect(result.reason).toContain("checkout_delivery_conflict");
+			expect(result.reason).not.toContain("cannot stage");
+			expect(git(f.root, "ls-files", "--stage", "changed")).toBe("");
+			expect(git(f.root, "ls-files", "--stage", "new")).toBe("");
+			expect(readFileSync(join(f.root, "changed"), "utf8")).toBe("delivered\n");
+			expect(readFileSync(join(f.root, "new"), "utf8")).toBe("new delivery\n");
+			expect(snapshot(f.root)).toEqual(before);
+		});
 	});
 	/** The standard delivery plus a deletion of the tracked `gone` file. */
 	function deletionFixture() {

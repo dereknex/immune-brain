@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { consumePhaseAdmission, phaseEntryGateHookOutput, recordPhaseEntryPrompt, type GatedTool } from "../plugins/immune-brain/runtime/claude/lane_guard";
+import { consumePhaseAdmission, phaseEntryGateHookOutput, recordPhaseEntryPrompt, revokeEntryToken, type GatedTool } from "../plugins/immune-brain/runtime/claude/lane_guard";
 import { runContinuationHookOutput } from "../plugins/immune-brain/runtime/claude/run_continuation";
 import { confirmationRef, entryTokenRequestId } from "../plugins/immune-brain/runtime/claude/interaction";
 import { createMcpRuntime, handleJsonRpc } from "../plugins/immune-brain/runtime/claude/mcp_server";
@@ -195,21 +195,32 @@ describe("Claude phase entry gate: start_unattended_batch admission", () => {
 		expect(s.gateCalls()).toBe(0);
 	});
 
-	test("a paused run refuses batch start and retire at tools/call even with admissions recorded before the pause", async () => {
+	test("a revoked entry refuses batch start and retire at tools/call even with admissions recorded before the revocation", async () => {
 		const s = await gateSession();
 		s.prompt("/drive gate-init");
 		for (const [tool, id] of [[BATCH, "toolu_pb"], [RETIRE, "toolu_pr"]] as const) expect(s.hook(tool, id)).toBeNull();
-		// The third native-operation failure under this entry pauses the run (Spec D9).
+		// A lost or terminal bound identity spends the entry (workflow-friction D1.1).
+		revokeEntryToken("gate-session", "spent", s.store);
+		expectRunEntryRequired(await s.call("start_unattended_batch", { initiative_slug: "gate-init" }, "toolu_pb"));
+		expectRunEntryRequired(await s.call("retire_stale_batch", { initiative_slug: "gate-init" }, "toolu_pr"));
+		expect(s.gateCalls()).toBe(0);
+		expect(readActiveClaimTaskId(s.cwd)).toBeNull();
+	});
+
+	test("a run suspended by native failures keeps its entry; batch start after a plain reply reaches its native gate", async () => {
+		const s = await gateSession();
+		s.prompt("/drive gate-init");
+		// The third native-operation failure suspends the run without spending the entry (workflow-friction D1.1).
 		for (let attempt = 1; attempt <= 3; attempt++) {
 			const failure = { tool_name: "mcp__plugin_immune-brain_immune-brain__request_authorization", tool_use_id: `toolu_f${attempt}`,
 				tool_input: { task_id: "gate-a" }, session_id: "gate-session", cwd: s.cwd };
 			await runContinuationHookOutput({ hook_event_name: "PreToolUse", ...failure }, s.store);
 			await runContinuationHookOutput({ hook_event_name: "PostToolUseFailure", ...failure, error: "rejected" }, s.store);
 		}
-		expectRunEntryRequired(await s.call("start_unattended_batch", { initiative_slug: "gate-init" }, "toolu_pb"));
-		expectRunEntryRequired(await s.call("retire_stale_batch", { initiative_slug: "gate-init" }, "toolu_pr"));
-		expect(s.gateCalls()).toBe(0);
-		expect(readActiveClaimTaskId(s.cwd)).toBeNull();
+		s.prompt("go on");
+		expect(s.hook(BATCH, "toolu_resumed")).toBeNull();
+		expect((await s.call("start_unattended_batch", START, "toolu_resumed"))?.error).toBeUndefined();
+		expect(s.gateCalls()).toBe(1);
 	});
 
 	test("the run entry stays live for a later Slice after ordinary prompts", async () => {

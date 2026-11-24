@@ -386,12 +386,6 @@ describe("Pi phase entry gate", () => {
 				revokePiPhaseEntry(identity.getSessionId());
 				return pi;
 			}],
-			["an entry ended by a user interrupt (AC4)", async (root) => {
-				const pi = session(root);
-				await pi.input("/skill:drive");
-				await pi.settle("aborted", false);
-				return pi;
-			}],
 		];
 		for (const [name, make] of cases) {
 			const root = fixtureRoot();

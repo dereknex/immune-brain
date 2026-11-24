@@ -24,6 +24,7 @@ import {
 } from "../host-core/private_file";
 import {
 	applyRunContinuationEvent,
+	PAUSED_GATE_GUIDANCE,
 	readSessionMetadata,
 	readSessionToolCall,
 	selectedParentSession,
@@ -233,7 +234,7 @@ export async function antigravityRunContinuationPreToolUse(
 		if (outcome.kind === "deny") {
 			return {
 				decision: "deny",
-				reason: `Run paused: ${outcome.reason}; enter drive explicitly before another native gate`,
+				reason: `Run paused: ${outcome.reason}; ${PAUSED_GATE_GUIDANCE}`,
 			};
 		}
 		return null;

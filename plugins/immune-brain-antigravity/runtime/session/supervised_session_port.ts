@@ -8,7 +8,8 @@
 
 export const SUPERVISED_SESSION_PROTOCOL = 1 as const;
 
-export const SESSION_STATES = ["working", "blocked", "idle", "done", "unknown"] as const;
+/** `error`: the Host stopped on an error it reported (herdr-core `status.state`, e.g. a usage limit); never terminal proof. */
+export const SESSION_STATES = ["working", "blocked", "idle", "done", "error", "unknown"] as const;
 export type SessionState = (typeof SESSION_STATES)[number];
 /** Where a state came from: a provider's own detection, the session's own report, or nowhere. */
 export type StateProvenance = "detected" | "reported" | "none";

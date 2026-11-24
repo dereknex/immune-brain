@@ -4,7 +4,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSy
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { computeBatchPlanDigest, createBatchAuthorityRegistry } from "../plugins/immune-brain/runtime/kernel/batch_authority";
-import { canonicalIntentHash, intentAuthorityHash, readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
+import { canonicalIntentHash, intentAuthorityHash, readTaskIntent, setIntentReaderTestHook } from "../plugins/immune-brain/runtime/kernel/intent";
 import type { AssuranceProjectionResult } from "../plugins/immune-brain/runtime/kernel/assurance_projection";
 import { createBatchKernelPort } from "../plugins/immune-brain/runtime/unattended/batch_kernel_port";
 import { createEnrollmentAuthorityRegistry } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
@@ -22,7 +22,7 @@ import { laneDecisionRequestPath, readLaneDecisionRequest, writeLaneDecisionRequ
 import type { BatchPlanChild } from "../plugins/immune-brain/runtime/unattended/types";
 import { batchReason } from "../plugins/immune-brain/runtime/unattended/batch_reasons";
 import { findLaneRelayTarget } from "../plugins/immune-brain/runtime/unattended/lane_decision";
-import { findActiveLaneBatchForTask, findExistingActiveBatch } from "../plugins/immune-brain/runtime/unattended/batch_preflight";
+import { findActiveLaneBatchForTask, findExistingActiveBatch, prepareBatchPreflight } from "../plugins/immune-brain/runtime/unattended/batch_preflight";
 import { readTaskTombstone } from "../plugins/immune-brain/runtime/kernel/backend_claim";
 import { prepareBatchLaneRunState, writeBatchLaneRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
 import { hasContiguousLaneRebind } from "../plugins/immune-brain/runtime/assurance/run_continuation";
@@ -62,9 +62,9 @@ const VERIFICATION = JSON.stringify({ contract: "assurance_kernel/verification_d
 	command: { executable: "bun", argv: ["-e", "process.exit(0)"], cwd: ".", timeout_ms: 60000, max_output_bytes: 4096 },
 	environment: { prepare: null, writable_paths: [] } });
 
-function intentJson(revision: number, assertion = "A1 holds") {
+function intentJson(revision: number, assertion = "A1 holds", risk = "material") {
 	return `${JSON.stringify({ contract: "assurance_kernel/task_intent/v1", task_id: TASK, owner: "user", goal: "Deliver the single task",
-		acceptance: [{ id: "A1", assertion, verification: VERIFICATION }], scope_hint: ["delivery.txt"], risk: "material", revision })}\n`;
+		acceptance: [{ id: "A1", assertion, verification: VERIFICATION }], scope_hint: ["delivery.txt"], risk, revision })}\n`;
 }
 
 function fixture() {
@@ -411,12 +411,12 @@ interface HostHarness {
  * fake session port: no real Herdr tab opens, no supervisor script runs. The
  * first generation leaves no findings behind; the test seeds the waiting
  * decision or replan finding directly, exactly like an interactive TUI run. */
-function hostFixture() {
+function hostFixture(risk = "material") {
 	const root = realpathSync(mkdtempSync(join(tmpdir(), "imm-lane-host-")));
 	roots.push(root);
 	copyGitTemplate(root);
 	mkdirSync(join(root, "docs/plans"), { recursive: true });
-	writeFileSync(join(root, `docs/plans/${TASK}.intent.json`), intentJson(1));
+	writeFileSync(join(root, `docs/plans/${TASK}.intent.json`), intentJson(1, "A1 holds", risk));
 	git(root, "add", "docs");
 	git(root, "commit", "-qm", "task intent");
 	const bin = realpathSync(mkdtempSync(join(tmpdir(), "imm-lane-host-bin-")));
@@ -1159,34 +1159,48 @@ describe("per-child Lane decisions (S7)", () => {
 	});
 });
 
-describe("LEL-AC3: a new single-task start takes the layered batch.final_verification", () => {
+describe("LEL-AC3 / workflow-friction D3.1: a new single-task start takes layered final verification by risk", () => {
 	const savedXdg = process.env.XDG_CONFIG_HOME;
 	afterEach(() => { if (savedXdg === undefined) delete process.env.XDG_CONFIG_HOME; else process.env.XDG_CONFIG_HOME = savedXdg; });
 	const CONFIGURED = ["bun test", "bun run typecheck"];
 
 	/** A single-task fixture whose project config is `batch`, with no user config. */
-	function configuredHost(batch: unknown) {
+	function configuredHost(batch: unknown, risk = "material") {
 		const xdg = realpathSync(mkdtempSync(join(tmpdir(), "imm-lel-xdg-")));
 		roots.push(xdg);
 		process.env.XDG_CONFIG_HOME = xdg;
-		const f = hostFixture();
+		const f = hostFixture(risk);
 		const writeConfig = (value: unknown) => {
 			mkdirSync(join(f.root, ".imm"), { recursive: true });
 			writeFileSync(join(f.root, ".imm/config.json"), JSON.stringify({ contract: "immune_brain/project_config/v2", ...(value === undefined ? {} : { batch: value }) }));
 		};
 		writeConfig(batch);
 		const h = claudeHarness(f.root, f.factory);
-		const recorded = () => (readAnyBatchRunState(f.root, findActiveLaneBatchForTask(f.root, TASK)!.record.batch_id) as BatchLaneRunStateRecord).final_verification;
-		return { f, h, writeConfig, recorded };
+		const record = () => readAnyBatchRunState(f.root, findActiveLaneBatchForTask(f.root, TASK)!.record.batch_id) as BatchLaneRunStateRecord;
+		const recorded = () => record().final_verification;
+		return { f, h, writeConfig, recorded, record };
 	}
 
-	it("records the configured commands and lists them in the native confirmation", async () => {
-		const { h, recorded } = configuredHost({ final_verification: CONFIGURED });
+	it.each([
+		["a critical task inherits batch.final_verification", "critical", { final_verification: CONFIGURED, single_task_final_verification: ["bun run lint"] }, CONFIGURED],
+		["a non-critical task takes batch.single_task_final_verification", "material", { final_verification: ["bun test"], single_task_final_verification: CONFIGURED }, CONFIGURED],
+	])("%s, records it as required and lists it in the native confirmation", async (_name, risk, batch, expected) => {
+		const { h, recorded, record } = configuredHost(batch, risk);
 		const started = await h.start({ agents: { executor: "claude-code" } });
 		expect(started.state).toBe("started");
-		expect(recorded()).toEqual(CONFIGURED);
+		expect(recorded()).toEqual(expected);
+		expect(record().final_verification_required).toBe(true);
 		expect(h.gates).toHaveLength(1);
-		for (const command of CONFIGURED) expect(h.gates[0]!.text).toContain(command);
+		for (const command of expected) expect(h.gates[0]!.text).toContain(command);
+		await h.stopBatch();
+	});
+
+	it("a non-critical task ignores batch.final_verification, recording none and leaving it optional", async () => {
+		const { h, recorded, record } = configuredHost({ final_verification: CONFIGURED });
+		const started = await h.start({ agents: { executor: "claude-code" } });
+		expect(started.state).toBe("started");
+		expect(recorded() ?? []).toEqual([]);
+		expect(record().final_verification_required).toBe(false);
 		await h.stopBatch();
 	});
 
@@ -1206,8 +1220,11 @@ describe("LEL-AC3: a new single-task start takes the layered batch.final_verific
 		await h.stopBatch();
 	});
 
-	it("refuses an invalid batch.final_verification with lane_config_invalid before any gate", async () => {
-		const { h } = configuredHost({ final_verification: "bun test" });
+	it.each([
+		["batch.final_verification", { final_verification: "bun test" }],
+		["batch.single_task_final_verification", { single_task_final_verification: [""] }],
+	])("refuses an invalid %s with lane_config_invalid before any gate", async (_key, batch) => {
+		const { h } = configuredHost(batch);
 		const refused = await h.start({ agents: { executor: "claude-code" } });
 		expect(refused.state).toBe("rejected");
 		expect(refused.reason).toContain("lane_config_invalid");
@@ -1215,11 +1232,40 @@ describe("LEL-AC3: a new single-task start takes the layered batch.final_verific
 	});
 
 	it("keeps the recorded commands when re-entering after the config changed", async () => {
-		const { h, writeConfig, recorded } = configuredHost({ final_verification: CONFIGURED });
+		const { h, writeConfig, recorded } = configuredHost({ single_task_final_verification: CONFIGURED });
 		expect((await h.start({ agents: { executor: "claude-code" } })).state).toBe("started");
-		writeConfig({ final_verification: ["bun run lint"] });
+		writeConfig({ single_task_final_verification: ["bun run lint"] });
 		expect((await h.start({ agents: { executor: "claude-code" } })).state).toBe("started");
 		expect(recorded()).toEqual(CONFIGURED);
+		await h.stopBatch();
+	});
+
+	it("treats an unreadable intent risk as critical and keeps batch.final_verification", async () => {
+		const { f, h, recorded, record } = configuredHost({ final_verification: CONFIGURED, single_task_final_verification: ["bun run lint"] }, "material");
+		let reads = 0;
+		try {
+			setIntentReaderTestHook({ onBeforeDescriptorRead: () => { if (++reads === 2) throw new Error("transient intent read failure"); } });
+			const preflight = await prepareBatchPreflight({ root: f.root, initiative_slug: TASK, plan_source: "single_task", now });
+			expect(reads).toBeGreaterThanOrEqual(2);
+			expect(preflight).toMatchObject({ ok: true, projection: { risk_by_task: {} } });
+		} finally {
+			setIntentReaderTestHook(null);
+		}
+		reads = 0;
+		let started: any;
+		try {
+			setIntentReaderTestHook({ onBeforeDescriptorRead: () => { if (++reads === 2) throw new Error("transient intent read failure"); } });
+			started = await h.start({ agents: { executor: "claude-code" } });
+		} finally {
+			setIntentReaderTestHook(null);
+		}
+		expect(reads).toBeGreaterThanOrEqual(2);
+		expect(started.state).toBe("started");
+		expect(recorded()).toEqual(CONFIGURED);
+		expect(record().final_verification_required).toBe(true);
+		expect(h.gates).toHaveLength(1);
+		for (const command of CONFIGURED) expect(h.gates[0]!.text).toContain(command);
+		expect(h.gates[0]!.text).not.toContain("bun run lint");
 		await h.stopBatch();
 	});
 });

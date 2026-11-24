@@ -59,7 +59,7 @@ const ENV = { CLAUDE_CODE_VERSION: "2.1.236", CLAUDE_CODE_PERMISSION_MODE: "manu
 const roots: string[] = [];
 afterAll(() => { for (const root of roots) rmSync(root, { recursive: true, force: true }); });
 const git = (root: string, ...args: string[]) => execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
-function fixture(slug: string) {
+function fixture(slug: string, commitDate?: string) {
 	const root = mkdtempSync(join(tmpdir(), "claude-batch-test-")); roots.push(root); copyGitTemplate(root); mkdirSync(join(root, "docs/plans"), { recursive: true });
 	for (const [n, risk] of [[1, "routine"], [2, "material"], [3, "critical"]] as const) {
 		const task_id = `${slug}-c${n}`;
@@ -67,7 +67,11 @@ function fixture(slug: string) {
 			acceptance: [{ id: `acc-${n}`, assertion: `c${n} assertion`, verification: "bun test" }],
 			scope_hint: [`docs/plans/${task_id}.intent.json`, `docs/specs/${task_id}.spec.md`, `docs/specs/archive/${task_id}.spec.md`], risk, revision: 1 }, null, 2)}\n`);
 	}
-	git(root, "add", "docs"); git(root, "commit", "-qm", "child intents");
+	git(root, "add", "docs");
+	execFileSync("git", ["commit", "-qm", "child intents"], {
+		cwd: root,
+		...(commitDate ? { env: { ...process.env, GIT_AUTHOR_DATE: commitDate, GIT_COMMITTER_DATE: commitDate } } : {}),
+	});
 	const observation: GithubInitiativeObservation = { contract: "immune_brain/github_initiative_observation/v1", initiative_id: slug, issue_number: 100,
 		tasks: [1, 2, 3].map(n => ({ task_id: `${slug}-c${n}`, slice_id: `S${n}`, issue_number: 100 + n, blocked_by: n === 2 ? [`${slug}-c1`] : [] })) };
 	return { root, slug, observation, head: git(root, "rev-parse", "HEAD") };
@@ -551,7 +555,12 @@ describe("Lane preflight preserves coordinator bytes", () => {
 	}
 });
 
-const normalize = (value: unknown, f: { root: string; head: string }) => JSON.parse(JSON.stringify(value, (key, item) => key === "run_id" || key === "record_revision" ? `<${key}>` : item)
+const normalize = (value: unknown, f: { root: string; head: string }) => JSON.parse(JSON.stringify(value, (key, item) => {
+	if (key === "run_id" || key === "record_revision") return `<${key}>`;
+	// session.baseline stores kernel.recordRevision (canonicalRecordHash), which embeds fixture-unique git_base_head.
+	if (key === "baseline" && typeof item === "string" && /^sha256:[0-9a-f]{64}$/.test(item)) return "<record_revision>";
+	return item;
+})
 	.split(realpathSync(f.root)).join("<root>").split(f.head).join("<head>").replace(/batch-[A-Za-z0-9._-]+?-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, "<batch>").replace(/\d{4}-\d\d-\d\dT[\d:.]+Z/g, "<time>")
 	// Session keys/handles embed sha256(batch_id …) digests, so they vary with the run-unique batch id exactly like <batch> above.
 	.replace(/-g(\d+)-[0-9a-f]{12}/g, "-g$1-<key>"));
@@ -631,7 +640,8 @@ describe("lane mode parameters and resume", () => {
 		expect(normalize((a!.report as { handoffs?: unknown }).handoffs ?? [], claude)).toEqual(normalize((b!.report as { handoffs?: unknown }).handoffs ?? [], pi));
 	}, 30000);
 	for (const max_parallel of [1, 2]) it(`omitted max_parallel reuses ${max_parallel}-Lane authorization in both Hosts`, async () => {
-		const slug = `lane-resume-${max_parallel}`, claude = fixture(slug), pi = fixture(slug); let claudeGates = 0, piGates = 0;
+		const slug = `lane-resume-${max_parallel}`, claude = fixture(slug, "2026-01-01T00:00:01Z"), pi = fixture(slug, "2026-01-01T00:00:02Z"); let claudeGates = 0, piGates = 0;
+		expect(claude.head).not.toBe(pi.head);
 		const runtime = client(claude, { requestConfirmation: async () => { claudeGates++; return { decision: "accept", requestId: "resume" }; } });
 		const options = { root: pi.root, initiativeSlug: slug, readInitiative: async () => pi.observation, confirmBatch: async () => { piGates++; return "accept" as const; } };
 		// The new batch freezes the named Executor; the resumed reports compare because both froze the same one.
@@ -639,6 +649,9 @@ describe("lane mode parameters and resume", () => {
 		const a = await runtime.callTool("start_unattended_batch", { initiative_slug: slug, final_verification: undefined }), b = await runPiBatch({ ...options, final_verification: undefined });
 		expect(a.state).toBe("started"); expect(b.state).toBe("started"); if (b.state !== "started") throw new Error(b.reason);
 		expect(a.batch_id).toBe(first.batch_id); expect(a.report.max_parallel).toBe(max_parallel); expect(b.report.max_parallel).toBe(max_parallel);
+		expect(a.report.children[0]?.session?.baseline).toMatch(/^sha256:[0-9a-f]{64}$/);
+		expect(b.report.children[0]?.session?.baseline).toMatch(/^sha256:[0-9a-f]{64}$/);
+		expect(a.report.children[0]?.session?.baseline).not.toBe(b.report.children[0]?.session?.baseline);
 		expect(claudeGates).toBe(1); expect(piGates).toBe(1); expect(normalize(a.report, claude)).toEqual(normalize(b.report, pi));
 		const path = join(claude.root, `.imm/state/batches/${a.batch_id}.json`), bytes = readFileSync(path);
 		expect(JSON.stringify(await runtime.callTool("start_unattended_batch", { initiative_slug: slug, max_parallel: max_parallel + 1 }))).toContain("batch_parallel_mismatch");
