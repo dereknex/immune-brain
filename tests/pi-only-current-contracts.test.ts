@@ -54,7 +54,7 @@ describe("current Pi-only contracts", () => {
     }
   });
 
-  it("describe Pi and Claude Code as the supported hosts", () => {
+  it("describe Pi, Claude Code, and Antigravity as the supported hosts", () => {
     const distSkills = readdirSync(resolve(ROOT, "plugins/immune-brain/dist"))
       .filter((name) => name.endsWith(".md"))
       .map((name) => `plugins/immune-brain/dist/${name}`);
@@ -65,8 +65,8 @@ describe("current Pi-only contracts", () => {
         unsupported: undefined,
       });
     }
-    expect(readFileSync(resolve(ROOT, "README.md"), "utf8")).toContain("Pi and Claude Code are the supported hosts");
-    expect(readFileSync(resolve(ROOT, "README.zh-CN.md"), "utf8")).toContain("Pi 与 Claude Code 是支持的宿主");
+    expect(readFileSync(resolve(ROOT, "README.md"), "utf8")).toContain("Pi, Claude Code, and Antigravity (`plugins/immune-brain-antigravity/`) are the supported hosts");
+    expect(readFileSync(resolve(ROOT, "README.zh-CN.md"), "utf8")).toContain("Pi、Claude Code 与 Antigravity（`plugins/immune-brain-antigravity/`）是支持的宿主");
     expect(readFileSync(resolve(ROOT, "plugins/immune-brain/USER_GUIDE.md"), "utf8")).toContain("Pi 与 Claude Code 工作流");
     expect(readFileSync(resolve(ROOT, "plugins/immune-brain/USER_GUIDE.md"), "utf8")).toContain("host native Review");
     expect(readFileSync(resolve(ROOT, "plugins/immune-brain/README.md"), "utf8")).toContain("Pi host extension or the Claude Code plugin");

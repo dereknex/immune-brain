@@ -1,6 +1,6 @@
 # Immune-Brain 使用手册
 
-Immune-Brain 是一套 Skill-explicit Managed 工作流，支持 Pi 与本地交互式 Claude Code，并提供五个独立 host-native Skill。用户可发现八个 public Skills：
+Immune-Brain 是一套 Skill-explicit Managed 工作流，支持 Pi、本地交互式 Claude Code 与 Antigravity，并提供六个独立 host-native Skill。用户可发现九个 public Skills：
 
 - `clarify`：澄清需求、约束、风险和非目标。
 - `draw-up`：创建或修订 Spec、Plan 和候选 TaskIntent。
@@ -10,6 +10,7 @@ Immune-Brain 是一套 Skill-explicit Managed 工作流，支持 Pi 与本地交
 - `slim`：在显式 manifest 批准后整理 tracked agent instruction 文件，不创建 Managed authority。
 - `prune-tests`：在显式 manifest 批准后合并、参数化或删除冗余测试，不弱化断言，不创建 Managed authority。
 - `revisit`：从 Pi、Claude Code 与 Antigravity CLI session logs 及可选 committed audit 诊断工作流健康度与返工摩擦，不排名模型，只读不创建 Managed authority。
+- `imm-loop`：查看、dry-run 或启停仓库后台 Loop 守护进程（`bin/imm-loop`），不直接创建前台 Run binding 或修改 Kernel authority。
 
 ### `prune-docs`
 
@@ -53,7 +54,7 @@ request
 
 显式 Skill 使用项目现有结构，并只创建当前工作需要的 artifact 及其父目录。Runtime 不安装、覆盖或校验项目级 `AGENTS.md`、`IMMUNE.md` 或 `CONTEXT.md`。
 
-## 八个 public Skills
+## 九个 public Skills
 
 ### `clarify`
 
@@ -105,16 +106,20 @@ PR 仍通过 `drive` 继续。
 
 ## 验证与发布
 
-公共 surface 由 `skills/registry.yaml` 声明，必须与八个 `skills/*/SKILL.md`、对应
+公共 surface 由 `skills/registry.yaml` 声明，必须与九个 `skills/*/SKILL.md`、对应
 `dist/<skill>.md`、package manifest 和实际 Pi loader 结果一致。未注册的旧 Skill 目录、
 旧 dist entry files 和兼容 alias 不应重新加入 registry。
 
 验证时至少运行：
 
 ```bash
+bun run typecheck
 bun scripts/sync-dist-docs.ts --check
 bun test
+bun run e2e
 ```
+
+发布采用两段式流程：合并 version PR 通过 `bun run changeset:publish`（含 `verify:release`）发布到 npm `next` dist-tag；在 `immune-brain-v<version>` tag 运行 `bun run e2e:live` 生成并提交 `docs/evidence/e2e-live/<version>.json` 后，再通过 `promote` workflow / `bun run release:promote <version>` 推进 `stable` 分支与 npm `latest`。
 
 `bun test` 中若本地明确停用了 `package.json` 的 `pi.extensions`，依赖 host extension
 发现的测试会失败；恢复 shipped extension manifest 后再判断真实 package/loader 结果。

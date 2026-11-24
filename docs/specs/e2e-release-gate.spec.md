@@ -250,4 +250,7 @@ L1 journey acceptances (`S2`–`S7`) run `bun run e2e <journey>` and need the pi
 
 ## Amendments to Settled Specs
 
-None yet. Probe outcomes for `A1`, `A3`, `A4` are recorded here by their slices.
+- **`A4` resolved (`S8` CI confirmation)**: `Host e2e journeys` (`bun run e2e`) passes on `ubuntu-latest` in `.github/workflows/ci.yml` using npm-installed pinned `@anthropic-ai/claude-code` and `@earendil-works/pi-coding-agent` binaries with the local mock model.
+- **`A3` partial (`S1` manifest check)**: `claude plugin validate --strict .claude-plugin/marketplace.json` passed on `claude 2.1.331`; remote `claude plugin marketplace add` / `install` / `update` against `ref: "stable"` remains to be verified once the maintainer creates the remote `stable` branch.
+- **Minimum vs pinned Claude install in CI**: `tests/e2e/hosts.json` sets `claude.minimum` separately from `claude.pinned` (while runtime MCP elicitation checks `2.1.236` and `herdr-core` requires `2.1.295`). `ci.yml` and `e2e-host-bump.yml` install `claude.minimum` into `/tmp/e2e-claude-min` and set `E2E_CLAUDE_MIN_BIN` whenever `minimum !== pinned`.
+- **`J2/pi` and L2 `fake-herdr` boundary (`S9`)**: `J2` (`tests/e2e/batch.e2e.ts`) now covers both `claude Executor` and `pi Executor` (`tests/e2e/cassettes/batch/pi.jsonl`) so `bun run e2e:live` matches `release-promote.ts`'s `REQUIRED_LIVE_JOURNEYS`. In `e2e:live`, `E2E_RECORD=1` invokes real `claude` and `pi` against the real Anthropic API while Lane panes still run under spawning `fake-herdr` (`herdr --version` is recorded in `hosts`); real interactive Herdr TUI dogfooding on `next` remains part of the maintainer's pre-promote check.

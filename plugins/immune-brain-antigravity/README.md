@@ -15,6 +15,15 @@ agy plugin install ./immune-brain/plugins/immune-brain-antigravity
 agy plugin validate ./immune-brain/plugins/immune-brain-antigravity --strict
 ```
 
+To upgrade after the next release is promoted:
+
+```sh
+git -C immune-brain pull --ff-only
+agy plugin install ./immune-brain/plugins/immune-brain-antigravity
+```
+
+To try a pre-release build before promotion, check out `main` or install `plugins/immune-brain-antigravity/` from the `immune-brain@next` npm package.
+
 The npm package ships this directory as `plugins/immune-brain-antigravity/`. Existing
 installs of the former shared-root manifest must be reinstalled from this directory.
 

@@ -36,6 +36,8 @@ describe("ci.yml e2e job", () => {
 		expect(installRun).toContain("@anthropic-ai/claude-code@");
 		expect(installRun).toContain("@earendil-works/pi-coding-agent@");
 		expect(installRun).toContain(".claude.pinned");
+		expect(installRun).toContain(".claude.minimum");
+		expect(installRun).toContain("E2E_CLAUDE_MIN_BIN");
 		expect(installRun).toContain(".pi.pinned");
 	});
 

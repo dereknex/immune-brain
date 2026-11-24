@@ -6,7 +6,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname } from "node:path";
-import { type CassetteBlock, type CassetteTurn, type MockModel, cassettePath, loadCassette, requestKey, startMockModel } from "./mock-model";
+import { type CassetteBlock, type CassetteTurn, type MockModel, type ModelRequest, cassettePath, loadCassette, requestKey, sessionKey, startMockModel } from "./mock-model";
 
 /** Redacts secrets, home paths and timestamps from text that would land in a checked-in cassette. */
 export function redactText(text: string, home = homedir()): string {
@@ -61,10 +61,15 @@ export function rewriteRequestModel(raw: string, model: string | undefined): str
 	}
 }
 
+export type RecordedTurn = CassetteTurn & { session?: string };
+
 export interface Recorder {
 	url: string;
-	/** Stops the proxy and writes the cassette. */
+	requests: ModelRequest[];
+	/** Stops the proxy and writes the cassette (unless `write: false`). */
 	stop(): Promise<void>;
+	/** Returns recorded turns in session order, omitting `conv` when only one session was recorded. */
+	recordedTurns(): RecordedTurn[];
 }
 
 export interface RecorderOptions {
@@ -72,12 +77,35 @@ export interface RecorderOptions {
 	upstream?: string;
 	/** Model the proxy substitutes in every upstream request (default: the Host's own). */
 	model?: string;
+	/** Optional session label attached to each recorded turn (used by multi-session journeys such as batch). */
+	session?: string;
+	/** Whether `stop()` writes `cassettePath` (default true). */
+	write?: boolean;
 }
 
 export async function startRecorder(options: RecorderOptions): Promise<Recorder> {
 	const upstream = (options.upstream ?? "https://api.anthropic.com").replace(/\/$/, "");
-	const turns = new Map<number, CassetteTurn>();
+	const turns = new Map<string, { sessionId: string; turn: RecordedTurn }>();
+	const sessionLabels = new Map<string, string>();
+	const requests: ModelRequest[] = [];
 	const pending: Promise<void>[] = [];
+	const labelFor = (id: string): string => {
+		const existing = sessionLabels.get(id);
+		if (existing) return existing;
+		const label = sessionLabels.size === 0 ? "main" : `conv-${sessionLabels.size + 1}`;
+		sessionLabels.set(id, label);
+		return label;
+	};
+	const recordedTurns = (): RecordedTurn[] => {
+		const order = [...sessionLabels.keys()];
+		const multi = order.length > 1;
+		return [...turns.values()]
+			.sort((left, right) => {
+				const sessionDiff = order.indexOf(left.sessionId) - order.indexOf(right.sessionId);
+				return sessionDiff !== 0 ? sessionDiff : left.turn.turn - right.turn.turn;
+			})
+			.map(({ sessionId, turn }) => (multi ? { ...turn, conv: sessionLabels.get(sessionId) } : turn));
+	};
 	const server = Bun.serve({
 		hostname: "127.0.0.1",
 		port: 0,
@@ -85,19 +113,47 @@ export async function startRecorder(options: RecorderOptions): Promise<Recorder>
 			const target = new URL(request.url);
 			const sent = request.method === "GET" || request.method === "HEAD" ? undefined : await request.text();
 			const raw = sent === undefined ? undefined : rewriteRequestModel(sent, options.model);
+			const isMessages = request.method === "POST" && target.pathname === "/v1/messages";
+			let request_body: { metadata?: { user_id?: string }; messages?: Array<{ role?: string; content?: unknown }>; tools?: Array<{ name?: string }> } = {};
+			let reqKey = { turn: 0, after: [] as string[] };
+			let sKey = "default";
+			let convLabel = "main";
+			if (isMessages && raw) {
+				try {
+					request_body = JSON.parse(raw);
+					reqKey = requestKey(request_body);
+					sKey = sessionKey(request, request_body);
+					convLabel = labelFor(sKey);
+					requests.push({
+						path: target.pathname,
+						turn: reqKey.turn,
+						offeredTools: (request_body.tools ?? []).map((tool) => String(tool.name)),
+						conv: convLabel,
+					});
+				} catch { /* non-JSON body */ }
+			}
 			const headers = new Headers(request.headers);
 			for (const name of ["host", "content-length", "accept-encoding"]) headers.delete(name);
 			const response = await fetch(`${upstream}${target.pathname}${target.search}`, { method: request.method, headers, body: raw });
-			const recordable = request.method === "POST" && target.pathname === "/v1/messages" && response.status === 200 && response.body;
+			const recordable = isMessages && response.status === 200 && response.body;
 			if (!recordable) return response;
-			const request_body = JSON.parse(raw ?? "{}");
 			const [toClient, toRecord] = response.body!.tee();
+			const turnStorageKey = `${sKey}:${reqKey.turn}`;
 			pending.push((async () => {
 				const turn = assembleTurn(await new Response(toRecord).text(), response.headers.get("content-type") ?? "");
-				const key = requestKey(request_body);
-				if (!turn || turns.has(key.turn)) return;
+				if (!turn || turns.has(turnStorageKey)) return;
 				const content = redactDeep(turn.content) as CassetteBlock[];
-				turns.set(key.turn, { turn: key.turn, after: key.after, tools: content.filter((block) => block.type === "tool_use").map((block) => String(block.name)), content, stop_reason: turn.stop_reason });
+				turns.set(turnStorageKey, {
+					sessionId: sKey,
+					turn: {
+						turn: reqKey.turn,
+						after: reqKey.after,
+						tools: content.filter((block) => block.type === "tool_use").map((block) => String(block.name)),
+						content,
+						stop_reason: turn.stop_reason,
+						...(options.session ? { session: options.session } : {}),
+					},
+				});
 			})());
 			const outHeaders = new Headers(response.headers);
 			for (const name of ["content-encoding", "content-length"]) outHeaders.delete(name);
@@ -106,10 +162,13 @@ export async function startRecorder(options: RecorderOptions): Promise<Recorder>
 	});
 	return {
 		url: `http://127.0.0.1:${server.port}`,
+		requests,
+		recordedTurns,
 		stop: async () => {
 			await server.stop(true);
 			await Promise.all(pending);
-			const ordered = [...turns.values()].sort((left, right) => left.turn - right.turn);
+			if (options.write === false) return;
+			const ordered = recordedTurns();
 			mkdirSync(dirname(options.cassettePath), { recursive: true });
 			writeFileSync(options.cassettePath, ordered.map((turn) => JSON.stringify(turn)).join("\n") + "\n");
 		},
@@ -118,6 +177,7 @@ export async function startRecorder(options: RecorderOptions): Promise<Recorder>
 
 export interface JourneyModel {
 	url: string;
+	requests: ModelRequest[];
 	/** Set when replaying a cassette; absent while recording. */
 	mock?: MockModel;
 	/** The API key the Host should use: a real one only while recording. */
@@ -134,8 +194,8 @@ export async function startJourneyModel(journey: string, host: string, turns?: P
 		const apiKey = process.env.ANTHROPIC_API_KEY;
 		if (!apiKey) throw new Error("record_credentials_missing: bun run e2e:record needs ANTHROPIC_API_KEY in the maintainer's environment");
 		const recorder = await startRecorder({ cassettePath: cassettePath(journey, host), upstream: process.env.E2E_UPSTREAM, model: process.env.E2E_LIVE_MODEL || undefined });
-		return { url: recorder.url, apiKey, stop: recorder.stop };
+		return { url: recorder.url, requests: recorder.requests, apiKey, stop: recorder.stop };
 	}
 	const mock = await startMockModel({ turns: turns ?? loadCassette(cassettePath(journey, host)) });
-	return { url: mock.url, mock, stop: mock.stop };
+	return { url: mock.url, requests: mock.requests, mock, stop: mock.stop };
 }

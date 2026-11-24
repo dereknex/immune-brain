@@ -81,12 +81,14 @@ async function drive(setup: (ws: string) => void): Promise<DriveRun & { cleanup(
 		const exitCode = await herdr.waitForExit(pane, 180_000);
 		const stream = parseClaudeStream(await herdr.output(pane));
 
-		// Every cassette turn was served. Before the plugin's MCP server connects, claude's first
-		// request offers no plugin tools and the cassette refuses it, so the Host retries; that
-		// refusal is the only failure a run may record.
-		const unexpected = model.mock!.failures.filter((failure) => !(failure.code === "cassette_mismatch" && /^turn 0 .* does not offer \[/.test(failure.message)));
-		expect(unexpected).toEqual([]);
-		expect(model.mock!.requests.filter((request) => request.offeredTools.includes(`${MCP_TOOLS}__status`)).map((request) => request.turn)).toEqual([0, 1, 2]);
+		if (model.mock) {
+			// Every cassette turn was served. Before the plugin's MCP server connects, claude's first
+			// request offers no plugin tools and the cassette refuses it, so the Host retries; that
+			// refusal is the only failure a run may record.
+			const unexpected = model.mock.failures.filter((failure) => !(failure.code === "cassette_mismatch" && /^turn 0 .* does not offer \[/.test(failure.message)));
+			expect(unexpected).toEqual([]);
+			expect(model.mock.requests.filter((request) => request.offeredTools.includes(`${MCP_TOOLS}__status`)).map((request) => request.turn)).toEqual([0, 1, 2]);
+		}
 
 		const names = new Map<string, string>();
 		const tools: Record<string, any> = {};

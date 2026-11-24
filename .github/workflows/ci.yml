@@ -91,8 +91,13 @@ jobs:
         # bump is one edit. An absent or differently-versioned Host fails a journey, never skips.
         run: |
           claude_version="$(jq -r .claude.pinned tests/e2e/hosts.json)"
+          claude_min="$(jq -r .claude.minimum tests/e2e/hosts.json)"
           pi_version="$(jq -r .pi.pinned tests/e2e/hosts.json)"
           npm install --global "@anthropic-ai/claude-code@${claude_version}" "@earendil-works/pi-coding-agent@${pi_version}"
+          if [ "$claude_min" != "$claude_version" ]; then
+            npm install --prefix /tmp/e2e-claude-min "@anthropic-ai/claude-code@${claude_min}"
+            echo "E2E_CLAUDE_MIN_BIN=/tmp/e2e-claude-min/node_modules/.bin/claude" >> "$GITHUB_ENV"
+          fi
 
       - name: Run the e2e journeys
         run: bun run e2e

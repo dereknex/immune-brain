@@ -1,6 +1,6 @@
 # Immune-Brain
 
-> 面向 [Pi](https://github.com/badlogic/pi) 与 [Claude Code](https://claude.ai/code) 的确定性工程工作流与质量保障引擎 — 把模糊想法变成可交付代码，覆盖规划、执行、QA 与审查。
+> 面向 [Pi](https://github.com/badlogic/pi)、[Claude Code](https://claude.ai/code) 与 [Antigravity](plugins/immune-brain-antigravity/README.md) 的确定性工程工作流与质量保障引擎 — 把模糊想法变成可交付代码，覆盖规划、执行、QA 与审查。
 
 **语言：** [English](./README.md) | **中文**
 
@@ -8,7 +8,7 @@
 
 ## 这是什么？
 
-Immune-Brain 为 AI 编程工具（**Pi** 与 **Claude Code**）提供结构化的工程工作流保障：
+Immune-Brain 为 AI 编程工具（**Pi**、**Claude Code** 与 **Antigravity**）提供结构化的工程工作流保障：
 
 - **日常对话零负担** — 普通问答、单点代码修改与探索性对话完全保持 Host 原生体验，不拦截、不强加流程。
 - **需要严谨时显式启用** — 遇到复杂功能开发或高保证任务时，显式调用 `clarify`、`draw-up` 或 `drive`。
@@ -16,7 +16,7 @@ Immune-Brain 为 AI 编程工具（**Pi** 与 **Claude Code**）提供结构化�
 - **质量由代码强制保障** — 自动化 QA 验收与隔离式 Reviewer 审查必须通过，任务才会结算完成。
 - **已就绪的 Initiative 可以通过 Lane 整批运行** — 一次确认的 Batch Authorization 即可无人值守推进整批子任务；容量为 1 时一次运行一个 Lane，更大容量允许 scope 互不重叠的 child 在独立 Git worktree 中并发执行，并通过集成守卫验证。每个 child 依然保持独立的 Enrollment、QA、Review 与结算。
 
-Pi 与 Claude Code 是支持的宿主。未声明的适配器仍不受支持。Claude Code 最低版本为 `2.1.236`，这是已通过交互式 server-initiated MCP elicitation 验证的最低版本。当前真实 Host 证据见 `docs/verification/claude-native-elicitation-authority-conformance.md`；历史报告归档于 `docs/verification/archive/`。
+Pi、Claude Code 与 Antigravity（`plugins/immune-brain-antigravity/`）是支持的宿主。未声明的适配器仍不受支持。Claude Code 最低版本为 `2.1.236`（已通过交互式 server-initiated MCP elicitation 验证；`herdr-core` OSC 7501 状态要求 `2.1.295`；CI L1 E2E 锁定版本见 [`tests/e2e/hosts.json`](tests/e2e/hosts.json)）。当前真实 Host 证据见 `docs/verification/claude-native-elicitation-authority-conformance.md`；历史报告归档于 `docs/verification/archive/`；Antigravity 的 Review 边界与原生 gate 行为见 [Antigravity 插件 README](plugins/immune-brain-antigravity/README.md)。
 
 ---
 
@@ -28,7 +28,7 @@ Pi 与 Claude Code 是支持的宿主。未声明的适配器仍不受支持。C
 - [推荐工作流：与 mattpocock/skills 组合使用](#推荐工作流与-mattpocockskills-组合使用)
 - [实战案例](#实战案例)
 - [核心设计哲学：把“判断”变成“查表”](#核心设计哲学把判断变成查表用确定性工程驾驭多模型)
-- [8 个 Skills](#8-个-skills)
+- [9 个 Skills](#9-个-skills)
 - [生命周期](#生命周期)
 - [无人值守批次运行](#无人值守批次运行)
 - [配置](#配置)
@@ -40,21 +40,30 @@ Pi 与 Claude Code 是支持的宿主。未声明的适配器仍不受支持。C
 
 ## 安装
 
-**前置要求：** 已安装 [Pi](https://github.com/badlogic/pi) 或 [Claude Code](https://claude.ai/code)（>= 2.1.236）、Node.js 20+、`bun`（用于测试）。
+**前置要求：** 已安装 [Pi](https://github.com/badlogic/pi)、[Claude Code](https://claude.ai/code)（>= `2.1.236`，`herdr-core` 需 `>= 2.1.295`）或 Antigravity（`agy`），以及 Node.js 20+、`bun`。
+
+| Host | 默认稳定通道（`stable` / `latest`） | 预发布 / 本地 dogfood 通道 |
+|---|---|---|
+| **Pi** | `pi install npm:immune-brain` | `pi install npm:immune-brain@next` |
+| **Claude Code** | `claude plugin marketplace add dereknex/immune-brain` + `claude plugin install immune-brain`（跟踪 `stable` 分支） | `claude --plugin-dir ./plugins/immune-brain`（来自 `main`） |
+| **Antigravity** | `git clone -b stable ...` + `agy plugin install ./immune-brain/plugins/immune-brain-antigravity` | `main` 分支检出，或 `@next` npm 包内的 `plugins/immune-brain-antigravity` |
 
 ### 在 Pi 中使用
 
-Pi 通过 `package.json`（或全局 Pi 配置）自动发现 Skills 与扩展：
+通过 npm 安装（Pi 会读取 `package.json` 的 `pi.skills` / `pi.extensions` 自动加载）：
 
-```json
-// package.json → pi.skills / pi.extensions
-"pi": {
-  "skills": ["./plugins/immune-brain/skills"],
-  "extensions": ["./plugins/immune-brain/.pi-extension"]
-}
+```bash
+pi install npm:immune-brain       # 稳定版（npm latest）
+pi update npm:immune-brain        # 升级到下一个已晋升版本
 ```
 
-无需额外 server 配置，通过 Pi 安装本 package 后 8 个 Skill 即自动可用。
+新版本在正式晋升前只发布到 npm `next` dist-tag；如需提前试用可安装 `immune-brain@next`：
+
+```bash
+pi install npm:immune-brain@next
+```
+
+无需额外 server 配置，通过 Pi 安装后 9 个公开 Skill 即自动可用。
 
 ### 在 Claude Code 中使用
 
@@ -65,18 +74,42 @@ claude plugin marketplace add dereknex/immune-brain
 claude plugin install immune-brain
 ```
 
-或在本地开发时直接加载插件目录：
+Marketplace 配置通过 `git-subdir` 从 `stable` 分支拉取插件内容（仅在版本晋升时前移）；后续运行 `claude plugin update immune-brain` 即可更新到下一稳定版。
+
+或在本地开发时直接加载 `main` 分支插件目录：
 
 ```bash
 claude --plugin-dir ./plugins/immune-brain
 ```
 
+### 在 Antigravity 中使用
+
+从 `stable` 分支安装自包含目录 `plugins/immune-brain-antigravity/`（不要安装 `plugins/immune-brain/`）：
+
+```bash
+git clone -b stable https://github.com/dereknex/immune-brain.git
+agy plugin install ./immune-brain/plugins/immune-brain-antigravity
+agy plugin validate ./immune-brain/plugins/immune-brain-antigravity --strict
+```
+
+升级到新晋升版本时，先拉取 `stable` 再重装：
+
+```bash
+git -C immune-brain pull --ff-only
+agy plugin install ./immune-brain/plugins/immune-brain-antigravity
+```
+
+如需在晋升前试用预发布版本，可检出 `main` 分支或从 `immune-brain@next` npm 包内的 `plugins/immune-brain-antigravity/` 目录安装。早期版本从 `plugins/immune-brain/` 发现组件，升级时请改从新目录重新安装；Review 边界详见 [Antigravity 插件 README](plugins/immune-brain-antigravity/README.md)。
+
 ### 验证安装
 
 ```bash
-bun test                    # 全量测试
-mise run check-plugin       # 校验插件结构
-mise run check-dist-sync    # 校验生成文档同步
+bun run typecheck                               # 类型检查
+bun test                                        # 单元与契约测试（不含 tests/e2e/）
+bun scripts/build-claude-plugin.ts --check      # 校验 Claude 插件构建产物
+bun scripts/build-antigravity-plugin.ts --check # 校验 Antigravity 插件构建产物
+bun scripts/sync-dist-docs.ts --check           # 校验生成文档同步
+bun run e2e                                     # 黑盒 L1 Host 端到端测试（需 pinned claude 与 pi）
 ```
 
 ---
@@ -677,7 +710,7 @@ Immune-Brain 读取两个 JSON 文件，Pi 与 Claude Code 共用（[ADR 0041](d
 package.json                          # Pi package manifest（skills + extensions）
 plugins/immune-brain/
 ├── .pi-extension/                    # Pi TUI + Kernel 扩展
-├── skills/                           # 8 个公开 Skills（触发 shim）
+├── skills/                           # 9 个公开 Skills（触发 shim）
 ├── dist/                             # 构建后的 skill 契约与参考文档
 ├── runtime/                          # Bun + TypeScript 运行时与 Kernel
 └── bin/                              # CLI wrappers（→ runtime/v4_runtime.ts）
@@ -695,7 +728,7 @@ docs/specs/                           # Living specs（原地更新）
 
 ## 常见问题
 
-**需要记住所有 Skill 吗？** 不需要。日常开发核心只需两个：`/draw-up`（规划与确认任务）和 `/drive`（执行与验证）。需求模糊时用 `/clarify`，维护类任务（如 `/fix-pr`）按需使用。普通问答与即时小修改无需任何 Skill。
+**需要记住所有 Skill 吗？** 不需要。日常开发核心只需两个：`/draw-up`（规划与确认任务）和 `/drive`（执行与验证）。需求模糊时用 `/clarify`，维护与守护进程类任务（如 `/fix-pr`、`/imm-loop`）按需使用。普通问答与即时小修改无需任何 Skill。
 
 **中途关闭会话会怎样？** 状态已落盘保存（`.imm/` + TaskIntent）。在 Pi 或 Claude Code 中重新输入 `/drive` 即可恢复，以 Kernel projection 状态为准。
 
@@ -719,35 +752,34 @@ docs/specs/                           # Living specs（原地更新）
 
 **我是否必须安装 `mattpocock/skills` 才能使用 Immune-Brain？** 不是。Immune-Brain 本身是完全独立自闭环的，内置的 `clarify` 可以零配置直接使用。与 `mattpocock/skills` 的组合属于强烈推荐的工程进阶工作流，旨在为严谨团队提供更极致的决策防线。
 
-**支持哪些 AI 编程工具？** Pi 与 Claude Code 是支持的宿主（Claude Code 最低版本为 `2.1.236`）。两者共享同一套确定性 Kernel 核心、质量保障机制与工具链。
+**支持哪些 AI 编程工具？** Pi、Claude Code（MCP elicitation 最低 `2.1.236`，`herdr-core` 最低 `2.1.295`）与 Antigravity（`plugins/immune-brain-antigravity/`，Review 边界见 [其 README](plugins/immune-brain-antigravity/README.md)）是支持的宿主。三者共享同一套确定性 Kernel 核心与质量保障体系。
 
 ---
 
 ## 发布
 
-本仓库使用 [Changesets](https://github.com/changesets/changesets) 管理版本与发布。
+本仓库使用 [Changesets](https://github.com/changesets/changesets) 管理版本，采用 **`next` → `stable` / `latest`** 两段式发布流程（详见 [Release Evidence & Setup](docs/evidence/e2e-live/README.md)）。
 
 | 任务 | 命令 |
 |------|------|
-| 创建 changeset | `bunx changeset` — 选择 bump 类型（patch/minor/major）并填写说明 |
-| 升级版本 | `bun run changeset:version` — 更新 `package.json` + `CHANGELOG.md`，然后同步并校验 Claude 与 Antigravity plugin manifest |
-| 本地发布 | `bun run changeset:publish` — 校验 manifest 版本后发布到 npm（需 `NPM_TOKEN` 或 `npm login`） |
+| 创建 changeset | `bunx changeset` — 选择 bump 类型（`patch`/`minor`/`major`）并填写说明（若修复近期版本且提交标题不以 `fix` 开头，需加 `Fixes-release: <version>`） |
+| 升级版本 | `bun run changeset:version` — 更新 `package.json` + `CHANGELOG.md`，重建 Claude 与 Antigravity 插件并校验 manifest |
+| 发布前校验 | `bun run verify:release` — 校验版本、插件构建、dist 文档同步、typecheck、`bun test` 与 `npm pack --dry-run` |
+| 发布到 `next` | `bun run changeset:publish` — 执行 `verify:release` 后以 `--tag next` 发布到 npm |
+| 运行 L2 live 冒烟 | `bun run e2e:live` — 在 tag `immune-brain-v<version>` 上用真实 `claude`/`pi` + API（`ANTHROPIC_API_KEY`）跑 J1/J2/J4 并生成 `docs/evidence/e2e-live/<version>.json` |
+| 晋升 / 回滚 | `bun run release:promote <version>` / `bun run release:promote -- --rollback` — 校验 live 证据、fast-forward `stable`、打 `immune-brain-v<version>-stable` tag 并更新 npm `latest` |
 
-**自动化流程（推荐）：**
-1. 推送 changeset 到 `main` → workflow 自动创建 “Version Packages” PR。
-2. 合并该 PR → workflow 发布到 npm、创建 GitHub Release，并打 tag `immune-brain-vX.Y.Z`。
+**两段式自动化流程：**
+1. 推送 changeset 到 `main` → [`.github/workflows/release.yml`](.github/workflows/release.yml)（`changesets/action@v1`）自动创建 `chore: version packages` PR。
+2. 合并该 PR → `release.yml` 通过 npm OIDC Trusted Publishing 发布到 npm **`next`**、创建 GitHub Release 并打 `immune-brain-vX.Y.Z` tag。默认通道（`stable` 分支与 npm `latest`）**暂不移动**。
+3. 维护者试用 `next`，检出 `immune-brain-vX.Y.Z` 运行 `bun run e2e:live`，将生成的 `docs/evidence/e2e-live/X.Y.Z.json`（及更新后的 cassette）提交到 `main`。
+4. 手动触发 [`.github/workflows/promote.yml`](.github/workflows/promote.yml)（`workflow_dispatch`，受 GitHub Environment `release` 审批保护）→ `scripts/release-promote.ts` 校验 `mode: "live"` 证据，fast-forward `stable` 分支、打 `immune-brain-vX.Y.Z-stable` tag 并更新 npm `latest`。需要回退时在 `promote.yml` 勾选 `rollback`（或本地加 `--rollback`）即可回到上一个 `-stable` 版本。
 
-配置：在 GitHub 仓库 Secrets 中添加 `NPM_TOKEN`（有发布权限的 npm token）。Workflow 为 `.github/workflows/release.yml`，基于 `changesets/action@v1`。
+**仓库配置：**
+- `release.yml`：npm Trusted Publishing（OIDC，`id-token: write`，`npm@11`）或 `NPM_TOKEN`。
+- `promote.yml`：GitHub Environment `release`（配置 required reviewer）、Secret `STABLE_PUSH_TOKEN`（有权推送受保护的 `stable` 分支与 tag）以及 Secret `NPM_TOKEN`（有权执行 `npm dist-tag add`）。首次初始化顺序见 [docs/evidence/e2e-live/README.md](docs/evidence/e2e-live/README.md)。
 
-**手动发布（回退方案）：**
-```bash
-npm publish --access public   # 需 npm login / NPM_TOKEN
-# 或
-bun run changeset:publish
-```
-包名为 `immune-brain`（当前版本 `4.6.0`），已配置 `publishConfig.access=public`。首次发布后，后续所有版本均通过 changesets 管理。
-
-详见 `CHANGELOG.md` 与 `.changeset/config.json`（changelog: `@changesets/changelog-github`，repo: `dereknex/immune-brain`）。
+详见 `CHANGELOG.md` 与 `.changeset/config.json`（已配置 `publishConfig.access=public`，repo: `dereknex/immune-brain`）。
 
 ---
 
@@ -756,11 +788,17 @@ bun run changeset:publish
 面向 Immune-Brain 本身的贡献者：
 
 ```bash
-bun test                    # 全量测试（以 bun test 为准，非 tsc）
-mise run check-plugin       # 插件结构 + 版本校验
-mise run check-dist-sync    # 生成的 dist 文档同步校验
+bun run typecheck                               # TypeScript 类型检查
+bun test                                        # 单元与契约测试（不含 tests/e2e/）
+bun run e2e                                     # 基于 npm pack 产物的黑盒 L1 Host 端到端测试
+bun run e2e:record <journey>                    # 重录 L1 cassette（需 ANTHROPIC_API_KEY）
+bun scripts/build-claude-plugin.ts --check      # 校验 Claude 插件构建产物
+bun scripts/build-antigravity-plugin.ts --check # 校验 Antigravity 插件构建产物
+bun scripts/sync-dist-docs.ts --check           # 校验生成的 dist 文档同步
 ```
 
+- **PR E2E 逃逸规则**：CI（[`.github/workflows/ci.yml`](.github/workflows/ci.yml)）会与 `verify` 并行运行 `Host e2e journeys`（`bun run e2e`）和 `e2e escape rule`（[`scripts/check-e2e-escape-rule.ts`](scripts/check-e2e-escape-rule.ts)）。标题为 `fix...` 且修改了 `plugins/immune-brain/runtime/`、`.pi-extension/` 或 `hooks/` 的 PR，必须同时修改 `tests/e2e/` 或在 PR body 中写明 `e2e-exempt: <reason>`。
+- **每周 Host 升级**：[`.github/workflows/e2e-host-bump.yml`](.github/workflows/e2e-host-bump.yml) 每周检查 npm 并提交 PR 升级 `tests/e2e/hosts.json` 中锁定的 Host 版本，同时附带 L1 跑测结果。
 - 运行时为 `runtime/v4_runtime.ts`（Bun + TypeScript），`scripts/` 下的 Python 仅为历史参考。
 - 生产 CLI：`plugins/immune-brain/bin/imm-kernel`，完整命令表见 [`plugins/immune-brain/README.md`](plugins/immune-brain/README.md)。
 

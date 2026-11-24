@@ -104,19 +104,19 @@ async function runJourney(executor: "claude" | "pi", entry = "/immune-brain:driv
 	if (executor === "pi") {
 		const agentDir = join(work, "pi-agent");
 		mkdirSync(agentDir);
-		writeFileSync(join(agentDir, "models.json"), JSON.stringify({ providers: { mock: { baseUrl: model.url, api: "anthropic-messages", apiKey: "sk-e2e-mock", models: [{ id: "mock-model", name: "mock", reasoning: true, input: ["text"], contextWindow: 200000, maxTokens: 8000, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }] } } }));
+		writeFileSync(join(agentDir, "models.json"), JSON.stringify({ providers: { mock: { baseUrl: model.url, api: "anthropic-messages", apiKey: model.apiKey ?? "sk-e2e-mock", models: [{ id: "mock-model", name: "mock", reasoning: true, input: ["text"], contextWindow: 200000, maxTokens: 8000, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }] } } }));
 		writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ packages: [install.packageDir] }));
 		const pi = Bun.which("pi", { PATH: process.env.PATH });
 		if (!pi) throw new Error("host_binary_missing: pi is not installed");
 		piEnv = { E2E_REAL_PI: pi, PI_CODING_AGENT_DIR: agentDir, PI_OFFLINE: "1" };
 	}
 	const herdr = FakeHerdr.create("w-e2e", {
-		HOME: home, CLAUDE_CONFIG_DIR: join(home, ".claude"), ANTHROPIC_BASE_URL: model.url, ANTHROPIC_API_KEY: "sk-ant-e2e-mock",
+		HOME: home, CLAUDE_CONFIG_DIR: join(home, ".claude"), ANTHROPIC_BASE_URL: model.url, ANTHROPIC_API_KEY: model.apiKey ?? "sk-ant-e2e-mock",
 		DISABLE_AUTOUPDATER: "1", DISABLE_TELEMETRY: "1", CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
 		E2E_REAL_CLAUDE: claude.bin, E2E_LAUNCH_LOG: launchLog, ...piEnv,
 	}, makeHostShims(join(work, "shims")));
 	try {
-		const parent = claudeLaunch({ bin: claude.bin, pluginDir: install.claudePluginDir, modelUrl: model.url, prompt: entry, homeDir: home });
+		const parent = claudeLaunch({ bin: claude.bin, pluginDir: install.claudePluginDir, modelUrl: model.url, prompt: entry, homeDir: home, apiKey: model.apiKey });
 		const { pane } = await herdr.launch({ label: "parent", cwd: project, launch: { command: parent.command, env: { ...parent.env, ...herdr.paneEnv() } } });
 		const exitCode = await herdr.waitForExit(pane, 480_000);
 		const stream = parseClaudeStream(await herdr.output(pane));
@@ -148,10 +148,12 @@ describe("single-task J1", () => {
 		const run = await runJourney("claude");
 		try {
 			expect(run.exitCode).toBe(0);
-			assertNoFailures(run.model.mock!);
-			// The Parent was entered with the drive slash command and every conversation of the cassette ran.
+			if (run.model.mock) {
+				assertNoFailures(run.model.mock);
+				expect([...new Set(run.model.mock.requests.map((request) => request.conv))].sort()).toEqual(["exec", "main", "review"]);
+			}
+			// The Parent was entered with the drive slash command.
 			assertDriveEntry(run.parentCommand[run.parentCommand.indexOf("-p") + 1]);
-			expect([...new Set(run.model.mock!.requests.map((request) => request.conv))].sort()).toEqual(["exec", "main", "review"]);
 			// The Executor Host was launched with the install root's plugin directory, after its entry prompt arrived.
 			const executor = run.launches.find((launch) => launch.event === "launch" && launch.host === "claude" && launch.args.includes("--model"));
 			expect(executor).toBeDefined();
@@ -167,14 +169,18 @@ describe("single-task J1", () => {
 		const run = await runJourney("pi");
 		try {
 			expect(run.exitCode).toBe(0);
-			assertNoFailures(run.model.mock!);
+			if (run.model.mock) {
+				assertNoFailures(run.model.mock);
+				expect([...new Set(run.model.mock.requests.map((request) => request.conv))].sort()).toEqual(["exec", "main", "review"]);
+				expect(run.model.mock.requests.find((request) => request.conv === "exec")?.offeredTools).toContain("imm_kernel_canary");
+			} else {
+				expect(run.model.requests.some((request) => request.offeredTools.includes("imm_kernel_canary"))).toBe(true);
+			}
 			assertDriveEntry(run.parentCommand[run.parentCommand.indexOf("-p") + 1]);
-			expect([...new Set(run.model.mock!.requests.map((request) => request.conv))].sort()).toEqual(["exec", "main", "review"]);
 			// The Executor ran as pi on the mock provider, was handed its entry, and was offered the Kernel tools the package registers.
 			const executor = run.launches.find((launch) => launch.event === "launch" && launch.host === "pi");
 			expect(executor?.args).toEqual(["--model", "mock/mock-model", "--thinking", "low"]);
 			expect(run.launches.find((launch) => launch.event === "entry" && launch.pane === executor!.pane)?.prompt).toBe("drive " + TASK);
-			expect(run.model.mock!.requests.find((request) => request.conv === "exec")?.offeredTools).toContain("imm_kernel_canary");
 			await assertDelivered(run);
 		} finally {
 			rmSync(run.work, { recursive: true, force: true });

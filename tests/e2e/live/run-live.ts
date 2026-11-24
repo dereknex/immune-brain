@@ -1,9 +1,10 @@
 // `bun run e2e:live` (Spec e2e-release-gate D6, S9): the maintainer's L2 run. It runs J1, J2 and J4
-// against the real `claude`, `pi` and `herdr` with one retry per journey, re-records the journey
-// cassettes through the recorder (E2E_RECORD=1, low-cost model tier E2E_LIVE_MODEL), and writes
-// docs/evidence/e2e-live/<version>.json (contract immune_brain/e2e_release_evidence/v1, mode
+// against the real `claude` and `pi` binaries (with Lane panes run through the harness's spawning
+// fake-herdr and installed `herdr --version` recorded) with one retry per journey, re-records the
+// journey cassettes through the recorder (E2E_RECORD=1, low-cost model tier E2E_LIVE_MODEL), and
+// writes docs/evidence/e2e-live/<version>.json (contract immune_brain/e2e_release_evidence/v1, mode
 // "live") for scripts/release-promote.ts to check. It needs the maintainer's Host logins, an
-// ANTHROPIC_API_KEY and a macOS Herdr session, so it is a maintainer action and never a QA descriptor.
+// ANTHROPIC_API_KEY and installed Host binaries, so it is a maintainer action and never a QA descriptor.
 // Black box: no runtime imports; the journeys run as child `bun test` processes.
 
 import { createHash } from "node:crypto";
@@ -33,7 +34,7 @@ export interface JourneyPlan {
 /** D6: J1 and J2 on claude and pi; J4 on claude, pi and antigravity (install only). */
 export const LIVE_PLAN: JourneyPlan[] = [
 	{ id: "J1", file: "single-task", hosts: { claude: "claude Executor", pi: "pi Executor" } },
-	{ id: "J2", file: "batch", hosts: { claude: "two-child Initiative", pi: "pi Executor" } },
+	{ id: "J2", file: "batch", hosts: { claude: "claude Executor", pi: "pi Executor" } },
 	{ id: "J4", file: "install", hosts: { claude: "Claude Code at the", pi: "Pi installs", antigravity: "Antigravity's packed plugin" } },
 ];
 

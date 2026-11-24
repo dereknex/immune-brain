@@ -19,10 +19,12 @@ bun scripts/release-promote.ts --rollback   # previous -stable version
 
 ## Live evidence
 
-`bun run e2e:live` is the maintainer's L2 run (Spec D6). It needs the maintainer's `claude`, `pi` and
-`herdr` logins, `ANTHROPIC_API_KEY` and a macOS Herdr session, so it never runs in CI. Check out the
-`immune-brain-v<version>` tag (the run refuses `release_commit_mismatch` when HEAD differs and
-`worktree_dirty` when tracked files differ), then:
+`bun run e2e:live` is the maintainer's L2 run (Spec D6). It drives real `claude` and `pi` binaries
+against the real Anthropic API (while Lane panes run through the harness's spawning `fake-herdr`,
+and the installed `herdr --version` is recorded in `hosts`) with `ANTHROPIC_API_KEY`, so it never
+runs in CI; dogfooding inside a real interactive Herdr TUI session on `next` is done alongside it
+before promoting. Check out the `immune-brain-v<version>` tag (the run refuses
+`release_commit_mismatch` when HEAD differs and `worktree_dirty` when tracked files differ), then:
 
 ```bash
 bun run e2e:live [--version 9.2.0] [--out-dir docs/evidence/e2e-live]
@@ -67,11 +69,12 @@ missing writes.
 
 ## One-time maintainer setup (repository settings, outside the code)
 
-- Create the `stable` branch at the latest released commit before the first promote, so no
-  installed version regresses.
-- Protect `stable`; the only allowed pusher is the token in the `STABLE_PUSH_TOKEN` secret.
-- Environment `release` with a required reviewer; secrets `STABLE_PUSH_TOKEN` and `NPM_TOKEN`.
-- Check once, on the minimum supported `claude` and the current one, that
-  `claude plugin marketplace add dereknex/immune-brain && claude plugin install immune-brain`
-  resolves the `stable` `plugin.json` version through the `git-subdir` + `ref` source (Spec
-  assumption `A3`); raise the documented minimum in `README.md` if it does not.
+1. **Create and push the `stable` branch before merging the `.claude-plugin/marketplace.json` `git-subdir` change**, pointing at the latest released commit so Claude Code and Antigravity installs do not break on merge:
+   ```bash
+   git branch stable immune-brain-v9.1.0
+   git push origin stable
+   ```
+2. **Verify `A3` live**: on both `claude.minimum` and the current `claude` CLI, confirm `claude plugin marketplace add dereknex/immune-brain && claude plugin install immune-brain` (and `claude plugin update immune-brain`) resolves `stable`'s `plugin.json` version via the `git-subdir` + `ref: "stable"` source; raise `claude.minimum` in `tests/e2e/hosts.json` and `README.md` if an older version does not support it.
+3. **Protect `stable`**: restrict pushes so only the `STABLE_PUSH_TOKEN` actor can push `stable` and `immune-brain-v*-stable` tags. Note that `--rollback` uses `git push --force-with-lease`, so the branch protection / ruleset must allow force-pushes by that actor (or omit force-push blocks for it).
+4. **Configure the `release` GitHub Environment**: require at least one reviewer and add secrets `STABLE_PUSH_TOKEN` (repo push + tag write access) and `NPM_TOKEN` (npm automation/granular token with `dist-tag` write permission on `immune-brain`, separate from `release.yml`'s OIDC Trusted Publishing).
+5. **Protect `main` with required status checks**: enable branch protection / ruleset on `main` requiring `Typecheck, build and test`, `Host e2e journeys`, and `e2e escape rule`.
