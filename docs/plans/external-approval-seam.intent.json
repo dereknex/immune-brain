@@ -1,0 +1,53 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "external-approval-seam",
+  "owner": "user",
+  "goal": "Deliver ADR 0043 Slice 2 per docs/specs/external-approval-seam.spec.md: add strictest-wins boolean external_approval (default false) to v2 layered config, admit external_approval in Kernel Enrollment confirmation recording confirmation_source on TaskRecordV4, expose imm-kernel approve <task-id> [--finding <id> --resolution <text> | --stop <reason>] [--actor <id>] --json and extend imm-kernel inspect [--task <id> [--run <run-id>]] --json for open user decisions and settled .imm/audit/ proof verification, and amend ADR 0043/0041, config docs, instruction guards, and Host bundles with zero takt coupling (BR-REQ-1..4, BR-DEC-1..5, BR-OUT-1..4, BR-SCN-1..2).",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "Per docs/specs/external-approval-seam.spec.md AC1 (agreed seams: tests/layered-config.test.ts, tests/batch-agreement.test.ts, tests/kernel-enrollment-authority.test.ts), layered_config.ts resolves boolean external_approval in v2 user/project configs with default false and strictest-wins merge (false in either layer or invalid/broken config yields false and non-boolean emits config_invalid causing imm-kernel config --json to exit 1), migrateConfig preserves v2 external_approval, verifyEnrollmentConfirmation admits external_approval only when external_approval_enabled is true across routine/material/critical while rejecting disabled/tracker_approval/policy_auto, and enrollTask persists confirmation_source: external_approval on TaskRecordV4 while leaving user_session omitted (BR-DEC-1, BR-DEC-2, BR-OUT-4).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/layered-config.test.ts\",\n      \"tests/batch-agreement.test.ts\",\n      \"tests/kernel-enrollment-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "Per docs/specs/external-approval-seam.spec.md AC2 and BR-SCN-1..2 (agreed seams: tests/external-approval-cli.test.ts, tests/kernel-inspect.test.ts, tests/v4-runtime-launchers.test.ts), imm-kernel approve <task-id> [--finding <id> --resolution <text> | --stop <reason>] [--actor <id>] --json fails closed with exit 1 external_approval_disabled when external_approval is unset/false, rejects untracked intents (exit 1 intent_untracked), duplicate/stale/terminal transitions (exit 1), and malformed flag combinations (exit 2 invalid_command), and when external_approval is true executes headless Enrollment, resolve_user_decision (including verifier disputes under literal-user), and stop while keeping runKernelCommand synchronous; imm-kernel inspect [--task <id> [--run <run-id>]] --json exposes unresolved_user_decisions summaries when active and verified .imm/audit/<task-id>/<run-id>/ metadata when settled, rejecting missing (task_audit_missing) or tampered (task_audit_invalid) audit pairs with exit 1 and creating no state on idle workspaces (BR-REQ-3, BR-REQ-4, BR-DEC-3, BR-DEC-5, BR-OUT-2, BR-OUT-3).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/external-approval-cli.test.ts\",\n      \"tests/kernel-inspect.test.ts\",\n      \"tests/v4-runtime-launchers.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "Per docs/specs/external-approval-seam.spec.md AC3 (agreed seams: tests/runtime-layering-boundary.test.ts, tests/claude-host-package.test.ts, tests/antigravity-host-package.test.ts, tests/dist-docs-sync-contract.test.ts), ADR 0043 Decision 4 and Slice 2, ADR 0041 Decision 2, and docs/reference/immune-brain-config.md document external_approval, imm-kernel approve, and imm-kernel inspect [--task] with zero takt/gate/v1, GateRequest, GateResponse, .takt/, or returning policy_auto clauses; BASELINE.md and executor.md forbid Managed/Agent sessions from invoking imm-kernel approve while keeping Claude PreToolUse Bash unrouted; runtime/kernel imports nothing from runtime/config or runtime/host-core; and Claude, Antigravity, and dist/ checks pass with zero drift (BR-REQ-1, BR-REQ-2, BR-DEC-4, BR-OUT-1).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/runtime-layering-boundary.test.ts\",\n      \"tests/claude-host-package.test.ts\",\n      \"tests/antigravity-host-package.test.ts\",\n      \"tests/dist-docs-sync-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/adr/0041-simplified-configuration.md",
+    "docs/adr/0043-loop-daemon-freeze-and-extraction.md",
+    "docs/reference/immune-brain-config.md",
+    "docs/specs/external-approval-seam.spec.md",
+    "plugins/immune-brain-antigravity",
+    "plugins/immune-brain/BASELINE.md",
+    "plugins/immune-brain/dist/BASELINE.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/docs/reference/immune-brain-config.md",
+    "plugins/immune-brain/dist/role-prompts/executor.md",
+    "plugins/immune-brain/runtime/commands/kernel.ts",
+    "plugins/immune-brain/runtime/config/layered_config.ts",
+    "plugins/immune-brain/runtime/kernel/enrollment.ts",
+    "plugins/immune-brain/runtime/kernel/enrollment_confirmation.ts",
+    "plugins/immune-brain/runtime/kernel/types.ts",
+    "plugins/immune-brain/runtime/prompts/executor.md",
+    "plugins/immune-brain/runtime/v4_runtime.ts",
+    "plugins/immune-brain/skills/BASELINE.md",
+    "tests/batch-agreement.test.ts",
+    "tests/dist-docs-sync-contract.test.ts",
+    "tests/external-approval-cli.test.ts",
+    "tests/kernel-enrollment-authority.test.ts",
+    "tests/kernel-inspect.test.ts",
+    "tests/layered-config.test.ts",
+    "tests/v4-runtime-launchers.test.ts"
+  ],
+  "scope_size_reason": "Cohesive end-to-end ADR 0043 Slice 2 authority seam spanning v2 config, Kernel confirmation membrane, CLI approve/inspect, ADR/config docs, synced dist mirrors, and focused tests.",
+  "risk": "material",
+  "revision": 1
+}
