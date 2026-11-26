@@ -3,7 +3,7 @@
 Lifecycle skills for agentic engineering: planning, execution, review, QA, and
 learning capture, backed by a deterministic TypeScript workflow runtime.
 
-Each of the ten public Skills is a compact `skills/<name>/SKILL.md`
+Each of the nine public Skills is a compact `skills/<name>/SKILL.md`
 trigger shim that loads its full instructions from `dist/<name>.md` only on
 invocation. Execution, review, QA, and learning capabilities remain internal
 runtime roles or tools. `fix-pr` is the standalone host-native repair
@@ -21,15 +21,15 @@ and repair roles; it is not a QA or style-only gate.
 
 ## Public Skill surface
 
-The package exposes ten Skills: `clarify`, `draw-up`, `drive`,
-`fix-pr`, `prune-docs`, `slim`, `prune-tests`, `revisit`, `design-review`, and `imm-loop`. The first three enter or continue the Managed Path;
+The package exposes nine Skills: `clarify`, `draw-up`, `drive`,
+`fix-pr`, `prune-docs`, `slim`, `prune-tests`, `revisit`, and `design-review`. The first three enter or continue the Managed Path;
 `fix-pr` repairs one PR directly, `prune-docs` prunes stale current
 documentation, `slim` minimizes tracked agent-instruction
 context, `prune-tests` prunes redundant tests without weakening assertions,
-`revisit` reports workflow health from session logs, `design-review` critiques
-interfaces and design contracts read-only, and `imm-loop` manages the background Loop daemon, all without Managed authority. Internal roles
+`revisit` reports workflow health from session logs, and `design-review` critiques
+interfaces and design contracts read-only, all without Managed authority. Internal roles
 are dispatched by the runtime through packaged prompts under
-`dist/role-prompts/`; Loop never discovers them through Skill loading. Skills use the project's existing files and create only the artifacts
+`dist/role-prompts/`; Skill loading never discovers them. Skills use the project's existing files and create only the artifacts
 the user explicitly requested.
 
 Managed Path starts only from explicit `clarify`, `draw-up`, or
@@ -135,7 +135,6 @@ in the next major release.
 | `prune-tests` | execute; repair; canonical | Audit and prune redundant tests after explicit manifest approval; no Managed authority mutation, production-source change, or assertion weakening. |
 | `revisit` | execute; discovery; canonical | Workflow-friction diagnosis from pi session logs and committed audit evidence. Read-only. No Managed Path mutation. |
 | `design-review` | execute; discovery; canonical | Read-only UI/UX and design-contract critique across code, diffs, screenshots, live pages, and DESIGN.md. No source edits or Managed Path mutation. |
-| `imm-loop` | coordinate; coordinator; canonical | Manage and observe the repository Loop daemon in the background without minting a foreground Run binding or mutating Kernel authority directly. |
 <!-- END GENERATED: skill-registry-role-map -->
 
 The authoritative public role manifest is [`skills/registry.yaml`](skills/registry.yaml).

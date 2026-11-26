@@ -54,6 +54,25 @@ describe("current Pi-only contracts", () => {
     }
   });
 
+  it("records ADR 0043 as accepted and keeps the retired Loop surface out of active contracts", () => {
+    const adr = (name: string) => readFileSync(resolve(ROOT, "docs/adr", name), "utf8");
+    expect(adr("0043-loop-daemon-freeze-and-extraction.md")).toStartWith("---\nstatus: accepted\n---");
+    for (const name of ["0039-loop-daemon.md", "0040-loop-interaction-protocol.md", "0042-loop-leader-role-catalog.md"])
+      expect(adr(name)).toStartWith("---\nstatus: superseded by ADR-0043\n---");
+    expect(adr("0038-supervised-session-port.md")).toStartWith("---\nstatus: accepted\n---");
+
+    for (const path of ["CONTEXT.md", "plugins/immune-brain/BASELINE.md", "plugins/immune-brain/skills/BASELINE.md", "plugins/immune-brain/dist/BASELINE.md"]) {
+      const retired = readFileSync(resolve(ROOT, path), "utf8").match(/Loop daemon|Interaction Request|Interaction Channel|imm-loop|Decision model/i)?.[0];
+      expect({ path, retired }).toEqual({ path, retired: undefined });
+    }
+    for (const path of ["docs/agents/derived-files.json", "plugins/immune-brain/skills/registry.yaml"]) {
+      const retired = readFileSync(resolve(ROOT, path), "utf8").match(/imm-loop|loop_daemon|decision_model|loop_interactions/)?.[0];
+      expect({ path, retired }).toEqual({ path, retired: undefined });
+    }
+    for (const path of ["scripts/decision-eval", "scripts/review-eval", "tests/fixtures/decision-eval", "tests/fixtures/review-eval"])
+      expect({ path, exists: existsSync(resolve(ROOT, path)) }).toEqual({ path, exists: false });
+  });
+
   it("describe Pi, Claude Code, and Antigravity as the supported hosts", () => {
     const distSkills = readdirSync(resolve(ROOT, "plugins/immune-brain/dist"))
       .filter((name) => name.endsWith(".md"))
@@ -79,8 +98,10 @@ describe("current Pi-only contracts", () => {
     // Every retired source is named by the one migration, which folds it in and deletes nothing.
     const migrationNote = flat.slice(flat.indexOf("A file whose `contract` is a `v1` contract"), flat.indexOf("## Agents"));
     expect(migrationNote).toContain("imm-kernel config migrate --write");
-    for (const legacy of ["`projects.<key>`", "`lanes`", "`.imm/lanes.local.json`", "`.imm/decision-models.local.json`", "`.imm/decision-bindings.json`", "`decision_models.enabled_points`", "`- Git integration:`", "`- Initiative carrier default:`"])
+    for (const legacy of ["`projects.<key>`", "`lanes`", "`.imm/lanes.local.json`", "`- Git integration:`", "`- Initiative carrier default:`"])
       expect({ legacy, named: migrationNote.includes(legacy) }).toEqual({ legacy, named: true });
+    // ADR 0043: the retired decision-model sources are no longer migrated; the retired keys are removed.
+    expect(migrationNote).toContain("It writes no `loop` or `decision_models` value and removes those keys");
     expect(migrationNote).toContain("It deletes none of those sources");
     expect(preferencesDoc).not.toContain("## Legacy Sources");
     expect(preferencesDoc).not.toContain("does not load an\nagent-local TOML file");
@@ -99,7 +120,7 @@ describe("current Pi-only contracts", () => {
       expect({ path, retired: content.match(retiredSkill)?.[0] }).toEqual({ path, retired: undefined });
     }
     const chinese = readFileSync(resolve(ROOT, "README.zh-CN.md"), "utf8");
-    for (const skill of ["clarify", "draw-up", "drive", "fix-pr", "prune-docs", "slim", "prune-tests", "revisit", "design-review", "imm-loop"]) {
+    for (const skill of ["clarify", "draw-up", "drive", "fix-pr", "prune-docs", "slim", "prune-tests", "revisit", "design-review"]) {
       expect(chinese).toContain(`\`${skill}\``);
     }
     expect(chinese).not.toContain("按模型排名");

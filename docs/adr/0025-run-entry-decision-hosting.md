@@ -4,11 +4,10 @@ status: accepted
 
 # Run-Entry Decision Hosting
 
-**Status update:** amended by [ADR 0039](0039-loop-daemon.md). Publication
-becomes a scoped standing publication grant when enabled in tracked configuration;
-Enrollment gains `tracker_approval` and `policy_auto` confirmation sources so
-execution can start unattended without an interactive native dialog when policy
-preconditions and risk floors are met.
+**Status update:** the standing publication grant and the `tracker_approval`
+and `policy_auto` confirmation sources that [ADR 0039](0039-loop-daemon.md)
+added are superseded by [ADR 0043](0043-loop-daemon-freeze-and-extraction.md). Publication and Enrollment keep their own
+confirmation.
 
 Accepted on 2026-10-17 by the repository owner (decisions Q1–Q14 in
 `docs/specs/run-entry-decision-hosting.spec.md`), for Initiative #264. It
@@ -39,7 +38,7 @@ therefore must not be the only literal-user act behind starting execution.
 
 1. **The literal entry authorizes the run's internal steps.** When the Host input event sees
    a literal-user `drive` entry (`imm-run` prior to the `#318` rename), it mints one entry token bound to the session id
-   and the workspace realpath it was typed in. Only a leading slash command enters a phase (`clarify`/`draw-up` → `plan`, `drive` → `run`): `immune-brain:<name>`, `skill:<name>` (unless shadowed on Pi by a same-named local skill), bare `<name>` unless shadowed by a local command alias or skill, or a local command alias whose body contains a single marked phase mention (`/drive`, `immune-brain:drive`, `skill:drive`); standalone skills including `imm-loop` mint no `run` token. The token sits beside the
+   and the workspace realpath it was typed in. Only a leading slash command enters a phase (`clarify`/`draw-up` → `plan`, `drive` → `run`): `immune-brain:<name>`, `skill:<name>` (unless shadowed on Pi by a same-named local skill), bare `<name>` unless shadowed by a local command alias or skill, or a local command alias whose body contains a single marked phase mention (`/drive`, `immune-brain:drive`, `skill:drive`); standalone skills mint no `run` token. The token sits beside the
    session's phase-entry state in the private cache. No MCP tool or tool
    argument can mint or supply one; a tool argument named `entry_token` or
    `native_decision` is refused. A model that writes the cache file by hand
@@ -54,10 +53,6 @@ therefore must not be the only literal-user act behind starting execution.
    plan already moved past, which preserves every child state and commit;
    that residual is accepted. Push, PR creation, credential
    use and `approve_breaking_intent_revision` keep their own confirmation.
-   (Under [ADR 0039](0039-loop-daemon.md), the Loop daemon may publish branches and
-   open PRs without per-operation confirmation when standing publication is enabled
-   in tracked repository configuration, and routine/material/critical tasks may
-   enroll via `policy_auto` or `tracker_approval`.)
    Gates that collect a user choice rather than a yes/no — rework exits and
    Lane revision delegation, which the batch gate collects — stay.
 3. **The token lives as long as the run, with no time limit.** It survives

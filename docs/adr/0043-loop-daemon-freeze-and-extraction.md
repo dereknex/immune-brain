@@ -1,14 +1,15 @@
 ---
-status: proposed
+status: accepted
 ---
 
 # Freeze In-Repo Loop Daemon and Extract Loop as an Independent Orchestrator
 
-**Status:** proposed. Contradicts and, once accepted and executed, supersedes
-[ADR 0039](0039-loop-daemon.md), [ADR 0040](0040-loop-interaction-protocol.md),
-and [ADR 0042](0042-loop-leader-role-catalog.md) inside this repository, and
-amends [ADR 0005](0005-unattended-initiative-batch-run.md) and
+**Status:** accepted. Supersedes [ADR 0039](0039-loop-daemon.md),
+[ADR 0040](0040-loop-interaction-protocol.md), and
+[ADR 0042](0042-loop-leader-role-catalog.md) inside this repository, and amends
+[ADR 0005](0005-unattended-initiative-batch-run.md) and
 [ADR 0041](0041-simplified-configuration.md) on the retirement schedule below.
+The Context records the tree as it stood before Slice 1.
 
 ## Context
 
@@ -35,14 +36,15 @@ amends [ADR 0005](0005-unattended-initiative-batch-run.md) and
 8. **Orthogonal to Herdr, with `herdr-core` (`hc`) as primary session substrate.** Loop remains a separate system from [Herdr](0038-supervised-session-port.md), using `herdr-core` (`hc run --bg --no-parent`, OSC 7501 status reporting, live Herdr UI visibility and attach/takeover) as its first-class backend for long-running sessions (`execute`, `repair`, `plan`) and falling back to headless Host CLI subprocesses for short read-only calls (`leader`) or environments without `hc`.
 9. **Adaptive default workflow and three-phase cutover.**
    - On repositories without Immune-Brain, Loop runs an adaptive pipeline: clear single-point Issues go straight through `execute -> shell verify -> PR`, while complex or ambiguous Issues run `clarify` / lightweight DAG `plan` (with optional approval) before parallel worktree execution.
-   - **Phase 1 (Freeze & standalone bootstrap):** Freeze `loop_daemon/` here; bootstrap the standalone Loop repository by selectively porting clean leaf primitives (`runtime/session/herdr_core_provider.ts`, `runtime/session/supervised_session_port.ts`, credential-isolated `loop_daemon/agent_runner.ts`, `loop_daemon/leader_agent.ts` fingerprint wake contract, `runtime/no_touch.ts` / `runtime/workspace_scope.ts`, and `loop_daemon/observer.ts` + `interaction/protocol.ts` with weak-ETag `W/"..."` parsing and `OPEN`-only `E1_NEW_ISSUE` filtering fixed) and validate on live repositories without Immune-Brain.
-   - **Phase 2 (CLI seam bridge):** Complete and conformance-test the narrow headless `imm-kernel --json` CLI contract in `immune-brain` and wire the Immune-Brain verifier/driver adapter in standalone Loop.
-   - **Phase 3 (In-repo retirement):** Delete `runtime/loop_daemon/`, `bin/imm-loop`, `skills/imm-loop/`, `runtime/decision_model/`, `loop` and `decision_models` configuration surfaces, and `loop_interactions` / `answer_loop_interaction` / `steer_loop_work_item` from `runtime/host-core/`, updating `CONTEXT.md` and superseding ADRs `0039`, `0040`, and `0042`. Retire `runtime/unattended/` and `runtime/lane_sessions/` in a subsequent slice once standalone Loop owns local batch execution.
+   - **Cutover sequence in this repository.** Retirement runs first, so interactive `drive` can build the later Slices on itself:
+     - **Slice 1 (`retire-loop-daemon`):** delete `runtime/loop_daemon/`, `bin/imm-loop`, `skills/imm-loop/`, `runtime/decision_model/`, the offline evals that consume it, the `loop` and `decision_models` configuration keys, the `tracker_approval` and `policy_auto` confirmation sources, and `loop_interactions` / `answer_loop_interaction` / `steer_loop_work_item` from every Host; supersede ADRs `0039`, `0040`, and `0042`.
+     - **Slice 2:** implement the `takt/gate/v1` CLI bridge (`GateRequest` on stdin, `GateResponse` on stdout) that consumes a signed Ed25519 `ApprovalProof`, relays blocking decisions, and returns the `.imm/audit/<task-id>/` proof reference. It is the headless Enrollment seam Decision 4 describes; `policy_auto` does not return.
+     - **Slice 3:** decouple interactive single-task `/drive` from the batch orchestration into a pure single-task Kernel path, retire `runtime/unattended/`, and amend [ADR 0005](0005-unattended-initiative-batch-run.md).
 
 ## Consequences
 
-- While `status: proposed` (and during Phase 1), existing `imm-loop` CLI behavior, `CONTEXT.md`, and ADRs `0039`–`0042` remain unchanged on `main`; no active user configuration or contract test breaks.
-- Phase 3 removes ~19k lines of `loop_daemon/` + ~1k lines of `decision_model/` + ~25k lines of coupled tests from `immune-brain` (~40% reduction in runtime + test footprint), leaving Host plugins leaner for interactive users.
+- From Slice 1, `imm-loop` and the three Loop tools no longer exist, and a configuration file that still carries `loop` or `decision_models` is reported as `config_invalid` and blocks a batch until `imm-kernel config migrate --write` removes the key.
+- Slice 1 removes ~19k lines of `loop_daemon/` + ~1k lines of `decision_model/` + their coupled tests, leaving Host plugins leaner for interactive users.
 - Kernel authority invariants stand: when Immune-Brain is enabled as a Loop backend, `TaskIntent`, `Enrollment`, `Scope Envelope`, `QA`, `Review`, and `.imm/audit/` `Settlement` remain governed solely by `runtime/kernel/`.
 
 ## Rejected

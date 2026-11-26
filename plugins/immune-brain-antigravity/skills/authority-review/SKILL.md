@@ -114,7 +114,9 @@ finding. This adds no finding kind and no verdict branch: it is the same
 `acceptance` finding the seam rule above already defines.
 
 Before pass, enumerate the immutable change set and read each complete per-file
-diff, including deletions, or complete the generated snapshot proof below. Page
+diff, including deletions, or, for eligible paths only, complete the generated
+snapshot proof or the whole-file deletion or declared derived-bundle proof
+below. Page
 bounded reads until every required hunk or structural difference is visible; a
 truncated aggregate output or summary is incomplete coverage. Trace changed
 high-risk behavior through its callers and state owner, and inspect a concrete
@@ -151,6 +153,62 @@ snapshot in `approval.inspected_paths` only after this proof is complete, and
 name the snapshot proof in `approval.summary`. If provenance, parsing, equality,
 or output coverage cannot be proved, read the full diff or return `incomplete`;
 never discard metadata, truncate values, or infer approval from generation.
+
+### Whole-file deletion and declared derived-bundle proof
+
+For a Git review revision, the two proofs below may replace reading the full diff
+of an eligible deleted file or declared derived output. They cover no other path:
+every other added or modified path is read as above. Run only these read-only Git
+commands, one at a time, and read each complete output: `git --no-pager diff`,
+`git --no-pager ls-tree`, `git --no-pager show` and `git --no-pager grep`.
+
+Whole-file deletion proof. A deleted path is eligible only when all of these
+hold:
+
+1. `git --no-pager diff --raw --no-renames <base_head> <review_commit>` shows it
+   with status `D`, an all-zero new OID and a regular-file mode (`100644` or
+   `100755`) in `<base_head>`.
+2. `git --no-pager ls-tree -r <review_commit>` confirms it is absent.
+3. The TaskIntent (`goal`, `scope_hint` or `acceptance`) or its bound Spec,
+   read from the brief or from `<review_commit>`, authorizes the removal.
+4. The path is no floor path, or an acceptance assertion or the bound Spec
+   explicitly names it, or a directory removed whole that contains it, for
+   removal. A floor path is one under any `paths` or `changed_only` prefix of
+   `.imm/risk-floor.json`, read with `git --no-pager show` at both
+   `<base_head>` and `<review_commit>`; that file and
+   `.imm/routine-classes.json` are floor paths too. When a present declaration
+   cannot be read or parsed, every path is a floor path. An unnamed floor path
+   stays ineligible: read it with `git --no-pager show <base_head>:<path>`.
+5. `git --no-pager grep -n -F -e <identifier> <review_commit>`, covering the
+   file name, the module specifier and every name the file exported or
+   registered, together with passing settled QA outcomes, shows no dangling
+   import, registration or live caller. Read every match; several `-e` patterns
+   may share one command.
+
+Declared derived-bundle proof. A changed path is eligible only when all of these
+hold:
+
+1. It is not deleted, and one entry of
+   `<review_commit>:docs/agents/derived-files.json`
+   (`immune_brain/derived_files/v1`) lists it exactly in `outputs[]` with
+   explicit `sources[]`, `generate` and `check`. When that declaration changed
+   in this revision, its diff was read in full.
+2. Every changed non-derived input of that entry was read with
+   `git --no-pager diff <base_head> <review_commit> -- <source_paths>`.
+3. The settled QA outcomes show that the entry's `check` command passed on this
+   snapshot: a passing acceptance whose verification descriptor, in the
+   TaskIntent at `<review_commit>`, runs that exact command directly or through
+   a test you read that runs it against this tree. A status or summary that does
+   not establish this is not enough; read the full diff.
+4. For a compiled `*.mjs` bundle,
+   `git --no-pager grep -n -F -e <identifier> <review_commit> -- <bundle_path>`
+   finds none of the retired identifiers the acceptance prohibits.
+
+Before listing a path proven this way in `approval.inspected_paths`, name
+`whole-file deletion proof` and/or `declared derived-bundle proof` in
+`approval.summary`. When any step cannot be proved, including through truncated
+output, read the full diff or return `incomplete`; a declaration, a commit
+message or a Parent-provided summary does not establish coverage.
 
 A required check that is skipped, that matches zero tests, or whose prerequisite
 is absent does not prove the acceptance; do not accept it as evidence. Full
@@ -198,7 +256,7 @@ Every rework finding must carry machine-checkable provenance: evidence.trigger (
 
 If the turn budget cannot cover every changed path, return decision "incomplete" with inspected_paths (a unique subset of changed paths actually read) and a non-empty single-line reason. Omit approval and findings entirely. Incomplete coverage is an execution outcome, never a finding or an assurance verdict.
 
-A pass verdict's approval must carry `inspected_paths`: an array of unique repository-relative path strings listing every path of the reviewed change set (git diff --name-only base_head review_commit), deleted paths included; an empty change set is listed as an empty array. A path may be listed only after its diff was read, or the code-review role's generated snapshot proof was completed for an eligible added Drizzle snapshot. A pass that omits any changed path, lists a path outside the change set, or duplicates a path is rejected as a correctable invalid verdict.
+A pass verdict's approval must carry `inspected_paths`: an array of unique repository-relative path strings listing every path of the reviewed change set (git diff --name-only base_head review_commit), deleted paths included; an empty change set is listed as an empty array. A path may be listed only after its diff was read, or the code-review role's generated snapshot proof was completed for an eligible added Drizzle snapshot, or its whole-file deletion or declared derived-bundle proof was completed for an eligible deleted file or declared derived output and named in `approval.summary`. A pass that omits any changed path, lists a path outside the change set, or duplicates a path is rejected as a correctable invalid verdict.
 
 The brief states the revision to diff, the Review turn budget and the verdict shapes. Return exactly one JSON object, never prose around it; if coverage cannot finish inside the turn budget, return the incomplete shape instead of a coverage finding.
 

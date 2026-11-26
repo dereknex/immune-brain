@@ -45,7 +45,6 @@ function expectV4Manifest(output: string): void {
 		"imm-plan",
 		"imm-tracker",
 		"imm-session",
-		"imm-loop",
 	]);
 	expect(manifest.retired).toBeUndefined();
 }
@@ -68,6 +67,27 @@ describe("repository v4 runtime launchers", () => {
 		const manifestStart = stdout.lastIndexOf('{\n  "commands"');
 		expect(manifestStart).toBeGreaterThanOrEqual(0);
 		expectV4Manifest(stdout.slice(manifestStart));
+	});
+
+	it("rejects the retired imm-loop CLI target and carries none of its sources (ADR 0043)", () => {
+		const result = Bun.spawnSync(
+			[process.execPath, "plugins/immune-brain/runtime/v4_runtime.ts", "cli", "imm-loop", "status", "--json"],
+			{ cwd: REPO_ROOT, stdout: "pipe", stderr: "pipe" },
+		);
+		expect(result.exitCode).not.toBe(0);
+		expect(result.stderr.toString()).toContain("Unknown Immune-Brain v4 command: imm-loop");
+		for (const retired of [
+			"runtime/loop_daemon",
+			"runtime/decision_model",
+			"bin/imm-loop",
+			"skills/imm-loop",
+			"runtime/host-core/loop_interactions.ts",
+		]) {
+			expect({ retired, exists: existsSync(resolve(REPO_ROOT, "plugins/immune-brain", retired)) }).toEqual({
+				retired,
+				exists: false,
+			});
+		}
 	});
 
 	it("documents v4 as current while preserving the next deletion boundary", () => {

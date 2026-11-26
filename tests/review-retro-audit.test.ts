@@ -238,12 +238,6 @@ describe("revisit boundary contract", () => {
 		expect(adr).toContain("lifecycle and raw review counts");
 	});
 
-	test("the review-verifier-eval D2 note stays and ADR 0032 links back to it", () => {
-		const rve = readFileSync(join(REPO, "docs/specs/review-verifier-eval.spec.md"), "utf8");
-		expect(rve).toContain("Superseded in part (2026-10-30");
-		expect(adr).toContain("review-verifier-eval.spec.md");
-	});
-
 	test("the dist Boundary allows committed .imm/audit through --audit and blocks live state", () => {
 		const [allowed, blocked] = boundary.split("Blocked:");
 		expect(allowed).toContain("--audit");

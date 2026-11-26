@@ -1,6 +1,6 @@
 # Loop Leader on Unified Lane Sessions
 
-Initiative aligning the loop leader (`docs/specs/loop-leader.spec.md`) with Unified Lane Sessions v4.1 (#570). Spec: [docs/specs/loop-leader-uls-alignment.spec.md](../specs/loop-leader-uls-alignment.spec.md).
+Initiative aligning the loop leader (`loop-leader.spec.md`) with Unified Lane Sessions v4.1 (#570). Spec: `loop-leader-uls-alignment.spec.md`. ADR 0043 removed the Loop daemon and both Specs; see Git history.
 
 The rebased loop leader compiles and passes its boundary tests; an Initiative-shaped work item runs as one `v3` batch through `startLanes` / `advanceLanes` with batch final verification, records its `batch_id` on the WorkItem and opens exactly one PR from `imm/<slug>` gated on every child's audit digest; `abandon` discards the batch with proof-based session and branch cleanup while `pause` freezes daemon reconciliation; and leader resolve follows the ULS recovery rules, asks each Lane dialog once, and ignores environmental `lane_session_unavailable` refusals in its counters.
 

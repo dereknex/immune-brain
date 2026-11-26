@@ -17,15 +17,15 @@ const PLUGIN = "plugins/immune-brain";
 const ANTIGRAVITY = "plugins/immune-brain-antigravity";
 
 /** The public Skills every Host must expose; each is also a slash command on Claude Code. */
-const SKILLS = ["authority-review", "clarify", "design-review", "draw-up", "drive", "fix-pr", "imm-loop", "prune-docs", "prune-tests", "revisit", "slim"];
+const SKILLS = ["authority-review", "clarify", "design-review", "draw-up", "drive", "fix-pr", "prune-docs", "prune-tests", "revisit", "slim"];
 /** The Kernel MCP tools Claude Code and Antigravity must list (their names are Host-neutral). */
 const MCP_TOOLS = [
-	"advance_assurance", "answer_loop_interaction", "approve_breaking_intent_revision", "loop_interactions", "refute_finding", "repair_authority_state",
-	"request_authorization", "resolve_finding", "retire_stale_batch", "revise_intent", "start_unattended_batch", "status", "steer_loop_work_item",
+	"advance_assurance", "approve_breaking_intent_revision", "refute_finding", "repair_authority_state",
+	"request_authorization", "resolve_finding", "retire_stale_batch", "revise_intent", "start_unattended_batch", "status",
 	"stop", "submit_review", "submit_session_result", "submit_verification",
 ];
 /** The Pi extension's registered tools and command (Pi has no MCP server; it loads .pi-extension). */
-const PI_TOOLS = ["imm_kernel_canary", "start_unattended_batch", "retire_stale_batch", "loop_interactions", "answer_loop_interaction", "steer_loop_work_item"];
+const PI_TOOLS = ["imm_kernel_canary", "start_unattended_batch", "retire_stale_batch"];
 const PI_COMMANDS = ["imm-tasks"];
 
 let install: InstallRoot;

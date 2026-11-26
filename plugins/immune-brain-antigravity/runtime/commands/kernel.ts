@@ -55,7 +55,6 @@ import { readBackendClaim } from "../kernel/backend_claim";
 import { inspectEnrollmentGitBase, type EnrollmentGitBase } from "../assurance/enrollment_git_base";
 import { probeKernelStore } from "../kernel";
 import { scopeEstimateFailure } from "../kernel/intent_readiness";
-import { inspectLoopDaemonState } from "../loop_daemon/state";
 
 export interface KernelCommandResult {
 	stdout: string;
@@ -209,7 +208,6 @@ function runInspect(root: string): KernelExecution {
 			outside_routine_allowlist: [] as string[],
 		};
 		const ok = layout.layout === "ready" || layout.layout === "migration_uncommitted";
-		const loop = inspectLoopDaemonState(resolve(root, ".imm/state/loop"));
 		if (!claim || !ok || layout.layout !== "ready") {
 			return {
 				result: jsonResult({
@@ -218,7 +216,6 @@ function runInspect(root: string): KernelExecution {
 					kernel,
 					assurance: null,
 					risk: idleRisk,
-					loop,
 					unobservable: UNOBSERVABLE,
 				}),
 				journal: journalFor(
@@ -331,7 +328,6 @@ function runInspect(root: string): KernelExecution {
 					routine_classes: routineClassIds(floor),
 					outside_routine_allowlist: routineAllowlistEscapes(intent, changedPaths, floor),
 				},
-				loop,
 				unobservable: UNOBSERVABLE,
 			}),
 			journal: journalFor("inspect", null, "ok", "command_ok", claim.task_id, null),

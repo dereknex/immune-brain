@@ -27,16 +27,8 @@ The owner of a candidate Spec and TaskIntent. Planner output remains non-authori
 _Avoid_: executor, task owner
 
 **Loop**:
-The continuation mechanism that projects current facts to the next bounded internal role, Kernel operation or public entry, without becoming a second authority source. It runs in two forms: in a session, after an explicit `drive` entry, it continues one enrolled Task or Initiative; as the Loop daemon, a standing process, it observes the tracker, pull requests and CI, plans open Issues, and dispatches bounded agents that start or resume those entries across sessions.
+The continuation mechanism that projects current facts to the next bounded internal role, Kernel operation or public entry, without becoming a second authority source. It runs in a session: after an explicit `drive` entry, it continues one enrolled Task or Initiative.
 _Avoid_: workflow engine, checkpoint store, scheduler authority
-
-**Interaction Request**:
-One question the Loop daemon asks a person: an `interaction_id`, a kind, the subject and binding it is asked against, the prompt and options, and whether the answer is advisory or literal-user. It is sent only through an Interaction Channel and is never authority.
-_Avoid_: notification, ticket comment, approval record
-
-**Interaction Channel**:
-The transport that carries an Interaction Request and the answer to it. `github` posts one marker comment per request, applies only the literal-user answers ADR 0039 already grants, and posts every other literal-user operation as a notice; `local` asks the owner's own Host session ([ADR 0040](docs/adr/0040-loop-interaction-protocol.md)).
-_Avoid_: inbox, queue, second authority store
 
 **Internal Role**:
 A bounded, non-public responsibility dispatched by Loop, such as Executor, QA, Review, repair, architecture exploration, or Compounder. Internal roles cannot widen their own scope or grant themselves authority.
@@ -73,7 +65,7 @@ A replacement TaskIntent revision classified as unchanged, compatible, or breaki
 _Avoid_: scope patch, in-place Plan edit
 
 **Batch Agreement**:
-The self-contained batch contract wrapping the validated BatchAuthorizationBinding plus ordered children, confirmation, final_verification, return_policy, and interaction_mode. One builder `authorizeBatch` validates and issues it for Host and daemon entries; `runtime/lane_sessions/` starts and advances it without a side-door `steerLane`.
+The self-contained batch contract wrapping the validated BatchAuthorizationBinding plus ordered children, confirmation, final_verification, return_policy, and interaction_mode. One builder `authorizeBatch` validates and issues it for Host entries; `runtime/lane_sessions/` starts and advances it without a side-door `steerLane`.
 _Avoid_: second authority, plan ledger
 
 ### Kernel State
@@ -151,7 +143,7 @@ The hash over the ordered child identities the literal user approved. Every issu
 _Avoid_: checksum of the Issue body, plan version number
 
 **Batch Branch**:
-The single dedicated branch `imm/<initiative-slug>` that a batch run creates from the confirmed `base_head` and advances one scope-bounded commit per completed child. Under interactive execution it is never pushed and never opened as a pull request; under the Loop daemon with standing publication enabled ([ADR 0039](docs/adr/0039-loop-daemon.md)), the daemon opens a pull request for review.
+The single dedicated branch `imm/<initiative-slug>` that a batch run creates from the confirmed `base_head` and advances one scope-bounded commit per completed child. It is never pushed and never opened as a pull request by the runner.
 _Avoid_: feature branch, worktree, trunk
 
 **Lane**:
@@ -204,10 +196,6 @@ _Avoid_: progressive ticket creation, Enrollment, task activation
 A presentation-level compression of the Managed Path for small tasks. It may reduce ceremony but never bypasses TaskIntent scope, Enrollment, QA, Review, authorization, or settlement.
 _Avoid_: bypass, reduced assurance
 
-**Decision model**:
-A hosted model that answers a closed question with a probability for every allowed option (for example Cloudflare Clef). Offline tooling reaches it only through `decide()` in `plugins/immune-brain/runtime/decision_model/`, which binds one profile per application point, enforces the sensitive-input egress allowlist and returns a result envelope or an `unavailable` reason; no authority path calls it (ADR 0006).
-_Avoid_: LLM judge, classifier service, model authority
-
 **Domain Mapper**:
 A read-only bounded architecture probe that returns structural evidence for its host. It is an advisory Internal Role pattern, not an execution or planning authority.
 _Avoid_: autonomous refactoring agent, Planner
@@ -254,8 +242,7 @@ _Avoid_: current acceptance field, QA attestation
 
 ## Skill Names
 
-The packaged workflow skills were renamed to bare verbs on 2026-10-28 (#318). Dated history under `docs/plans`, `docs/specs`, `docs/adr` and `docs/reports` keeps the old names; this table maps them. `imm-loop` serves as the background Loop Daemon Skill and CLI ([ADR 0039](docs/adr/0039-loop-daemon.md)).
-
+The packaged workflow skills were renamed to bare verbs on 2026-10-28 (#318). Dated history under `docs/plans`, `docs/specs`, `docs/adr` and `docs/reports` keeps the old names; this table maps them.
 <!-- skill-rename-map:start -->
 | Old | New |
 |---|---|
@@ -271,7 +258,7 @@ The packaged workflow skills were renamed to bare verbs on 2026-10-28 (#318). Da
 
 ## Architecture Map
 
-- Public entries: `plugins/immune-brain/skills/clarify/`, `draw-up/`, and `drive/` enter or continue the Managed Path; `fix-pr/` is the standalone host-native PR repair Skill, `prune-docs/` is the standalone host-native document maintenance Skill, `slim/` is the standalone host-native agent-instruction maintenance Skill, `prune-tests/` is the standalone host-native test-suite maintenance Skill, `design-review/` is the standalone host-native read-only UI/UX and design-contract critique Skill whose criteria live in the shared `docs/reference/` checklists that the internal `ui-review` role also reads, `revisit/` is the standalone host-native workflow-health retro Skill reading Pi, Claude Code, and Antigravity CLI session transcripts; its `--audit <project-root>` mode reads the committed `.imm/audit/` of one named project at HEAD through `readAuditTaskPair` and reports lifecycle and raw review counts only ([ADR 0032](docs/adr/0032-revisit-reads-committed-audit.md)), and `imm-loop/` is the standalone daemon-control Skill for inspecting, starting, stopping, and pausing the background Loop Daemon ([ADR 0039](docs/adr/0039-loop-daemon.md)).
+- Public entries: `plugins/immune-brain/skills/clarify/`, `draw-up/`, and `drive/` enter or continue the Managed Path; `fix-pr/` is the standalone host-native PR repair Skill, `prune-docs/` is the standalone host-native document maintenance Skill, `slim/` is the standalone host-native agent-instruction maintenance Skill, `prune-tests/` is the standalone host-native test-suite maintenance Skill, `design-review/` is the standalone host-native read-only UI/UX and design-contract critique Skill whose criteria live in the shared `docs/reference/` checklists that the internal `ui-review` role also reads, and `revisit/` is the standalone host-native workflow-health retro Skill reading Pi, Claude Code, and Antigravity CLI session transcripts; its `--audit <project-root>` mode reads the committed `.imm/audit/` of one named project at HEAD through `readAuditTaskPair` and reports lifecycle and raw review counts only ([ADR 0032](docs/adr/0032-revisit-reads-committed-audit.md)).
 - Planning artifacts: `docs/specs/` stores active Specs; `docs/plans/*.intent.json` stores active TaskIntents despite the historical directory name. Frozen artifacts move under the corresponding `archive/` directories.
 - Kernel authority: `plugins/immune-brain/runtime/kernel/` owns TaskIntent parsing, Enrollment, TaskRecord reduction/storage, claims, projections, and completion.
 - Worktree state: `.imm/state/kernel.sqlite` holds current authority — each run's TaskRecord, workspace ownership, claim state, run identity and terminal proof, written in one transaction per mutation. `.imm/audit/<task-id>/` stores settled terminal evidence (tracked); the database, its WAL/SHM siblings and backups are Git-ignored runtime state, and `.imm/state/tasks/*.json` survives only as retired layout that the explicit migration diagnoses.
@@ -281,11 +268,9 @@ The packaged workflow skills were renamed to bare verbs on 2026-10-28 (#318). Da
 - Response continuation: `runtime/assurance/run_continuation.ts` projects read-only task/Parent facts; `.pi-extension/pi-run-continuation.ts` and `runtime/claude/run_continuation.ts` bind the session and drive Pi settle/Claude Stop boundaries. Kernel and the existing batch driver retain execution ownership.
 - Session supervision: `plugins/immune-brain/runtime/session/` holds the Supervised Session Port, its `fake` provider and the Herdr and herdr-core adapters, routed as `plugins/immune-brain/bin/imm-session`; only the CLI router imports it, and the Kernel and batch runtime never do ([ADR 0038](docs/adr/0038-supervised-session-port.md), [contract](docs/reference/supervised-session-port.md)).
 - Loop dispatch: `plugins/immune-brain/runtime/loop_contract.ts`, `role_prompt_bridge.ts`, and `runtime/prompts/` define internal role routing and bounded delegation contracts.
-- Loop daemon: `plugins/immune-brain/runtime/loop_daemon/` forms the 4th authorized composition root ([ADR 0039](docs/adr/0039-loop-daemon.md)), observing GitHub state, evaluating events, managing disposable `.imm/state/loop/` orchestration state, and dispatching headless bounded agent sessions.
 - Batch execution: `plugins/immune-brain/runtime/unattended/` and `plugins/immune-brain/runtime/kernel/batch_authority.ts` alone own every batch state transition, plan projection, Git branch and per-child commit, and Batch Authorization; the Claude, Antigravity, and Pi host adapters are callers through HostRuntime.
 - CLI surface: `plugins/immune-brain/runtime/v4_runtime.ts` routes the stable wrappers in `plugins/immune-brain/bin/`; `imm-kernel` owns current Kernel commands, while `imm-plan` retains routing-policy and historical Plan validation surfaces.
 - Initiative projection: `plugins/immune-brain/runtime/github_issue_tracker.ts` and `plugins/immune-brain/bin/imm-tracker` own the optional one-way GitHub Issues adapter, complete batch publication, Parent/Child relationship verification, and execution recommendations without reading or writing Kernel authority.
-- Decision models: `plugins/immune-brain/runtime/decision_model/` holds the offline `decide()` component, its provider adapters and the code-owned application-point registry; `decision_models` in the layered configuration (ADR 0041) names the user's profiles and binds points to them, with sensitive egress per provider kind. `scripts/decision-eval/` holds the offline evals that consume it. No authority path imports the component, and the plugin does not import `scripts/`.
 - Packaging: root `package.json` is the Pi package manifest; `plugins/immune-brain/dist/` is checked-in generated output guarded by `bun scripts/sync-dist-docs.ts --check`. Releases publish to npm `next` via `release.yml`, and `scripts/release-promote.ts` (`.github/workflows/promote.yml`) advances the `stable` branch and npm `latest` after verifying live evidence under `docs/evidence/e2e-live/` produced by the black-box L1/L2 suite in `tests/e2e/`.
 - Durable knowledge: `docs/solutions/` stores Learnings and `docs/adr/` stores qualifying architecture decisions. `CONTEXT.md` is vocabulary and navigation only, never runtime state.
 - Module documentation: structure and rules live in [the layering reference](docs/reference/layering-rules.md#module-documentation); the layering doctrine is [ADR 0035](docs/adr/0035-layering-doctrine.md).

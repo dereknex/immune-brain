@@ -270,13 +270,8 @@ describe("claude host package", () => {
       "repair_authority_state",
       "resolve_finding",
       "refute_finding",
-      // Spec loop-agent-scheduling D4: appended after every pre-existing Tool.
-      "loop_interactions",
-      "answer_loop_interaction",
       // Spec review-receipt-mcp-submission D4: appended after every pre-existing Tool.
       "submit_session_result",
-      // Spec loop-leader D5.2: the privileged local steering Tool.
-      "steer_loop_work_item",
     ]);
     const init = await handleJsonRpc({ jsonrpc: "2.0", id: 1, method: "initialize" });
     expect(init?.result).toMatchObject({
@@ -350,11 +345,11 @@ describe("claude host package", () => {
       "plugins/immune-brain/.claude-plugin/plugin.json",
       "plugins/immune-brain/.mcp.json",
       "plugins/immune-brain/runtime/claude/mcp_server.ts",
-      ...["config.ts", "contract.ts", "decide.ts", "thresholds.ts", "providers/clef.ts", "providers/fake.ts", "providers/jev.ts"].map((file) => `plugins/immune-brain/runtime/decision_model/${file}`),
       "plugins/immune-brain/skills/drive/SKILL.md",
     ]) expect(files).toContain(required);
     expect(files.some((path: string) => path.startsWith("tests/"))).toBe(false);
     expect(files.some((path: string) => path.startsWith(".cursor-plugin/"))).toBe(false);
+    expect(files.filter((path: string) => /imm-loop|loop_daemon|decision_model|loop_interactions/.test(path))).toEqual([]);
   });
 
   it("the authority-review skill states the inspected_paths requirement and its read-before-claim rule", () => {

@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "review-deletion-bundle-proof",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:review-deletion-bundle-proof:2026-11-26T09:26:34.427Z",
+  "final_record_hash": "sha256:ee7ed3b3bf3771a00f27bff0e45932176d4cbe74dab9466d6af9a45e8e32dee7",
+  "terminalized_at": "2026-11-26T09:26:34.427Z"
+}

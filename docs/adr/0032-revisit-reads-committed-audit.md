@@ -4,7 +4,7 @@ status: accepted
 
 # revisit reads committed audit
 
-Accepted on 2026-10-30 by the repository owner (#322, "Decisions (Derek, 2026-10-30)" 2, 7, 9 and 11; `docs/specs/revisit-workflow-health.spec.md` D4, D5 and D8). It narrows the earlier rule that the retro never computes record-based metrics, recorded as D2 of [the review-verifier-eval Spec](../specs/review-verifier-eval.spec.md) and now marked superseded in part.
+Accepted on 2026-10-30 by the repository owner (#322, "Decisions (Derek, 2026-10-30)" 2, 7, 9 and 11; `docs/specs/revisit-workflow-health.spec.md` D4, D5 and D8). It narrows the earlier rule that the retro never computes record-based metrics, recorded as D2 of the review-verifier-eval Spec (`review-verifier-eval.spec.md`), which this ADR supersedes in part. [ADR 0043](0043-loop-daemon-freeze-and-extraction.md) later removed that Spec and its tooling; see Git history.
 
 ## Context
 
@@ -16,7 +16,7 @@ Accepted on 2026-10-30 by the repository owner (#322, "Decisions (Derek, 2026-10
 
 - The reader exports the HEAD tree's `.imm/audit/**` into a temporary directory and parses each pair with the Kernel's `readAuditTaskPair`. It never opens working-tree audit files, `.imm/state/`, SQLite or the authority store.
 - A pair that is incomplete, fails the proof check or does not parse is skipped and counted by reason; the report header prints the project root, the HEAD commit, schema counts, skipped counts and the sample-bias line (only merged terminal runs are present).
-- Derived review metrics (rounds-to-pass median and p95, shares, the per-acceptance series, per-model breakdowns) stay with the review-verifier-eval tooling. `revisit` computes none of them.
+- Derived review metrics (rounds-to-pass median and p95, shares, the per-acceptance series, per-model breakdowns) are outside this decision: they belonged to the review-verifier-eval tooling that ADR 0043 removed. `revisit` computes none of them.
 - Snapshot writes (`--out`) and multi-ref reads (`--audit-ref`) are not part of this decision; snapshot writes get their own ADR.
 
 ## Consequences
