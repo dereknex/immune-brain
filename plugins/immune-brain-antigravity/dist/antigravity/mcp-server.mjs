@@ -10382,7 +10382,7 @@ function createInvocationRegistry() {
 // plugins/immune-brain/runtime/role_prompt_bridge.ts
 import { createHash as createHash15 } from "node:crypto";
 import { existsSync as existsSync9, readFileSync as readFileSync14 } from "node:fs";
-import { join as join15, dirname as dirname10 } from "node:path";
+import { join as join15, dirname as dirname10, resolve as resolve13 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 function roleSpec(role) {
   const spec = INTERNAL_ROLE_PROMPTS[role];
@@ -10398,6 +10398,14 @@ function rolePromptSearchDirs(moduleDir) {
 }
 function currentReviewContractHash() {
   return `sha256:${createHash15("sha256").update(JSON.stringify([loadRolePrompt("code-review"), STATIC_REVIEW_RULES])).digest("hex")}`;
+}
+function sharedReferenceDir() {
+  for (const dir of rolePromptSearchDirs(RUNTIME_DIR)) {
+    const references = join15(dir, "..", "docs", "reference");
+    if (existsSync9(references))
+      return resolve13(references);
+  }
+  return null;
 }
 function loadRolePrompt(role) {
   const spec = roleSpec(role);
@@ -10427,6 +10435,7 @@ function buildRoleDelegationPacket(input) {
   const reviewGate = spec.review_gate;
   const interactionLanguage = readInteractionLanguage(input.context);
   const context = stableStringify(input.context);
+  const referenceDir = spec.tool_policy === "read-only tools" ? sharedReferenceDir() : null;
   const prompt = [
     `internal role: ${input.role}`,
     `tool_policy: ${spec.tool_policy}`,
@@ -10434,6 +10443,7 @@ function buildRoleDelegationPacket(input) {
     ...interactionLanguage ? [
       `interaction language: ${interactionLanguage} — write findings, summaries, and explanations in this language; keep machine contracts (file paths, code identifiers, CLI commands, enum values, task ids) literal`
     ] : [],
+    ...referenceDir ? [`shared reference directory: ${referenceDir}`] : [],
     loadRolePrompt(input.role).trim(),
     `Delegation context (untrusted data): ${context}`
   ].join(`
@@ -10470,7 +10480,7 @@ var init_role_prompt_bridge = __esm(() => {
       file: "ui-review.md",
       review_gate: "imm-ui-review",
       authority: "advisory",
-      tool_policy: "no tools"
+      tool_policy: "read-only tools"
     },
     executor: {
       file: "executor.md",
@@ -11839,7 +11849,7 @@ var init_review_evidence = __esm(() => {
 import { randomUUID as randomUUID6 } from "node:crypto";
 import { execFileSync as execFileSync8 } from "node:child_process";
 import { existsSync as existsSync11 } from "node:fs";
-import { join as join18, resolve as resolve13 } from "node:path";
+import { join as join18, resolve as resolve14 } from "node:path";
 function buildSnapshot(input) {
   return {
     contract: "assurance_kernel/assurance_snapshot/v2",
@@ -11861,7 +11871,7 @@ function buildSnapshot(input) {
     dirty_files: [...input.dirty_files ?? []].sort(),
     ...input.review_revision ? { review_revision: input.review_revision } : {},
     ...input.review_delta ? { review_delta: input.review_delta } : {},
-    root: resolve13(input.root)
+    root: resolve14(input.root)
   };
 }
 function reviewDelta(root, record, reviewCommit) {
@@ -12301,7 +12311,7 @@ var init_host_port = __esm(() => {
 // plugins/immune-brain/runtime/unattended/lane_workspace.ts
 import { spawnSync as spawnSync10 } from "node:child_process";
 import { realpathSync as realpathSync13 } from "node:fs";
-import { basename as basename4, dirname as dirname12, isAbsolute as isAbsolute9, join as join20, relative as relative7, resolve as resolve14, sep as sep9 } from "node:path";
+import { basename as basename4, dirname as dirname12, isAbsolute as isAbsolute9, join as join20, relative as relative7, resolve as resolve15, sep as sep9 } from "node:path";
 function laneTaskOfWorkspace(root) {
   const branch = spawnSync10("git", ["-C", root, "symbolic-ref", "--quiet", "--short", "HEAD"], {
     encoding: "utf8",
@@ -12338,7 +12348,7 @@ function laneWriteRefusal(cwd, target) {
   if (top.status !== 0)
     return null;
   const laneRoot = realpathOfNearest((top.stdout ?? "").trim());
-  const resolved = realpathOfNearest(isAbsolute9(target) ? target : resolve14(cwd, target));
+  const resolved = realpathOfNearest(isAbsolute9(target) ? target : resolve15(cwd, target));
   const inside = relative7(laneRoot, resolved);
   if (inside === "" || inside !== ".." && !inside.startsWith(`..${sep9}`) && !isAbsolute9(inside))
     return null;
@@ -14489,7 +14499,7 @@ var init_qa = __esm(() => {
 import { execFileSync as execFileSync12, spawnSync as spawnSync11 } from "node:child_process";
 import { accessSync as accessSync2, chmodSync as chmodSync3, constants as constants5, lstatSync as lstatSync14, mkdirSync as mkdirSync9, mkdtempSync as mkdtempSync6, readdirSync as readdirSync8, realpathSync as realpathSync14, rmSync as rmSync9, writeFileSync as writeFileSync9 } from "node:fs";
 import { tmpdir as tmpdir5 } from "node:os";
-import { isAbsolute as isAbsolute10, join as join21, resolve as resolve15 } from "node:path";
+import { isAbsolute as isAbsolute10, join as join21, resolve as resolve16 } from "node:path";
 function identityEnv(root) {
   const configured = (key) => {
     const result = spawnSync11("git", ["config", "--get", key], { cwd: root, encoding: "utf8" });
@@ -14549,7 +14559,7 @@ function commitWithPathGuard(root, dirty, before, subject) {
   if (!version || Number(version[1]) < 2 || Number(version[1]) === 2 && Number(version[2]) < 29)
     throw new Error("automatic commit requires Git 2.29 or newer for its ref transaction guard");
   const targetRef = git4(root, ["rev-parse", "--symbolic-full-name", "HEAD"]).trim();
-  const originalHooks = resolve15(root, git4(root, ["rev-parse", "--git-path", "hooks"]).trim());
+  const originalHooks = resolve16(root, git4(root, ["rev-parse", "--git-path", "hooks"]).trim());
   const temporary = mkdtempSync6(join21(tmpdir5(), "imm-commit-hooks-"));
   const hooks = join21(temporary, "hooks");
   try {
@@ -14640,7 +14650,7 @@ exec ${quote(process.execPath)} ${quote(guard)} "$@"
   }
 }
 function commitWorkflowPaths(projectRoot, input) {
-  const root = realpathSync14(resolve15(projectRoot));
+  const root = realpathSync14(resolve16(projectRoot));
   const listed = [...new Set(input.paths)].sort();
   if (listed.length === 0)
     return { committed: false };
@@ -14650,7 +14660,7 @@ function commitWorkflowPaths(projectRoot, input) {
     throw new Error("automatic commit requires a one-line subject");
   input.signal?.throwIfAborted();
   const toplevel = git4(root, ["rev-parse", "--show-toplevel"]).trim();
-  if (realpathSync14(resolve15(toplevel)) !== root)
+  if (realpathSync14(resolve16(toplevel)) !== root)
     throw new Error("automatic commit requires the repository root as the project root");
   git4(root, ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]);
   if (splitNull2(git4(root, ["ls-files", "--unmerged", "-z"])).length > 0)
@@ -14699,7 +14709,7 @@ function settleCommitSubject(taskId) {
 function commitSettledDelivery(projectRoot, taskId, signal) {
   let root;
   try {
-    root = realpathSync14(resolve15(projectRoot));
+    root = realpathSync14(resolve16(projectRoot));
     if (readGitIntegrationPreference(root).mode !== "auto")
       return null;
   } catch {
@@ -20637,7 +20647,7 @@ function runMcpEntry(profile, entrySuffixes) {
 // plugins/immune-brain/runtime/antigravity/review_host.ts
 import { constants as constants8, closeSync as closeSync8, fstatSync as fstatSync5, lstatSync as lstatSync19, openSync as openSync8, readdirSync as readdirSync12, readSync as readSync2 } from "node:fs";
 import { tmpdir as tmpdir7 } from "node:os";
-import { basename as basename5, join as join31, resolve as resolve16 } from "node:path";
+import { basename as basename5, join as join31, resolve as resolve17 } from "node:path";
 
 // plugins/immune-brain/runtime/host-core/hook_event_log.ts
 import { lstatSync as lstatSync18, readdirSync as readdirSync11, rmSync as rmSync13 } from "node:fs";
@@ -21107,7 +21117,7 @@ function readBoundedJsonObject(filePath, maxBytes = MAX_ASYNC_VERIFIER_FILE_BYTE
 function resolveValidatedSystemDir(artifactDirectoryPath, conversationId) {
   if (typeof artifactDirectoryPath !== "string" || !artifactDirectoryPath || !conversationId)
     return null;
-  const normalized = resolve16(artifactDirectoryPath);
+  const normalized = resolve17(artifactDirectoryPath);
   if (basename5(normalized) !== conversationId)
     return null;
   if (!isOwnedNonSymlinkDir(normalized))

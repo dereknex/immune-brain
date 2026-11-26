@@ -74,3 +74,12 @@ skills:
     output_artifacts: [retro_report]
     next_actions: []
     boundary: Workflow-friction diagnosis from pi session logs and committed audit evidence. Read-only. No Managed Path mutation.
+  - name: design-review
+    path: skills/design-review/SKILL.md
+    role: execute
+    title: Design Review
+    role_class: discovery
+    canonical: true
+    output_artifacts: [design_review_report]
+    next_actions: []
+    boundary: Read-only UI/UX and design-contract critique across code, diffs, screenshots, live pages, and DESIGN.md. No source edits or Managed Path mutation.

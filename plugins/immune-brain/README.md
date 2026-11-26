@@ -3,14 +3,16 @@
 Lifecycle skills for agentic engineering: planning, execution, review, QA, and
 learning capture, backed by a deterministic TypeScript workflow runtime.
 
-Each of the eight public Skills is a compact `skills/<name>/SKILL.md`
+Each of the nine public Skills is a compact `skills/<name>/SKILL.md`
 trigger shim that loads its full instructions from `dist/<name>.md` only on
 invocation. Execution, review, QA, and learning capabilities remain internal
 runtime roles or tools. `fix-pr` is the standalone host-native repair
 entry, `prune-docs` is the standalone host-native document maintenance
 entry, `slim` is the standalone host-native
-agent-instruction maintenance entry, and `prune-tests` is the standalone
-host-native test-suite maintenance entry; Loop's repair role remains internal.
+agent-instruction maintenance entry, `prune-tests` is the standalone
+host-native test-suite maintenance entry, and `design-review` is the standalone
+host-native read-only UI/UX and design-contract critique entry; Loop's repair
+role remains internal.
 Shared rules live in [`BASELINE.md`](BASELINE.md); current workflow behavior
 lives in the focused modules under [`runtime/`](runtime/), while `imm_core.ts`
 is the public API barrel. The Code Quality Guard reference documents
@@ -19,19 +21,20 @@ and repair roles; it is not a QA or style-only gate.
 
 ## Public Skill surface
 
-The package exposes eight Skills: `clarify`, `draw-up`, `drive`,
-`fix-pr`, `prune-docs`, `slim`, `prune-tests`, and `revisit`. The first three enter or continue the Managed Path;
+The package exposes nine Skills: `clarify`, `draw-up`, `drive`,
+`fix-pr`, `prune-docs`, `slim`, `prune-tests`, `revisit`, and `design-review`. The first three enter or continue the Managed Path;
 `fix-pr` repairs one PR directly, `prune-docs` prunes stale current
 documentation, `slim` minimizes tracked agent-instruction
-context, `prune-tests` prunes redundant tests without weakening assertions, and
-`revisit` reports workflow health from session logs, all without Managed authority. Internal roles
+context, `prune-tests` prunes redundant tests without weakening assertions,
+`revisit` reports workflow health from session logs, and `design-review` critiques
+interfaces and design contracts read-only, all without Managed authority. Internal roles
 are dispatched by the runtime through packaged prompts under
 `dist/role-prompts/`; Skill loading never discovers them. Skills use the project's existing files and create only the artifacts
 the user explicitly requested.
 
 Managed Path starts only from explicit `clarify`, `draw-up`, or
 `drive` entry; ordinary host input and standalone `fix-pr`,
-`prune-docs`, `slim`, `prune-tests`, and `revisit` stay
+`prune-docs`, `slim`, `prune-tests`, `revisit`, and `design-review` stay
 host-native and are not classified by natural-language routing. `draw-up`
 and `clarify` also start on the user's request for a Spec, Plan,
 TaskIntent or requirement clarification, by slash command or in natural
@@ -131,10 +134,11 @@ in the next major release.
 | `slim` | execute; repair; canonical | Minimize tracked agent-instruction context after explicit manifest approval; no Managed authority mutation, contract installation, or reference-document creation. |
 | `prune-tests` | execute; repair; canonical | Audit and prune redundant tests after explicit manifest approval; no Managed authority mutation, production-source change, or assertion weakening. |
 | `revisit` | execute; discovery; canonical | Workflow-friction diagnosis from pi session logs and committed audit evidence. Read-only. No Managed Path mutation. |
+| `design-review` | execute; discovery; canonical | Read-only UI/UX and design-contract critique across code, diffs, screenshots, live pages, and DESIGN.md. No source edits or Managed Path mutation. |
 <!-- END GENERATED: skill-registry-role-map -->
 
 The authoritative public role manifest is [`skills/registry.yaml`](skills/registry.yaml).
-It contains the eight user-facing Skill entries; internal role authority
+It contains the nine user-facing Skill entries; internal role authority
 and transitions live in the runtime bridge.
 
 ## Review gates

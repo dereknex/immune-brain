@@ -59,7 +59,7 @@ describe("Skill-explicit workflow routing contract", () => {
 
   it("aligns project constitutions and packaged consumers", () => {
     expectAll(ROOT_IMMUNE, ["Skill-explicit Managed Path", "显式 Immune-Brain Skill", "literal-user Enrollment"]);
-    expectAll(README, ["Managed Path starts only from explicit `clarify`, `draw-up`, or", "standalone `fix-pr`,\n`prune-docs`, `slim`, `prune-tests`, and `revisit` stay", "ordinary host input"]);
+    expectAll(README, ["Managed Path starts only from explicit `clarify`, `draw-up`, or", "standalone `fix-pr`,\n`prune-docs`, `slim`, `prune-tests`, `revisit`, and `design-review` stay", "ordinary host input"]);
     expect(README.replace(/\s+/g, " ")).toContain("also start on the user's request for a Spec, Plan, TaskIntent or requirement clarification, by slash command or in natural language; `drive` starts only from a literal-user entry");
     expectAll(USER_GUIDE, ["Skill-explicit Managed Path", "普通 host input 保持 host-native"]);
     expectAll(PLANNER_SKILL, ["never invokes the native Enrollment gate", "only that gate grants execution authority", "first step\nof a literal-user `drive` entry"]);

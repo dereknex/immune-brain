@@ -86,7 +86,7 @@ export function reviewerDefinitionDrift(root: string): string | null {
  * The read-only role definitions: one frontmatter with the strictest expressible
  * tool boundary, and a body taken from the matching role prompt source.
  *
- * These roles declare `no tools` in `INTERNAL_ROLE_PROMPTS`. A native definition
+ * These roles declare `no tools` or `read-only tools` in `INTERNAL_ROLE_PROMPTS`. A native definition
  * cannot express an empty allowlist without inheriting every tool, so they ship
  * read-only without shell instead — narrower than the reviewer, which needs
  * `Bash` for read-only Git commands.
