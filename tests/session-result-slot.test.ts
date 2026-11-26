@@ -104,10 +104,10 @@ describe("submit_session_result", () => {
 		expect(readSlotResult(real)).toBeNull();
 	});
 
-	test("is listed after answer_loop_interaction as a plain, task-less tool", () => {
+	test("is listed after refute_finding as a plain, task-less tool", () => {
 		const tools = listMcpTools();
 		const names = tools.map((tool) => tool.name);
-		expect(names.indexOf("submit_session_result")).toBe(names.indexOf("answer_loop_interaction") + 1);
+		expect(names.indexOf("submit_session_result")).toBe(names.indexOf("refute_finding") + 1);
 		const tool = tools.find((item) => item.name === "submit_session_result")!;
 		expect(tool.inputSchema.required).toEqual(["slot_id", "result"]);
 		expect(Object.keys(tool.inputSchema.properties)).toEqual(["slot_id", "result"]);

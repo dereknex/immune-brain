@@ -255,8 +255,7 @@ function runEnrollmentPreconditionChecks<T>(
 		if (intent) {
 			const binding = inspectSpecBinding(intent.intent);
 			if (!binding.ok) fail(binding.message, new Error(binding.message));
-			// The unattended confirmation sources are decided on the live intent, so
-			// the risk and scope that gate `policy_auto` are the ones being recorded.
+			// The confirmation is decided on the live intent before the capability is consumed.
 			if (input.confirmation) {
 				const verdict = verifyEnrollmentConfirmation(root, input.confirmation, {
 					risk: intent.intent.risk,
@@ -331,11 +330,6 @@ function buildTaskRecordV4(
 		attestations: [],
 		findings: [],
 		history: [],
-		// Written only for an unattended source, so an interactive Enrollment still
-		// produces the exact record shape every earlier record has.
-		...(input.confirmation && input.confirmation.source !== "user_session"
-			? { confirmation_source: input.confirmation.source }
-			: {}),
 	};
 }
 

@@ -9,7 +9,7 @@ Roadmap phase: none; internal architecture maintenance
 **Diagram reason**: Ownership, dependency direction, and QA/Review continuation are easier to verify as structure and sequence flows than as prose alone.
 
 **Current-contract override (2026-09-03)**: The executable contract in `CONTEXT.md`,
-`plugins/immune-brain/skills/imm-loop/SKILL.md`, and
+the `imm-loop` Skill (removed by ADR 0043), and
 `runtime/kernel/completion.ts` supersedes this completed slice's Review-verdict
 and critical-completion confirmation clauses. Fresh QA and required Review now
 settle automatically; `request_authorization` is reserved for unresolved user

@@ -28,7 +28,7 @@ Pi, Claude Code, and Antigravity (`plugins/immune-brain-antigravity/`) are the s
 - [Recommended Workflows: Composing with mattpocock/skills](#recommended-workflows-composing-with-mattpocockskills)
 - [Real-World Case Studies](#real-world-case-studies)
 - [Core Philosophy: Turn "Judgment" into "Table Lookup"](#core-philosophy-turn-judgment-into-table-lookup-harnessing-multi-model-tiers-with-determinism)
-- [The 9 Skills](#the-9-skills)
+- [The 8 Skills](#the-8-skills)
 - [Lifecycle](#lifecycle)
 - [Unattended Batch Runs](#unattended-batch-runs)
 - [Configuration](#configuration)
@@ -63,7 +63,7 @@ New versions reach the `latest` npm dist-tag only after they are promoted; insta
 pi install npm:immune-brain@next
 ```
 
-No extra server config is needed. Installing the package via Pi makes all 9 public Skills available automatically.
+No extra server config is needed. Installing the package via Pi makes all 8 public Skills available automatically.
 
 ### In Claude Code
 
@@ -159,7 +159,6 @@ Immune-Brain provides two clean modes: **Host-native** for daily coding, and **M
 | Agent instructions bloated | `/slim` | → Minimizes tracked `AGENTS.md` / `CLAUDE.md` to essential non-discoverable rules |
 | Test suite bloated with redundant cases | `/prune-tests` | → Audits tests read-only, then merges or deletes only approved entries backed by retirement or coverage evidence |
 | Where workflow friction occurs and what to improve | `/revisit` | → Workflow-friction diagnosis from session evidence |
-| Run or inspect the background Loop daemon for Issues/PRs | `/imm-loop` | → Inspects status/logs or starts/stops the repository Loop daemon via `bin/imm-loop` |
 
 > **Core Principle: Skill-Explicit Entry**
 > - **Ordinary input stays host-native**: Natural language queries never automatically start planning or task enrollment. You choose when to turn on engineering rigor.
@@ -448,7 +447,7 @@ Without explicit cost levers, multi-agent workflows compound expenses exponentia
 
 ---
 
-## The 9 Skills
+## The 8 Skills
 
 | Skill | Type | When to use | What it does |
 |---|---|---|---|
@@ -460,11 +459,10 @@ Without explicit cost levers, multi-agent workflows compound expenses exponentia
 | `slim` | Standalone | Bloated agent instructions | Minimizes tracked AGENTS/CLAUDE/GEMINI.md to necessary context |
 | `prune-tests` | Standalone | Bloated or redundant tests | Merges, parameterizes, or deletes approved test entries without weakening assertions |
 | `revisit` | Standalone | Workflow-friction diagnosis | Traces evidence, recommends one next step; no model ranking |
-| `imm-loop` | Standalone | Background Loop daemon control | Inspects status/logs, runs dry-run ticks, starts/stops/pauses `bin/imm-loop` |
 
 Internal roles (Executor, QA, Review, Compounder) are dispatched by `drive` — you never invoke them directly.
 
-All 9 skills are invoked explicitly. For new features, start with `clarify` (if requirements are uncertain) or `draw-up` (if requirements are clear), then proceed to `drive` once enrolled.
+All 8 skills are invoked explicitly. For new features, start with `clarify` (if requirements are uncertain) or `draw-up` (if requirements are clear), then proceed to `drive` once enrolled.
 
 ### Managed Path entries (brainstorm → planner → loop)
 
@@ -657,10 +655,10 @@ sequenceDiagram
 
 Immune-Brain reads two JSON files, the same on Pi and Claude Code ([ADR 0041](docs/adr/0041-simplified-configuration.md)):
 
-- **User file** `~/.config/immune-brain/config.json` (`$XDG_CONFIG_HOME/immune-brain/config.json` when set): your defaults, agent profiles and decision-model profiles (credential environment-variable *names* only).
+- **User file** `~/.config/immune-brain/config.json` (`$XDG_CONFIG_HOME/immune-brain/config.json` when set): your defaults and agent profiles.
 - **Project file** `.imm/config.json` in the main checkout: per-repository choices, local to your checkout. It is read whether or not Git tracks it, so keep it out of version control when teammates' habits differ.
 
-Every key resolves **request > project file > user file > default**, except permission keys, which take the stricter value: `git_integration` (`manual` wins), `loop.auto_enroll_max_risk` (lower risk wins) and `loop.allowed_actors` / `loop.allowed_associations` (intersection).
+Every key resolves **request > project file > user file > default**, except `git_integration`, which takes the stricter value (`manual` wins).
 
 ```json
 {
@@ -681,7 +679,7 @@ Every key resolves **request > project file > user file > default**, except perm
 | Preference | Where | Default | Notes |
 |---|---|---|---|
 | Reply language | agent instruction file (`AGENTS.md` / `CLAUDE.md`) | repo `AGENTS.md` | Machine contracts / paths stay literal |
-| Agents (`executor`, `reviewer`, `planner`, `triage`) | either file; profiles in the user file | executor: the Parent's Host; reviewer: none | A profile name, shorthand `host[:model][@effort]` or `{ host, model?, effort? }` |
+| Agents (`executor`, `reviewer`) | either file; profiles in the user file | executor: the Parent's Host; reviewer: none | A profile name, shorthand `host[:model][@effort]` or `{ host, model?, effort? }` |
 | Lane capacity | `batch.max_parallel` in either file | 1 | A request's `max_parallel` wins |
 | Herdr tabs | top-level `herdr` | `false` | `true` runs Lane Executors in Herdr tabs when the Parent runs in Herdr |
 | Initiative carrier | either file | none — Planner asks | Only matters when a proposal splits across multiple TaskIntents |
@@ -700,7 +698,7 @@ See [`docs/reference/immune-brain-config.md`](docs/reference/immune-brain-config
 package.json                          # Pi package manifest (skills + extensions)
 plugins/immune-brain/
 ├── .pi-extension/                    # Pi TUI + Kernel authority extension
-├── skills/                           # 9 public Skills (trigger shims)
+├── skills/                           # 8 public Skills (trigger shims)
 ├── dist/                             # Built skill contracts & references
 ├── runtime/                          # Bun + TypeScript runtime & Kernel
 └── bin/                              # CLI wrappers (→ runtime/v4_runtime.ts)
@@ -718,7 +716,7 @@ docs/specs/                           # Living specs (updated in place)
 
 ## FAQ
 
-**Do I need to learn all 9 skills?** No. Most of the time you only need `/draw-up` (to plan and enroll a task) and `/drive` (to build and verify it). Use `clarify` when requirements need clarifying first, and the maintenance skills (`fix-pr`, `imm-loop`, etc.) only when specific repair or daemon needs arise. Ordinary chat and simple edits don't need any skills at all.
+**Do I need to learn all 8 skills?** No. Most of the time you only need `/draw-up` (to plan and enroll a task) and `/drive` (to build and verify it). Use `clarify` when requirements need clarifying first, and the maintenance skills (`fix-pr`, `prune-docs`, etc.) only when specific repair or maintenance needs arise. Ordinary chat and simple edits don't need any skills at all.
 
 **What if I interrupt or close the session mid-task?** State is safely stored on disk (`.imm/` + TaskIntent). In Pi or Claude Code, simply re-enter `/drive` to resume — the Kernel projection is authoritative.
 
@@ -736,7 +734,7 @@ docs/specs/                           # Living specs (updated in place)
 
 **Where is the terminal Audit Trail stored and how is it verified?** Settled records are saved to `.imm/audit/<task-id>/` and tracked in Git. Each directory contains the immutable `TaskRecord`, the bound `diff_hash`, raw QA process exit-code attestations, and the Reviewer's signed verdict bundle.
 
-**Why two config files instead of AGENTS.md / CLAUDE.md directives?** Configuration belongs to the plugin, not to one Host's instruction file. Personal choices (Lane profiles, decision-model credentials by env-var name) live in `~/.config/immune-brain/config.json` and follow you across clones and Hosts; repository policy (`git_integration`, carrier, egress ceiling) lives in the tracked `.imm/config.json`, version-controlled and shared with collaborators. Communication instructions stay in the agent instruction files.
+**Why two config files instead of AGENTS.md / CLAUDE.md directives?** Configuration belongs to the plugin, not to one Host's instruction file. Personal choices (Lane and agent profiles) live in `~/.config/immune-brain/config.json` and follow you across clones and Hosts; repository policy (`git_integration`, carrier) lives in the tracked `.imm/config.json`, version-controlled and shared with collaborators. Communication instructions stay in the agent instruction files.
 
 **Why do you recommend `grill-me` instead of `clarify` for complex tasks?** `clarify` is a lightweight, built-in tool designed for quick problem framing without external dependencies. However, `grill-me` (from `mattpocock/skills`) provides an active, relentless Socratic interview that explores every branch of your design tree with opinionated recommendations. For non-trivial features, architectural refactors, or security boundaries, grilling the design with `grill-me` before passing the settled decisions to `draw-up` produces significantly tighter specifications and prevents downstream rework.
 

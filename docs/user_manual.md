@@ -1,6 +1,6 @@
 # Immune-Brain 使用手册
 
-Immune-Brain 是一套 Skill-explicit Managed 工作流，支持 Pi、本地交互式 Claude Code 与 Antigravity，并提供六个独立 host-native Skill。用户可发现九个 public Skills：
+Immune-Brain 是一套 Skill-explicit Managed 工作流，支持 Pi、本地交互式 Claude Code 与 Antigravity，并提供五个独立 host-native Skill。用户可发现八个 public Skills：
 
 - `clarify`：澄清需求、约束、风险和非目标。
 - `draw-up`：创建或修订 Spec、Plan 和候选 TaskIntent。
@@ -10,8 +10,6 @@ Immune-Brain 是一套 Skill-explicit Managed 工作流，支持 Pi、本地交�
 - `slim`：在显式 manifest 批准后整理 tracked agent instruction 文件，不创建 Managed authority。
 - `prune-tests`：在显式 manifest 批准后合并、参数化或删除冗余测试，不弱化断言，不创建 Managed authority。
 - `revisit`：从 Pi、Claude Code 与 Antigravity CLI session logs 及可选 committed audit 诊断工作流健康度与返工摩擦，不排名模型，只读不创建 Managed authority。
-- `imm-loop`：查看、dry-run 或启停仓库后台 Loop 守护进程（`bin/imm-loop`），不直接创建前台 Run binding 或修改 Kernel authority。
-
 ### `prune-docs`
 
 独立处理过期当前文档的清理。它盘点仓库全部 tracked 当前文档，机械筛选候选，输出精确 manifest，用户显式批准后才执行删除或编辑。Git history 是非权威文档的唯一历史档案；它不维护 `retired`/`superseded` 文档墓地。它不创建或修改 Spec、TaskIntent、TaskRecord 或 Kernel state；不删除 active/frozen Spec、TaskIntent、TaskRecord、tombstone 或其他 `.imm` authority；已由 Managed task 拥有的文档仍通过 `drive` 继续。
@@ -54,7 +52,7 @@ request
 
 显式 Skill 使用项目现有结构，并只创建当前工作需要的 artifact 及其父目录。Runtime 不安装、覆盖或校验项目级 `AGENTS.md`、`IMMUNE.md` 或 `CONTEXT.md`。
 
-## 九个 public Skills
+## 八个 public Skills
 
 ### `clarify`
 
@@ -106,7 +104,7 @@ PR 仍通过 `drive` 继续。
 
 ## 验证与发布
 
-公共 surface 由 `skills/registry.yaml` 声明，必须与九个 `skills/*/SKILL.md`、对应
+公共 surface 由 `skills/registry.yaml` 声明，必须与八个 `skills/*/SKILL.md`、对应
 `dist/<skill>.md`、package manifest 和实际 Pi loader 结果一致。未注册的旧 Skill 目录、
 旧 dist entry files 和兼容 alias 不应重新加入 registry。
 

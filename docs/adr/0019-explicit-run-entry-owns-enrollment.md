@@ -4,13 +4,10 @@ status: accepted
 
 # Explicit Run Entry Owns Enrollment
 
-**Status update:** amended by [ADR 0039](0039-loop-daemon.md). When
-`loop.mode === "autonomous"` or `"assist"`, `imm-loop` holds a standing
-publication grant to publish candidate plans, status Issue updates, and
-escalation comments without per-call interactive prompts; routine tasks may
-auto-enroll via `policy_auto` under project policy and `.imm/risk-floor.json`,
-and material/critical tasks may enroll via `tracker_approval` without requiring
-a session native dialog.
+**Status update:** the Loop daemon's standing publication grant and unattended
+Enrollment (`policy_auto`, `tracker_approval`) that
+[ADR 0039](0039-loop-daemon.md) added are superseded by [ADR 0043](0043-loop-daemon-freeze-and-extraction.md). Enrollment
+requires an explicit run entry and the native dialog again.
 
 Accepted on 2026-10-11 by the repository owner, for Initiative
 `explicit-phase-entry` (#206). It retires the Planner's "execution-bearing
@@ -42,12 +39,9 @@ Planning and implementation are two phases and the literal user launches each.
   entry.
 
 Once the user has entered `imm-run`, the single native confirmation still
-carries a routine task through enrollment, execution and QA. Under
-[ADR 0039](0039-loop-daemon.md), the Loop daemon may enroll routine tasks
-via `policy_auto` without interactive session entry when policy preconditions
-and risk floors are met, and material/critical tasks via `tracker_approval`
-upon verified owner comment. Interactive execution retains explicit `drive`
-entry.
+carries a routine task through enrollment, execution and QA. *The Loop
+daemon's unattended Enrollment under [ADR 0039](0039-loop-daemon.md) is
+superseded by [ADR 0043](0043-loop-daemon-freeze-and-extraction.md).*
 
 ## Consequences
 

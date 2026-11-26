@@ -2,12 +2,12 @@
 
 Pi, Claude Code and Antigravity read the same two configuration files through
 one runtime resolver, recorded in ADR 0041
-(`docs/adr/0041-simplified-configuration.md` in the repository):
+(`docs/adr/0041-simplified-configuration.md` in the repository, as amended by
+ADR 0043):
 
 - the **user file**, `~/.config/immune-brain/config.json`
   (`$XDG_CONFIG_HOME/immune-brain/config.json` when `XDG_CONFIG_HOME` is an
-  absolute path), for your agent profiles, decision-model profiles and
-  credential environment-variable names; and
+  absolute path), for your agent profiles and personal defaults; and
 - the **project file**, `.imm/config.json` at the root of the main checkout,
   for your choices in one repository. It is a local file: keep it out of version
   control so that each developer's choices stay their own. It is read whether or
@@ -39,12 +39,6 @@ file:
   },
   "session_providers": ["herdr"],
   "batch": { "max_parallel": 3 },
-  "decision_models": {
-    "profiles": { "edge": { "kind": "clef", "model": "clef", "account_id_env": "CLOUDFLARE_ACCOUNT_ID", "token_env": "CLOUDFLARE_AUTH_TOKEN" } },
-    "default_profile": "edge",
-    "bindings": { "a14_pr_comment_triage": "edge" },
-    "egress": { "clef": ["finding"] }
-  },
   "git_integration": "manual",
   "initiative_carrier": "github"
 }
@@ -55,34 +49,33 @@ file:
   "contract": "immune_brain/project_config/v2",
   "agents": { "executor": "opus" },
   "batch": { "max_parallel": 2, "final_verification": ["bun run typecheck", "bun test"], "single_task_final_verification": ["bun run typecheck"] },
-  "decision_models": { "bindings": { "a4_finding_equivalence": "off" } },
-  "initiative_carrier": "local",
-  "loop": { "interaction": { "channel": "local" } }
+  "initiative_carrier": "local"
 }
 ```
 
 - The top-level keys are `contract`, `agents`, `session_providers`, `batch`,
-  `decision_models`, `git_integration`, `initiative_carrier`, `loop` and
-  `review_verifier`. Every key is optional except `contract`. An unknown key at
-  any level is invalid. The retired `herdr` key is still accepted so existing
-  files warn instead of failing, but it is never resolved (see below).
-- `agents.profiles` and `decision_models.profiles` exist only in the user file.
-  The project file refers to a user profile by name.
-- A `*_env` value names an environment variable (`^[A-Z_][A-Z0-9_]*$`); the file
-  never holds the credential itself.
+  `git_integration`, `initiative_carrier` and `review_verifier`. Every key is
+  optional except `contract`. An unknown key at any level is invalid. The
+  retired `herdr` key is still accepted so existing files warn instead of
+  failing, but it is never resolved (see below).
+- The `loop` and `decision_models` keys are retired (ADR 0043). Each is an
+  unknown key: it reports `config_invalid` at that key path and blocks every
+  batch until `imm-kernel config migrate --write` removes it.
+- `agents.profiles` exists only in the user file. The project file refers to a
+  user profile by name.
 - `session_providers` is a non-empty ordered list of distinct registered
   provider names (`herdr`, `herdr-core`; default `["herdr"]`, so a refusal
   outside Herdr names only the `herdr` recovery). The project
   file replaces the user file. An empty list, an unknown or test-only name
   (`fake`, `process`), a duplicate entry, or a non-array is a blocking
   `config_invalid` error. `imm-kernel config migrate --write` removes a stored
-  `herdr` key and preserves every other key.
+  `herdr`, `loop` or `decision_models` key and preserves every other key.
 - `herdr` is retired: setting it in either file produces one non-blocking
   `retired_key` warning diagnostic at key path `herdr`, is ignored by the
   resolver, and is omitted from the effective configuration. A Lane Executor
   started inside Herdr (`HERDR_ENV=1`) runs in an interactive Herdr tab.
   Authority Review and its findings verification
-  always run in a Herdr session; the Loop roles always run as processes.
+  always run in a Herdr session.
 - `batch.max_parallel` is an integer in 1..8 (default 1).
   `batch.final_verification` and `batch.single_task_final_verification` each
   hold at most 8 plain command strings. A new single-task `drive` that names no
@@ -91,16 +84,6 @@ file:
   final verification is optional. Declared derived-file checks
   (`docs/agents/derived-files.json`) still run and gate checkout delivery when
   no commands are set. Initiative batches always need `batch.final_verification`.
-- `loop.interaction.channel` is `"github"` or `"local"` and defaults to `"github"`: it selects where the Loop
-  daemon asks you a question. With `local` the daemon writes its requests under
-  `.imm/state/loop/interactions/`, your own Host session lists them with `loop_interactions` and answers one
-  through `answer_loop_interaction`, and the daemon applies the confirmed answer on its next tick. A
-  `plan_approval` is still answered by your own `drive` entry. Any other value is `config_invalid`.
-- `loop.budget` caps the daemon's day: `max_ticks_per_day` and
-  `max_dispatches_per_day` are positive integers or `null` (unlimited), and
-  `max_leader_wakes_per_day` is an integer in 0..500 (default 48) bounding how
-  many changed briefings may wake the read-only leader; `0` disables the leader.
-  A wake counts once against both the leader and the dispatch budget.
 - `.imm/risk-floor.json` and `.imm/routine-classes.json` stay separate, tracked
   files (see [Risk Floor](#risk-floor)).
 
@@ -109,11 +92,11 @@ with `imm-kernel config migrate`, which prints the converted files, and
 `imm-kernel config migrate --write` to write them. The migration also folds in
 the retired sources: `projects.<key>` entries of the user file (the current
 repository's entry becomes its project file; other entries are listed for you to
-move), `agents.presets` and `active`, `lanes`, `.imm/lanes.local.json`,
-`.imm/decision-models.local.json`, `.imm/decision-bindings.json`,
-`decision_models.enabled_points`, and the `- Git integration:` and
-`- Initiative carrier default:` lines in `AGENTS.md` or `CLAUDE.md`. It deletes
-none of those sources; remove them once the result is right.
+move), `agents.presets` and `active`, `lanes`, `.imm/lanes.local.json`, and the
+`- Git integration:` and `- Initiative carrier default:` lines in `AGENTS.md` or
+`CLAUDE.md`. It deletes none of those sources; remove them once the result is
+right. It writes no `loop` or `decision_models` value and removes those keys
+from both files.
 
 ## Agents
 
@@ -121,10 +104,10 @@ none of those sources; remove them once the result is right.
 
 | Role | Runs |
 |---|---|
-| `executor` | every Lane Executor, and the Loop's `repair` work (`pr-fix`, `test-fixer`) |
+| `executor` | every Lane Executor |
 | `reviewer` | Authority Review, its findings verification, and advisory reviewers |
-| `planner` | the Loop's `clarify` and `plan` steps |
-| `triage` | reserved; no Loop session reads it since `S3` retired judging |
+| `planner` | accepted so existing files stay valid; nothing reads it (ADR 0043) |
+| `triage` | accepted so existing files stay valid; nothing reads it (ADR 0043) |
 
 A role value is one of:
 
@@ -143,8 +126,7 @@ from another.
 
 Each role resolves on its own: request → project file → user file → built-in.
 Without a value, the Lane Executor runs on the Parent's own Host type with its
-default model, Review reports `review_profile_required`, and the Loop roles
-keep their `claude-code` fallback. An invalid role value counts as unset and is
+default model, and Review reports `review_profile_required`. An invalid role value counts as unset and is
 reported as `config_invalid` (or `unknown_profile` for an unknown name).
 
 ## Precedence
@@ -156,19 +138,12 @@ value winning. **Request** values come from the literal current request (see
 | Key | Merge |
 |---|---|
 | `agents.<role>` | per role; a whole profile from one layer |
-| `decision_models.default_profile`, `decision_models.bindings.<point>` | per key |
-| `decision_models.egress.<kind>` | per provider kind |
 | `session_providers`, `batch.max_parallel`, `batch.final_verification`, `batch.single_task_final_verification`, `initiative_carrier`, `review_verifier` | first set value |
 | `git_integration` | stricter wins: `manual` if either file sets it |
-| `loop.auto_enroll_max_risk` | stricter wins: the lower risk |
-| `loop.allowed_actors`, `loop.allowed_associations` | stricter wins: the intersection of the layers that set them |
 
 Permission keys take the stricter value so that a local file cannot widen what
 your user file allows. `batch.final_verification` falls back to the test and
 type-check commands the repository instruction file names in prose, else none.
-
-A decision point bound to `"off"` is disabled and returns `unavailable` /
-`point_disabled`; an unbound point uses `default_profile`.
 
 ## Inspecting the Effective Configuration
 
@@ -176,8 +151,6 @@ A decision point bound to `"off"` is disabled and returns `unavailable` /
 `immune_brain/effective_config/v2`). Every leaf value is
 `{ "value": ..., "source": ... }`, where `source` is `project`, `user` or
 `default`. The command exits 1 when any diagnostic has severity `error`, else 0.
-`--check-env` also reports, per decision-model profile, whether each named
-variable is `set` or `unset`, never its value.
 
 `agents.roles.<role>` holds `{ host, model, effort, source }`, or `null` when
 nothing binds the role; `agents.profiles` is a leaf like any other value.
@@ -186,90 +159,18 @@ The status Tool on both Hosts carries the same object as `config` and adds every
 `error` diagnostic to its warnings as `config_invalid`.
 
 Each diagnostic is `{ code, severity, file, key_path, message }` with code
-`config_invalid`, `unknown_profile`, `retired_key` (`retired_key` is always a
-non-blocking warning), `deprecated_config_source` or one of the loop role
-codes below. Messages never contain a configured
-`*_env` value or any environment variable's value. An invalid value counts as
-unset, so the next layer or the default applies, and its diagnostic stays an
-error:
+`config_invalid`, `unknown_profile` or `retired_key` (`retired_key` is always a
+non-blocking warning). An invalid value counts as unset, so the next layer or the
+default applies, and its diagnostic stays an error:
 
-- `decision_models` profiles invalid: a decision returns `unavailable` /
-  `config_invalid`;
-- any error under `agents`, `batch` or `session_providers`, or a file that is not JSON or
-  has the wrong `contract`: no batch starts (`lane_config_invalid`), and Review
-  reports `review_config_invalid` naming the file and key path;
+- any error under `agents`, `batch` or `session_providers`, an unknown
+  top-level key such as the retired `loop` or `decision_models`, or a file that
+  is not JSON or has the wrong `contract`: no batch starts
+  (`lane_config_invalid`);
+- an `agents` error that leaves Review without a profile: Review reports
+  `review_config_invalid` naming the file and key path;
 - `git_integration` invalid: `manual`;
 - `initiative_carrier` invalid: none, and the Planner asks.
-
-## Loop Role Catalog
-
-`loop.roles` names the roles one repository's Loop runs as. It exists only in
-the project file, because it describes this repository's work:
-
-```json
-{
-  "contract": "immune_brain/project_config/v2",
-  "loop": {
-    "roles": {
-      "planner": { "base": "plan", "host": "pi", "model": "<model id>", "effort": "high" },
-      "security-analyst": {
-        "base": "analyze",
-        "when": "changes touch authentication or authorization",
-        "instructions": "docs/agents/security.md",
-        "limits": { "turn_budget": 60, "timeout_s": 1200, "max_parallel": 2 }
-      }
-    }
-  }
-}
-```
-
-A role name matches `^[a-z][a-z0-9-]{0,31}$`. `base` is required and closed to
-`leader`, `clarify`, `plan`, `execute`, `repair` and `analyze`; the base fixes
-what a role may do, and configuration can never widen it. `host` is
-`claude-code`, `pi` or `antigravity` and defaults to `claude-code`; `model` and
-`effort` are optional. `when` is an advisory one-paragraph selection hint of at
-most 500 characters. `instructions` is a repository-relative path to an existing
-file inside the repository; its content is appended to the role's entry prompt
-under *Advisory project instructions* and never changes tools, permission flags
-or the output contract.
-
-`limits` holds `turn_budget` (1..200, default 40), `timeout_s` (60..3600, default
-900) and `max_parallel` (1..8, default 1). The Loop's `clarify`, `plan` and
-`repair` sessions take Host, model, effort, turn budget and timeout from their
-base's role.
-
-Every base always has exactly one role: with no `loop.roles`, or for a base no
-role binds, the built-in role named after the base runs on `claude-code` with
-the default limits. Exactly one role may claim `leader`. `imm-kernel config
---json` lists the resolved catalog under `loop.value.roles` with `name`, `base`,
-`host`, `model`, `effort`, `when`, `instructions`, `limits` and `source`
-(`project` or `default`).
-
-A role is refused whole — absent from the catalog, one `error` diagnostic — for:
-
-| Code | Cause |
-|---|---|
-| `role_base_unknown` | `base` missing or not one of the six |
-| `role_name_invalid` | the role name does not match the pattern |
-| `role_host_unknown` | `host` is not one of the three |
-| `role_limit_out_of_range` | a limit outside its range |
-| `role_instructions_outside_repo` | `instructions` is absolute or leaves the repository |
-| `role_instructions_missing` | `instructions` names no file |
-| `leader_role_duplicate` | two or more roles claim base `leader` |
-
-A refused role never stops the daemon: `loop.valid` ignores `loop.roles` errors,
-so the rest of the Loop keeps running while `imm-kernel config --json` keeps
-exiting 1 and `imm-loop status` (including `--json` `role_catalog_diagnostics`)
-surfaces the error until the role is fixed. A read-only base on a Host without a verified
-read-only mode still fails closed at spawn (`role_readonly_unsupported`), and a
-configured Host whose executable is not on `PATH` fails that session
-(`role_host_unavailable`) instead of falling back to another Host.
-
-`agents.planner` and `agents.executor` no longer choose a Loop role: the Loop's
-`clarify` and `plan` sessions run on the `clarify` and `plan` base role, and its
-`repair` session on the `repair` base role. Each affected role reports one
-`deprecated_config_source` warning naming the ignored binding and `loop.roles`.
-`agents.executor` still selects the Lane Executor's Host, and `agents.triage` binds nothing in the Loop since `S3` retired judging. A retired `roles.judging` preset binding is ignored with one `deprecated_config_source` warning and never makes `agents` invalid.
 
 ## Initiative Carrier
 
@@ -306,7 +207,8 @@ request through and never resolves configuration for a batch.
   batch, each a profile name, shorthand or object as in [Agents](#agents). A
   request value replaces that role whole, for that batch alone.
 - Every Lane runs the resolved `executor` host with no fallback to another Host.
-- Any configuration error under `agents`, `batch` or `session_providers` starts no batch.
+- Any configuration error under `agents`, `batch` or `session_providers`, or an
+  unknown top-level key, starts no batch.
 
 Lane-mode agents only create: they close no tab, stop no session and remove no
 Lane. The full contract is `plugins/immune-brain/dist/drive-batch.md#lane-preferences`.

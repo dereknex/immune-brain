@@ -87,16 +87,6 @@ import type { BatchRunnerKernelPort, BatchTrackerPort } from "../unattended/batc
 import type { BatchRunReport } from "../unattended/batch_state";
 import { findLaneRelayTarget, relayLaneDecision, type LaneDecisionOperation } from "../unattended/lane_decision";
 import {
-	ANSWER_LOOP_INTERACTION_TOOL,
-	listPendingLoopInteractions,
-} from "./loop_interactions";
-import {
-	localDecisionRecordRevision,
-	loopInteractionStateDir,
-	readLocalRequest,
-	writeLocalAnswer,
-} from "../loop_daemon/interaction/local_channel";
-import {
 	LANE_EXECUTOR_ENV,
 	LANE_EXECUTOR_HEADLESS,
 	writeLaneDecisionRequest,
@@ -104,15 +94,6 @@ import {
 import { createBatchKernelPort } from "../unattended/batch_kernel_port";
 import { createBatchTrackerPort, laneRuntimeContractRefusal, RUNTIME_CONTRACT_MISMATCH, type LaneInstructionRequest, type LaneOffer, type LaneSessionCloseRequest } from "../unattended/batch_lanes";
 import { retireStaleBatch } from "../unattended/batch_disposition";
-import {
-	LOOP_STEERING_ACTIONS,
-	LOOP_STEERING_REQUEST_CONTRACT,
-	STEER_LOOP_WORK_ITEM_TOOL,
-	isLoopSteeringAction,
-	steeringBindingDigest,
-	writeSteeringRequest,
-	type LoopSteeringRequest,
-} from "../loop_daemon/steering";
 import { runEntryManifest, type RunEntryManifest } from "../unattended/run_entry_manifest";
 import { batchTopologyDigest, isLaneBatchRecord, parkLaneForExecutor, type BatchLaneRunReport } from "../unattended/batch_state";
 import {
@@ -553,8 +534,6 @@ export class HostRuntime {
 		reworkExits?: ReworkExitsReadiness;
 		verifierDispute?: NativeConfirmationInput["verifierDispute"];
 		reviewRetryNotice?: string;
-		interaction?: NativeConfirmationInput["interaction"];
-		steering?: NativeConfirmationInput["steering"];
 	} = {}): Promise<{ confirmation_ref: string; reworkChoice?: ReworkChoice; verifierChoice?: NativeConfirmationResult["verifierChoice"] }> {
 		throwIfCancelled(meta.signal);
 		const probe = this.probeHost();
@@ -568,7 +547,7 @@ export class HostRuntime {
 		throwIfCancelled(meta.signal);
 		const gate = evaluateNativeGate({ operation, interactive, decision: result.decision });
 		if (!gate.ok) throw gate.error;
-		const { reworkExits: _exits, verifierDispute: _dispute, steering: _steering, ...refBinding } = binding;
+		const { reworkExits: _exits, verifierDispute: _dispute, ...refBinding } = binding;
 		return {
 			confirmation_ref: this.profile.confirmationRef({
 				connectionId: meta.sessionId,
@@ -730,120 +709,6 @@ export class HostRuntime {
 				actor_id: "executor",
 			},
 		});
-	}
-
-	/**
-	 * D5.2: the local owner steering Tool. A natively confirmed request is written
-	 * under `.imm/state/loop/steering/` and the daemon applies it on its next tick;
-	 * a declined or cancelled gate writes nothing.
-	 */
-	async steerLoopWorkItem(target: string, action: string, reason: string | null, meta: ToolMeta) {
-		if (!target) throw new Error("target is required");
-		if (!isLoopSteeringAction(action))
-			throw new Error(`action must be one of ${LOOP_STEERING_ACTIONS.join(", ")}`);
-		const normalized = reason && reason.trim().length > 0 ? reason.trim() : null;
-		// The confirmation binds the exact target and action, so one accepted gate
-		// cannot be replayed for another item.
-		const gate = await this.gate(
-			STEER_LOOP_WORK_ITEM_TOOL,
-			{ ...meta },
-			{ bindingDigest: steeringBindingDigest(target, action, normalized), steering: { target, action, reason: normalized } },
-		);
-		const request: LoopSteeringRequest = {
-			contract: LOOP_STEERING_REQUEST_CONTRACT,
-			target,
-			action,
-			reason: normalized,
-			requested_at: new Date().toISOString(),
-			confirmation: {
-				tool: STEER_LOOP_WORK_ITEM_TOOL,
-				confirmed_at: new Date().toISOString(),
-				confirmation_ref: gate.confirmation_ref,
-			},
-		};
-		const path = writeSteeringRequest(loopInteractionStateDir(this.cwd), request);
-		return {
-			state: "steering_requested",
-			target,
-			action,
-			reason: normalized,
-			request_path: path,
-			confirmation_ref: gate.confirmation_ref,
-			next:
-				action === "abandon"
-					? "The daemon moves this item to `abandoned` on its next tick and leaves any running Kernel run untouched; do not repeat the request."
-					: `The daemon applies this \`${action}\` on its next tick and removes the request file; do not repeat it.`,
-		};
-	}
-
-	/**
-	 * D4: the requests this checkout's daemon is waiting on. A read: it lists the
-	 * daemon's request files and changes nothing.
-	 */
-	async listLoopInteractions(taskId?: string) {
-		return listPendingLoopInteractions(this.cwd, taskId);
-	}
-
-	/**
-	 * D4: answer one pending local request under the native gate. The answer file
-	 * carries this confirmation's reference, which is what the daemon requires
-	 * before it applies the answer through the Lane decision relay.
-	 */
-	async answerLoopInteraction(interactionId: string, answer: string, meta: ToolMeta) {
-		if (!interactionId) throw new Error("interaction_id is required");
-		if (!answer) throw new Error("answer is required");
-		const stateDir = loopInteractionStateDir(this.cwd);
-		const request = readLocalRequest(stateDir, interactionId);
-		if (!request)
-			throw new Error(`interaction_not_pending: ${interactionId} is not a pending local request in ${stateDir}`);
-		if (request.kind === "plan_approval")
-			throw new Error(
-				`answer_with_drive: a plan_approval is answered by your own \`drive\` entry on the published TaskIntent, not by ${ANSWER_LOOP_INTERACTION_TOOL}`,
-			);
-		if (request.kind === "notice") throw new Error(`interaction_not_answerable: ${interactionId} is a notice`);
-		const taskId = request.subject.task_id ?? meta.taskId;
-		// The binding belongs to the store that owns the task: a Lane decision is
-		// bound to the Lane's TaskRecord, not to this checkout's.
-		const current = request.binding.record_revision ? localDecisionRecordRevision(this.cwd, taskId) : null;
-		if (request.binding.record_revision && request.binding.record_revision !== current)
-			throw new Error(
-				`interaction_stale: ${interactionId} was bound to record revision ${request.binding.record_revision}, the owner of ${taskId} now holds ${current ?? "an unreadable record"}; list the pending requests again`,
-			);
-		const gate = await this.gate(ANSWER_LOOP_INTERACTION_TOOL, { ...meta, taskId }, {
-			interaction: {
-				interaction_id: interactionId,
-				kind: request.kind,
-				subject: Object.entries(request.subject)
-					.map(([key, value]) => `${key}=${String(value)}`)
-					.join(" "),
-				binding: Object.entries(request.binding)
-					.filter(([, value]) => Boolean(value))
-					.map(([key, value]) => `${key}=${String(value)}`)
-					.join(" "),
-				prompt: request.prompt,
-				answer,
-			},
-		});
-		writeLocalAnswer(stateDir, {
-			interaction_id: interactionId,
-			kind: request.kind,
-			subject: request.subject,
-			binding: request.binding,
-			value: answer,
-			confirmation: {
-				tool: ANSWER_LOOP_INTERACTION_TOOL,
-				confirmed_at: new Date().toISOString(),
-				confirmation_ref: gate.confirmation_ref,
-			},
-		});
-		return {
-			state: "interaction_answered",
-			interaction_id: interactionId,
-			task_id: taskId,
-			answer,
-			confirmation_ref: gate.confirmation_ref,
-			next: "The daemon applies this answer through the Lane decision relay on its next tick; do not answer it again.",
-		};
 	}
 
 	/**

@@ -1,11 +1,12 @@
 // Self-contained BatchAgreement (Spec unified-lane-sessions D3).
-// One builder validates and issues it for both Host and daemon entries,
+// One builder validates and issues it for the Host entry,
 // refusing unknown confirmation.source, return_policy, interaction_mode,
 // or malformed final_verification with batch_agreement_invalid before
 // writing any state.
 import { computeBatchPlanDigest, type BatchPlanChild } from "../kernel/batch_authority";
 
-export type BatchConfirmationSource = "native_gate" | "tracker_approval" | "policy_auto";
+/** ADR 0043 retired the Loop daemon's `tracker_approval` and `policy_auto` sources. */
+export type BatchConfirmationSource = "native_gate";
 export type BatchReturnPolicy = "checkout_delivery" | "retain_branch";
 export type BatchInteractionMode = "interactive_host" | "parent_relayed";
 
@@ -55,7 +56,7 @@ export type AuthorizeBatchResult =
 	| { ok: true; agreement: BatchAgreement }
 	| { ok: false; code: "batch_agreement_invalid"; reason: string };
 
-const CONFIRMATION_SOURCES: ReadonlySet<string> = new Set(["native_gate", "tracker_approval", "policy_auto"]);
+const CONFIRMATION_SOURCES: ReadonlySet<string> = new Set(["native_gate"]);
 const RETURN_POLICIES: ReadonlySet<string> = new Set(["checkout_delivery", "retain_branch"]);
 const INTERACTION_MODES: ReadonlySet<string> = new Set(["interactive_host", "parent_relayed"]);
 

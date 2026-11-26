@@ -10,7 +10,6 @@
  *   - `imm-plan --routing-status --json` (strict Git-owned route projection)
  *   - `imm-plan <plan-path> [--json]` (read-only Plan validation)
  *   - `imm-tracker` (opt-in, one-way, non-authoritative GitHub Issue projection)
- *   - `imm-loop` (the ADR 0039 Loop Daemon CLI; records, never Kernel authority)
  *
  * Every retired v3 mutating command (`imm-work`, `imm-review`, `imm-migrate`,
  * `imm-finish`, `imm-autowork`, `imm-heal`, `imm-check-child-output`,
@@ -190,8 +189,8 @@ async function runKernelCli(args: string[], root: string): Promise<{
 	// The explicit claimless storage-layout migration is reachable here: a
 	// worktree still on the retired file store has no other entry point, and
 	// every mutating subcommand stays fail-closed behind it.
-	if (sub === "config" && args.includes("--json") && args.slice(1).every((arg) => arg === "--json" || arg === "--check-env")) {
-		const config = resolveConfig(root, { checkEnv: args.includes("--check-env") });
+	if (sub === "config" && args.includes("--json") && args.slice(1).every((arg) => arg === "--json")) {
+		const config = resolveConfig(root);
 		return { stdout: `${JSON.stringify(config, null, 2)}\n`, stderr: "", returncode: config.diagnostics.some((d) => d.severity === "error") ? 1 : 0 };
 	}
 	if (sub === "config" && args[1] === "migrate") {
@@ -296,10 +295,6 @@ async function runCli(command: string, args: string[], root: string): Promise<{
 		const { runSessionCli } = await import("./session/cli");
 		return runSessionCli(args, process.env);
 	}
-	if (command === "imm-loop") {
-		const { runLoopDaemonExecutable } = await import("./loop_daemon/cli");
-		return runLoopDaemonExecutable(args, root);
-	}
 	return {
 		stdout: "",
 		stderr: `Unknown Immune-Brain v4 command: ${command}\n`,
@@ -401,19 +396,6 @@ async function main(argv: string[]): Promise<number> {
 								"imm-session probe --provider herdr",
 								"imm-session create --provider herdr --cwd <lane_path> --label <name> --host claude-code --entry \"<drive entry> <task_id>\" -- <host arguments>",
 								"imm-session await <handle> --provider herdr",
-							],
-						},
-						{
-							name: "imm-loop",
-							description:
-								"The Loop Daemon (ADR 0039): observe GitHub, judge events and dispatch admitted handlers under `loop.mode`. Its decisions and dispatches are records, never Kernel authority.",
-							json_output: true,
-							examples: [
-								"imm-loop start --json",
-								"imm-loop status --json",
-								"imm-loop logs --lines 50",
-								"imm-loop stop --json",
-								"imm-loop tick --dry-run --json",
 							],
 						},
 					],

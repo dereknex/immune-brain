@@ -8,11 +8,9 @@ status: partially superseded by ADR-0037
 `review_command` from a review profile; it is no longer a reserved in-process
 Agent dispatch. See
 [ADR 0037](0037-authority-review-cli-stage.md). Enrollment, batch ownership and
-findings verification below are unchanged. Also amended by
-[ADR 0039](0039-loop-daemon.md): registers the Loop daemon (`imm-loop`) as the
-4th authorized composition root alongside interactive `drive`, `batch_runner`,
-and recovery tools; the daemon may start Host processes and call the decision
-model for event judging.
+findings verification below are unchanged. The fourth composition root that
+[ADR 0039](0039-loop-daemon.md) added, the Loop daemon, is superseded by
+[ADR 0043](0043-loop-daemon-freeze-and-extraction.md) and no longer exists.
 
 ## Context
 
@@ -41,11 +39,10 @@ invocation inside the runtime would introduce another execution/authority path.
    child's terminal audit evidence and re-enters the same batch. The shared
    driver reconciles settlement, adopts or creates exactly one scope-bound
    commit, and enrolls the next ready child under valid authorization.
-   Under [ADR 0039](0039-loop-daemon.md), the Loop daemon is authorized as a 4th
-   composition root to start Host processes and call the decision model for event
-   judging; authority-path files (`runtime/kernel/`, `runtime/assurance/`,
-   `runtime/unattended/`, `runtime/claude/`, `.pi-extension/`) still invoke no model
-   and do not import `runtime/decision_model/`.
+   *The Loop daemon composition root that [ADR 0039](0039-loop-daemon.md) added
+   is superseded by [ADR 0043](0043-loop-daemon-freeze-and-extraction.md);* authority-path files (`runtime/kernel/`,
+   `runtime/assurance/`, `runtime/unattended/`, `runtime/claude/`,
+   `.pi-extension/`) invoke no model.
 
 ## Rejected Alternatives
 

@@ -1,5 +1,5 @@
 import {
-	ENROLLMENT_CONFIRMATION_SOURCES,
+	RECORDED_ENROLLMENT_CONFIRMATION_SOURCES,
 	TASK_ARTIFACT_STATES,
 	TASK_LIFECYCLES,
 	TASK_RECORD_CONTRACT_V3,
@@ -745,8 +745,8 @@ export function parseTaskRecordAtVersion(raw: unknown, version: 3 | 4): TaskReco
 	let confirmationSource: TaskRecordV4["confirmation_source"];
 	if (value.confirmation_source !== undefined) {
 		if (version !== 4) violations.push("record.confirmation_source is only valid on a v4 record");
-		else if (!(ENROLLMENT_CONFIRMATION_SOURCES as readonly unknown[]).includes(value.confirmation_source))
-			violations.push(`record.confirmation_source must be one of ${ENROLLMENT_CONFIRMATION_SOURCES.join(", ")}`);
+		else if (!(RECORDED_ENROLLMENT_CONFIRMATION_SOURCES as readonly unknown[]).includes(value.confirmation_source))
+			violations.push(`record.confirmation_source must be one of ${RECORDED_ENROLLMENT_CONFIRMATION_SOURCES.join(", ")}`);
 		else confirmationSource = value.confirmation_source as TaskRecordV4["confirmation_source"];
 	}
 	if (findings.some((finding) => finding.status === "accepted_risk") && residualRiskAcceptance === undefined)

@@ -953,7 +953,7 @@ describe("review rework: adoption, attention, refusals and exited corrections", 
 			port.refuseOpen = "provider is busy";
 			const kernel = fakeKernel(new Map([["task-a", "r1"]]));
 			const input = laneInput(fx.repo, fx.base, "batch-resume-refusal", [child("task-a")], kernel, port, {
-				confirmation: { source: "tracker_approval", ref: "tracker_approval:plan" },
+				confirmation: { source: "native_gate", ref: "native_gate:plan" },
 			});
 			await advanceBatch(input, null);
 			const parked = (await advanceBatch(input, readAnyBatchRunState(fx.repo, "batch-resume-refusal"))) as unknown as { batch_state: string; children: Array<{ state: string }> };

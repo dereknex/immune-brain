@@ -1,10 +1,15 @@
+---
+status: superseded by ADR-0043
+---
+
 # Leader plus catalog replace the judging agent
 
-Status: accepted; amends [ADR 0039](0039-loop-daemon.md) Decisions 2, 6 and 7,
+Status: superseded by [ADR 0043](0043-loop-daemon-freeze-and-extraction.md), which removed the Loop daemon from this
+repository. The text below is the historical record; it amended [ADR 0039](0039-loop-daemon.md) Decisions 2, 6 and 7,
 and amends [ADR 0041](0041-simplified-configuration.md) Decisions 1, 3 and 7.
-Numbered 0041 until Slice `S1` of `docs/specs/loop-leader-uls-alignment.spec.md`
+Numbered 0041 until Slice `S1` of `loop-leader-uls-alignment.spec.md`
 renumbered it: [ADR 0041](0041-simplified-configuration.md) already held that number.
-Slice `S3` of `docs/specs/loop-leader.spec.md` (`loop-leader-s3-guarded-dispatch`).
+Slice `S3` of `loop-leader.spec.md` (`loop-leader-s3-guarded-dispatch`).
 
 ## Context
 

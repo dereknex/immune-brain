@@ -5,7 +5,6 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { batchConfigErrors, resolveConfig } from "../plugins/immune-brain/runtime/config/layered_config.ts";
 import { migrateConfig } from "../plugins/immune-brain/runtime/config/migrate.ts";
-import { POINT_REGISTRY } from "../plugins/immune-brain/runtime/decision_model/thresholds.ts";
 
 // ADR 0041: two layers (project `.imm/config.json` over the user file) resolve
 // every key; permission keys take the stricter value; v1 files are void until
@@ -29,7 +28,6 @@ const write = (root: string, path: string, data: unknown) => { mkdirSync(join(ro
 const fake = { kind: "fake", answers: {} };
 type Config = ReturnType<typeof resolveConfig>;
 const errorAt = (c: Config, key_path: string) => c.diagnostics.find((d) => d.severity === "error" && d.key_path === key_path);
-const point = Object.keys(POINT_REGISTRY)[0]!, other = Object.keys(POINT_REGISTRY)[1]!;
 
 const PLAIN: Array<[string, (v: unknown) => object, unknown, unknown, unknown, (c: Config) => unknown]> = [
 	["initiative_carrier", (v) => ({ initiative_carrier: v }), "local", "github", null, (c) => c.initiative_carrier],
@@ -117,7 +115,9 @@ test.each([
 	["retired projects key", JSON.stringify({ contract: USER, projects: { "github.com/O/R": { initiative_carrier: "local" } } }), "projects"],
 	["retired lanes key", JSON.stringify({ contract: USER, lanes: { active: "x" } }), "lanes"],
 	["unknown nested key", JSON.stringify({ contract: USER, batch: { mystery: true } }), "batch.mystery"],
-	["pasted token", JSON.stringify({ contract: USER, decision_models: { profiles: { x: { kind: "clef", model: "clef", account_id_env: "ACCOUNT", token_env: "sk-live-123" } } } }), "decision_models.profiles.x.token_env"],
+	// ADR 0043: the retired Loop keys are unknown, and a pasted token inside one is never echoed.
+	["retired decision_models key", JSON.stringify({ contract: USER, decision_models: { profiles: { x: { kind: "clef", token_env: "sk-live-123" } } } }), "decision_models"],
+	["retired loop key", JSON.stringify({ contract: USER, loop: { mode: "off" } }), "loop"],
 ])("refuses a user file with %s through a redacted named diagnostic", (_name, content, path) => {
 	const f = fixture(); f.project({ initiative_carrier: "github" }); writeFileSync(f.userPath, content);
 	const c = f.read(true);
@@ -128,16 +128,12 @@ test.each([
 
 test("permission keys take the stricter value across layers", () => {
 	const f = fixture();
-	f.user({ git_integration: "manual", loop: { auto_enroll_max_risk: "none", allowed_actors: ["a", "b"], allowed_associations: ["OWNER", "MEMBER"] } });
-	f.project({ git_integration: "auto", loop: { auto_enroll_max_risk: "routine", allowed_actors: ["b", "c"], allowed_associations: ["MEMBER", "COLLABORATOR"] } });
-	let c = f.read();
-	expect(c.git_integration).toEqual({ value: "manual", source: "user" });
-	expect(c.loop.value).toMatchObject({ auto_enroll_max_risk: "none", allowed_actors: ["b"], allowed_associations: ["MEMBER"] });
-	f.user({ git_integration: "auto", loop: { auto_enroll_max_risk: "routine" } });
+	f.user({ git_integration: "manual" });
+	f.project({ git_integration: "auto" });
+	expect(f.read().git_integration).toEqual({ value: "manual", source: "user" });
+	f.user({ git_integration: "auto" });
 	f.project({ git_integration: "manual" });
-	c = f.read();
-	expect(c.git_integration).toEqual({ value: "manual", source: "project" });
-	expect(c.loop.value.auto_enroll_max_risk).toBe("routine");
+	expect(f.read().git_integration).toEqual({ value: "manual", source: "project" });
 	f.project({ git_integration: "auto" });
 	expect(f.read().git_integration).toEqual({ value: "auto", source: "project" });
 	f.project({});
@@ -145,29 +141,23 @@ test("permission keys take the stricter value across layers", () => {
 	expect(f.read().git_integration).toEqual({ value: "manual", source: "default" });
 });
 
-test("decision_models: per-key project override, bindings off, egress replaced per kind, user-only profiles", () => {
+// ADR 0043 retired the Loop daemon: a top-level `loop` or `decision_models` key in either file is
+// config_invalid and blocks the batch, and the effective configuration carries neither.
+test("a retired loop or decision_models key is config_invalid in either file and blocks the batch", () => {
 	const f = fixture();
-	f.user({ decision_models: { profiles: { a: fake, b: fake }, default_profile: "a", bindings: { [point]: "a", [other]: "a" }, egress: { clef: ["finding", "diff"], jev: ["diff"] } } });
-	f.project({ decision_models: { default_profile: "b", bindings: { [point]: "off" }, egress: { clef: ["finding", "goal_scope"] } } });
-	let c = f.read();
-	expect(c.decision_models.valid).toBe(true);
-	expect(c.decision_models.profiles).toEqual({ value: { a: fake, b: fake }, source: "user" });
-	expect(c.decision_models.default_profile).toEqual({ value: "b", source: "project" });
-	expect(c.decision_models.bindings[point]).toEqual({ value: "off", source: "project" });
-	expect(c.decision_models.bindings[other]).toEqual({ value: "a", source: "user" });
-	// No intersection: the project list replaces the user list for its kind.
-	expect(c.decision_models.egress.clef).toEqual({ value: ["finding", "goal_scope"], source: "project" });
-	expect(c.decision_models.egress.jev).toEqual({ value: ["diff"], source: "user" });
-	expect("enabled_points" in c.decision_models).toBe(false);
-
-	f.project({ decision_models: { profiles: { p: fake }, default_profile: "missing", enabled_points: [point] } });
-	c = f.read();
-	expect(c.decision_models.valid).toBe(false);
-	expect(errorAt(c, "decision_models.profiles")).toMatchObject({ code: "config_invalid", file: f.projectPath });
-	expect(errorAt(c, "decision_models.enabled_points")).toMatchObject({ code: "config_invalid", file: f.projectPath });
-	expect(errorAt(c, "decision_models.default_profile")).toMatchObject({ code: "unknown_profile", file: f.projectPath });
-	expect(c.decision_models.default_profile).toEqual({ value: "a", source: "user" });
-	expect(c.decision_models.profiles.value).not.toHaveProperty("p");
+	f.user({ decision_models: {} });
+	f.project({ loop: { mode: "off" } });
+	const c = f.read();
+	expect(errorAt(c, "decision_models")).toMatchObject({ code: "config_invalid", file: f.userPath });
+	expect(errorAt(c, "loop")).toMatchObject({ code: "config_invalid", file: f.projectPath });
+	expect(batchConfigErrors(c).map((d) => d.key_path).sort()).toEqual(["decision_models", "loop"]);
+	expect(c).not.toHaveProperty("loop");
+	expect(c).not.toHaveProperty("decision_models");
+	f.user({});
+	f.project({});
+	const clean = f.read();
+	expect(clean.diagnostics).toEqual([]);
+	expect(batchConfigErrors(clean)).toEqual([]);
 });
 
 test("the project file is read untracked, and a linked worktree reads the main checkout's file", () => {
@@ -193,14 +183,12 @@ test("retired legacy sources are no longer read", () => {
 	execFileSync("git", ["add", "AGENTS.md", ".imm/decision-bindings.json"], { cwd: f.root });
 	const c = f.read();
 	expect(c.batch.max_parallel).toEqual({ value: 1, source: "default" });
-	expect(c.decision_models.profiles).toEqual({ value: {}, source: "default" });
-	expect(c.decision_models.default_profile).toEqual({ value: null, source: "default" });
 	expect(c.git_integration).toEqual({ value: "manual", source: "default" });
 	expect(c.initiative_carrier).toEqual({ value: null, source: "default" });
 	expect(c.diagnostics).toEqual([]);
 });
 
-test("batchConfigErrors counts only agents, batch, herdr and whole-file errors", () => {
+test("batchConfigErrors counts agents, batch, session_providers, unknown top-level and whole-file errors", () => {
 	const f = fixture();
 	for (const [data, blocks] of [
 		[{ agents: { executor: "codex" } }, true],
@@ -209,9 +197,9 @@ test("batchConfigErrors counts only agents, batch, herdr and whole-file errors",
 		[{ session_providers: ["fake"] }, true],
 		[{ herdr: "yes" }, false],
 		[{ herdr: true }, false],
-		[{ loop: { mode: "always" } }, false],
+		[{ loop: { mode: "always" } }, true],
 		[{ initiative_carrier: "gitlab" }, false],
-		[{ decision_models: { bindings: { [point]: "missing" } } }, false],
+		[{ decision_models: {} }, true],
 	] as const) {
 		f.user(data);
 		expect({ data, blocks: batchConfigErrors(f.read()).length > 0 }).toEqual({ data, blocks });
@@ -220,53 +208,19 @@ test("batchConfigErrors counts only agents, batch, herdr and whole-file errors",
 	expect(batchConfigErrors(f.read())).toContainEqual(expect.objectContaining({ key_path: "$" }));
 });
 
-test("loop.budget.max_leader_wakes_per_day accepts 0..500 and defaults to 48", () => {
-	const f = fixture();
-	expect(f.read().loop.value.budget.max_leader_wakes_per_day).toBe(48);
-	f.project({ loop: { budget: { max_leader_wakes_per_day: 0 } } });
-	expect(f.read().loop.value.budget.max_leader_wakes_per_day).toBe(0);
-	f.project({ loop: { budget: { max_leader_wakes_per_day: 500 } } });
-	expect(f.read().loop.value.budget.max_leader_wakes_per_day).toBe(500);
-	// Out of range: the key is refused and the default stands.
-	f.project({ loop: { budget: { max_leader_wakes_per_day: 501 } } });
-	const c = f.read();
-	expect(errorAt(c, "loop.budget.max_leader_wakes_per_day")).toMatchObject({ code: "config_invalid" });
-	expect(c.loop.value.budget.max_leader_wakes_per_day).toBe(48);
-});
-
-test("loop.roles resolves from the project file only, and a rejected role never invalidates the loop", () => {
-	const f = fixture();
-	expect(f.read().loop.value.roles).toHaveLength(6);
-	f.project({ loop: { roles: { planner: { base: "plan", host: "pi" } } } });
-	const bound = f.read();
-	expect(bound.loop).toMatchObject({ valid: true, source: "project" });
-	expect(bound.loop.value.roles.find((role) => role.base === "plan")).toMatchObject({ name: "planner", host: "pi", source: "project" });
-	// A user-file catalog is refused: `loop.roles` names this repository's roles.
-	f.user({ loop: { roles: { planner: { base: "plan" } } } });
-	expect(errorAt(f.read(), "loop.roles")).toMatchObject({ code: "config_invalid", file: f.userPath });
-	// A rejected role is excluded and reported, while a loop error outside the catalog still fails it.
-	f.user({});
-	f.project({ loop: { roles: { broken: { base: "review" }, odd: { base: "plan", limits: { max_parallel: 9 } } }, mode: "always" } });
-	const c = f.read();
-	expect(errorAt(c, "loop.roles.broken.base")).toMatchObject({ code: "role_base_unknown" });
-	expect(errorAt(c, "loop.roles.odd.limits.max_parallel")).toMatchObject({ code: "role_limit_out_of_range" });
-	expect(errorAt(c, "loop.mode")).toMatchObject({ code: "config_invalid" });
-	expect(c.loop.valid).toBe(false);
-	expect(c.loop.value.roles.map((role) => role.name)).toEqual(["leader", "clarify", "plan", "execute", "repair", "analyze"]);
-});
-
-test("CLI config --json prints the v2 effective configuration, exits on errors and checks env without values", () => {
+test("CLI config --json prints the v2 effective configuration and exits on errors", () => {
 	const f = fixture(), configHome = join(temp, "xdg"); mkdirSync(join(configHome, "immune-brain"), { recursive: true });
 	f.project({ batch: { max_parallel: 2 }, agents: { executor: "pi:project-model" } });
 	const userPath = join(configHome, "immune-brain/config.json");
-	writeFileSync(userPath, JSON.stringify({ contract: USER, session_providers: ["herdr-core"], decision_models: { profiles: { x: { kind: "clef", model: "clef", account_id_env: "TEST_ACCOUNT", token_env: "TEST_TOKEN" } } } }));
+	writeFileSync(userPath, JSON.stringify({ contract: USER, session_providers: ["herdr-core"] }));
 	const cli = resolve("plugins/immune-brain/bin/imm-kernel");
-	const env = { ...process.env, XDG_CONFIG_HOME: configHome, TEST_ACCOUNT: "secret-value" }; delete env.TEST_TOKEN;
-	const run = () => spawnSync(cli, ["config", "--json", "--check-env"], { cwd: f.root, encoding: "utf8", env });
-	let result = run(); expect(result.status).toBe(0); expect(result.stdout).not.toContain("secret-value");
+	const env = { ...process.env, XDG_CONFIG_HOME: configHome };
+	const run = () => spawnSync(cli, ["config", "--json"], { cwd: f.root, encoding: "utf8", env });
+	let result = run(); expect(result.status).toBe(0);
 	const parsed = JSON.parse(result.stdout);
 	expect(parsed.contract).toBe("immune_brain/effective_config/v2");
-	expect(parsed.decision_models.environment.x).toEqual({ account_id_env: "set", token_env: "unset" });
+	expect(parsed).not.toHaveProperty("loop");
+	expect(parsed).not.toHaveProperty("decision_models");
 	expect(parsed.batch.max_parallel).toEqual({ value: 2, source: "project" });
 	expect(parsed.session_providers).toEqual({ value: ["herdr-core"], source: "user" });
 	expect(parsed).not.toHaveProperty("herdr");
@@ -278,6 +232,12 @@ test("CLI config --json prints the v2 effective configuration, exits on errors a
 	result = run(); expect(result.status).toBe(1); expect(JSON.parse(result.stdout).diagnostics.some((d: { code: string }) => d.code === "unknown_profile")).toBe(true);
 	writeFileSync(userPath, JSON.stringify({ contract: USER, decision_models: { profiles: { x: { kind: "clef", model: "clef", account_id_env: "A", token_env: "sk-live-123" } } } }));
 	result = run(); expect(result.status).toBe(1); expect(result.stdout).not.toContain("sk-live-123");
+	expect(JSON.parse(result.stdout).diagnostics).toContainEqual(expect.objectContaining({ code: "config_invalid", key_path: "decision_models" }));
+	writeFileSync(userPath, JSON.stringify({ contract: USER }));
+	f.project({ loop: { mode: "off" } });
+	result = run(); expect(result.status).toBe(1);
+	expect(JSON.parse(result.stdout).diagnostics).toContainEqual(expect.objectContaining({ code: "config_invalid", key_path: "loop" }));
+	f.project({});
 	writeFileSync(userPath, "{"); result = run(); expect(result.status).toBe(1);
 });
 
@@ -302,7 +262,7 @@ test("config migrate rewrites v1 user and project files as v2: dry run writes no
 			"github.com/X/Y": { initiative_carrier: "github" },
 		},
 	};
-	const v1Project = { contract: "immune_brain/project_config/v1", decision_models: { enabled_points: [point] }, batch: { final_verification: ["bun test"] }, review_verifier: "on" };
+	const v1Project = { contract: "immune_brain/project_config/v1", decision_models: { enabled_points: ["any"] }, batch: { final_verification: ["bun test"] }, review_verifier: "on" };
 	write(configHome, "immune-brain/config.json", v1User);
 	f.project(v1Project, v1Project.contract);
 	const userAfter = {
@@ -312,14 +272,12 @@ test("config migrate rewrites v1 user and project files as v2: dry run writes no
 			executor: "sonnet", reviewer: "opus", planner: "opus", triage: "sonnet",
 		},
 		batch: { max_parallel: 2 },
-		decision_models: { profiles: { main: fake } },
 		git_integration: "manual",
 	};
 	const projectAfter = {
 		contract: PROJECT,
 		agents: { executor: "opus" },
 		batch: { max_parallel: 4, final_verification: ["bun test"] },
-		decision_models: { default_profile: "main", bindings: Object.fromEntries(Object.keys(POINT_REGISTRY).filter((p) => p !== point).map((p) => [p, "off"])) },
 		review_verifier: "on",
 		initiative_carrier: "local",
 	};
@@ -327,7 +285,8 @@ test("config migrate rewrites v1 user and project files as v2: dry run writes no
 
 	const report = migrateConfig(f.root, { userConfigPath: userPath });
 	expect(report.user).toMatchObject({ path: userPath, before: v1User, after: userAfter, changed: true });
-	expect(report.user.after).not.toHaveProperty("herdr");
+	// ADR 0043: no v1 decision_models or loop value is synthesized into v2.
+	for (const after of [report.user.after, report.project.after]) for (const retired of ["herdr", "loop", "decision_models"]) expect(after).not.toHaveProperty(retired);
 	expect(report.project).toMatchObject({ before: v1Project, after: projectAfter, changed: true });
 	expect(report.written).toBe(false);
 	expect(report.notes.some((n) => n.includes("projects.github.com/X/Y"))).toBe(true);
@@ -347,16 +306,8 @@ test("config migrate rewrites v1 user and project files as v2: dry run writes no
 	expect(JSON.parse(readFileSync(userPath, "utf8"))).toEqual(userAfter);
 	expect(JSON.parse(readFileSync(f.projectPath, "utf8"))).toEqual(projectAfter);
 	const c = resolveConfig(f.root, { userConfigPath: userPath });
-	// The migrated file keeps the agents bindings the Loop no longer reads, so each is one notice (S1, BR-DEC-7).
-	expect(c.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
-	expect(c.diagnostics.map((d) => [d.code, d.key_path])).toEqual([
-		["deprecated_config_source", "loop.roles"],
-		["deprecated_config_source", "loop.roles"],
-		["deprecated_config_source", "loop.roles"],
-		["deprecated_config_source", "agents.triage"],
-	]);
+	expect(c.diagnostics).toEqual([]);
 	expect(c.agents.roles.executor).toEqual({ host: "claude-code", model: "opus-5-5", effort: "medium", source: "project" });
-	expect(c.decision_models.bindings[other]).toEqual({ value: "off", source: "project" });
 	expect(migrateConfig(f.root, { userConfigPath: userPath }).notes).toContain("both files already use the v2 contract");
 	// The v1 user file is kept, so another repository's `projects` entry still migrates there, and the
 	// migrated user file is not rewritten.
@@ -370,24 +321,24 @@ test("config migrate rewrites v1 user and project files as v2: dry run writes no
 	expect({ status: usage.status, stderr: usage.stderr }).toEqual({ status: 2, stderr: "usage: imm-kernel config migrate [--write]\n" });
 });
 
-test("config migrate --write deletes a stored herdr key from v2 files and preserves every other key", () => {
+test("config migrate --write deletes stored herdr, loop and decision_models keys from v2 files and preserves every other key", () => {
 	const f = fixture();
 	const configHome = join(temp, `xdg-retired-${counter}`), userPath = join(configHome, "immune-brain/config.json");
 	mkdirSync(join(configHome, "immune-brain"), { recursive: true });
-	const userBefore = { contract: USER, herdr: true, initiative_carrier: "local" };
-	const projectBefore = { contract: PROJECT, herdr: false, batch: { max_parallel: 3 } };
+	const userBefore = { contract: USER, herdr: true, decision_models: {}, initiative_carrier: "local", agents: { executor: "pi" } };
+	const projectBefore = { contract: PROJECT, herdr: false, loop: { mode: "off" }, batch: { max_parallel: 3 }, review_verifier: "on" };
 	writeFileSync(userPath, JSON.stringify(userBefore));
 	writeFileSync(f.projectPath, JSON.stringify(projectBefore));
 	const dry = migrateConfig(f.root, { userConfigPath: userPath });
-	expect(dry.user.after).toEqual({ contract: USER, initiative_carrier: "local" });
-	expect(dry.project.after).toEqual({ contract: PROJECT, batch: { max_parallel: 3 } });
+	expect(dry.user.after).toEqual({ contract: USER, initiative_carrier: "local", agents: { executor: "pi" } });
+	expect(dry.project.after).toEqual({ contract: PROJECT, batch: { max_parallel: 3 }, review_verifier: "on" });
 	expect(dry.user.changed).toBe(true);
 	expect(dry.project.changed).toBe(true);
 	expect(readFileSync(userPath, "utf8")).toBe(JSON.stringify(userBefore));
 	const wrote = migrateConfig(f.root, { userConfigPath: userPath, write: true });
 	expect(wrote.written).toBe(true);
-	expect(JSON.parse(readFileSync(userPath, "utf8"))).toEqual({ contract: USER, initiative_carrier: "local" });
-	expect(JSON.parse(readFileSync(f.projectPath, "utf8"))).toEqual({ contract: PROJECT, batch: { max_parallel: 3 } });
+	expect(JSON.parse(readFileSync(userPath, "utf8"))).toEqual({ contract: USER, initiative_carrier: "local", agents: { executor: "pi" } });
+	expect(JSON.parse(readFileSync(f.projectPath, "utf8"))).toEqual({ contract: PROJECT, batch: { max_parallel: 3 }, review_verifier: "on" });
 	expect(resolveConfig(f.root, { userConfigPath: userPath }).diagnostics).toEqual([]);
 });
 

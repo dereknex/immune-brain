@@ -82,11 +82,10 @@ const TRIGGER_CASES: Array<[name: string, explicit: string, ordinary: string, sc
 	["slim", "minimize AGENTS.md with Immune-Brain", "what does this instruction mean", "tracked AGENTS.md"],
 	["prune-tests", "prune redundant tests with Immune-Brain", "is this test redundant", "redundant, bloated, or orphaned tests"],
 	["revisit", "review-retro with Immune-Brain", "review this function", "workflow-health retro"],
-	["imm-loop", "start the Immune-Brain Loop daemon", "explain this for loop", "Loop daemon"],
 ];
 
 
-// The current surface names no retired Skill (imm-loop is active as the Loop daemon Skill and CLI). Dated history and tests keep them.
+// The current surface names no retired Skill. Dated history and tests keep them.
 const RETIRED_SKILL_NAME = /(?<![A-Za-z0-9_-])imm-(?:brainstorm|planner|run|retro|doc-slim|doc-prune|test-prune|pr-fix)(?![A-Za-z0-9_])/g;
 const CURRENT_SURFACE = [
 	"plugins/immune-brain",

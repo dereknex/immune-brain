@@ -1,10 +1,11 @@
 ---
-status: accepted
+status: superseded by ADR-0043
 ---
 
 # Loop Daemon: Unattended Planning and Advancement of Issues
 
-**Status:** accepted. Adopted from the repository owner's decisions D1–D12 of
+**Status:** superseded by [ADR 0043](0043-loop-daemon-freeze-and-extraction.md), which removed the Loop daemon from this
+repository. The text below is the historical record. Adopted from the repository owner's decisions D1–D12 of
 2026-11-10, recorded with their evidence in
 [`docs/proposals/loop-agent.md`](../proposals/loop-agent.md). Renumbered from 0038
 per BR-DEC-3 because [ADR 0038](0038-supervised-session-port.md) already occupies
@@ -96,7 +97,7 @@ what to start, and supplies a confirmation when no native dialog can open.
 7. **The decision model is enabled directly.** Its application points for the
    daemon go live without a prior offline measurement or a shadow run. This
    departs from the "measured offline first, against a named baseline" rule
-   that `docs/specs/decision-model-core.spec.md` follows. In exchange: each
+   that `decision-model-core.spec.md` follows. In exchange: each
    point starts with a conservative hand-set threshold; only the correctable
    direction of an answer is acted on; an event the model caused to be skipped
    is re-checked by a judging agent at the next full reconciliation; every

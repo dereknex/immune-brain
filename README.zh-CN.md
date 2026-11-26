@@ -28,7 +28,7 @@ Pi、Claude Code 与 Antigravity（`plugins/immune-brain-antigravity/`）是支�
 - [推荐工作流：与 mattpocock/skills 组合使用](#推荐工作流与-mattpocockskills-组合使用)
 - [实战案例](#实战案例)
 - [核心设计哲学：把“判断”变成“查表”](#核心设计哲学把判断变成查表用确定性工程驾驭多模型)
-- [9 个 Skills](#9-个-skills)
+- [8 个 Skills](#8-个-skills)
 - [生命周期](#生命周期)
 - [无人值守批次运行](#无人值守批次运行)
 - [配置](#配置)
@@ -63,7 +63,7 @@ pi update npm:immune-brain        # 升级到下一个已晋升版本
 pi install npm:immune-brain@next
 ```
 
-无需额外 server 配置，通过 Pi 安装后 9 个公开 Skill 即自动可用。
+无需额外 server 配置，通过 Pi 安装后 8 个公开 Skill 即自动可用。
 
 ### 在 Claude Code 中使用
 
@@ -158,7 +158,6 @@ Immune-Brain 提供两种清晰的工作模式：日常轻量编码走 **Host-na
 | Agent 指令文件膨胀 | `/slim` | → 将 tracked `AGENTS.md` / `CLAUDE.md` 压到最小必要上下文 |
 | 测试用例膨胀、重复 | `/prune-tests` | → 只读审计测试，仅合并或删除经审批、有退休或覆盖率证据的条目 |
 | 工作流在哪里遇到阻力、如何改进 | `/revisit` | → 基于会话证据诊断工作流阻力 |
-| 启动、停止或查看仓库后台 Loop 守护进程 | `/imm-loop` | → 通过 `bin/imm-loop` 查看状态/日志、执行 dry-run 或启停后台守护进程 |
 
 > **核心原则：Skill 显式调用**
 > - **普通输入保持 Host-native**：自然语言提问绝不自动绑架流程或发起 Enrollment。你完全自主决定何时开启严格工程保障。
@@ -450,7 +449,7 @@ Immune-Brain 的核心假设是：**不要让弱模型做架构决策，把它�
 
 ---
 
-## 9 个 Skills
+## 8 个 Skills
 
 | Skill | 类型 | 何时使用 | 职责 |
 |---|---|---|---|
@@ -462,11 +461,10 @@ Immune-Brain 的核心假设是：**不要让弱模型做架构决策，把它�
 | `slim` | 独立 | Agent instruction 膨胀 | 将 tracked AGENTS/CLAUDE/GEMINI.md 压到最小必要上下文 |
 | `prune-tests` | 独立 | 测试膨胀或重复 | 合并、参数化或删除经审批的测试条目，不弱化断言 |
 | `revisit` | 独立 | 工作流阻力诊断 | 追溯证据，推荐一个后续步骤；不对模型排名 |
-| `imm-loop` | 独立 | 后台 Loop 守护进程控制 | 查看状态/日志、运行 dry-run tick，启停与暂停 `bin/imm-loop` |
 
 Executor、QA、Review、Compounder 等为 `drive` 内部调度的角色，无需手动调用。
 
-所有 9 个 Skill 均显式调用。新需求开发时：若需求含糊先调 `clarify`，目标清晰直接调 `draw-up`，完成确认后调 `drive` 推进闭环。
+所有 8 个 Skill 均显式调用。新需求开发时：若需求含糊先调 `clarify`，目标清晰直接调 `draw-up`，完成确认后调 `drive` 推进闭环。
 
 ### Managed Path 入口（brainstorm → planner → loop）
 
@@ -667,10 +665,10 @@ sequenceDiagram
 
 Immune-Brain 读取两个 JSON 文件，Pi 与 Claude Code 共用（[ADR 0041](docs/adr/0041-simplified-configuration.md)）：
 
-- **用户文件** `~/.config/immune-brain/config.json`（设置了 `XDG_CONFIG_HOME` 时为 `$XDG_CONFIG_HOME/immune-brain/config.json`）：个人默认值、agent profile 和决策模型 profile（只写凭据环境变量的*名字*）。
+- **用户文件** `~/.config/immune-brain/config.json`（设置了 `XDG_CONFIG_HOME` 时为 `$XDG_CONFIG_HOME/immune-brain/config.json`）：个人默认值和 agent profile。
 - **项目文件** 主 checkout 中的 `.imm/config.json`：按仓库的选择，只属于本地 checkout。无论 Git 是否跟踪都会读取；团队成员习惯不同时不要纳入版本管理。
 
-每个键按 **请求 > 项目文件 > 用户文件 > 默认值** 解析；权限类键取更严格的值：`git_integration`（`manual` 优先）、`loop.auto_enroll_max_risk`（风险较低者优先）、`loop.allowed_actors` / `loop.allowed_associations`（取交集）。
+每个键按 **请求 > 项目文件 > 用户文件 > 默认值** 解析；`git_integration` 例外，取更严格的值（`manual` 优先）。
 
 ```json
 {
@@ -691,7 +689,7 @@ Immune-Brain 读取两个 JSON 文件，Pi 与 Claude Code 共用（[ADR 0041](d
 | 偏好 | 位置 | 默认 | 说明 |
 |---|---|---|---|
 | 回复语言 | agent 指令文件（`AGENTS.md` / `CLAUDE.md`） | 仓库 `AGENTS.md` | 机器契约/路径/标识符保持原文 |
-| Agent（`executor`、`reviewer`、`planner`、`triage`） | 任一文件；profile 只在用户文件 | executor：Parent 自己的 Host；reviewer：无 | profile 名、简写 `host[:model][@effort]` 或 `{ host, model?, effort? }` |
+| Agent（`executor`、`reviewer`） | 任一文件；profile 只在用户文件 | executor：Parent 自己的 Host；reviewer：无 | profile 名、简写 `host[:model][@effort]` 或 `{ host, model?, effort? }` |
 | Lane 并行数 | 任一文件的 `batch.max_parallel` | 1 | 请求中的 `max_parallel` 优先 |
 | Herdr tab | 顶层 `herdr` | `false` | 为 `true` 且 Parent 运行在 Herdr 中时，Lane Executor 在 Herdr tab 中运行 |
 | Initiative 载体 | 任一文件 | 无默认，Planner 询问 | 仅当提案拆分为多个 TaskIntent 时生效 |
@@ -710,7 +708,7 @@ Immune-Brain 读取两个 JSON 文件，Pi 与 Claude Code 共用（[ADR 0041](d
 package.json                          # Pi package manifest（skills + extensions）
 plugins/immune-brain/
 ├── .pi-extension/                    # Pi TUI + Kernel 扩展
-├── skills/                           # 9 个公开 Skills（触发 shim）
+├── skills/                           # 8 个公开 Skills（触发 shim）
 ├── dist/                             # 构建后的 skill 契约与参考文档
 ├── runtime/                          # Bun + TypeScript 运行时与 Kernel
 └── bin/                              # CLI wrappers（→ runtime/v4_runtime.ts）
@@ -728,7 +726,7 @@ docs/specs/                           # Living specs（原地更新）
 
 ## 常见问题
 
-**需要记住所有 Skill 吗？** 不需要。日常开发核心只需两个：`/draw-up`（规划与确认任务）和 `/drive`（执行与验证）。需求模糊时用 `/clarify`，维护与守护进程类任务（如 `/fix-pr`、`/imm-loop`）按需使用。普通问答与即时小修改无需任何 Skill。
+**需要记住所有 Skill 吗？** 不需要。日常开发核心只需两个：`/draw-up`（规划与确认任务）和 `/drive`（执行与验证）。需求模糊时用 `/clarify`，维护类任务（如 `/fix-pr`、`/prune-docs`）按需使用。普通问答与即时小修改无需任何 Skill。
 
 **中途关闭会话会怎样？** 状态已落盘保存（`.imm/` + TaskIntent）。在 Pi 或 Claude Code 中重新输入 `/drive` 即可恢复，以 Kernel projection 状态为准。
 
@@ -746,7 +744,7 @@ docs/specs/                           # Living specs（原地更新）
 
 **任务结算后的审计凭证（Audit Trail）保存在哪里？** 保存在仓库的 `.imm/audit/<task-id>/` 目录下，并作为 Git-tracked 资产提交。其中包含最终的 `TaskRecord`、绑定的代码 `diff_hash`、真实执行的 QA 退出码/输出 Attestation、以及 Reviewer 签署的验证凭据，保证交付全流程可追溯、可审计。
 
-**为什么用两个配置文件，而不是 AGENTS.md / CLAUDE.md 里的指令行？** 配置属于插件，不属于某个 Host 的指令文件。个人选择（Lane profile、按环境变量名引用的决策模型凭据）写在 `~/.config/immune-brain/config.json`，跨 clone、跨 Host 生效；仓库策略（`git_integration`、载体、egress 上限）写在受 Git 跟踪的 `.imm/config.json`，可审阅、与协作者共享。交互语言等沟通指令仍写在 agent 指令文件里。
+**为什么用两个配置文件，而不是 AGENTS.md / CLAUDE.md 里的指令行？** 配置属于插件，不属于某个 Host 的指令文件。个人选择（Lane 与 agent profile）写在 `~/.config/immune-brain/config.json`，跨 clone、跨 Host 生效；仓库策略（`git_integration`、载体）写在受 Git 跟踪的 `.imm/config.json`，可审阅、与协作者共享。交互语言等沟通指令仍写在 agent 指令文件里。
 
 **为什么在复杂任务中推荐用 `grill-me` 替代 `clarify` 进行决策确认？** `clarify` 是轻量内置的免安装工具，用于快速对齐顶层问题框架。而来自 `mattpocock/skills` 的 `grill-me` 则具备极具侵略性的苏格拉底式发问机制，能够沿着设计树分支主动提供带偏好的推荐方案并穷追猛打，促使开发者做出明确抉择。对于非平凡功能开发、重大架构重构或安全门禁边界，在上游先用 `grill-me` 彻底敲定决策树再输入给 `draw-up`，能产出颗粒度极高、无后顾之忧的 Living Spec，从根源上杜绝下游返工。
 

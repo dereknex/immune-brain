@@ -901,6 +901,7 @@ function validateLaneRecordShape(value: unknown, batchId: string): asserts value
 	const record = value as Record<string, unknown>;
 	if (record.contract !== "assurance_kernel/batch_run_state/v3" && record.contract !== "assurance_kernel/batch_run_state/v2")
 		throw new Error(`batch run state ${batchId} has an unknown contract`);
+	// A record written before ADR 0043 may still name a retired unattended source; reading stays tolerant.
 	if (record.confirmation !== undefined && (!isObject(record.confirmation) ||
 		!((record.confirmation as { source?: unknown }).source === "native_gate" ||
 			(record.confirmation as { source?: unknown }).source === "tracker_approval" ||
