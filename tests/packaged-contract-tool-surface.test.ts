@@ -24,15 +24,19 @@
 // obligation as the Tool it claims.
 
 import { describe, expect, test } from "bun:test";
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { TOOLS } from "../plugins/immune-brain/runtime/claude/mcp_server";
+import { createAntigravityMcpRuntime as createAntigravityMcp } from "../plugins/immune-brain/runtime/antigravity/mcp_server";
+import { createMcpRuntime as createClaudeMcp, handleJsonRpc, TOOLS } from "../plugins/immune-brain/runtime/claude/mcp_server";
 
 const ROOT = resolve(import.meta.dir, "..");
 const DIST_DIR = join(ROOT, "plugins/immune-brain/dist");
 const PI_EXTENSION_DIR = join(ROOT, "plugins/immune-brain/.pi-extension");
 const PI_MANIFEST = join(PI_EXTENSION_DIR, "package.json");
 
+/** The Loop tools ADR 0043 retired from every Host. */
+const RETIRED_LOOP_TOOLS = ["loop_interactions", "answer_loop_interaction", "steer_loop_work_item"];
 /** Packaged contracts name call targets only through backticked identifiers. */
 const BACKTICKED = /`([^`\n]+)`/g;
 /** Pi's Tool schemas declare their operation literals inline. */
@@ -137,6 +141,31 @@ describe("packaged contract tool surface", () => {
 		expect(PI_TOOLS.has("imm_canary_enrollment")).toBe(false);
 		expect(CLAUDE_TOOLS.has("start_unattended_batch")).toBe(true);
 		expect(PI_TOOLS.has("start_unattended_batch")).toBe(true);
+	});
+
+	test("no Host surface lists or serves a retired Loop tool (ADR 0043)", async () => {
+		const root = mkdtempSync(join(tmpdir(), "retired-loop-tools-"));
+		try {
+			for (const [create, client] of [
+				[createClaudeMcp, { name: "claude-code", version: "2.1.236" }],
+				[createAntigravityMcp, { name: "antigravity-client", version: "1.0.0" }],
+			] as const) {
+				const mcp = create({ cwd: root, env: {}, interactive: true });
+				await handleJsonRpc({ jsonrpc: "2.0", id: 1, method: "initialize",
+					params: { clientInfo: client, capabilities: { elicitation: {} } } }, mcp);
+				const listed = await handleJsonRpc({ jsonrpc: "2.0", id: 2, method: "tools/list" }, mcp);
+				const names = (listed!.result as { tools: { name: string }[] }).tools.map((tool) => tool.name);
+				expect(names).toContain("status");
+				for (const retired of RETIRED_LOOP_TOOLS) {
+					expect(names).not.toContain(retired);
+					await expect(mcp.callTool(retired, { task_id: "retired" }, { toolCallId: `call-${retired}` })).rejects.toThrow();
+				}
+				mcp.shutdown();
+			}
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+		for (const retired of RETIRED_LOOP_TOOLS) expect(PI_TOOLS.has(retired)).toBe(false);
 	});
 
 	test("no packaged contract names a Host-specific tool spelling", () => {

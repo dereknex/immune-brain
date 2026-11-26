@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { authorizeBatch } from "../plugins/immune-brain/runtime/unattended/batch_agreement";
 import { computeBatchPlanDigest, createBatchAuthorityRegistry } from "../plugins/immune-brain/runtime/kernel/batch_authority";
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
-import { LOOP_DAEMON_ACTOR_ID } from "../plugins/immune-brain/runtime/kernel/actor_identity";
+import { verifyEnrollmentConfirmation } from "../plugins/immune-brain/runtime/kernel/enrollment_confirmation";
 import {
 	effectiveReturnPolicy,
 	isRetiredLaneRecord,
@@ -137,7 +137,7 @@ describe("batch-agreement", () => {
 		}
 	});
 
-	test("AGR-A3: authorizeBatch accepts Host and daemon, refuses bad fields with zero writes", () => {
+	test("AGR-A3: authorizeBatch accepts the Host entry, refuses retired daemon sources and bad fields with zero writes", () => {
 		const root = repo();
 		try {
 			const kids = children2();
@@ -171,6 +171,8 @@ describe("batch-agreement", () => {
 				actor: "literal-user",
 			});
 			expect(hostInit.ok).toBe(true);
+			// ADR 0043 retired the Loop daemon's unattended sources: both fail closed
+			// at the agreement and at the Enrollment membrane.
 			for (const source of ["tracker_approval", "policy_auto"] as const) {
 				const daemon = authorizeBatch({
 					batch_id: `b-daemon-${source}`,
@@ -182,10 +184,18 @@ describe("batch-agreement", () => {
 					final_verification: { required: false, commands: [] },
 					return_policy: "retain_branch",
 					interaction_mode: "parent_relayed",
-					actor: LOOP_DAEMON_ACTOR_ID,
+					actor: "loop-daemon",
 				});
-				expect(daemon.ok).toBe(true);
+				expect(daemon.ok).toBe(false);
+				if (!daemon.ok) expect(daemon.reason).toContain(`unknown confirmation.source ${source}`);
+				const membrane = verifyEnrollmentConfirmation(root, { source } as never, { risk: "routine", scope_hint: [] });
+				expect(membrane).toEqual({ ok: false, reason: `unknown_confirmation_source: ${source}` });
 			}
+			expect(verifyEnrollmentConfirmation(root, { source: "user_session" }, { risk: "routine", scope_hint: [] })).toEqual({ ok: true });
+			expect(() => createBatchAuthorityRegistry().issue({
+				batch_id: "b-daemon-actor", initiative_slug: "init", plan_digest: computeBatchPlanDigest(kids), branch: "imm/init", base_head: baseHead,
+				budget: { max_children: 2, qa_failure_limit: 2 }, actor_id: "loop-daemon", confirmation_ref: "r", nonce: "n",
+			}, kids)).toThrow("literal-user actor_id");
 			if (hostSingle.ok && hostInit.ok) {
 				const registry = createBatchAuthorityRegistry();
 				for (const agreement of [hostSingle.agreement, hostInit.agreement]) {

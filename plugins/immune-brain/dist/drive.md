@@ -357,9 +357,12 @@ unique repository-relative path strings listing every path of the reviewed
 change set, deleted paths included; an empty change set is listed as an empty
 array. A path may be listed only after its diff was read, or the
 [code-review role's generated snapshot proof](role-prompts/code-review.md#generated-snapshot-proof)
-was completed for an eligible added Drizzle snapshot. A pass that omits any
-changed path, lists a path outside the change set, or duplicates a path is
-rejected as a correctable invalid verdict.
+was completed for an eligible added Drizzle snapshot, or its
+[whole-file deletion or declared derived-bundle proof](role-prompts/code-review.md#whole-file-deletion-and-declared-derived-bundle-proof)
+was completed for an eligible deleted file or declared derived output and named
+in `approval.summary`. A pass that omits any changed path, lists a path outside
+the change set, or duplicates a path is rejected as a correctable invalid
+verdict.
 
 `dispatch_role` for `qa`, `code-review`, or `ui-review` is used only when an
 explicit runtime-supported role boundary requests it, followed by the returned

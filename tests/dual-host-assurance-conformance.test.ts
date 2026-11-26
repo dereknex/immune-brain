@@ -1422,6 +1422,40 @@ describe("dual-host assurance conformance", () => {
 			assertZeroWrites(cf, pf, false);
 		}
 
+		// Parity scenario: RETIRED CONFIG KEY (ADR 0043) refuses `drive` on both Hosts
+		{
+			const cf = createConformanceFixture("conf-retired-key-c");
+			const pf = createConformanceFixture("conf-retired-key-p");
+			for (const f of [cf, pf]) writeFileSync(join(f.root, ".imm", "config.json"),
+				JSON.stringify({ contract: "immune_brain/project_config/v2", loop: { mode: "off" } }));
+			let gates = 0;
+
+			const cr = createMcpRuntime({
+				cwd: cf.root,
+				env: ENV,
+				interactive: true,
+				readInitiative: async () => cf.observation,
+				requestConfirmation: async () => { gates++; return { decision: "accept", requestId: "r" }; },
+			});
+			cr.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
+			const cRes = await cr.callTool("start_unattended_batch", { initiative_slug: "conf-retired-key-c" }, { toolCallId: "toolu-retired" });
+
+			const pRes = await runPiBatch({
+				root: pf.root,
+				initiativeSlug: "conf-retired-key-p",
+				interactive: true,
+				readInitiative: async () => pf.observation,
+				confirmBatch: async () => { gates++; return "accept"; },
+			});
+
+			for (const result of [cRes, pRes]) {
+				expect(result.state).toBe("rejected");
+				expect(result.reason).toContain("lane_config_invalid");
+			}
+			expect(gates).toBe(0);
+			assertZeroWrites(cf, pf);
+		}
+
 		// 7. Parity scenario: EMPTY ENROLLABLE CHILD SET
 		{
 			const cf = createConformanceFixture("conf-empty-c");

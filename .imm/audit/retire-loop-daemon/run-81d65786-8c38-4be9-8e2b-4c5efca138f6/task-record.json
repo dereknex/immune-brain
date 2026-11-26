@@ -1,0 +1,250 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "retire-loop-daemon",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "retire-loop-daemon",
+    "goal": "Execute ADR 0043 Slice 1 per docs/specs/retire-loop-daemon.spec.md: delete runtime/loop_daemon/, bin/imm-loop, skills/imm-loop/, runtime/decision_model/, scripts/decision-eval/, scripts/review-eval/, and their coupled specs/fixtures/tests; remove loop_interactions, answer_loop_interaction, and steer_loop_work_item across Host adapters, the loop field on imm-kernel inspect --json, and live tracker_approval/policy_auto confirmation admission; strictly reject loop and decision_models in v2 config (blocking batchConfigErrors/drive) while stripping them in config migrate --write; accept ADR 0043, supersede ADRs 0039/0040/0042, and sync active docs and Host bundles (BR-REQ-1, BR-REQ-2, BR-DEC-1..3, BR-OUT-1, BR-SCN-1..3).",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "Per docs/specs/retire-loop-daemon.spec.md AC1 and BR-SCN-1 (agreed seams: tests/v4-runtime-launchers.test.ts, tests/packaged-contract-tool-surface.test.ts, tests/kernel-inspect.test.ts, tests/batch-agreement.test.ts, tests/acceptance-repeat-series.test.ts), runtime/loop_daemon/, bin/imm-loop, skills/imm-loop/, runtime/decision_model/, and runtime/host-core/loop_interactions.ts are deleted; v4_runtime.ts cli imm-loop status --json exits non-zero as an unknown command; MCP tools/list and Pi registered tools exclude loop_interactions, answer_loop_interaction, and steer_loop_work_item; imm-kernel inspect --json omits the loop key; verifyEnrollmentConfirmation and authorizeBatch reject tracker_approval and policy_auto while retaining user_session/native_gate; and runtime/kernel/acceptance_repeats.ts remains covered without scripts/review-eval/ (BR-REQ-1, BR-DEC-2).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/v4-runtime-launchers.test.ts\",\n      \"tests/packaged-contract-tool-surface.test.ts\",\n      \"tests/kernel-inspect.test.ts\",\n      \"tests/batch-agreement.test.ts\",\n      \"tests/acceptance-repeat-series.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "Per docs/specs/retire-loop-daemon.spec.md AC2 and BR-SCN-2 (agreed seams: tests/layered-config.test.ts, tests/agent-roles-config.test.ts, tests/dual-host-assurance-conformance.test.ts), loop and decision_models are removed from v2 FILE_KEYS and EffectiveConfig in layered_config.ts; a v2 user config with decision_models or project config with loop emits a config_invalid error on that key path, causes imm-kernel config --json to exit 1, and causes batchConfigErrors and startUnattendedBatch (drive) to fail closed with lane_config_invalid; and imm-kernel config migrate --write strips top-level loop and decision_models alongside retired herdr while preserving valid v2 keys (BR-DEC-3).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/layered-config.test.ts\",\n      \"tests/agent-roles-config.test.ts\",\n      \"tests/dual-host-assurance-conformance.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "Per docs/specs/retire-loop-daemon.spec.md AC3 (agreed seams: tests/claude-host-package.test.ts, tests/antigravity-host-package.test.ts, tests/dist-docs-sync-contract.test.ts, tests/skill-dist-consistency.test.ts, plugins/immune-brain/tests/skill-registry-consistency.test.ts, tests/vocabulary-dead-reference-contract.test.ts, tests/pi-only-current-contracts.test.ts), scripts/decision-eval/, scripts/review-eval/, and their fixtures/specs/tests are deleted while .imm/audit/ and docs/*/archive/ stay untouched; ADR 0043 is status: accepted, ADRs 0039/0040/0042 are superseded by ADR-0043 with ADR 0038 intact, and ADR 0041/CONTEXT.md/BASELINE.md/fix-pr/config docs drop active Loop daemon and Decision model entries; Claude, Antigravity, and dist/ checks pass and npm pack --dry-run contains no imm-loop, loop_daemon, or decision_model files (BR-REQ-2, BR-DEC-2, BR-OUT-1).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-host-package.test.ts\",\n      \"tests/antigravity-host-package.test.ts\",\n      \"tests/dist-docs-sync-contract.test.ts\",\n      \"tests/skill-dist-consistency.test.ts\",\n      \"plugins/immune-brain/tests/skill-registry-consistency.test.ts\",\n      \"tests/vocabulary-dead-reference-contract.test.ts\",\n      \"tests/pi-only-current-contracts.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "CONTEXT.md",
+      "docs/adr/0005-unattended-initiative-batch-run.md",
+      "docs/adr/0006-unattended-review-dispatch-authority.md",
+      "docs/adr/0019-explicit-run-entry-owns-enrollment.md",
+      "docs/adr/0025-run-entry-decision-hosting.md",
+      "docs/adr/0039-loop-daemon.md",
+      "docs/adr/0040-loop-interaction-protocol.md",
+      "docs/adr/0041-simplified-configuration.md",
+      "docs/adr/0042-loop-leader-role-catalog.md",
+      "docs/adr/0043-loop-daemon-freeze-and-extraction.md",
+      "docs/agents/derived-files.json",
+      "docs/reference/immune-brain-config.md",
+      "docs/reference/immune-brain-skills-guide.md",
+      "docs/specs/retire-loop-daemon.spec.md",
+      "docs/user_manual.md",
+      "package.json",
+      "plugins/immune-brain-antigravity",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/BASELINE.md",
+      "plugins/immune-brain/README.md",
+      "plugins/immune-brain/bin/imm-loop",
+      "plugins/immune-brain/dist",
+      "plugins/immune-brain/runtime/commands/kernel.ts",
+      "plugins/immune-brain/runtime/config/layered_config.ts",
+      "plugins/immune-brain/runtime/config/migrate.ts",
+      "plugins/immune-brain/runtime/decision_model",
+      "plugins/immune-brain/runtime/host-core/interaction.ts",
+      "plugins/immune-brain/runtime/host-core/loop_interactions.ts",
+      "plugins/immune-brain/runtime/host-core/mcp_runtime.ts",
+      "plugins/immune-brain/runtime/host-core/runtime.ts",
+      "plugins/immune-brain/runtime/kernel/enrollment_confirmation.ts",
+      "plugins/immune-brain/runtime/kernel/types.ts",
+      "plugins/immune-brain/runtime/loop_daemon",
+      "plugins/immune-brain/runtime/unattended/batch_agreement.ts",
+      "plugins/immune-brain/runtime/v4_runtime.ts",
+      "plugins/immune-brain/skills/BASELINE.md",
+      "plugins/immune-brain/skills/fix-pr/SKILL.md",
+      "plugins/immune-brain/skills/imm-loop",
+      "plugins/immune-brain/skills/registry.yaml",
+      "plugins/immune-brain/tests/skill-registry-consistency.test.ts",
+      "scripts/decision-eval",
+      "scripts/dist-sync-manifest.ts",
+      "scripts/review-eval",
+      "tests/acceptance-repeat-series.test.ts",
+      "tests/agent-roles-config.test.ts",
+      "tests/antigravity-host-package.test.ts",
+      "tests/batch-agreement.test.ts",
+      "tests/claude-host-package.test.ts",
+      "tests/dist-docs-sync-contract.test.ts",
+      "tests/e2e/install.e2e.ts",
+      "tests/fixtures/decision-eval",
+      "tests/fixtures/review-eval",
+      "tests/kernel-inspect.test.ts",
+      "tests/layered-config.test.ts",
+      "tests/packaged-contract-tool-surface.test.ts",
+      "tests/pi-only-current-contracts.test.ts",
+      "tests/skill-dist-consistency.test.ts",
+      "tests/v4-runtime-launchers.test.ts",
+      "tests/vocabulary-dead-reference-contract.test.ts"
+    ],
+    "scope_size_reason": "Deletion-heavy atomic retirement (ADR 0043 Slice 1): removing loop_daemon, decision_model, offline eval scripts, three host Loop tools, strict loop/decision_models config keys, and ADR/doc references must land together so typecheck, generated Host bundles, and contract mirrors stay consistent.",
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/retire-loop-daemon.intent.json",
+    "content_hash": "sha256:53f747dc493daefbfac0c069ded80ad79b03c7b9c0a772c1c13e5f61ecfe1074"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:53f747dc493daefbfac0c069ded80ad79b03c7b9c0a772c1c13e5f61ecfe1074",
+  "git_base_head": "b4ec48210a02cd01436a4b24a47843bd2eeead1a",
+  "attestations": [
+    {
+      "id": "approval-qa-91391b6a",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:53f747dc493daefbfac0c069ded80ad79b03c7b9c0a772c1c13e5f61ecfe1074",
+      "diff_hash": "sha256:de7deaa3a9bb1a8ce044e04a11d097e15cac9b2d940d969bf8a6b06efa9b90ee",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:029f03d6747578659ce9c6027882fd62581f143239eb957efd4d83413982525f",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:029f03d6747578659ce9c6027882fd62581f143239eb957efd4d83413982525f"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:029f03d6747578659ce9c6027882fd62581f143239eb957efd4d83413982525f"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:029f03d6747578659ce9c6027882fd62581f143239eb957efd4d83413982525f"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-49140778",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:53f747dc493daefbfac0c069ded80ad79b03c7b9c0a772c1c13e5f61ecfe1074",
+      "diff_hash": "sha256:de7deaa3a9bb1a8ce044e04a11d097e15cac9b2d940d969bf8a6b06efa9b90ee",
+      "actor_id": "cli:antigravity:b69c742a-86de-40a0-a6e0-ca808ce76b09",
+      "summary": "AC1-AC3 satisfied: loop_daemon/decision_model/imm-loop/loop tools/eval suites removed with zero residual imports in runtime, scripts, tests or both generated MCP bundles; verifyEnrollmentConfirmation/authorizeBatch/batch authority now admit only user_session/native_gate/literal-user while TaskRecord and batch-state readers stay tolerant of settled records; FILE_KEYS drops loop/decision_models so the unknown-key config_invalid diagnostic (key_path loop|decision_models) is caught by batchConfigErrors' new not-in-FILE_KEYS clause, and migrate strips herdr/loop/decision_models; antigravity runtime/skills trees are byte-identical to the source and dist config doc mirrors docs/reference; tests pin each AC at its agreed seam; whole-file deletions were verified via name-status/stat and residual-reference greps, and the regenerated bundles via tree equality and grep. Blast radius: medium; load-bearing paths are runtime/config/layered_config.ts (batchConfigErrors), runtime/kernel/enrollment_confirmation.ts, runtime/unattended/batch_agreement.ts, runtime/kernel/batch_authority.ts, runtime/host-core/mcp_runtime.ts; no persisted-shape change (RECORDED_ENROLLMENT_CONFIRMATION_SOURCES keeps legacy records readable).",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "b4ec48210a02cd01436a4b24a47843bd2eeead1a",
+        "review_commit": "374240cfb4c858f1f099e05b4bc833a51311a4bf"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-02c22f5e2942-1-review-1",
+          "acceptance_id": "AC3",
+          "summary": "docs/specs/revisit-workflow-health.spec.md still cites docs/plans/review-verifier-eval-s1-metrics.intent.json, which this change deletes, while the neighbouring spec reference was rewritten to a bare name.",
+          "anchor": "sha256:1c3c0d747389266b5b04d8fe53e4f510e157f0cb405026034324402640131b53",
+          "evidence": {
+            "trigger": "A reader who follows the Discovery bullet in revisit-workflow-health.spec.md at review_commit opens docs/plans/review-verifier-eval-s1-metrics.intent.json → the path no longer exists (deleted in this diff), so the link dangles.",
+            "caller_chain": [
+              "docs/specs/revisit-workflow-health.spec.md",
+              "docs/plans/review-verifier-eval-s1-metrics.intent.json"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "AC3"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:3cb678d3617ff2eddbfd67ed7d083e775f81cb190671b040b0a2a5f510265be6"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:retire-loop-daemon:2026-11-26T04:52:45.064Z",
+      "at": "2026-11-26T04:52:45.064Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/retire-loop-daemon.intent.json"
+    },
+    {
+      "id": "record_approval:retire-loop-daemon:2026-11-26T04:55:47.362Z",
+      "at": "2026-11-26T04:55:47.362Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-91391b6a\naction_v2_sha256:1aceca53e83e0cc7fc6c69eba7febc82e23aec4c4bf44529cb95655cb4ed03df",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-11-26T04:55:47.362Z"
+      }
+    },
+    {
+      "id": "record_review_incomplete:retire-loop-daemon:2026-11-26T07:10:57.343Z",
+      "at": "2026-11-26T07:10:57.343Z",
+      "type": "record_review_incomplete",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "{\"intent_content_hash\":\"sha256:53f747dc493daefbfac0c069ded80ad79b03c7b9c0a772c1c13e5f61ecfe1074\",\"diff_hash\":\"sha256:de7deaa3a9bb1a8ce044e04a11d097e15cac9b2d940d969bf8a6b06efa9b90ee\",\"turn_budget\":48,\"inspected_paths\":[\"CONTEXT.md\",\"README.md\",\"README.zh-CN.md\",\"docs/adr/0005-unattended-initiative-batch-run.md\",\"docs/adr/0006-unattended-review-dispatch-authority.md\",\"docs/adr/0019-explicit-run-entry-owns-enrollment.md\",\"docs/adr/0025-run-entry-decision-hosting.md\",\"docs/adr/0032-revisit-reads-committed-audit.md\",\"docs/adr/0039-loop-daemon.md\",\"docs/adr/0040-loop-interaction-protocol.md\",\"docs/adr/0041-simplified-configuration.md\",\"docs/adr/0042-loop-leader-role-catalog.md\",\"docs/adr/0043-loop-daemon-freeze-and-extraction.md\",\"docs/agents/derived-files.json\",\"docs/initiatives/loop-leader-uls.md\",\"docs/plans/retire-loop-daemon.intent.json\",\"docs/proposals/loop-agent.md\",\"docs/reference/immune-brain-config.md\",\"docs/reference/immune-brain-skills-guide.md\",\"docs/solutions/workflow.md\",\"docs/specs/deepen-assurance-progression.spec.md\",\"docs/specs/host-native-assurance-ui.spec.md\",\"docs/specs/layered-config.spec.md\",\"docs/specs/retire-loop-daemon.spec.md\",\"docs/specs/revisit-workflow-health.spec.md\",\"docs/user_manual.md\",\"package.json\",\"plugins/immune-brain-antigravity/BASELINE.md\",\"plugins/immune-brain-antigravity/dist/BASELINE.md\",\"plugins/immune-brain-antigravity/dist/docs/reference/immune-brain-config.md\",\"plugins/immune-brain-antigravity/dist/fix-pr.md\",\"plugins/immune-brain-antigravity/dist/registry.yaml\",\"plugins/immune-brain-antigravity/runtime/commands/kernel.ts\",\"plugins/immune-brain-antigravity/runtime/config/agent_roles.ts\",\"plugins/immune-brain-antigravity/runtime/config/layered_config.ts\",\"plugins/immune-brain-antigravity/runtime/config/migrate.ts\",\"plugins/immune-brain-antigravity/runtime/host-core/interaction.ts\",\"plugins/immune-brain-antigravity/runtime/host-core/mcp_runtime.ts\",\"plugins/immune-brain-antigravity/runtime/host-core/runtime.ts\",\"plugins/immune-brain-antigravity/runtime/kernel/actor_identity.ts\",\"plugins/immune-brain-antigravity/runtime/kernel/batch_authority.ts\",\"plugins/immune-brain-antigravity/runtime/kernel/enrollment.ts\",\"plugins/immune-brain-antigravity/runtime/kernel/enrollment_confirmation.ts\",\"plugins/immune-brain-antigravity/runtime/kernel/types.ts\",\"plugins/immune-brain-antigravity/runtime/kernel/validation.ts\",\"plugins/immune-brain-antigravity/runtime/unattended/batch_agreement.ts\",\"plugins/immune-brain-antigravity/runtime/unattended/batch_state.ts\",\"plugins/immune-brain-antigravity/runtime/v4_runtime.ts\",\"plugins/immune-brain-antigravity/skills/BASELINE.md\",\"plugins/immune-brain-antigravity/skills/fix-pr/SKILL.md\",\"plugins/immune-brain-antigravity/skills/registry.yaml\",\"plugins/immune-brain/.pi-extension/imm-canary-work.ts\",\"plugins/immune-brain/BASELINE.md\",\"plugins/immune-brain/README.md\",\"plugins/immune-brain/dist/BASELINE.md\",\"plugins/immune-brain/dist/docs/reference/immune-brain-config.md\",\"plugins/immune-brain/dist/fix-pr.md\",\"plugins/immune-brain/dist/registry.yaml\",\"plugins/immune-brain/runtime/commands/kernel.ts\",\"plugins/immune-brain/runtime/config/agent_roles.ts\",\"plugins/immune-brain/runtime/config/layered_config.ts\",\"plugins/immune-brain/runtime/config/migrate.ts\",\"plugins/immune-brain/runtime/host-core/interaction.ts\",\"plugins/immune-brain/runtime/host-core/mcp_runtime.ts\",\"plugins/immune-brain/runtime/host-core/runtime.ts\",\"plugins/immune-brain/runtime/kernel/actor_identity.ts\",\"plugins/immune-brain/runtime/kernel/batch_authority.ts\",\"plugins/immune-brain/runtime/kernel/enrollment.ts\",\"plugins/immune-brain/runtime/kernel/enrollment_confirmation.ts\",\"plugins/immune-brain/runtime/kernel/types.ts\",\"plugins/immune-brain/runtime/kernel/validation.ts\",\"plugins/immune-brain/runtime/unattended/batch_agreement.ts\",\"plugins/immune-brain/runtime/unattended/batch_state.ts\",\"plugins/immune-brain/runtime/v4_runtime.ts\",\"plugins/immune-brain/skills/BASELINE.md\",\"plugins/immune-brain/skills/fix-pr/SKILL.md\",\"plugins/immune-brain/skills/registry.yaml\",\"plugins/immune-brain/tests/skill-registry-consistency.test.ts\",\"scripts/dist-sync-manifest.ts\",\"tests/acceptance-repeat-series.test.ts\",\"tests/agent-roles-config.test.ts\",\"tests/antigravity-host-package.test.ts\",\"tests/batch-agreement.test.ts\",\"tests/batch-session-port.test.ts\",\"tests/canary-command-retirement-contract.test.ts\",\"tests/claude-host-authority.test.ts\",\"tests/claude-host-package.test.ts\",\"tests/dual-host-assurance-conformance.test.ts\",\"tests/e2e/install.e2e.ts\",\"tests/kernel-inspect.test.ts\",\"tests/layered-config.test.ts\",\"tests/packaged-contract-tool-surface.test.ts\",\"tests/pi-canary-packed-loader.test.ts\",\"tests/pi-canary-work-extension.test.ts\",\"tests/pi-only-current-contracts.test.ts\",\"tests/plugin-package-runtime.test.ts\",\"tests/python-reference-boundary.test.ts\",\"tests/review-retro-audit.test.ts\",\"tests/session-result-slot.test.ts\",\"tests/skill-dist-consistency.test.ts\",\"tests/v4-runtime-launchers.test.ts\"],\"reason\":\"Every modified and added source, test and doc diff was read with no blocking defect found, but the full contents of the ~225 whole-file deletions (~75k removed lines) and the two regenerated mcp-server.mjs bundles (~10k changed lines each) cannot be read within the 48-turn budget; only their whole-file deletion status, residual-reference scans and mirror parity were checked.\",\"review_contract_hash\":\"sha256:380ec4c8a90c378339570c592d389530d9ddbb12e8f97159468683fd32c97dd6\"}\naction_v2_sha256:b831876ce1e3eb9f984ff8f8d277188d504184f2f01e4c2a6087845c0ea872ff",
+      "review_started_at": "2026-11-26T07:05:38.917Z",
+      "review_submitted_at": "2026-11-26T07:10:57.330Z",
+      "reviewer_model": "claude-opus-5-5-medium"
+    },
+    {
+      "id": "record_review_incomplete:retire-loop-daemon:2026-11-26T07:16:55.973Z",
+      "at": "2026-11-26T07:16:55.973Z",
+      "type": "record_review_incomplete",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "{\"intent_content_hash\":\"sha256:53f747dc493daefbfac0c069ded80ad79b03c7b9c0a772c1c13e5f61ecfe1074\",\"diff_hash\":\"sha256:de7deaa3a9bb1a8ce044e04a11d097e15cac9b2d940d969bf8a6b06efa9b90ee\",\"turn_budget\":96,\"inspected_paths\":[\"docs/plans/retire-loop-daemon.intent.json\",\"package.json\",\"plugins/immune-brain/runtime/commands/kernel.ts\",\"plugins/immune-brain/runtime/kernel/actor_identity.ts\",\"plugins/immune-brain/runtime/kernel/batch_authority.ts\",\"plugins/immune-brain/runtime/kernel/enrollment.ts\",\"plugins/immune-brain/runtime/kernel/enrollment_confirmation.ts\",\"plugins/immune-brain/runtime/kernel/types.ts\",\"plugins/immune-brain/runtime/kernel/validation.ts\",\"plugins/immune-brain/runtime/unattended/batch_agreement.ts\",\"plugins/immune-brain/runtime/unattended/batch_state.ts\",\"plugins/immune-brain/runtime/v4_runtime.ts\",\"plugins/immune-brain/runtime/config/agent_roles.ts\",\"plugins/immune-brain/runtime/config/layered_config.ts\",\"plugins/immune-brain/runtime/config/migrate.ts\",\"plugins/immune-brain/runtime/host-core/interaction.ts\",\"plugins/immune-brain/runtime/host-core/mcp_runtime.ts\",\"plugins/immune-brain/runtime/host-core/runtime.ts\",\"plugins/immune-brain/skills/registry.yaml\",\"plugins/immune-brain/tests/skill-registry-consistency.test.ts\",\"scripts/dist-sync-manifest.ts\",\"tests/agent-roles-config.test.ts\",\"tests/batch-agreement.test.ts\",\"tests/dual-host-assurance-conformance.test.ts\",\"tests/kernel-inspect.test.ts\",\"tests/layered-config.test.ts\",\"tests/acceptance-repeat-series.test.ts\",\"tests/antigravity-host-package.test.ts\",\"tests/claude-host-package.test.ts\",\"tests/skill-dist-consistency.test.ts\",\"tests/v4-runtime-launchers.test.ts\",\"tests/batch-session-port.test.ts\",\"tests/canary-command-retirement-contract.test.ts\",\"tests/claude-host-authority.test.ts\",\"tests/e2e/install.e2e.ts\",\"tests/pi-canary-work-extension.test.ts\",\"tests/plugin-package-runtime.test.ts\",\"tests/python-reference-boundary.test.ts\",\"tests/review-retro-audit.test.ts\",\"tests/session-result-slot.test.ts\",\"docs/adr/0005-unattended-initiative-batch-run.md\",\"docs/adr/0006-unattended-review-dispatch-authority.md\",\"docs/adr/0019-explicit-run-entry-owns-enrollment.md\",\"docs/adr/0025-run-entry-decision-hosting.md\",\"docs/adr/0032-revisit-reads-committed-audit.md\",\"docs/adr/0039-loop-daemon.md\",\"docs/adr/0040-loop-interaction-protocol.md\",\"docs/adr/0041-simplified-configuration.md\",\"docs/adr/0042-loop-leader-role-catalog.md\",\"docs/adr/0043-loop-daemon-freeze-and-extraction.md\",\"docs/user_manual.md\"],\"reason\":\"The 332-path change set (about 10k insertions and 86k deletions, including two regenerated mcp-server.mjs bundles of about 21k changed lines and about 54k unique deleted lines) cannot be read diff-by-diff within the 96-turn budget; every modified runtime, config, host-core, kernel and seam-test path that was read showed no blocking defect.\",\"review_contract_hash\":\"sha256:380ec4c8a90c378339570c592d389530d9ddbb12e8f97159468683fd32c97dd6\"}\naction_v2_sha256:fce4038cb4a5b07cc2141a5c0100bfb5d97b92ff8bf47fd9f393ae922d5e484e",
+      "review_started_at": "2026-11-26T07:12:32.176Z",
+      "review_submitted_at": "2026-11-26T07:16:55.965Z",
+      "reviewer_model": "claude-opus-5-5-medium"
+    },
+    {
+      "id": "authorize_review_retry:retire-loop-daemon:2026-11-26T07:51:02.202Z",
+      "at": "2026-11-26T07:51:02.202Z",
+      "type": "authorize_review_retry",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "{\"intent_content_hash\":\"sha256:53f747dc493daefbfac0c069ded80ad79b03c7b9c0a772c1c13e5f61ecfe1074\",\"diff_hash\":\"sha256:de7deaa3a9bb1a8ce044e04a11d097e15cac9b2d940d969bf8a6b06efa9b90ee\",\"review_contract_hash\":\"sha256:b5c086d4b32e2579926f2575a2ed6b1b8b17b899528ec11dbe48a41baec71815\"}\naction_v2_sha256:87a77a1abf0bb1c2de64cf5e8d9cf7a3e8bc2a3ff5622dfd6d0ae1b0cbf81d34",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "claude-confirm-11da3bad7d0e9945",
+        "issued_at": "2026-11-26T07:54:53.787Z"
+      }
+    },
+    {
+      "id": "record_approval:retire-loop-daemon:2026-11-26T08:02:43.124Z",
+      "at": "2026-11-26T08:02:43.124Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-49140778\naction_v2_sha256:5ca70a54cf33331e243a1a4c3044021fe85ba0815163053ebed2887e3b71c78c",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:antigravity:b69c742a-86de-40a0-a6e0-ca808ce76b09",
+        "confirmation_ref": "claude:cli:antigravity:b69c742a-86de-40a0-a6e0-ca808ce76b09",
+        "issued_at": "2026-11-26T08:02:43.124Z"
+      },
+      "review_started_at": "2026-11-26T07:56:15.871Z",
+      "review_submitted_at": "2026-11-26T08:02:30.148Z",
+      "reviewer_model": "claude-opus-5-5-medium"
+    },
+    {
+      "id": "complete:retire-loop-daemon:2026-11-26T08:03:22.990Z",
+      "at": "2026-11-26T08:03:22.990Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:104e3897fd1ca74b69a2e5134296fd7b62c2e66d7971f581cfa9d36ed063e227"
+    }
+  ]
+}

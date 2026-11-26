@@ -581,7 +581,7 @@ Host-specific rituals (Codex, Claude Code, Cursor) live in
 ### Evidence
 
 - `plugins/immune-brain/dist/imm-loop.md` 定义 current-conversation loop、decision-specific child schemas、target/gate/signature freshness、no-write-on-invalid、exactly-once dispatch/collection 和 terminal summary。
-- `plugins/immune-brain/skills/imm-loop/SKILL.md` 不再调用 shell runner；`plugins/immune-brain/runtime/immune_brain_runtime.ts` 不再暴露 `imm-loop` command。
+- `imm-loop` Skill（已由 ADR 0043 移除） 不再调用 shell runner；`plugins/immune-brain/runtime/immune_brain_runtime.ts` 不再暴露 `imm-loop` command。
 - `plugins/immune-brain/bin/imm-loop` 与 `plugins/immune-brain/extensions/imm-loop/` 删除；三组 Pi runner 专属测试删除，保留 checkpoint、review lifecycle、follow-up 和 package regressions。
 - `tests/imm-loop-review-orchestration-contract.test.ts` 锁住 main-context、Agent isolation、decision schemas、fresh checkpoint、no-write、cancellation/repeated-failure/budget 和 observable output contract。
 - Verification 通过 66 tests / 493 assertions、Plan validation、case-insensitive active-doc stale scan 与 `git diff --check`。

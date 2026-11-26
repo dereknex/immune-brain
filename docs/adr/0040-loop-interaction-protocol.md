@@ -1,11 +1,12 @@
 ---
-status: accepted
+status: superseded by ADR-0043
 ---
 
 # Interaction Protocol: One Request Shape, Two Channels, a Narrowed GitHub Boundary
 
-**Status:** accepted. Records D3 of
-[`docs/specs/loop-agent-scheduling.spec.md`](../specs/loop-agent-scheduling.spec.md)
+**Status:** superseded by [ADR 0043](0043-loop-daemon-freeze-and-extraction.md), which removed the Loop daemon from this
+repository. The text below is the historical record. Records D3 of
+`loop-agent-scheduling.spec.md` (removed by ADR 0043; see Git history)
 (S3), from `BR-DEC-6`, `BR-DEC-8` and `BR-DEC-10`. It amends
 [ADR 0039](0039-loop-daemon.md) Decision 12 ("People are called only for
 judgement, and only on GitHub") and introduces the protocol `local` will

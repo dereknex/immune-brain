@@ -12,12 +12,13 @@ import { execFileSync } from "node:child_process";
 import { AGENT_ROLES, type AgentRole } from "./agent_roles.ts";
 import { defaultUserConfigPath, mainCheckoutRoot, PROJECT_CONFIG_CONTRACT, USER_CONFIG_CONTRACT } from "./layered_config.ts";
 import { projectIdentity } from "./project_identity.ts";
-import { POINT_REGISTRY } from "../decision_model/thresholds.ts";
 
 type Obj = Record<string, any>;
 const object = (v: unknown): v is Obj => v !== null && typeof v === "object" && !Array.isArray(v);
 const V1_USER = "immune_brain/user_config/v1";
 const V1_PROJECT = "immune_brain/project_config/v1";
+/** Top-level keys no current contract reads; `--write` deletes them from either file. */
+const RETIRED_KEYS = ["herdr", "loop", "decision_models"] as const;
 
 /** The v1 roles each v2 role takes its value from, first bound wins. */
 const ROLE_SOURCES: Record<AgentRole, readonly string[]> = {
@@ -100,8 +101,6 @@ export function migrateConfig(root: string, options: { userConfigPath?: string; 
 	// Legacy sources fill only what the v1 files left unset.
 	const legacyFile = (path: string): Obj => { const v = readJson(join(main, path)); if (v) notes.push(`${path} was read; delete it once the migration is written`); return v ?? {}; };
 	const legacyLanes = legacyFile(".imm/lanes.local.json");
-	const legacyProfiles = legacyFile(".imm/decision-models.local.json");
-	const legacyBindings = tracked(main, ".imm/decision-bindings.json") ? legacyFile(".imm/decision-bindings.json") : {};
 	const directive = (regex: RegExp): string | undefined => {
 		for (const file of ["AGENTS.md", "CLAUDE.md"]) {
 			if (!tracked(main, file)) continue;
@@ -151,30 +150,8 @@ export function migrateConfig(root: string, options: { userConfigPath?: string; 
 	if (projectParallel !== undefined && projectParallel !== userParallel) (projectAfter.batch ??= {}).max_parallel = projectParallel;
 	if (object(p.batch) && p.batch.final_verification !== undefined) (projectAfter.batch ??= {}).final_verification = p.batch.final_verification;
 
-	// decision_models: enabled_points becomes bindings.<point>: "off".
-	const ud: Obj = object(u.decision_models) ? u.decision_models : {};
-	const pd: Obj = object(p.decision_models) ? p.decision_models : {};
-	const md: Obj = object(mine.decision_models) ? mine.decision_models : {};
-	const userDm: Obj = {};
-	const profiles = ud.profiles ?? legacyProfiles.profiles;
-	if (profiles !== undefined) userDm.profiles = profiles;
-	const defaultProfile = ud.default_profile ?? legacyBindings.default_profile;
-	if (defaultProfile !== undefined && defaultProfile !== null) userDm.default_profile = defaultProfile;
-	const userBindings = Object.fromEntries(Object.entries({ ...(legacyBindings.bindings ?? {}), ...(ud.bindings ?? {}) }).filter(([, v]) => v !== null));
-	if (Object.keys(userBindings).length) userDm.bindings = userBindings;
-	if (ud.egress !== undefined) userDm.egress = ud.egress;
-	if (Object.keys(userDm).length) userAfter.decision_models = { ...(userAfter.decision_models ?? {}), ...userDm };
-	const projectDm: Obj = {};
-	if (md.default_profile !== undefined) projectDm.default_profile = md.default_profile;
-	const projectBindings: Obj = { ...(md.bindings ?? {}) };
-	if (Array.isArray(pd.enabled_points)) for (const point of Object.keys(POINT_REGISTRY)) if (!pd.enabled_points.includes(point)) projectBindings[point] = "off";
-	if (Object.keys(projectBindings).length) projectDm.bindings = projectBindings;
-	const projectEgress = pd.egress ?? legacyBindings.egress;
-	if (projectEgress !== undefined) { projectDm.egress = projectEgress; notes.push("decision_models.egress in .imm/config.json now replaces the user list instead of capping it"); }
-	if (Object.keys(projectDm).length) projectAfter.decision_models = { ...(projectAfter.decision_models ?? {}), ...projectDm };
-
 	// Plain keys keep their layer.
-	for (const k of ["git_integration", "initiative_carrier", "loop", "review_verifier"] as const) {
+	for (const k of ["git_integration", "initiative_carrier", "review_verifier"] as const) {
 		if (u[k] !== undefined) userAfter[k] = u[k];
 		if (p[k] !== undefined) projectAfter[k] = p[k];
 	}
@@ -182,22 +159,23 @@ export function migrateConfig(root: string, options: { userConfigPath?: string; 
 	if (gitLegacy && u.git_integration === undefined && p.git_integration === undefined) projectAfter.git_integration = gitLegacy;
 	if (carrierLegacy && projectAfter.initiative_carrier === undefined && u.initiative_carrier === undefined) projectAfter.initiative_carrier = carrierLegacy;
 
-	// The retired `herdr` key is never carried into the migrated files: `--write` deletes it,
-	// preserving every other key verbatim.
-	for (const [label, after, before] of [["user", userAfter, userBefore], ["project", projectAfter, projectBefore]] as const) {
-		if (before && Object.hasOwn(before, "herdr") && Object.hasOwn(after, "herdr")) {
-			delete after.herdr;
-			notes.push(`${label} file: removed the retired herdr key; all other keys are preserved`);
+	// Retired top-level keys are never carried into the migrated files: `--write` deletes them,
+	// preserving every other key verbatim. `loop` and `decision_models` retired with the
+	// in-repo Loop daemon (ADR 0043), so v1 values for them are not migrated either.
+	for (const [label, after] of [...(userMigrated ? [] : [["user", userAfter] as const]), ["project", projectAfter] as const]) {
+		for (const retired of RETIRED_KEYS) if (Object.hasOwn(after, retired)) {
+			delete after[retired];
+			notes.push(`${label} file: removed the retired ${retired} key; all other keys are preserved`);
 		}
 	}
 	// An already migrated user file is never rewritten from the archived v1 file; only the project side uses it.
 	const userResult: Obj = userMigrated ? userBefore! : userAfter;
-	// An already-migrated v2 user file reports (and `--write` writes) a copy without the retired key.
+	// An already-migrated v2 user file reports (and `--write` writes) a copy without the retired keys.
 	let userReported: Obj = userResult;
-	if (userMigrated && userResult && Object.hasOwn(userResult, "herdr")) {
-		userReported = { ...userResult };
-		delete userReported.herdr;
-		notes.push("user file: removed the retired herdr key; all other keys are preserved");
+	if (userMigrated && userResult) for (const retired of RETIRED_KEYS) if (Object.hasOwn(userReported, retired)) {
+		if (userReported === userResult) userReported = { ...userResult };
+		delete userReported[retired];
+		notes.push(`user file: removed the retired ${retired} key; all other keys are preserved`);
 	}
 	const changed = (before: Obj | null, after: Obj) => JSON.stringify(before) !== JSON.stringify(after) && (before !== null || Object.keys(after).length > 1);
 	const report: MigrationReport = {

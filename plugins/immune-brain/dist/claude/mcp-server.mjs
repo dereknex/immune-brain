@@ -31,13 +31,7 @@ function isLiteralUserActor(actorId) {
 function canonicalActorId(actorId) {
   return actorId === "user" ? LITERAL_USER_ACTOR_ID : actorId;
 }
-function isUnattendedCompositionRoot(actorId) {
-  return actorId === LOOP_DAEMON_ACTOR_ID;
-}
-function isCompositionRootActor(actorId) {
-  return isLiteralUserActor(actorId) || isUnattendedCompositionRoot(actorId);
-}
-var LITERAL_USER_ACTOR_ID = "literal-user", LITERAL_USER_SPELLINGS, LOOP_DAEMON_ACTOR_ID = "loop-daemon";
+var LITERAL_USER_ACTOR_ID = "literal-user", LITERAL_USER_SPELLINGS;
 var init_actor_identity = __esm(() => {
   LITERAL_USER_SPELLINGS = new Set([LITERAL_USER_ACTOR_ID, "user"]);
 });
@@ -874,13 +868,13 @@ function stableStringify(value) {
 }
 
 // plugins/immune-brain/runtime/kernel/types.ts
-var TASK_PHASES, TASK_LIFECYCLES, TASK_ARTIFACT_STATES, TASK_RISKS, ENROLLMENT_CONFIRMATION_SOURCES, TASK_INTENT_CONTRACT_V1 = "assurance_kernel/task_intent/v1", TASK_RECORD_CONTRACT_V2 = "assurance_kernel/task_record/v2", TASK_RECORD_CONTRACT_V3 = "assurance_kernel/task_record/v3", TASK_RECORD_CONTRACT_V4 = "assurance_kernel/task_record/v4", REVIEW_REVISION_IDENTITY_CONTRACT_V1 = "assurance_kernel/review_revision_identity/v1", REVIEW_REVISION_IDENTITY_CONTRACT = "assurance_kernel/review_revision_identity/v2", REDUCED_MUTATION_BRAND, MUTATION_AUTHORITY_CAPABILITY_BRAND;
+var TASK_PHASES, TASK_LIFECYCLES, TASK_ARTIFACT_STATES, TASK_RISKS, RECORDED_ENROLLMENT_CONFIRMATION_SOURCES, TASK_INTENT_CONTRACT_V1 = "assurance_kernel/task_intent/v1", TASK_RECORD_CONTRACT_V2 = "assurance_kernel/task_record/v2", TASK_RECORD_CONTRACT_V3 = "assurance_kernel/task_record/v3", TASK_RECORD_CONTRACT_V4 = "assurance_kernel/task_record/v4", REVIEW_REVISION_IDENTITY_CONTRACT_V1 = "assurance_kernel/review_revision_identity/v1", REVIEW_REVISION_IDENTITY_CONTRACT = "assurance_kernel/review_revision_identity/v2", REDUCED_MUTATION_BRAND, MUTATION_AUTHORITY_CAPABILITY_BRAND;
 var init_types = __esm(() => {
   TASK_PHASES = ["working", "review", "done", "stopped"];
   TASK_LIFECYCLES = ["active", "done", "stopped"];
   TASK_ARTIFACT_STATES = ["active", "frozen"];
   TASK_RISKS = ["routine", "material", "critical"];
-  ENROLLMENT_CONFIRMATION_SOURCES = ["user_session", "tracker_approval", "policy_auto"];
+  RECORDED_ENROLLMENT_CONFIRMATION_SOURCES = ["user_session", "tracker_approval", "policy_auto"];
   REDUCED_MUTATION_BRAND = Symbol("assurance-kernel-reduced-mutation-v2");
   MUTATION_AUTHORITY_CAPABILITY_BRAND = Symbol("assurance-kernel-mutation-authority-capability");
 });
@@ -2298,8 +2292,8 @@ function parseTaskRecordAtVersion(raw, version) {
   if (value.confirmation_source !== undefined) {
     if (version !== 4)
       violations.push("record.confirmation_source is only valid on a v4 record");
-    else if (!ENROLLMENT_CONFIRMATION_SOURCES.includes(value.confirmation_source))
-      violations.push(`record.confirmation_source must be one of ${ENROLLMENT_CONFIRMATION_SOURCES.join(", ")}`);
+    else if (!RECORDED_ENROLLMENT_CONFIRMATION_SOURCES.includes(value.confirmation_source))
+      violations.push(`record.confirmation_source must be one of ${RECORDED_ENROLLMENT_CONFIRMATION_SOURCES.join(", ")}`);
     else
       confirmationSource = value.confirmation_source;
   }
@@ -5251,8 +5245,8 @@ function createBatchAuthorityRegistry() {
   const inner = createCapabilityRegistry(BATCH_AUTHORITY_CAPABILITY_BRAND, {
     validateBinding(binding) {
       requireNonEmpty(binding);
-      if (!isCompositionRootActor(binding.actor_id))
-        throw new Error("batch authorization requires a literal-user actor_id or the loop-daemon composition root");
+      if (!isLiteralUserActor(binding.actor_id))
+        throw new Error("batch authorization requires a literal-user actor_id");
       if (!GIT_COMMIT_ID.test(binding.base_head))
         throw new Error("batch authorization base_head must be a committed 40-hex commit id");
       validateBudget(binding.budget);
@@ -9754,8 +9748,7 @@ function resolveAgents(layers) {
         err("config_invalid", file, `agents.${key}`, key === "profiles" ? "profiles are defined only in the user file" : "unknown key");
     return value;
   };
-  const presetJudging = [];
-  const withoutJudgingPresets = (value, file) => {
+  const withoutJudgingPresets = (value) => {
     if (value === null || value === undefined || !isObject2(value) || !isObject2(value.presets))
       return value;
     const presets = value.presets;
@@ -9763,14 +9756,12 @@ function resolveAgents(layers) {
     const onlyJudging = entries.length > 0 && entries.every(([, preset]) => isObject2(preset) && Object.keys(preset).every((key) => key === "roles") && isObject2(preset.roles) && Object.keys(preset.roles).length > 0 && Object.keys(preset.roles).every((air) => air === "judging"));
     if (!onlyJudging)
       return value;
-    for (const [name] of entries)
-      presetJudging.push({ file, key_path: `agents.presets.${name}.roles.judging` });
     const stripped = { ...value };
     delete stripped.presets;
     return stripped;
   };
-  const user = section(withoutJudgingPresets(layers.user, layers.files.user), layers.files.user, ["profiles", ...AGENT_ROLES]);
-  const project = section(withoutJudgingPresets(layers.project, layers.files.project), layers.files.project, AGENT_ROLES);
+  const user = section(withoutJudgingPresets(layers.user), layers.files.user, ["profiles", ...AGENT_ROLES]);
+  const project = section(withoutJudgingPresets(layers.project), layers.files.project, AGENT_ROLES);
   const profiles = {};
   if (user.profiles !== undefined) {
     if (!isObject2(user.profiles))
@@ -9785,14 +9776,11 @@ function resolveAgents(layers) {
       }
   }
   const roles = {};
-  const triageBindings = [];
   for (const role of AGENT_ROLES) {
     roles[role] = null;
     for (const [layer, values, file] of [["project", project, layers.files.project], ["user", user, layers.files.user]]) {
       if (values[role] === undefined)
         continue;
-      if (role === "triage")
-        triageBindings.push({ file, key_path: "agents.triage" });
       const parsed = parseAgentValue(values[role], profiles);
       if (!parsed.ok) {
         err(parsed.code, file, `agents.${role}`, parsed.message);
@@ -9801,7 +9789,7 @@ function resolveAgents(layers) {
       roles[role] ??= { host: parsed.profile.host, model: parsed.profile.model ?? null, effort: parsed.profile.effort ?? null, source: layer };
     }
   }
-  return { agents: { valid: errors.length === 0, profiles: { value: profiles, source: user.profiles !== undefined ? "user" : "default" }, roles }, errors, preset_judging: presetJudging, triage_bindings: triageBindings };
+  return { agents: { valid: errors.length === 0, profiles: { value: profiles, source: user.profiles !== undefined ? "user" : "default" }, roles }, errors };
 }
 function agentRole(agents, role) {
   return agents.roles[role] ?? null;
@@ -9813,473 +9801,13 @@ var init_agent_roles = __esm(() => {
   AGENT_EFFORTS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 });
 
-// plugins/immune-brain/runtime/loop_daemon/role_catalog.ts
-import { existsSync as existsSync8, statSync as statSync3 } from "node:fs";
-import { isAbsolute as isAbsolute6, relative as relative6, resolve as resolve12, sep as sep7 } from "node:path";
-function defaultLoopRole(base) {
-  return {
-    name: base,
-    base,
-    host: LOOP_ROLE_DEFAULT_HOST,
-    model: null,
-    effort: null,
-    when: null,
-    instructions: null,
-    limits: { ...DEFAULT_LOOP_ROLE_LIMITS },
-    source: "default"
-  };
-}
-function parseLoopRole(name, value, root) {
-  const fail = (code, message, key = `loop.roles.${name}`) => ({ error: { code, key_path: key, message } });
-  if (!LOOP_ROLE_NAME_PATTERN.test(name))
-    return fail("role_name_invalid", `role name must match ${LOOP_ROLE_NAME_PATTERN.source}`);
-  if (!isObject3(value))
-    return fail("config_invalid", "expected object");
-  for (const key of Object.keys(value))
-    if (!ROLE_KEYS.includes(key))
-      return fail("config_invalid", `unknown key ${key}`, `loop.roles.${name}.${key}`);
-  const base = value.base;
-  if (!LOOP_ROLE_BASES.includes(base))
-    return fail("role_base_unknown", `expected base ${LOOP_ROLE_BASES.join(", ")}`, `loop.roles.${name}.base`);
-  if (value.host !== undefined && !AGENT_HOSTS.includes(value.host))
-    return fail("role_host_unknown", `expected host ${AGENT_HOSTS.join(", ")}`, `loop.roles.${name}.host`);
-  for (const key of ["model", "effort"])
-    if (value[key] !== undefined && !text2(value[key]))
-      return fail("config_invalid", "expected a non-empty string", `loop.roles.${name}.${key}`);
-  if (value.when !== undefined && (typeof value.when !== "string" || value.when.length === 0 || value.when.length > LOOP_ROLE_WHEN_MAX))
-    return fail("config_invalid", `expected 1 to ${LOOP_ROLE_WHEN_MAX} characters`, `loop.roles.${name}.when`);
-  let instructions = null;
-  if (value.instructions !== undefined) {
-    const key = `loop.roles.${name}.instructions`;
-    if (!text2(value.instructions))
-      return fail("config_invalid", "expected a repository-relative path", key);
-    const path = resolve12(root, value.instructions);
-    if (isAbsolute6(value.instructions) || !path.startsWith(root.endsWith(sep7) ? root : root + sep7))
-      return fail("role_instructions_outside_repo", `must name a file inside ${root}`, key);
-    if (!existsSync8(path) || !statSync3(path).isFile())
-      return fail("role_instructions_missing", "no such file", key);
-    instructions = relative6(root, path);
-  }
-  const limits = { ...DEFAULT_LOOP_ROLE_LIMITS };
-  if (value.limits !== undefined) {
-    if (!isObject3(value.limits))
-      return fail("config_invalid", "expected object", `loop.roles.${name}.limits`);
-    for (const key of Object.keys(value.limits))
-      if (!Object.hasOwn(LOOP_LIMIT_BOUNDS, key))
-        return fail("config_invalid", `unknown key ${key}`, `loop.roles.${name}.limits.${key}`);
-    for (const key of Object.keys(LOOP_LIMIT_BOUNDS)) {
-      const set = value.limits[key];
-      if (set === undefined)
-        continue;
-      const bounds = LOOP_LIMIT_BOUNDS[key];
-      if (!Number.isSafeInteger(set) || set < bounds.min || set > bounds.max)
-        return fail("role_limit_out_of_range", `expected an integer between ${bounds.min} and ${bounds.max}`, `loop.roles.${name}.limits.${key}`);
-      limits[key] = set;
-    }
-  }
-  return {
-    role: {
-      name,
-      base,
-      host: value.host ?? LOOP_ROLE_DEFAULT_HOST,
-      model: value.model ?? null,
-      effort: value.effort ?? null,
-      when: value.when ?? null,
-      instructions,
-      limits,
-      source: "project"
-    }
-  };
-}
-function resolveLoopRoles(input) {
-  const errors = [];
-  const accepted = [];
-  if (input.roles !== undefined) {
-    if (!isObject3(input.roles))
-      errors.push({ code: "config_invalid", key_path: "loop.roles", message: "expected object" });
-    else
-      for (const [name, value] of Object.entries(input.roles)) {
-        const parsed = parseLoopRole(name, value, input.root);
-        if ("error" in parsed)
-          errors.push(parsed.error);
-        else
-          accepted.push(parsed.role);
-      }
-  }
-  const leaders = accepted.filter((role) => role.base === "leader");
-  if (leaders.length > 1)
-    for (const leader of leaders)
-      errors.push({
-        code: "leader_role_duplicate",
-        key_path: `loop.roles.${leader.name}`,
-        message: `${leaders.map((role) => role.name).join(", ")} all claim base leader; exactly one role may`
-      });
-  const usable = leaders.length > 1 ? accepted.filter((role) => role.base !== "leader") : accepted;
-  const roles = LOOP_ROLE_BASES.flatMap((base) => {
-    const named = usable.filter((role) => role.base === base);
-    return named.length > 0 ? named : [defaultLoopRole(base)];
-  });
-  return { roles, errors };
-}
-var LOOP_ROLE_BASES, LOOP_ROLE_NAME_PATTERN, LOOP_ROLE_WHEN_MAX = 500, LOOP_LIMIT_BOUNDS, DEFAULT_LOOP_ROLE_LIMITS, LOOP_ROLE_DEFAULT_HOST = "claude-code", ROLE_KEYS, isObject3 = (v) => v !== null && typeof v === "object" && !Array.isArray(v), text2 = (v) => typeof v === "string" && v.trim().length > 0;
-var init_role_catalog = __esm(() => {
-  init_agent_roles();
-  LOOP_ROLE_BASES = ["leader", "clarify", "plan", "execute", "repair", "analyze"];
-  LOOP_ROLE_NAME_PATTERN = /^[a-z][a-z0-9-]{0,31}$/;
-  LOOP_LIMIT_BOUNDS = {
-    turn_budget: { min: 1, max: 200, default: 40 },
-    timeout_s: { min: 60, max: 3600, default: 900 },
-    max_parallel: { min: 1, max: 8, default: 1 }
-  };
-  DEFAULT_LOOP_ROLE_LIMITS = { turn_budget: 40, timeout_s: 900, max_parallel: 1 };
-  ROLE_KEYS = ["base", "host", "model", "effort", "when", "instructions", "limits"];
-});
-
-// plugins/immune-brain/runtime/decision_model/thresholds.ts
-var A1_REVIEW_FINDING_PRESCREEN, A14_PR_COMMENT_TRIAGE, A15_ISSUE_TRIAGE, A14_AMBIGUOUS_USER_INTENT, A15_TASK_GRANULARITY, A16_REVISIT_CHAIN_CLASS, A4_FINDING_EQUIVALENCE, A17_REVIEW_FINDING_KIND, A18_EVENT_PREFILTER, A19_OWNER_COMMENT_INTENT, A20_ISSUE_DUPLICATE_PAIR, POINT_REGISTRY;
-var init_thresholds = __esm(() => {
-  A1_REVIEW_FINDING_PRESCREEN = {
-    id: "a1_review_finding_prescreen",
-    question_type: "choice",
-    input_category: "finding",
-    options: ["likely_true", "likely_false", "uncertain"],
-    criteria: {
-      likely_true: "The finding describes a reachable defect",
-      likely_false: "The finding does not describe a reachable defect",
-      uncertain: "The evidence does not support either conclusion"
-    },
-    instructions: "Given a review finding's trigger, caller chain, and violated invariant, which option best describes it?",
-    threshold_set: { version: "a1/v0", values: null }
-  };
-  A14_PR_COMMENT_TRIAGE = {
-    id: "a14_pr_comment_triage",
-    question_type: "choice",
-    input_category: "pr_comment",
-    options: ["blocking", "nit", "out_of_scope", "duplicate"],
-    criteria: {
-      blocking: "Must change before merge",
-      nit: "Optional polish",
-      out_of_scope: "Valid but belongs to another change",
-      duplicate: "Restates an earlier comment in the same PR"
-    },
-    instructions: "Given the target review comment, its thread discussion and the earlier comments of the same pull request, which option best describes the target comment?",
-    threshold_set: {
-      version: "a14/v1",
-      values: { blocking: 0.8, nit: 0.8, out_of_scope: 0.8, duplicate: 0.8 }
-    }
-  };
-  A15_ISSUE_TRIAGE = {
-    id: "a15_issue_triage",
-    question_type: "choice",
-    input_category: "issue_text",
-    options: ["duplicate", "needs_spec", "ready_for_agent"],
-    criteria: {
-      duplicate: "Restates an issue that already exists",
-      needs_spec: "Too under-specified to implement; needs a spec first",
-      ready_for_agent: "Specified well enough for an agent to implement as written"
-    },
-    instructions: "Given the issue title and body, which option best describes how the issue should be triaged: a duplicate of an existing issue, in need of a spec before work can start, or ready for an agent to implement?",
-    threshold_set: { version: "a15/v0", values: null }
-  };
-  A14_AMBIGUOUS_USER_INTENT = {
-    id: "a14_ambiguous_user_intent",
-    question_type: "choice",
-    input_category: "pr_comment",
-    options: ["clear_single_task", "needs_initiative_decomposition", "needs_clarification"],
-    criteria: {
-      clear_single_task: "The comment requests one change that one Lane can make",
-      needs_initiative_decomposition: "The comment requests work that must be split into several tasks first",
-      needs_clarification: "The comment's intent is too ambiguous to act on"
-    },
-    instructions: "Given a review comment on a daemon pull request, which option best describes what its author is asking for?",
-    threshold_set: { version: "a14-intent/v0", values: null }
-  };
-  A15_TASK_GRANULARITY = {
-    id: "a15_task_granularity",
-    question_type: "choice",
-    input_category: "issue_text",
-    options: ["clear_single_task", "needs_initiative_decomposition", "needs_clarification"],
-    criteria: {
-      clear_single_task: "The issue is one task an agent can implement as written",
-      needs_initiative_decomposition: "The issue describes work that must be split into several tasks first",
-      needs_clarification: "The issue is too under-specified to plan"
-    },
-    instructions: "Given an issue title and body, which option best describes the granularity of the work it asks for?",
-    threshold_set: {
-      version: "a15-granularity/v1",
-      values: {
-        clear_single_task: 0.75,
-        needs_initiative_decomposition: 0.75,
-        needs_clarification: 0.75
-      }
-    }
-  };
-  A16_REVISIT_CHAIN_CLASS = {
-    id: "a16_revisit_chain_class",
-    question_type: "choice",
-    input_category: "session_event",
-    options: ["avoidable_friction", "necessary_decision", "error_recovery", "unknown"],
-    criteria: {
-      avoidable_friction: "The user stepped in only because the workflow stalled or asked something it could have resolved itself",
-      necessary_decision: "The user stepped in to make a decision only they could make",
-      error_recovery: "The user stepped in to recover from a failed or errored step",
-      unknown: "The located fields do not support any other class"
-    },
-    instructions: "Given one revisit candidate chain (the task, how often the same task resumed, the last tool result before the stop and the length of the user's reply), which option best describes why the user resumed the task?",
-    threshold_set: { version: "a16/v0", values: null }
-  };
-  A4_FINDING_EQUIVALENCE = {
-    id: "a4_finding_equivalence",
-    question_type: "choice",
-    input_category: "finding",
-    options: ["same_invariant", "new_defect", "out_of_contract"],
-    criteria: {
-      same_invariant: "Violates the same invariant class as an earlier finding of the same run",
-      new_defect: "A distinct defect that no earlier finding covers",
-      out_of_contract: "Outside the accepted contract of the task"
-    },
-    instructions: "Given the target blocking review finding and the earlier findings of the same run, which option best describes the target finding: the same invariant class as an earlier finding, a new defect, or outside the task's accepted contract?",
-    threshold_set: { version: "a4/v0", values: null }
-  };
-  A17_REVIEW_FINDING_KIND = {
-    id: "a17_review_finding_kind",
-    question_type: "choice",
-    input_category: "finding",
-    options: ["acceptance", "security_boundary"],
-    criteria: { acceptance: "Violates an acceptance assertion", security_boundary: "Violates a security boundary" },
-    instructions: "Classify the violated invariant using only the finding trigger and caller chain; do not infer the reviewer's declared kind.",
-    threshold_set: { version: "a17/v0", values: null }
-  };
-  A18_EVENT_PREFILTER = {
-    id: "a18_event_prefilter",
-    question_type: "choice",
-    input_category: "session_event",
-    options: ["actionable", "ignore"],
-    criteria: {
-      actionable: "The event requires daemon action or triage",
-      ignore: "The event is noisy, informational, or requires no action"
-    },
-    instructions: "Given a GitHub event or notification, which option best describes whether the daemon must act on it?",
-    threshold_set: { version: "a18/v1", values: { ignore: 0.9 } }
-  };
-  A19_OWNER_COMMENT_INTENT = {
-    id: "a19_owner_comment_intent",
-    question_type: "choice",
-    input_category: "issue_text",
-    options: ["approve_plan", "request_plan_revision", "answer_lane_decision", "command", "discussion"],
-    criteria: {
-      approve_plan: "The owner intends to approve the proposed plan",
-      request_plan_revision: "The owner requests changes or revision to the proposed plan",
-      answer_lane_decision: "The owner answers an in-Lane decision or clarification question",
-      command: "The owner issues a direct daemon command",
-      discussion: "General discussion not requiring execution"
-    },
-    instructions: "Given a comment from a verified repository owner, which option best describes the author's intent?",
-    threshold_set: {
-      version: "a19/v1",
-      values: {
-        approve_plan: 0.8,
-        request_plan_revision: 0.8,
-        answer_lane_decision: 0.8,
-        command: 0.8,
-        discussion: 0.8
-      }
-    }
-  };
-  A20_ISSUE_DUPLICATE_PAIR = {
-    id: "a20_issue_duplicate_pair",
-    question_type: "choice",
-    input_category: "issue_text",
-    options: ["duplicate", "related", "unrelated"],
-    criteria: {
-      duplicate: "The candidate issue describes the same underlying problem as the existing issue",
-      related: "The candidate issue is related but addresses a different problem",
-      unrelated: "The candidate issue is unrelated to the existing issue"
-    },
-    instructions: "Given two GitHub issues, which option best describes their relationship?",
-    threshold_set: { version: "a20/v1", values: { duplicate: 0.85 } }
-  };
-  POINT_REGISTRY = {
-    [A17_REVIEW_FINDING_KIND.id]: A17_REVIEW_FINDING_KIND,
-    [A1_REVIEW_FINDING_PRESCREEN.id]: A1_REVIEW_FINDING_PRESCREEN,
-    [A14_PR_COMMENT_TRIAGE.id]: A14_PR_COMMENT_TRIAGE,
-    [A15_ISSUE_TRIAGE.id]: A15_ISSUE_TRIAGE,
-    [A14_AMBIGUOUS_USER_INTENT.id]: A14_AMBIGUOUS_USER_INTENT,
-    [A15_TASK_GRANULARITY.id]: A15_TASK_GRANULARITY,
-    [A16_REVISIT_CHAIN_CLASS.id]: A16_REVISIT_CHAIN_CLASS,
-    [A4_FINDING_EQUIVALENCE.id]: A4_FINDING_EQUIVALENCE,
-    [A18_EVENT_PREFILTER.id]: A18_EVENT_PREFILTER,
-    [A19_OWNER_COMMENT_INTENT.id]: A19_OWNER_COMMENT_INTENT,
-    [A20_ISSUE_DUPLICATE_PAIR.id]: A20_ISSUE_DUPLICATE_PAIR
-  };
-});
-
-// plugins/immune-brain/runtime/decision_model/contract.ts
-function isProviderKind(value) {
-  return typeof value === "string" && PROVIDER_KINDS.includes(value);
-}
-function unavailable(reason, detail) {
-  return { status: "unavailable", reason, detail };
-}
-var SENSITIVE_CATEGORIES, PROVIDER_KINDS;
-var init_contract = __esm(() => {
-  init_thresholds();
-  SENSITIVE_CATEGORIES = ["finding", "diff", "goal_scope", "spec_source"];
-  PROVIDER_KINDS = ["clef", "fake", "jev"];
-});
-
-// plugins/immune-brain/runtime/decision_model/config.ts
-function isObject4(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-function invalid(file, why) {
-  return { ok: false, error: unavailable("config_invalid", `${file}: ${why}`) };
-}
-function unknownKey(obj, allowed) {
-  for (const key of Object.keys(obj))
-    if (!allowed.includes(key))
-      return key;
-  return null;
-}
-function parseProfiles(raw) {
-  const file = PROFILES_LABEL;
-  if (!isObject4(raw))
-    return invalid(file, "top level must be an object");
-  const extra = unknownKey(raw, ["profiles"]);
-  if (extra !== null)
-    return invalid(file, `unknown key "${extra}"`);
-  if (!isObject4(raw.profiles))
-    return invalid(file, "profiles must be an object");
-  const profiles = {};
-  for (const [name, value] of Object.entries(raw.profiles)) {
-    const parsed = parseProfile(name, value);
-    if (!parsed.ok)
-      return parsed;
-    profiles[name] = parsed.value;
-  }
-  return { ok: true, value: profiles };
-}
-function parseProfile(name, raw) {
-  const file = PROFILES_LABEL;
-  const where = `profiles.${name}`;
-  if (!isObject4(raw))
-    return invalid(file, `${where} must be an object`);
-  if (!isProviderKind(raw.kind))
-    return invalid(file, `${where}.kind is not a known provider kind`);
-  switch (raw.kind) {
-    case "clef":
-      return parseClefProfile(where, raw);
-    case "fake":
-      return parseFakeProfile(where, raw);
-    case "jev":
-      return parseJevProfile(where, raw);
-  }
-}
-function parseClefProfile(where, raw) {
-  const file = PROFILES_LABEL;
-  const extra = unknownKey(raw, ["kind", "model", "account_id_env", "token_env", "context_window", "timeout_ms"]);
-  if (extra !== null)
-    return invalid(file, `${where}: unknown key "${extra}"`);
-  if (raw.model !== "clef" && raw.model !== "clef-flash")
-    return invalid(file, `${where}.model must be "clef" or "clef-flash"`);
-  if (!nonEmptyString2(raw.account_id_env))
-    return invalid(file, `${where}.account_id_env must name an environment variable`);
-  if (!nonEmptyString2(raw.token_env))
-    return invalid(file, `${where}.token_env must name an environment variable`);
-  const profile = { kind: "clef", model: raw.model, account_id_env: raw.account_id_env, token_env: raw.token_env };
-  if (raw.context_window !== undefined) {
-    if (!Number.isInteger(raw.context_window) || raw.context_window <= 0)
-      return invalid(file, `${where}.context_window must be a positive integer`);
-    profile.context_window = raw.context_window;
-  }
-  if (raw.timeout_ms !== undefined) {
-    const t = raw.timeout_ms;
-    if (!Number.isInteger(t) || t < 1000 || t > 120000)
-      return invalid(file, `${where}.timeout_ms must be an integer in 1000..120000`);
-    profile.timeout_ms = t;
-  }
-  return { ok: true, value: profile };
-}
-function parseJevProfile(where, raw) {
-  const file = PROFILES_LABEL;
-  const extra = unknownKey(raw, ["kind", "api_key_env", "base_url", "context_window", "timeout_ms"]);
-  if (extra !== null)
-    return invalid(file, `${where}: unknown key "${extra}"`);
-  if (!nonEmptyString2(raw.api_key_env))
-    return invalid(file, `${where}.api_key_env must name an environment variable`);
-  const profile = { kind: "jev", api_key_env: raw.api_key_env };
-  if (raw.base_url !== undefined) {
-    const baseUrl = raw.base_url;
-    let url = null;
-    if (nonEmptyString2(baseUrl)) {
-      try {
-        url = new URL(baseUrl);
-      } catch {}
-    }
-    if (!nonEmptyString2(baseUrl) || url === null || url.protocol !== "https:" && url.protocol !== "http:" || url.username !== "" || url.password !== "") {
-      return invalid(file, `${where}.base_url must be an http(s) URL without credentials`);
-    }
-    profile.base_url = baseUrl;
-  }
-  if (raw.context_window !== undefined) {
-    if (!Number.isInteger(raw.context_window) || raw.context_window <= 0)
-      return invalid(file, `${where}.context_window must be a positive integer`);
-    profile.context_window = raw.context_window;
-  }
-  if (raw.timeout_ms !== undefined) {
-    const t = raw.timeout_ms;
-    if (!Number.isInteger(t) || t < 1000 || t > 120000)
-      return invalid(file, `${where}.timeout_ms must be an integer in 1000..120000`);
-    profile.timeout_ms = t;
-  }
-  return { ok: true, value: profile };
-}
-function parseProbabilityMap(value) {
-  if (!isObject4(value))
-    return null;
-  const out = {};
-  for (const [key, p] of Object.entries(value)) {
-    if (typeof p !== "number")
-      return null;
-    out[key] = p;
-  }
-  return out;
-}
-function parseFakeProfile(where, raw) {
-  const file = PROFILES_LABEL;
-  const extra = unknownKey(raw, ["kind", "answers", "default"]);
-  if (extra !== null)
-    return invalid(file, `${where}: unknown key "${extra}"`);
-  if (!isObject4(raw.answers))
-    return invalid(file, `${where}.answers must be an object`);
-  const answers = {};
-  for (const [trace, map] of Object.entries(raw.answers)) {
-    const parsed = parseProbabilityMap(map);
-    if (parsed === null)
-      return invalid(file, `${where}.answers.${trace} must map options to numbers`);
-    answers[trace] = parsed;
-  }
-  const profile = { kind: "fake", answers };
-  if (raw.default !== undefined) {
-    const parsed = parseProbabilityMap(raw.default);
-    if (parsed === null)
-      return invalid(file, `${where}.default must map options to numbers`);
-    profile.default = parsed;
-  }
-  return { ok: true, value: profile };
-}
-var PROFILES_LABEL = "decision_models.profiles", nonEmptyString2 = (value) => typeof value === "string" && value.length > 0;
-var init_config = __esm(() => {
-  init_contract();
-});
-
 // plugins/immune-brain/runtime/config/layered_config.ts
 import { execFileSync as execFileSync5 } from "node:child_process";
-import { existsSync as existsSync9, readFileSync as readFileSync12 } from "node:fs";
+import { existsSync as existsSync8, readFileSync as readFileSync12 } from "node:fs";
 import { homedir } from "node:os";
-import { basename as basename3, dirname as dirname9, isAbsolute as isAbsolute7, join as join13 } from "node:path";
+import { basename as basename3, dirname as dirname9, isAbsolute as isAbsolute6, join as join13 } from "node:path";
 function defaultUserConfigPath() {
-  return join13(process.env.XDG_CONFIG_HOME && isAbsolute7(process.env.XDG_CONFIG_HOME) ? process.env.XDG_CONFIG_HOME : join13(homedir(), ".config"), "immune-brain/config.json");
+  return join13(process.env.XDG_CONFIG_HOME && isAbsolute6(process.env.XDG_CONFIG_HOME) ? process.env.XDG_CONFIG_HOME : join13(homedir(), ".config"), "immune-brain/config.json");
 }
 function mainCheckoutRoot(root) {
   try {
@@ -10293,7 +9821,6 @@ function projectConfigPath(root) {
   return join13(mainCheckoutRoot(root), ".imm/config.json");
 }
 function resolveConfig(root, options = {}) {
-  const registry = options.registry ?? POINT_REGISTRY;
   const diagnostics = [];
   const diag = (code, severity, file, key_path, message) => {
     diagnostics.push({ code, severity, file, key_path, message: `${file}: ${key_path}: ${message}` });
@@ -10302,7 +9829,7 @@ function resolveConfig(root, options = {}) {
   const userPath = options.userConfigPath ?? defaultUserConfigPath();
   const projectPath = options.projectConfigPath ?? projectConfigPath(root);
   const read = (path, contract) => {
-    if (!existsSync9(path))
+    if (!existsSync8(path))
       return null;
     try {
       const data = JSON.parse(readFileSync12(path, "utf8"));
@@ -10392,169 +9919,26 @@ function resolveConfig(root, options = {}) {
   const git = valid((o) => o.git_integration, "git_integration", oneOf(["manual", "auto"]), "expected manual or auto");
   const gitBroken = diagnostics.find((d) => d.severity === "error" && ["git_integration", "$", "contract"].includes(d.key_path));
   const gitIntegration = gitBroken ? { value: "manual", source: gitBroken.file === projectPath ? "project" : "user" } : git.find((g) => g.value === "manual") ?? git[0] ?? { value: "manual", source: "default" };
-  const loopKeys = ["mode", "interval_seconds", "max_concurrent", "max_ready_buffer", "max_pr_buffer", "auto_enroll_max_risk", "allowed_actors", "allowed_associations", "interaction", "budget"];
-  for (const [layer, o, file] of layers) {
-    knownKeys(part(o, file, "loop"), layer === "project" ? [...loopKeys, "roles"] : loopKeys, file, "loop");
-    if (layer === "user" && has(part(o, file, "loop"), "roles"))
-      invalid(file, "loop.roles", "loop.roles is defined only in the project file");
-    knownKeys(part(o, file, "loop.budget"), ["max_ticks_per_day", "max_dispatches_per_day", "max_leader_wakes_per_day"], file, "loop.budget");
-    knownKeys(part(o, file, "loop.interaction"), ["channel"], file, "loop.interaction");
-  }
-  const distinct = (v) => Array.isArray(v) && v.every((item) => typeof item === "string" && item.trim().length > 0) && new Set(v).size === v.length;
-  const loopPick = (key, ok, message) => pick((o) => o.loop?.[key], `loop.${key}`, ok, message, DEFAULT_LOOP_CONFIG[key]).value;
-  const intersect = (key, ok, message) => {
-    const values = valid((o) => o.loop?.[key], `loop.${key}`, ok, message);
-    if (!values.length)
-      return DEFAULT_LOOP_CONFIG[key];
-    return values.map((v) => v.value).reduce((a, b) => a.filter((item) => b.includes(item)));
-  };
-  const risks = valid((o) => o.loop?.auto_enroll_max_risk, "loop.auto_enroll_max_risk", oneOf(LOOP_AUTO_ENROLL_MAX_RISKS), "expected none or routine; material and critical require tracker_approval");
-  const budgetPick = (key) => pick((o) => o.loop?.budget?.[key], `loop.budget.${key}`, (v) => integerWithin(v, 1), "expected a positive integer", null).value;
-  const leaderWakes = pick((o) => o.loop?.budget?.max_leader_wakes_per_day, "loop.budget.max_leader_wakes_per_day", (v) => integerWithin(v, LOOP_LEADER_WAKES_BOUNDS.min, LOOP_LEADER_WAKES_BOUNDS.max), `expected an integer between ${LOOP_LEADER_WAKES_BOUNDS.min} and ${LOOP_LEADER_WAKES_BOUNDS.max}`, LOOP_LEADER_WAKES_BOUNDS.default).value;
-  const loopCatalog = resolveLoopRoles({ roles: project?.loop?.roles, root });
-  for (const error of loopCatalog.errors)
-    diag(error.code, "error", projectPath, error.key_path, error.message);
-  const resolvedLoop = {
-    mode: loopPick("mode", oneOf(LOOP_MODES), `expected one of ${LOOP_MODES.join(", ")}`),
-    interval_seconds: loopPick("interval_seconds", (v) => integerWithin(v, 15), "expected an integer of at least 15"),
-    max_concurrent: loopPick("max_concurrent", (v) => integerWithin(v, 1, 8), "expected an integer between 1 and 8"),
-    max_ready_buffer: loopPick("max_ready_buffer", (v) => integerWithin(v, 1, 20), "expected an integer between 1 and 20"),
-    max_pr_buffer: loopPick("max_pr_buffer", (v) => integerWithin(v, 1, 20), "expected an integer between 1 and 20"),
-    auto_enroll_max_risk: risks.length ? risks.some((r) => r.value === "none") ? "none" : "routine" : DEFAULT_LOOP_CONFIG.auto_enroll_max_risk,
-    allowed_actors: intersect("allowed_actors", distinct, "expected distinct non-empty GitHub logins"),
-    allowed_associations: intersect("allowed_associations", (v) => distinct(v) && v.length > 0 && v.every((a) => LOOP_ASSOCIATIONS.includes(a)), `expected a subset of ${LOOP_ASSOCIATIONS.join(", ")}`),
-    interaction: { channel: pick((o) => o.loop?.interaction?.channel, "loop.interaction.channel", oneOf(LOOP_INTERACTION_CHANNELS), `expected one of ${LOOP_INTERACTION_CHANNELS.join(", ")}`, "github").value },
-    budget: {
-      max_ticks_per_day: budgetPick("max_ticks_per_day"),
-      max_dispatches_per_day: budgetPick("max_dispatches_per_day"),
-      max_leader_wakes_per_day: leaderWakes
-    },
-    roles: loopCatalog.roles
-  };
-  const deprecated = [
-    ["agents.planner", agentLayers.agents.roles.planner, ["clarify", "plan"]],
-    ["agents.executor", agentLayers.agents.roles.executor, ["repair"]]
-  ];
-  for (const [key, bound, bases] of deprecated) {
-    if (!bound)
-      continue;
-    for (const base of bases)
-      diag("deprecated_config_source", "warning", bound.source === "project" ? projectPath : userPath, "loop.roles", `${key} no longer chooses the loop ${base} role; bind a base ${base} role under loop.roles in .imm/config.json`);
-  }
-  for (const binding of agentLayers.triage_bindings)
-    diag("deprecated_config_source", "warning", binding.file, binding.key_path, "triage judging is retired: nothing reads agents.triage, so this binding selects nothing");
-  for (const binding of agentLayers.preset_judging)
-    diag("deprecated_config_source", "warning", binding.file, binding.key_path, "judging is retired: the leader replaces the Tier-3 judging session, so this binding selects nothing");
-  for (const [layer, o, file] of layers)
-    knownKeys(part(o, file, "decision_models"), layer === "user" ? ["profiles", "default_profile", "bindings", "egress"] : ["default_profile", "bindings", "egress"], file, "decision_models");
-  let profiles = {};
-  const rawProfiles = part(user, userPath, "decision_models.profiles");
-  if (has(user?.decision_models, "profiles")) {
-    let ok = true;
-    for (const [name, profile] of Object.entries(rawProfiles))
-      if (object3(profile)) {
-        for (const [key, value] of Object.entries(profile))
-          if (key.endsWith("_env") && (typeof value !== "string" || !envName.test(value))) {
-            invalid(userPath, `decision_models.profiles.${name}.${key}`, "expected environment variable name");
-            ok = false;
-          }
-      }
-    const parsed = parseProfiles({ profiles: rawProfiles });
-    if (!parsed.ok) {
-      invalid(userPath, "decision_models.profiles", parsed.error.detail.replace(/^.*?: /, ""));
-      ok = false;
-    }
-    if (ok)
-      profiles = rawProfiles;
-  }
-  const profileRef = (get, key, allowOff) => {
-    for (const [layer, o, file] of layers) {
-      const value = o ? get(o) : undefined;
-      if (value === undefined)
-        continue;
-      if (typeof value !== "string" || !value) {
-        invalid(file, key, "expected profile name");
-        continue;
-      }
-      if (allowOff && value === "off")
-        return leaf(value, layer);
-      if (!Object.hasOwn(profiles, value)) {
-        diag("unknown_profile", "error", file, key, `unknown profile ${value}`);
-        continue;
-      }
-      return leaf(value, layer);
-    }
-    return leaf(null, "default");
-  };
-  const defaultProfile = profileRef((o) => o.decision_models?.default_profile, "decision_models.default_profile", false);
-  const bindings = {};
-  const points = new Set;
-  for (const [, o, file] of layers)
-    for (const point of Object.keys(part(o, file, "decision_models.bindings"))) {
-      if (Object.hasOwn(registry, point))
-        points.add(point);
-      else
-        invalid(file, `decision_models.bindings.${point}`, "unknown application point");
-    }
-  for (const point of [...points].sort())
-    bindings[point] = profileRef((o) => o.decision_models?.bindings?.[point], `decision_models.bindings.${point}`, true);
-  for (const [, o, file] of layers)
-    for (const kind of Object.keys(part(o, file, "decision_models.egress")))
-      if (!PROVIDER_KINDS.includes(kind))
-        invalid(file, `decision_models.egress.${kind}`, "unknown provider kind");
-  const egress = {};
-  for (const kind of PROVIDER_KINDS)
-    egress[kind] = pick((o) => o.decision_models?.egress?.[kind], `decision_models.egress.${kind}`, (v) => Array.isArray(v) && v.every((c) => SENSITIVE_CATEGORIES.includes(c)) && new Set(v).size === v.length, "invalid egress list", []);
-  const decisionModels = { valid: !errorsUnder("decision_models"), profiles: leaf(profiles, Object.keys(profiles).length ? "user" : "default"), default_profile: defaultProfile, bindings, egress };
-  if (options.checkEnv)
-    decisionModels.environment = Object.fromEntries(Object.entries(profiles).map(([name, profile]) => [name, object3(profile) ? Object.fromEntries(Object.entries(profile).filter(([k, v]) => k.endsWith("_env") && typeof v === "string" && envName.test(v)).map(([k, v]) => [k, process.env[v] !== undefined ? "set" : "unset"])) : {}]));
-  const catalogPrefix = "loop.roles";
-  const loopErrorsOutsideCatalog = () => diagnostics.some((d) => d.severity === "error" && (d.key_path === "loop" || d.key_path.startsWith("loop.")) && d.key_path !== catalogPrefix && !d.key_path.startsWith(`${catalogPrefix}.`));
-  const loopSource = has(project, "loop") ? "project" : has(user, "loop") ? "user" : "default";
   return {
     contract: "immune_brain/effective_config/v2",
     files: { user: userPath, project: projectPath },
     agents,
     session_providers: sessionProviders,
     batch: { valid: !errorsUnder("batch"), max_parallel: maxParallel, final_verification: finalVerification, single_task_final_verification: singleTaskFinalVerification },
-    decision_models: decisionModels,
     git_integration: leaf(gitIntegration.value, gitIntegration.source),
     initiative_carrier: carrier,
-    loop: { valid: !loopErrorsOutsideCatalog(), value: resolvedLoop, source: loopSource },
     review_verifier: reviewVerifier,
     diagnostics
   };
 }
 function batchConfigErrors(config) {
-  return config.diagnostics.filter((d) => d.severity === "error" && (/^(agents|batch|session_providers)(\.|$)/.test(d.key_path) || d.key_path === "$" || d.key_path === "contract"));
+  return config.diagnostics.filter((d) => d.severity === "error" && (/^(agents|batch|session_providers)(\.|$)/.test(d.key_path) || d.key_path === "$" || d.key_path === "contract" || !FILE_KEYS.includes(d.key_path.split(".")[0])));
 }
-var object3 = (v) => v !== null && typeof v === "object" && !Array.isArray(v), leaf = (value, source) => ({ value, source }), has = (o, k) => !!o && Object.hasOwn(o, k), envName, USER_CONFIG_CONTRACT = "immune_brain/user_config/v2", PROJECT_CONFIG_CONTRACT = "immune_brain/project_config/v2", BATCH_MAX_PARALLEL, LOOP_MODES, LOOP_AUTO_ENROLL_MAX_RISKS, LOOP_ASSOCIATIONS, LOOP_INTERACTION_CHANNELS, LOOP_LEADER_WAKES_BOUNDS, DEFAULT_LOOP_CONFIG, FILE_KEYS, REGISTERED_SESSION_PROVIDERS;
+var object3 = (v) => v !== null && typeof v === "object" && !Array.isArray(v), leaf = (value, source) => ({ value, source }), USER_CONFIG_CONTRACT = "immune_brain/user_config/v2", PROJECT_CONFIG_CONTRACT = "immune_brain/project_config/v2", BATCH_MAX_PARALLEL, FILE_KEYS, REGISTERED_SESSION_PROVIDERS;
 var init_layered_config = __esm(() => {
   init_agent_roles();
-  init_role_catalog();
-  init_config();
-  init_contract();
-  init_thresholds();
-  envName = /^[A-Z_][A-Z0-9_]*$/;
   BATCH_MAX_PARALLEL = { min: 1, max: 8, default: 1 };
-  LOOP_MODES = ["off", "observe", "assist", "autonomous"];
-  LOOP_AUTO_ENROLL_MAX_RISKS = ["none", "routine"];
-  LOOP_ASSOCIATIONS = ["OWNER", "MEMBER", "COLLABORATOR"];
-  LOOP_INTERACTION_CHANNELS = ["github", "local"];
-  LOOP_LEADER_WAKES_BOUNDS = { min: 0, max: 500, default: 48 };
-  DEFAULT_LOOP_CONFIG = {
-    mode: "off",
-    interval_seconds: 60,
-    max_concurrent: 2,
-    max_ready_buffer: 5,
-    max_pr_buffer: 5,
-    auto_enroll_max_risk: "none",
-    allowed_actors: [],
-    allowed_associations: [...LOOP_ASSOCIATIONS],
-    interaction: { channel: "github" },
-    budget: { max_ticks_per_day: null, max_dispatches_per_day: null, max_leader_wakes_per_day: LOOP_LEADER_WAKES_BOUNDS.default }
-  };
-  FILE_KEYS = ["contract", "agents", "herdr", "session_providers", "decision_models", "git_integration", "initiative_carrier", "batch", "loop", "review_verifier"];
+  FILE_KEYS = ["contract", "agents", "herdr", "session_providers", "git_integration", "initiative_carrier", "batch", "review_verifier"];
   REGISTERED_SESSION_PROVIDERS = ["herdr", "herdr-core"];
 });
 
@@ -10610,18 +9994,18 @@ function acceptanceRepeatSeries(findings, latestRound) {
 // plugins/immune-brain/runtime/assurance/verification.ts
 import { createHash as createHash13, randomBytes } from "node:crypto";
 import { execFileSync as execFileSync6, spawn as spawn3 } from "node:child_process";
-import { accessSync, constants as constants4, readFileSync as readFileSync13, readdirSync as readdirSync6, realpathSync as realpathSync10, statSync as statSync4 } from "node:fs";
-import { delimiter as delimiter3, isAbsolute as isAbsolute8, join as join14, relative as relative7, resolve as resolve13, sep as sep8 } from "node:path";
+import { accessSync, constants as constants4, readFileSync as readFileSync13, readdirSync as readdirSync6, realpathSync as realpathSync10, statSync as statSync3 } from "node:fs";
+import { delimiter as delimiter3, isAbsolute as isAbsolute7, join as join14, relative as relative6, resolve as resolve12, sep as sep7 } from "node:path";
 function insideVerificationRoot(root, candidate) {
   const realRoot = realpathSync10(root);
   const real = realpathSync10(candidate);
-  const rel = relative7(realRoot, real);
-  if (rel === ".." || rel.startsWith(`..${sep8}`) || isAbsolute8(rel))
+  const rel = relative6(realRoot, real);
+  if (rel === ".." || rel.startsWith(`..${sep7}`) || isAbsolute7(rel))
     throw new VerificationDescriptorError("verification path escapes the materialization");
   return real;
 }
 function verificationPath() {
-  return (process.env.PATH ?? "").split(delimiter3).filter((path) => isAbsolute8(path)).join(delimiter3);
+  return (process.env.PATH ?? "").split(delimiter3).filter((path) => isAbsolute7(path)).join(delimiter3);
 }
 function verificationEnvironment(path, processToken) {
   const env = {};
@@ -10631,11 +10015,11 @@ function verificationEnvironment(path, processToken) {
   return { ...env, PATH: path, IMM_VERIFICATION_PROCESS_TOKEN: processToken };
 }
 function toolPath(name, path) {
-  for (const dir of path.split(delimiter3).filter(isAbsolute8)) {
+  for (const dir of path.split(delimiter3).filter(isAbsolute7)) {
     const candidate = join14(dir, name);
     try {
       accessSync(candidate, constants4.X_OK);
-      if (statSync4(candidate).isFile())
+      if (statSync3(candidate).isFile())
         return candidate;
     } catch {}
   }
@@ -10645,7 +10029,7 @@ function identity(path) {
   try {
     const real = realpathSync10(path);
     accessSync(real, constants4.X_OK);
-    const stat = statSync4(real);
+    const stat = statSync3(real);
     if (!stat.isFile())
       throw new Error("not a file");
     return { path: real, invocation_path: path, dev: stat.dev, ino: stat.ino, content_hash: `sha256:${createHash13("sha256").update(readFileSync13(real)).digest("hex")}` };
@@ -10654,8 +10038,8 @@ function identity(path) {
   }
 }
 function resolveVerificationCommand(root, command, path = verificationPath()) {
-  insideVerificationRoot(root, resolve13(root, command.cwd));
-  const entry = identity(command.executable.startsWith("./") ? insideVerificationRoot(root, resolve13(root, command.executable)) : toolPath(command.executable, path));
+  insideVerificationRoot(root, resolve12(root, command.cwd));
+  const entry = identity(command.executable.startsWith("./") ? insideVerificationRoot(root, resolve12(root, command.executable)) : toolPath(command.executable, path));
   return { entry };
 }
 function assertCommandIdentity(frozen) {
@@ -10667,7 +10051,7 @@ async function runFixedVerification(root, command, frozen, options) {
     throw new VerificationAbortedError;
   if (process.platform === "win32")
     throw new VerificationDescriptorError("fixed verification process-group isolation requires a POSIX host");
-  const cwd = insideVerificationRoot(root, resolve13(root, command.cwd));
+  const cwd = insideVerificationRoot(root, resolve12(root, command.cwd));
   assertCommandIdentity(frozen);
   const processScanner = process.platform === "linux" ? null : identity(options._processScanner ?? toolPath("ps", verificationPath()));
   const procRoot = options._procRoot ?? "/proc";
@@ -10997,7 +10381,7 @@ function createInvocationRegistry() {
 
 // plugins/immune-brain/runtime/role_prompt_bridge.ts
 import { createHash as createHash14 } from "node:crypto";
-import { existsSync as existsSync10, readFileSync as readFileSync14 } from "node:fs";
+import { existsSync as existsSync9, readFileSync as readFileSync14 } from "node:fs";
 import { join as join15, dirname as dirname10 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 function roleSpec(role) {
@@ -11019,7 +10403,7 @@ function loadRolePrompt(role) {
   const spec = roleSpec(role);
   for (const dir of rolePromptSearchDirs(RUNTIME_DIR)) {
     const path = join15(dir, spec.file);
-    if (existsSync10(path))
+    if (existsSync9(path))
       return readFileSync14(path, "utf8");
   }
   throw new Error(`internal role prompt is not packaged: ${role}`);
@@ -11132,7 +10516,7 @@ var init_role_prompt_bridge = __esm(() => {
     "Reserve the final turn for exactly one strict JSON verdict. Reply with ONLY that object, without markdown fences or commentary; when the reservation names an `output_path`, the verdict leaves only through the session's receipt channel and the reply stays empty.",
     `Every rework finding must carry machine-checkable provenance: evidence.trigger (the concrete inputs or state that reach the defect), a non-empty evidence.caller_chain (ordered repository paths or symbols), and evidence.violated {kind: "acceptance"|"security_boundary", ref}. The anchor is derived from that evidence; a finding without it is rejected and the correction must be resubmitted.`,
     `If the turn budget cannot cover every changed path, return decision "incomplete" with inspected_paths (a unique subset of changed paths actually read) and a non-empty single-line reason. Omit approval and findings entirely. Incomplete coverage is an execution outcome, never a finding or an assurance verdict.`,
-    `A pass verdict's approval must carry \`inspected_paths\`: an array of unique repository-relative path strings listing every path of the reviewed change set (git diff --name-only base_head review_commit), deleted paths included; an empty change set is listed as an empty array. A path may be listed only after its diff was read, or the code-review role's generated snapshot proof was completed for an eligible added Drizzle snapshot. A pass that omits any changed path, lists a path outside the change set, or duplicates a path is rejected as a correctable invalid verdict.`
+    `A pass verdict's approval must carry \`inspected_paths\`: an array of unique repository-relative path strings listing every path of the reviewed change set (git diff --name-only base_head review_commit), deleted paths included; an empty change set is listed as an empty array. A path may be listed only after its diff was read, or the code-review role's generated snapshot proof was completed for an eligible added Drizzle snapshot, or its whole-file deletion or declared derived-bundle proof was completed for an eligible deleted file or declared derived output and named in \`approval.summary\`. A pass that omits any changed path, lists a path outside the change set, or duplicates a path is rejected as a correctable invalid verdict.`
   ];
 });
 
@@ -12123,13 +11507,13 @@ var init_authority_port = __esm(() => {
 
 // plugins/immune-brain/runtime/assurance/review_packet.ts
 import { createHash as createHash16 } from "node:crypto";
-import { isAbsolute as isAbsolute9 } from "node:path";
+import { isAbsolute as isAbsolute8 } from "node:path";
 import { readFileSync as readFileSync15 } from "node:fs";
 function packetDigest(content) {
   return createHash16("sha256").update(content, "utf8").digest("hex");
 }
 function reviewPacketHandle(input) {
-  if (!isAbsolute9(input.packet.path) || /[\r\n]/.test(input.packet.path) || !/^[a-f0-9]{64}$/.test(input.packet.sha256))
+  if (!isAbsolute8(input.packet.path) || /[\r\n]/.test(input.packet.path) || !/^[a-f0-9]{64}$/.test(input.packet.sha256))
     throw new Error("invalid review packet identity");
   if (!/^[A-Za-z0-9._-]+$/.test(input.operationId) || !/^[A-Za-z0-9._-]+$/.test(input.taskId))
     throw new Error("invalid review reservation identity");
@@ -12181,7 +11565,7 @@ var init_review_packet = () => {};
 
 // plugins/immune-brain/runtime/session_result_slot.ts
 import { createHash as createHash17 } from "node:crypto";
-import { existsSync as existsSync11, lstatSync as lstatSync13, mkdirSync as mkdirSync8, readFileSync as readFileSync16, readdirSync as readdirSync7, rmSync as rmSync7, writeFileSync as writeFileSync7 } from "node:fs";
+import { existsSync as existsSync10, lstatSync as lstatSync13, mkdirSync as mkdirSync8, readFileSync as readFileSync16, readdirSync as readdirSync7, rmSync as rmSync7, writeFileSync as writeFileSync7 } from "node:fs";
 import { join as join16 } from "node:path";
 function freshSlotDirectory(cwd, id) {
   if (!SLOT_ID.test(id) || id.includes(".."))
@@ -12189,7 +11573,7 @@ function freshSlotDirectory(cwd, id) {
   const sessions = join16(cwd, SESSION_RESULT_SLOTS_RELATIVE);
   mkdirSync8(sessions, { recursive: true });
   const ignore = join16(sessions, ".gitignore");
-  if (!existsSync11(ignore))
+  if (!existsSync10(ignore))
     writeFileSync7(ignore, `*
 `);
   const directory = join16(sessions, id);
@@ -12454,8 +11838,8 @@ var init_review_evidence = __esm(() => {
 // plugins/immune-brain/runtime/assurance/verdict_authority.ts
 import { randomUUID as randomUUID5 } from "node:crypto";
 import { execFileSync as execFileSync8 } from "node:child_process";
-import { existsSync as existsSync12 } from "node:fs";
-import { join as join18, resolve as resolve14 } from "node:path";
+import { existsSync as existsSync11 } from "node:fs";
+import { join as join18, resolve as resolve13 } from "node:path";
 function buildSnapshot(input) {
   return {
     contract: "assurance_kernel/assurance_snapshot/v2",
@@ -12477,7 +11861,7 @@ function buildSnapshot(input) {
     dirty_files: [...input.dirty_files ?? []].sort(),
     ...input.review_revision ? { review_revision: input.review_revision } : {},
     ...input.review_delta ? { review_delta: input.review_delta } : {},
-    root: resolve14(input.root)
+    root: resolve13(input.root)
   };
 }
 function reviewDelta(root, record, reviewCommit) {
@@ -12578,7 +11962,7 @@ function stagePlanningArtifactTransition(root, record) {
     intentArchive,
     ...specActive ? [specActive, specActive.replace("docs/specs/", "docs/specs/archive/")] : []
   ];
-  const paths = candidates.filter((path) => existsSync12(join18(root, path)) || execFileSync8("git", ["ls-files", "--cached", "--", path], { cwd: root, encoding: "utf8" }).trim().length > 0);
+  const paths = candidates.filter((path) => existsSync11(join18(root, path)) || execFileSync8("git", ["ls-files", "--cached", "--", path], { cwd: root, encoding: "utf8" }).trim().length > 0);
   if (paths.length === 0)
     return;
   execFileSync8("git", ["add", "--", ...paths], {
@@ -12784,12 +12168,12 @@ var init_verdict_authority = __esm(() => {
 // plugins/immune-brain/runtime/plugin_source_skew.ts
 import { createHash as createHash19 } from "node:crypto";
 import { execFileSync as execFileSync9, spawnSync as spawnSync9 } from "node:child_process";
-import { existsSync as existsSync13, readFileSync as readFileSync17, realpathSync as realpathSync12, statSync as statSync5 } from "node:fs";
-import { dirname as dirname11, join as join19, sep as sep9 } from "node:path";
+import { existsSync as existsSync12, readFileSync as readFileSync17, realpathSync as realpathSync12, statSync as statSync4 } from "node:fs";
+import { dirname as dirname11, join as join19, sep as sep8 } from "node:path";
 function pluginRootAbove(dir) {
   let current = dir;
   for (let level = 0;level < MAX_LEVELS; level++) {
-    if (existsSync13(join19(current, PLUGIN_MANIFEST)))
+    if (existsSync12(join19(current, PLUGIN_MANIFEST)))
       return current;
     const parent = dirname11(current);
     if (parent === current)
@@ -12804,16 +12188,16 @@ function runtimeClaudePluginDir(start = runningRuntimeSource()) {
 }
 function sameBuild(a, b) {
   const left = join19(a, BUILD_PROXY), right = join19(b, BUILD_PROXY);
-  if (!existsSync13(left) || !existsSync13(right))
+  if (!existsSync12(left) || !existsSync12(right))
     return false;
-  if (statSync5(left).size !== statSync5(right).size)
+  if (statSync4(left).size !== statSync4(right).size)
     return false;
   return readFileSync17(left).equals(readFileSync17(right));
 }
 function pluginSourceSkewWarning(root, loadedFrom = runningRuntimeSource()) {
   try {
     const workspace = join19(root, WORKSPACE_PLUGIN_DIR);
-    if (!existsSync13(join19(workspace, PLUGIN_MANIFEST)))
+    if (!existsSync12(join19(workspace, PLUGIN_MANIFEST)))
       return null;
     const loaded = pluginRootAbove(loadedFrom);
     if (!loaded)
@@ -12824,7 +12208,7 @@ function pluginSourceSkewWarning(root, loadedFrom = runningRuntimeSource()) {
     let lane = false;
     try {
       const common = realpathSync12(execFileSync9("git", ["-C", root, "rev-parse", "--path-format=absolute", "--git-common-dir"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim());
-      lane = realpathSync12(root).startsWith(`${join19(common, "imm", "worktrees")}${sep9}`);
+      lane = realpathSync12(root).startsWith(`${join19(common, "imm", "worktrees")}${sep8}`);
     } catch {}
     return {
       code: "loaded_plugin_differs_from_workspace",
@@ -12836,7 +12220,7 @@ function pluginSourceSkewWarning(root, loadedFrom = runningRuntimeSource()) {
   }
 }
 function parentRuntimeSkew(root, head, integrated, loadedFrom = runningRuntimeSource()) {
-  if (!integrated.length || !existsSync13(join19(root, WORKSPACE_PLUGIN_DIR, PLUGIN_MANIFEST)))
+  if (!integrated.length || !existsSync12(join19(root, WORKSPACE_PLUGIN_DIR, PLUGIN_MANIFEST)))
     return null;
   const parent = spawnSync9("git", ["-C", root, "show", `${head}:${BUNDLE_GIT_PATH}`], { maxBuffer: 256 * 1024 * 1024 });
   if (parent.status !== 0)
@@ -12859,7 +12243,7 @@ function parentRuntimeSkew(root, head, integrated, loadedFrom = runningRuntimeSo
 function watchBundleIdentity(path) {
   const read = () => {
     try {
-      const stat = statSync5(path);
+      const stat = statSync4(path);
       return { stamp: { size: stat.size, mtimeMs: stat.mtimeMs }, hash: createHash19("sha256").update(readFileSync17(path)).digest("hex") };
     } catch {
       return null;
@@ -12876,7 +12260,7 @@ function watchBundleIdentity(path) {
         return true;
       let current;
       try {
-        const stat = statSync5(path);
+        const stat = statSync4(path);
         current = { size: stat.size, mtimeMs: stat.mtimeMs };
       } catch {
         return stale = true;
@@ -12917,7 +12301,7 @@ var init_host_port = __esm(() => {
 // plugins/immune-brain/runtime/unattended/lane_workspace.ts
 import { spawnSync as spawnSync10 } from "node:child_process";
 import { realpathSync as realpathSync13 } from "node:fs";
-import { basename as basename4, dirname as dirname12, isAbsolute as isAbsolute10, join as join20, relative as relative8, resolve as resolve15, sep as sep10 } from "node:path";
+import { basename as basename4, dirname as dirname12, isAbsolute as isAbsolute9, join as join20, relative as relative7, resolve as resolve14, sep as sep9 } from "node:path";
 function laneTaskOfWorkspace(root) {
   const branch = spawnSync10("git", ["-C", root, "symbolic-ref", "--quiet", "--short", "HEAD"], {
     encoding: "utf8",
@@ -12954,9 +12338,9 @@ function laneWriteRefusal(cwd, target) {
   if (top.status !== 0)
     return null;
   const laneRoot = realpathOfNearest((top.stdout ?? "").trim());
-  const resolved = realpathOfNearest(isAbsolute10(target) ? target : resolve15(cwd, target));
-  const inside = relative8(laneRoot, resolved);
-  if (inside === "" || inside !== ".." && !inside.startsWith(`..${sep10}`) && !isAbsolute10(inside))
+  const resolved = realpathOfNearest(isAbsolute9(target) ? target : resolve14(cwd, target));
+  const inside = relative7(laneRoot, resolved);
+  if (inside === "" || inside !== ".." && !inside.startsWith(`..${sep9}`) && !isAbsolute9(inside))
     return null;
   return `Lane write refused: ${resolved} is outside this Lane. In a batch Lane every edit and write stays under ${laneRoot}; use the same repository-relative path inside the Lane.`;
 }
@@ -15105,7 +14489,7 @@ var init_qa = __esm(() => {
 import { execFileSync as execFileSync12, spawnSync as spawnSync11 } from "node:child_process";
 import { accessSync as accessSync2, chmodSync as chmodSync3, constants as constants5, lstatSync as lstatSync14, mkdirSync as mkdirSync9, mkdtempSync as mkdtempSync6, readdirSync as readdirSync8, realpathSync as realpathSync14, rmSync as rmSync9, writeFileSync as writeFileSync9 } from "node:fs";
 import { tmpdir as tmpdir5 } from "node:os";
-import { isAbsolute as isAbsolute11, join as join21, resolve as resolve16 } from "node:path";
+import { isAbsolute as isAbsolute10, join as join21, resolve as resolve15 } from "node:path";
 function identityEnv(root) {
   const configured = (key) => {
     const result = spawnSync11("git", ["config", "--get", key], { cwd: root, encoding: "utf8" });
@@ -15145,7 +14529,7 @@ function git4(root, args, env = process.env) {
 }
 function assertListedPath(root, path) {
   const parts = path.split("/");
-  if (path.length === 0 || path.includes("\x00") || path.includes("\\") || isAbsolute11(path) || parts.some((part) => part === "" || part === "." || part === ".." || part === ".git"))
+  if (path.length === 0 || path.includes("\x00") || path.includes("\\") || isAbsolute10(path) || parts.some((part) => part === "" || part === "." || part === ".." || part === ".git"))
     throw new Error(`automatic commit refuses a path outside the repository: ${JSON.stringify(path)}`);
   let current = root;
   for (const part of parts.slice(0, -1)) {
@@ -15165,7 +14549,7 @@ function commitWithPathGuard(root, dirty, before, subject) {
   if (!version || Number(version[1]) < 2 || Number(version[1]) === 2 && Number(version[2]) < 29)
     throw new Error("automatic commit requires Git 2.29 or newer for its ref transaction guard");
   const targetRef = git4(root, ["rev-parse", "--symbolic-full-name", "HEAD"]).trim();
-  const originalHooks = resolve16(root, git4(root, ["rev-parse", "--git-path", "hooks"]).trim());
+  const originalHooks = resolve15(root, git4(root, ["rev-parse", "--git-path", "hooks"]).trim());
   const temporary = mkdtempSync6(join21(tmpdir5(), "imm-commit-hooks-"));
   const hooks = join21(temporary, "hooks");
   try {
@@ -15256,7 +14640,7 @@ exec ${quote(process.execPath)} ${quote(guard)} "$@"
   }
 }
 function commitWorkflowPaths(projectRoot, input) {
-  const root = realpathSync14(resolve16(projectRoot));
+  const root = realpathSync14(resolve15(projectRoot));
   const listed = [...new Set(input.paths)].sort();
   if (listed.length === 0)
     return { committed: false };
@@ -15266,7 +14650,7 @@ function commitWorkflowPaths(projectRoot, input) {
     throw new Error("automatic commit requires a one-line subject");
   input.signal?.throwIfAborted();
   const toplevel = git4(root, ["rev-parse", "--show-toplevel"]).trim();
-  if (realpathSync14(resolve16(toplevel)) !== root)
+  if (realpathSync14(resolve15(toplevel)) !== root)
     throw new Error("automatic commit requires the repository root as the project root");
   git4(root, ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]);
   if (splitNull2(git4(root, ["ls-files", "--unmerged", "-z"])).length > 0)
@@ -15315,7 +14699,7 @@ function settleCommitSubject(taskId) {
 function commitSettledDelivery(projectRoot, taskId, signal) {
   let root;
   try {
-    root = realpathSync14(resolve16(projectRoot));
+    root = realpathSync14(resolve15(projectRoot));
     if (readGitIntegrationPreference(root).mode !== "auto")
       return null;
   } catch {
@@ -15996,7 +15380,7 @@ import { createHash as createHash22, randomUUID as randomUUID8 } from "node:cryp
 import {
   constants as constants6,
   closeSync as closeSync6,
-  existsSync as existsSync14,
+  existsSync as existsSync13,
   lstatSync as lstatSync16,
   mkdirSync as mkdirSync10,
   openSync as openSync6,
@@ -16208,7 +15592,7 @@ function ensureSecureDirectory3(root, relativePath) {
   let current = root;
   for (const segment of segments) {
     current = join24(current, segment);
-    if (existsSync14(current)) {
+    if (existsSync13(current)) {
       const stats = lstatSync16(current);
       if (stats.isSymbolicLink() || !stats.isDirectory()) {
         throw new Error(`${segment} exists but is not a real directory`);
@@ -16227,7 +15611,7 @@ function writeFileAtomically2(root, relativePath, bytes) {
   if (stats.isSymbolicLink() || !stats.isDirectory()) {
     throw new Error(`${dirname13(relativePath)} is not a real directory`);
   }
-  if (existsSync14(target)) {
+  if (existsSync13(target)) {
     const targetStats = lstatSync16(target);
     if (targetStats.isSymbolicLink()) {
       throw new Error(`${relativePath} is a symlink`);
@@ -16244,7 +15628,7 @@ function writeFileAtomically2(root, relativePath, bytes) {
   } finally {
     if (fd !== null)
       closeSync6(fd);
-    if (existsSync14(tempPath)) {
+    if (existsSync13(tempPath)) {
       try {
         rmSync10(tempPath);
       } catch {}
@@ -16268,7 +15652,7 @@ function writeBatchCommitEvidence(root, evidence) {
 function readBatchCommitEvidence(root, batchId, taskId) {
   const path = commitEvidencePath(batchId, taskId);
   const fullPath = join24(root, path);
-  if (!existsSync14(fullPath))
+  if (!existsSync13(fullPath))
     return null;
   try {
     const content = readSecureProjectFile(root, path);
@@ -16717,7 +16101,7 @@ function deliveryScopes(root, taskIds) {
 function parentDeliveryTasks(root, initiativeSlug, requiredTaskIds) {
   const directory = join24(root, ".imm", "state", "batches");
   const records = [];
-  if (existsSync14(directory))
+  if (existsSync13(directory))
     for (const file of readdirSync9(directory).sort()) {
       if (!file.endsWith(".json"))
         continue;
@@ -17038,7 +16422,7 @@ var init_intent_readiness = __esm(() => {
 
 // plugins/immune-brain/runtime/unattended/batch_leak_restore.ts
 import { spawnSync as spawnSync16 } from "node:child_process";
-import { copyFileSync as copyFileSync2, existsSync as existsSync15, mkdirSync as mkdirSync11, renameSync as renameSync5, writeFileSync as writeFileSync11 } from "node:fs";
+import { copyFileSync as copyFileSync2, existsSync as existsSync14, mkdirSync as mkdirSync11, renameSync as renameSync5, writeFileSync as writeFileSync11 } from "node:fs";
 import { dirname as dirname14, join as join25 } from "node:path";
 function git7(root, args) {
   const result = spawnSync16("git", ["-C", root, ...args], {
@@ -17065,7 +16449,7 @@ function laneOrigin(root, record, path, blob) {
       continue;
     if (blobAt(root, lane.base_head, path) === blob)
       continue;
-    if (existsSync15(join25(lane.path, path)) && blobOfFile(lane.path, join25(lane.path, path)) === blob)
+    if (existsSync14(join25(lane.path, path)) && blobOfFile(lane.path, join25(lane.path, path)) === blob)
       return child.task_id;
     const commits = git7(root, ["rev-list", `${lane.base_head}..${lane.branch}`]);
     if (commits.status !== 0)
@@ -17138,7 +16522,7 @@ var init_batch_leak_restore = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/unattended/batch_preflight.ts
-import { existsSync as existsSync16, readdirSync as readdirSync10, readFileSync as readFileSync18 } from "node:fs";
+import { existsSync as existsSync15, readdirSync as readdirSync10, readFileSync as readFileSync18 } from "node:fs";
 import { createHash as createHash23, randomUUID as randomUUID9 } from "node:crypto";
 import { dirname as dirname15, join as join26 } from "node:path";
 import { spawnSync as spawnSync17 } from "node:child_process";
@@ -17160,7 +16544,7 @@ function readActiveClaimTaskId(root) {
 }
 function findResumableBatchSlugForTask(root, taskId) {
   const batchesDir = join26(root, ".imm", "state", "batches");
-  if (!existsSync16(batchesDir))
+  if (!existsSync15(batchesDir))
     return null;
   for (const file of readdirSync10(batchesDir)) {
     if (!file.endsWith(".json"))
@@ -17182,7 +16566,7 @@ function findResumableBatchSlugForTask(root, taskId) {
 function findExistingActiveBatch(root, initiativeSlug) {
   let found = null;
   const batchesDir = join26(root, ".imm", "state", "batches");
-  if (!existsSync16(batchesDir))
+  if (!existsSync15(batchesDir))
     return null;
   for (const file of readdirSync10(batchesDir)) {
     if (!file.endsWith(".json"))
@@ -17224,7 +16608,7 @@ function findExistingActiveBatch(root, initiativeSlug) {
 }
 function findActiveLaneBatchForTask(root, taskId) {
   const batchesDir = join26(root, ".imm/state/batches");
-  if (!existsSync16(batchesDir))
+  if (!existsSync15(batchesDir))
     return null;
   const matches = [];
   for (const file of readdirSync10(batchesDir).sort()) {
@@ -17268,7 +16652,7 @@ function findActiveLaneBatchForTask(root, taskId) {
 }
 function findSettledBatchRecord(root, initiativeSlug) {
   const batchesDir = join26(root, ".imm", "state", "batches");
-  if (!existsSync16(batchesDir))
+  if (!existsSync15(batchesDir))
     return null;
   let newest = null;
   for (const file of readdirSync10(batchesDir).sort()) {
@@ -17629,7 +17013,7 @@ async function projectPreflight(options, preparing) {
     return reject("batch_entry_kind_mismatch");
   if (options.plan_source === "single_task") {
     const batchesDir = join26(root, ".imm", "state", "batches");
-    if (existsSync16(batchesDir))
+    if (existsSync15(batchesDir))
       for (const file of readdirSync10(batchesDir)) {
         if (!file.endsWith(".json") || file.endsWith(".report.json"))
           continue;
@@ -18007,16 +17391,16 @@ var init_batch_preflight = __esm(() => {
 // plugins/immune-brain/runtime/claude/mcp_server.ts
 init_batch_preflight();
 init_batch_state();
-import { existsSync as existsSync25, readdirSync as readdirSync14 } from "node:fs";
+import { existsSync as existsSync22, readdirSync as readdirSync12 } from "node:fs";
 import { createInterface } from "node:readline";
-import { join as join41 } from "node:path";
+import { join as join39 } from "node:path";
 import { stdin as stdin2 } from "node:process";
 import { fileURLToPath as fileURLToPath5 } from "node:url";
 
 // plugins/immune-brain/runtime/host-core/mcp_runtime.ts
-import { randomUUID as randomUUID12 } from "node:crypto";
+import { randomUUID as randomUUID11 } from "node:crypto";
 import { realpathSync as realpathSync17 } from "node:fs";
-import { isAbsolute as isAbsolute13 } from "node:path";
+import { isAbsolute as isAbsolute12 } from "node:path";
 import { fileURLToPath as fileURLToPath3 } from "node:url";
 import { stdin, stdout } from "node:process";
 
@@ -18175,9 +17559,7 @@ var PRIVILEGED_OPERATIONS = [
   "approve_breaking_intent_revision",
   "stop",
   "start_unattended_batch",
-  "retire_stale_batch",
-  "answer_loop_interaction",
-  "steer_loop_work_item"
+  "retire_stale_batch"
 ];
 var RECOVERY_ACTIONS = {
   interaction_not_opened: "retry through a fresh native gate in the current Host",
@@ -18246,8 +17628,8 @@ init_batch_final_report();
 init_checkout_delivery();
 import { spawnSync as spawnSync19 } from "node:child_process";
 import { createHash as createHash26 } from "node:crypto";
-import { existsSync as existsSync18, realpathSync as realpathSync16 } from "node:fs";
-import { isAbsolute as isAbsolute12, join as join28 } from "node:path";
+import { existsSync as existsSync17, realpathSync as realpathSync16 } from "node:fs";
+import { isAbsolute as isAbsolute11, join as join28 } from "node:path";
 import { readFileSync as readFileSync20 } from "node:fs";
 
 // plugins/immune-brain/runtime/unattended/lane_cleanup.ts
@@ -18332,7 +17714,7 @@ init_batch_reasons();
 init_batch_state();
 
 // plugins/immune-brain/runtime/unattended/lane_decision_request.ts
-import { existsSync as existsSync17, mkdirSync as mkdirSync12, readFileSync as readFileSync19, rmSync as rmSync11, writeFileSync as writeFileSync12 } from "node:fs";
+import { existsSync as existsSync16, mkdirSync as mkdirSync12, readFileSync as readFileSync19, rmSync as rmSync11, writeFileSync as writeFileSync12 } from "node:fs";
 import { dirname as dirname16, join as join27 } from "node:path";
 var LANE_EXECUTOR_ENV = "IMM_LANE_EXECUTOR";
 var LANE_EXECUTOR_HEADLESS = "headless";
@@ -18349,7 +17731,7 @@ function writeLaneDecisionRequest(lanePath, request) {
 }
 function readLaneDecisionRequest(lanePath, taskId, recordRevision) {
   const path = laneDecisionRequestPath(lanePath);
-  if (!existsSync17(path))
+  if (!existsSync16(path))
     return null;
   try {
     const value = JSON.parse(readFileSync19(path, "utf8"));
@@ -18976,7 +18358,7 @@ function parseLaneOffers(value) {
       throw new Error("invalid lane_offers: unknown offer field");
     if (typeof taskId !== "string" || !TASK_ID_PATTERN2.test(taskId))
       throw new Error("invalid lane_offers: task_id is not a valid task id");
-    if (typeof path !== "string" || !path || path.length > MAX_PATH_LENGTH || path.includes("\x00") || !isAbsolute12(path))
+    if (typeof path !== "string" || !path || path.length > MAX_PATH_LENGTH || path.includes("\x00") || !isAbsolute11(path))
       throw new Error("invalid lane_offers: path must be an absolute path");
     if (seen.has(taskId))
       throw new Error(`invalid lane_offers: duplicate offer for ${taskId}`);
@@ -19106,7 +18488,7 @@ function createDefaultLaneGitPort() {
   return {
     resolveRoot: (root) => resolveRealPath(root) ?? root,
     inspectLane(coordinatorRoot, lanePath) {
-      const real = existsSync18(lanePath) ? resolveRealPath(lanePath) : null;
+      const real = existsSync17(lanePath) ? resolveRealPath(lanePath) : null;
       const absent = {
         exists: real !== null,
         real_path: real,
@@ -19731,7 +19113,7 @@ async function runLaneBatchEngine(input, persisted) {
     record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "released" } : c);
     persist();
   }
-  const lineage = existsSync18(join28(input.root, ".git")) ? classifyBatchLineage({
+  const lineage = existsSync17(join28(input.root, ".git")) ? classifyBatchLineage({
     root: input.root,
     branch: record.branch ?? "",
     expectedHead: expectedBatchHead(record),
@@ -20326,2329 +19708,6 @@ init_storage();
 init_session_result_slot();
 init_plugin_source_skew();
 init_assurance_projection();
-
-// plugins/immune-brain/runtime/loop_daemon/steering.ts
-import { createHash as createHash27, randomUUID as randomUUID11 } from "node:crypto";
-import { chmodSync as chmodSync4, existsSync as existsSync20, mkdirSync as mkdirSync14, readFileSync as readFileSync22, readdirSync as readdirSync12, rmSync as rmSync13, writeFileSync as writeFileSync14 } from "node:fs";
-import { join as join30 } from "node:path";
-
-// plugins/immune-brain/runtime/loop_daemon/work_items.ts
-init_intent();
-
-// plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts
-init_layered_config();
-init_github_issue_tracker();
-init_actor_identity();
-init_batch_authority();
-
-// plugins/immune-brain/runtime/kernel/enrollment.ts
-init_sqlite_store();
-init_intent();
-init_spec_binding();
-// plugins/immune-brain/runtime/kernel/enrollment_confirmation.ts
-init_no_touch();
-init_risk_floor();
-var ok = { ok: true };
-var refuse3 = (reason) => ({ ok: false, reason });
-function timestamp2(value) {
-  const parsed = Date.parse(value);
-  return Number.isNaN(parsed) ? null : parsed;
-}
-function isPositiveInteger(value) {
-  return typeof value === "number" && Number.isInteger(value) && value > 0;
-}
-function verifyTrackerApproval(proof, policy) {
-  if (!isPositiveInteger(proof.issue_number) || !isPositiveInteger(proof.comment_id))
-    return refuse3(`tracker_approval_proof_shape: issue_number and comment_id must be positive integers`);
-  if (policy.daemon_identity === "")
-    return refuse3("tracker_approval_policy_shape: daemon identity is empty");
-  if (proof.actor_login === policy.daemon_identity)
-    return refuse3(`tracker_approval_daemon_authored: ${proof.actor_login}`);
-  if (!policy.allowed_actors.includes(proof.actor_login))
-    return refuse3(`tracker_approval_actor_not_allowed: ${proof.actor_login}`);
-  if (!policy.allowed_associations.includes(proof.author_association))
-    return refuse3(`tracker_approval_association_not_allowed: ${proof.author_association}`);
-  const created = timestamp2(proof.created_at);
-  const published = timestamp2(policy.plan_published_at);
-  if (created === null || published === null)
-    return refuse3("tracker_approval_timestamp_invalid: created_at and plan_published_at must be timestamps");
-  if (created <= published)
-    return refuse3(`tracker_approval_predates_plan: ${proof.created_at} is not after ${policy.plan_published_at}`);
-  if (proof.updated_at !== proof.created_at)
-    return refuse3(`tracker_approval_comment_edited: updated_at ${proof.updated_at} differs from created_at`);
-  if (proof.plan_digest !== policy.plan_digest)
-    return refuse3(`tracker_approval_digest_mismatch: ${proof.plan_digest} is not the published ${policy.plan_digest}`);
-  return ok;
-}
-var POLICY_AUTO_MAX_RISK = "routine";
-function verifyPolicyAuto(policy, risk) {
-  if (policy.mode !== "autonomous")
-    return refuse3(`policy_auto_mode_not_autonomous: loop.mode is ${policy.mode}`);
-  if (policy.identity_posture !== "isolated")
-    return refuse3(`policy_auto_requires_isolated_identity: ${policy.identity_posture}`);
-  if (policy.auto_enroll_max_risk !== POLICY_AUTO_MAX_RISK)
-    return refuse3(`policy_auto_disabled: loop.auto_enroll_max_risk is ${policy.auto_enroll_max_risk}`);
-  if (risk.declared !== POLICY_AUTO_MAX_RISK)
-    return refuse3(`policy_auto_requires_routine_risk: declared ${risk.declared}`);
-  if (risk.elevated !== POLICY_AUTO_MAX_RISK)
-    return refuse3(`policy_auto_requires_routine_risk: elevated ${risk.elevated}`);
-  return ok;
-}
-function noTouchScopeMatches(scopeHint) {
-  const literal = (entry) => entry.replace(/\/\*\*$/, "").replace(/\/\*$/, "").replace(/\/$/, "");
-  return scopeHint.filter((entry) => {
-    const path = literal(entry);
-    if (path === "" || !entry)
-      return false;
-    return noTouchPaths([path]).length > 0;
-  });
-}
-function verifyEnrollmentConfirmation(root, input, intent) {
-  if (input.source === "user_session")
-    return ok;
-  if (input.source === "tracker_approval") {
-    if (!input.tracker_approval)
-      return refuse3("tracker_approval_missing_proof: a tracker approval needs a comment proof and its policy");
-    return verifyTrackerApproval(input.tracker_approval.proof, input.tracker_approval.policy);
-  }
-  if (input.source !== "policy_auto")
-    return refuse3(`unknown_confirmation_source: ${String(input.source)}`);
-  if (!input.policy_auto)
-    return refuse3("policy_auto_missing_policy: policy_auto needs loop.mode, the risk cap and the identity posture");
-  const elevated = raiseRisk(intent.risk, scopeRiskFloor(intent.scope_hint, readRiskFloor(root)));
-  const verdict = verifyPolicyAuto(input.policy_auto, { declared: intent.risk, elevated });
-  if (!verdict.ok)
-    return verdict;
-  const touched = noTouchScopeMatches(intent.scope_hint);
-  if (touched.length > 0)
-    return refuse3(`policy_auto_touches_no_touch: ${touched.join(", ")}`);
-  return ok;
-}
-
-// plugins/immune-brain/runtime/kernel/enrollment_authority.ts
-var ENROLLMENT_CAPABILITY_BRAND = Symbol.for("assurance-kernel.enrollment-capability-brand");
-function createEnrollmentAuthorityRegistry() {
-  return createCapabilityRegistry(ENROLLMENT_CAPABILITY_BRAND, {
-    validateBinding(binding) {
-      const missing = [];
-      for (const [key, value] of Object.entries(binding)) {
-        if (value === undefined || value === null || value === "")
-          missing.push(key);
-      }
-      if (missing.length > 0)
-        throw new Error(`enrollment capability binding is incomplete: ${missing.join(", ")}`);
-    },
-    validateAndProject(state, expected) {
-      for (const key of Object.keys(expected)) {
-        if (state[key] !== expected[key])
-          throw new Error(`enrollment capability ${key} mismatch`);
-      }
-      return {
-        task_id: state.task_id,
-        intent_path: state.intent_path,
-        intent_revision: state.intent_revision,
-        intent_content_hash: state.intent_content_hash,
-        preparation_digest: state.preparation_digest,
-        actor_id: state.actor_id,
-        confirmation_ref: state.confirmation_ref,
-        issued_at: state.issued_at,
-        nonce: state.nonce
-      };
-    }
-  }, "enrollment");
-}
-
-// plugins/immune-brain/runtime/kernel/enrollment.ts
-init_batch_authority();
-init_pi_canary_prepare();
-init_workspace_scope();
-init_run_identity();
-init_storage();
-function singleTaskEnrollmentDirt(root, intentPath, intent) {
-  const binding = inspectSpecBinding(intent);
-  return dirtyWorkspacePaths(root, [intentPath, ...binding.ok && binding.binding ? [binding.binding.active] : []]);
-}
-
-class EnrollmentRehearsalError extends Error {
-  blockers;
-  constructor(blockers) {
-    super(`Kernel enrollment rehearsal failed: ${blockers.join("; ")}`);
-    this.name = "EnrollmentRehearsalError";
-    this.blockers = blockers;
-  }
-}
-function runEnrollmentPreconditionChecks(root, input, capability, registry, mode, beforeLock, onReady) {
-  const blockers = [];
-  let validated = null;
-  try {
-    validated = registry.inspect(capability, input.capability_binding);
-    if (mode === "fail_fast" && validated.task_id !== input.task_id)
-      throw new Error("enrollment capability task mismatch");
-  } catch (error) {
-    if (mode === "fail_fast")
-      throw error;
-    blockers.push(`capability: ${error instanceof Error ? error.message : String(error)}`);
-  }
-  beforeLock(validated);
-  return withKernelStoreLock(root, () => {
-    let current = null;
-    let workspace = null;
-    let intent = null;
-    let gitBaseHead = null;
-    let claimedScopePaths = [];
-    const fail = (report, error) => {
-      if (mode === "fail_fast")
-        throw error instanceof Error ? error : new Error(String(error));
-      blockers.push(report);
-    };
-    const localRun = reconcileKernelAuthority(root, input.task_id);
-    const localTerminal = localRun.state === "terminal_owner" && withKernelRead(root, (db) => readRunRowByTask(db, input.task_id)) !== null;
-    if (localTerminal) {
-      fail("local run is terminal; same-task re-enrollment is forbidden", new Error(`task ${input.task_id} is terminal; same-task re-enrollment is forbidden`));
-    } else {
-      current = readTaskRecordRaw(root, input.task_id);
-      if (current.record)
-        fail("task record already exists", new Error(`task ${input.task_id} already has a TaskRecord`));
-    }
-    workspace = readWorkspaceStateRaw(root);
-    if (workspace.state.current_working !== null)
-      fail(`workspace already owned by ${workspace.state.current_working}`, new Error(`workspace is already owned by ${workspace.state.current_working}`));
-    try {
-      intent = readTaskIntent(root, input.task_id);
-    } catch (error) {
-      fail(`intent: ${error instanceof Error ? error.message : String(error)}`, error);
-    }
-    if (intent) {
-      const binding = inspectSpecBinding(intent.intent);
-      if (!binding.ok)
-        fail(binding.message, new Error(binding.message));
-      if (input.confirmation) {
-        const verdict = verifyEnrollmentConfirmation(root, input.confirmation, {
-          risk: intent.intent.risk,
-          scope_hint: intent.intent.scope_hint
-        });
-        if (!verdict.ok) {
-          const message = `confirmation: ${verdict.reason}`;
-          fail(message, new Error(message));
-        }
-      }
-    }
-    try {
-      gitBaseHead = readGitHead(root);
-    } catch (error) {
-      fail(`git base: ${error instanceof Error ? error.message : String(error)}`, error);
-    }
-    if (intent && gitBaseHead) {
-      try {
-        if (!input.batch) {
-          const binding = inspectSpecBinding(intent.intent);
-          claimedScopePaths = [input.intent_path, ...binding.ok && binding.binding ? [binding.binding.active] : []];
-          const dirty = singleTaskEnrollmentDirt(root, input.intent_path, intent.intent);
-          if (dirty.length > 0) {
-            const message = `workspace_not_clean: ${dirty.join(", ")}`;
-            fail(message, new Error(message));
-          }
-        } else {
-          const disclosed = new Set(input.disclosed_scope_paths ?? []);
-          const dirty = dirtyScopePaths(root, intent.intent.scope_hint, input.task_id);
-          const unlisted = dirty.filter((path) => !disclosed.has(path));
-          if (unlisted.length > 0) {
-            const message = `task scope is already dirty before Enrollment: ${unlisted.join(", ")}; the confirmed Enrollment gate did not list these paths, so enroll again from the Host to review them`;
-            fail(message, new Error(message));
-          } else
-            claimedScopePaths = dirty;
-        }
-      } catch (error) {
-        fail(`scope: ${error instanceof Error ? error.message : String(error)}`, error);
-      }
-    }
-    const state = {
-      validated,
-      current,
-      workspace,
-      intent,
-      gitBaseHead,
-      claimedScopePaths
-    };
-    return onReady ? onReady(state) : { ...state, blockers };
-  });
-}
-function buildTaskRecordV4(input, intent, gitBaseHead) {
-  return {
-    contract: "assurance_kernel/task_record/v4",
-    task_id: input.task_id,
-    intent_snapshot: intent.intent,
-    intent_ref: {
-      path: input.intent_path,
-      content_hash: intent.content_hash
-    },
-    lifecycle: "active",
-    artifact_state: "active",
-    baseline: intent.content_hash,
-    git_base_head: gitBaseHead,
-    attestations: [],
-    findings: [],
-    history: [],
-    ...input.confirmation && input.confirmation.source !== "user_session" ? { confirmation_source: input.confirmation.source } : {}
-  };
-}
-function runEnrollmentRehearsal(root, input, capability, registry) {
-  const preconditions = runEnrollmentPreconditionChecks(root, input, capability, registry, "report", () => {
-    return;
-  });
-  return {
-    rehearsed: true,
-    writes_performed: false,
-    evidence: {
-      contract: "assurance_kernel/enrollment_rehearsal/v1",
-      task_id: input.task_id,
-      outcome: preconditions.blockers.length === 0 ? "ready" : "not_ready",
-      blockers: preconditions.blockers,
-      claimed_scope_paths: preconditions.claimedScopePaths,
-      generated_at: input.now
-    }
-  };
-}
-function enrollmentEventId(taskId, now) {
-  return enrollmentEventIdFor(taskId, now);
-}
-var CANCELLATION_BOUNDARY = Promise.resolve();
-async function enrollTask(root, registry, request) {
-  const { binding, batch, now, checkpoint, disclosed_scope_paths, confirmation } = request;
-  const capability = registry.issue(binding);
-  const input = {
-    task_id: binding.task_id,
-    intent_path: binding.intent_path,
-    intent_revision: binding.intent_revision,
-    preparation_digest: binding.preparation_digest,
-    capability,
-    capability_binding: binding,
-    ...batch ? { batch } : {},
-    ...disclosed_scope_paths ? { disclosed_scope_paths } : {},
-    ...confirmation ? { confirmation } : {},
-    now
-  };
-  const { eventId, digest } = digestForEnrollment(input);
-  const committed = readCommittedEnrollmentResult(root, input.task_id, eventId, digest);
-  if (committed) {
-    const result = {
-      record: committed.record,
-      backend_claim: committed.claim,
-      workspace: { revision: "", state: committed.workspace }
-    };
-    return checkpoint ? { outcome: "enrolled", result } : result;
-  }
-  const rehearsal = runEnrollmentRehearsal(root, input, capability, registry);
-  if (!rehearsal.rehearsed || rehearsal.evidence.outcome !== "ready")
-    throw new EnrollmentRehearsalError(rehearsal.evidence.blockers);
-  await CANCELLATION_BOUNDARY;
-  if (checkpoint && !checkpoint())
-    return { outcome: "cancelled" };
-  const result = enrollCanaryTask(root, input, registry);
-  return checkpoint ? { outcome: "enrolled", result } : result;
-}
-function digestForEnrollment(input) {
-  const eventId = enrollmentEventId(input.task_id, input.now);
-  return {
-    eventId,
-    digest: enrollmentRequestDigest({
-      task_id: input.task_id,
-      intent_path: input.intent_path,
-      intent_revision: input.intent_revision,
-      intent_content_hash: input.capability_binding.intent_content_hash,
-      preparation_digest: input.preparation_digest,
-      enrollment_event_id: eventId,
-      actor_id: input.capability_binding.actor_id,
-      confirmation_ref: input.capability_binding.confirmation_ref,
-      nonce: input.capability_binding.nonce
-    })
-  };
-}
-function enrollCanaryTask(root, input, registry) {
-  const { eventId, digest } = digestForEnrollment(input);
-  const replayed = readCommittedEnrollmentResult(root, input.task_id, eventId, digest);
-  if (replayed)
-    return {
-      record: replayed.record,
-      backend_claim: replayed.claim,
-      workspace: { revision: "", state: replayed.workspace }
-    };
-  let gitBaseHead = null;
-  let consumed = false;
-  try {
-    return runEnrollmentPreconditionChecks(root, input, input.capability, registry, "fail_fast", () => {
-      const recomputed = preparePiCanary(root, { task_id: input.task_id, now: input.now });
-      if (recomputed.digest !== input.preparation_digest)
-        throw new Error("enrollment preparation digest mismatch");
-      gitBaseHead = recomputed.git_base_head;
-      if (!gitBaseHead)
-        throw new Error(recomputed.git_error ?? "enrollment requires a committed Git HEAD");
-    }, (checks) => {
-      if (!checks.validated || !checks.intent || !checks.workspace || !checks.current)
-        throw new Error("enrollment precondition state incomplete");
-      const locked = preparePiCanary(root, { task_id: input.task_id, now: input.now });
-      if (locked.digest !== input.preparation_digest)
-        throw new Error("enrollment preparation digest mismatch");
-      if (checks.intent.intent.revision !== input.intent_revision)
-        throw new Error("intent revision mismatch");
-      if (checks.intent.content_hash !== checks.validated.intent_content_hash)
-        throw new Error("intent content hash mismatch");
-      if (checks.gitBaseHead !== gitBaseHead)
-        throw new Error("Git HEAD moved after the enrollment confirmation");
-      if (input.batch) {
-        const batch = input.batch.registry.inspect(input.batch.capability, input.batch.binding);
-        if (input.batch.registry.consumedChildren(input.batch.capability).length === 0)
-          assertBatchLineageOrigin(root, batch.base_head, input.batch.expected_head);
-        if (checks.gitBaseHead !== input.batch.expected_head)
-          throw new Error(`batch_head_lineage_broken: expected ${input.batch.expected_head}, found ${checks.gitBaseHead}`);
-      }
-      registry.consume(input.capability, input.capability_binding);
-      consumed = true;
-      if (input.batch)
-        input.batch.registry.consumeChild(input.batch.capability, input.batch.binding, input.task_id);
-      if (!gitBaseHead)
-        throw new Error("enrollment requires a committed Git HEAD");
-      const record = buildTaskRecordV4(input, checks.intent, gitBaseHead);
-      const nextWorkspace = {
-        ...checks.workspace.state,
-        current_working: input.task_id
-      };
-      const claim = {
-        contract: "assurance_kernel/backend_claim/v2",
-        backend: "kernel",
-        task_id: input.task_id,
-        intent_revision: input.intent_revision,
-        intent_content_hash: checks.intent.content_hash,
-        enrollment_event_id: eventId,
-        lifecycle_status: "active",
-        created_at: input.now,
-        updated_at: input.now
-      };
-      const mutation = commitEnrollmentLocked(root, input.task_id, {
-        contract: "assurance_kernel/workspace_transaction/v2",
-        task_id: input.task_id,
-        expected_record_hash: checks.current.revision,
-        next_record_content: `${JSON.stringify(record, null, 2)}
-`,
-        expected_workspace_hash: checks.workspace.revision,
-        next_workspace_content: `${JSON.stringify(nextWorkspace, null, 2)}
-`
-      }, claim, digest);
-      writeEnrollmentBaseline(root, checks.claimedScopePaths, !input.batch);
-      return {
-        record: mutation.record,
-        backend_claim: claim,
-        workspace: { revision: "", state: mutation.workspace }
-      };
-    });
-  } catch (error) {
-    const ownership = (() => {
-      try {
-        return {
-          known: true,
-          owned: reconcileKernelAuthority(root, input.task_id).owner_task_id === input.task_id
-        };
-      } catch {
-        return { known: false, owned: false };
-      }
-    })();
-    if (consumed && input.batch && ownership.known && !ownership.owned)
-      input.batch.registry.releaseChild(input.batch.capability, input.task_id);
-    throw error;
-  }
-}
-
-// plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts
-init_intent();
-init_pi_canary_prepare();
-init_storage();
-init_verification_descriptor();
-
-// plugins/immune-brain/runtime/unattended/batch_kernel_port.ts
-init_batch_git();
-init_assurance_projection();
-init_batch_authority();
-init_storage();
-init_batch_preflight();
-function batchQaFailureFacts(record) {
-  const failed = record.history.filter((event) => event.type === "request_rework" && event.authority?.authority_kind === "qa");
-  return {
-    qa_failure_count: failed.length,
-    last_qa_failure_at: failed.at(-1)?.at ?? null,
-    recovery_findings: record.findings.filter((f) => f.status === "open").map((f) => ({ id: f.id, kind: f.kind, status: f.status, acceptance_id: f.acceptance_id }))
-  };
-}
-function createBatchKernelPort(input) {
-  const project = input.deps?.projectAssurance ?? projectAssurance;
-  const readRecord = input.deps?.readTaskRecordRaw ?? readTaskRecordRaw;
-  const deriveEnrollment = input.deps?.deriveChildEnrollment ?? deriveChildEnrollment;
-  const enrollKernelTask = input.deps?.enrollTask ?? enrollTask;
-  const base = {
-    canStartTask: async (taskId) => {
-      if (!input.parent)
-        return true;
-      const task = input.parent.tasks.find((child) => child.task_id === taskId);
-      if (!task)
-        throw new Error("authorized child absent from confirmed Parent topology");
-      const authorizedIds = new Set(input.registry.children(input.capability).map((child) => child.task_id));
-      const external = task.blocked_by.filter((id) => !authorizedIds.has(id));
-      if (!external.length)
-        return true;
-      const observation = await observeParentCompletion(input.root, input.parent.initiative_id, external);
-      return observation.missing_task_ids.length === 0;
-    },
-    enrollTask: async ({ root, task_id, batch }) => {
-      const now = new Date().toISOString();
-      const derived = deriveEnrollment(root, batch.registry, {
-        capability: batch.capability,
-        binding: input.binding,
-        task_id,
-        expected_head: batch.binding.expected_head,
-        now
-      });
-      await enrollKernelTask(root, input.enrollmentRegistry, {
-        binding: derived.binding,
-        batch: {
-          registry: batch.registry,
-          capability: batch.capability,
-          binding: input.binding,
-          expected_head: batch.binding.expected_head
-        },
-        now
-      });
-      const recordRaw = readRecord(root, task_id);
-      return { record_revision: recordRaw.revision };
-    },
-    advanceTask: input.advanceTask,
-    projectTask: async (root, taskId) => {
-      const fresh = await project(root, taskId);
-      if (!fresh.claim || fresh.projection.lifecycle !== "active" || fresh.error !== null)
-        return fresh;
-      const { record, revision } = readRecord(root, taskId);
-      if (!record || revision !== fresh.projection.record_revision)
-        throw new Error(`Kernel recovery projection changed for ${taskId}`);
-      return { ...fresh, ...batchQaFailureFacts(record) };
-    },
-    ownsTaskClaim: (taskId) => input.registry.isChildConsumed(input.capability, taskId),
-    validateBatchAuthorization: (request) => request.registry.inspect(request.capability, request.binding)
-  };
-  const port = { ...base, ...input.overrides ?? {} };
-  const overriddenOwnsTaskClaim = port.ownsTaskClaim;
-  return {
-    ...port,
-    ownsTaskClaim: (taskId) => {
-      if (input.resume.isResuming && taskId === readActiveClaimTaskId(input.root)) {
-        return isOwnBatchClaim(input.root, input.resume.existingBatch, taskId, input.resume.batchBranch);
-      }
-      return overriddenOwnsTaskClaim(taskId);
-    }
-  };
-}
-
-// plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts
-init_batch_git();
-init_batch_plan();
-init_batch_preflight();
-
-// plugins/immune-brain/runtime/loop_daemon/agent_runner.ts
-init_agent_roles();
-init_role_catalog();
-var SESSION_OUTPUT_BOUND = 8 * 1024 * 1024;
-
-// plugins/immune-brain/runtime/unattended/batch_agreement.ts
-init_batch_authority();
-var CONFIRMATION_SOURCES = new Set(["native_gate", "tracker_approval", "policy_auto"]);
-var RETURN_POLICIES = new Set(["checkout_delivery", "retain_branch"]);
-var INTERACTION_MODES = new Set(["interactive_host", "parent_relayed"]);
-function invalid2(reason) {
-  return { ok: false, code: "batch_agreement_invalid", reason: `batch_agreement_invalid: ${reason}` };
-}
-function authorizeBatch2(input) {
-  if (!input || typeof input !== "object")
-    return invalid2("agreement must be an object");
-  if (typeof input.batch_id !== "string" || !input.batch_id)
-    return invalid2("batch_id must be a non-empty string");
-  if (typeof input.initiative_slug !== "string" || !input.initiative_slug)
-    return invalid2("initiative_slug must be a non-empty string");
-  if (!Array.isArray(input.children) || input.children.length === 0)
-    return invalid2("children must be a non-empty array");
-  if (typeof input.base_head !== "string" || !input.base_head)
-    return invalid2("base_head must be a non-empty string");
-  if (!input.budget || typeof input.budget !== "object" || !Number.isInteger(input.budget.max_children) || input.budget.max_children <= 0 || !Number.isInteger(input.budget.qa_failure_limit) || input.budget.qa_failure_limit <= 0)
-    return invalid2("budget must carry positive max_children and qa_failure_limit");
-  const confirmation = input.confirmation;
-  if (!confirmation || typeof confirmation !== "object")
-    return invalid2("confirmation must be an object");
-  if (typeof confirmation.source !== "string" || !CONFIRMATION_SOURCES.has(confirmation.source))
-    return invalid2(`unknown confirmation.source ${String(confirmation.source)}`);
-  if (typeof confirmation.ref !== "string" || !confirmation.ref)
-    return invalid2("confirmation.ref must be a non-empty string");
-  const fv = input.final_verification;
-  if (!fv || typeof fv !== "object")
-    return invalid2("final_verification must be an object");
-  if (typeof fv.required !== "boolean")
-    return invalid2("final_verification.required must be a boolean");
-  if (!Array.isArray(fv.commands))
-    return invalid2("final_verification.commands must be an array");
-  for (const command of fv.commands) {
-    if (typeof command !== "string" || !command.trim())
-      return invalid2("final_verification.commands must be non-empty strings");
-  }
-  if (typeof input.return_policy !== "string" || !RETURN_POLICIES.has(input.return_policy))
-    return invalid2(`unknown return_policy ${String(input.return_policy)}`);
-  if (typeof input.interaction_mode !== "string" || !INTERACTION_MODES.has(input.interaction_mode))
-    return invalid2(`unknown interaction_mode ${String(input.interaction_mode)}`);
-  let planDigest;
-  try {
-    planDigest = computeBatchPlanDigest(input.children);
-  } catch (error) {
-    return invalid2(error instanceof Error ? error.message : "invalid child plan");
-  }
-  if (input.plan_digest !== undefined && input.plan_digest !== planDigest)
-    return invalid2("plan_digest does not match the confirmed child plan");
-  if (input.plan_source !== undefined && input.plan_source !== "single_task")
-    return invalid2(`unknown plan_source ${String(input.plan_source)}`);
-  const agreement = {
-    batch_id: input.batch_id,
-    initiative_slug: input.initiative_slug,
-    children: input.children.map((child) => ({ ...child, blocked_by: [...child.blocked_by] })),
-    plan_digest: planDigest,
-    ...input.plan_source ? { plan_source: input.plan_source } : {},
-    ...input.branch ? { branch: input.branch } : {},
-    base_head: input.base_head,
-    budget: { ...input.budget },
-    confirmation: { source: confirmation.source, ref: confirmation.ref },
-    final_verification: { required: fv.required, commands: [...fv.commands] },
-    return_policy: input.return_policy,
-    interaction_mode: input.interaction_mode,
-    ...input.actor ? { actor: input.actor } : {}
-  };
-  return { ok: true, agreement };
-}
-
-// plugins/immune-brain/runtime/loop_daemon/drive_dispatcher.ts
-init_batch_git();
-init_batch_plan();
-init_batch_authority();
-init_batch_preflight();
-init_batch_state();
-init_layered_config();
-
-// plugins/immune-brain/runtime/session/herdr_provider.ts
-import { randomBytes as randomBytes2 } from "node:crypto";
-
-// plugins/immune-brain/runtime/session/exec.ts
-import { spawn as spawn4 } from "node:child_process";
-function runCommand(env, command, args, signal) {
-  return new Promise((resolve) => {
-    let stdout = "";
-    let stderr = "";
-    let settled = false;
-    if (signal?.aborted) {
-      resolve({ code: null, stdout, stderr, aborted: true });
-      return;
-    }
-    const child = spawn4(command, args, { env, stdio: ["ignore", "pipe", "pipe"] });
-    const abort = () => {
-      child.kill("SIGTERM");
-      finish({ code: null, stdout, stderr, aborted: true });
-    };
-    const finish = (result) => {
-      if (settled)
-        return;
-      settled = true;
-      signal?.removeEventListener("abort", abort);
-      resolve(result);
-    };
-    signal?.addEventListener("abort", abort, { once: true });
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk;
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk;
-    });
-    child.once("error", (error) => finish({ code: null, stdout, stderr: stderr || error.message, missing: error.code === "ENOENT" }));
-    child.once("close", (code) => finish({ code, stdout, stderr }));
-  });
-}
-function parseJson(text) {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return;
-  }
-}
-function pick(value, path) {
-  let current = value;
-  for (const key of path) {
-    if (current === null || typeof current !== "object")
-      return;
-    current = current[key];
-  }
-  return current;
-}
-function parseVersion(text) {
-  const match = /(\d+)\.(\d+)\.(\d+)/.exec(text);
-  return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : null;
-}
-function versionAtLeast(version, minimum) {
-  for (let index = 0;index < 3; index++) {
-    if (version[index] !== minimum[index])
-      return version[index] > minimum[index];
-  }
-  return true;
-}
-
-// plugins/immune-brain/runtime/session/supervised_session_port.ts
-var SUPERVISED_SESSION_PROTOCOL = 1;
-var SESSION_STATES = ["working", "blocked", "idle", "done", "error", "unknown"];
-var EXECUTOR_HOSTS2 = ["claude-code", "pi", "antigravity"];
-var SESSION_KEY_PATTERN = /^[a-z0-9-]{1,64}$/;
-function refuse4(code, reason, handle) {
-  return handle === undefined ? { ok: false, code, reason } : { ok: false, code, reason, handle };
-}
-function instructionRefusal(handle, observed) {
-  if (observed.state === "idle" || observed.state === "done")
-    return null;
-  return refuse4("state_refused", `session is ${observed.state}; an instruction is sent only to an idle or done session and nothing was sent`, handle);
-}
-function resumeRefusal(handle, observed) {
-  if (observed.state === "idle" || observed.state === "done")
-    return null;
-  return refuse4("state_refused", `session is ${observed.state}; the entry is resubmitted only to an idle or done session and nothing was sent`, handle);
-}
-function closeRecordRefusal(handle, record) {
-  const unmet = [];
-  if (typeof record?.task_id !== "string" || !/^[a-z0-9][a-z0-9._-]*$/i.test(record.task_id))
-    unmet.push("task_id");
-  const at = record?.recorded_at;
-  if (typeof at !== "string" || !Number.isFinite(Date.parse(at)) || new Date(Date.parse(at)).toISOString() !== at)
-    unmet.push("recorded_at");
-  if (unmet.length === 0)
-    return null;
-  return refuse4("close_unproven", `no recorded session close: ${unmet.join(", ")}; take task_id and at from the batch report's session_closes`, handle);
-}
-function validateSessionKey(key) {
-  if (!SESSION_KEY_PATTERN.test(key))
-    return refuse4("invalid_input", `session_key must match [a-z0-9-]{1,64}: ${JSON.stringify(key)}`);
-  return null;
-}
-function validateCreateInput(input) {
-  if (!input.cwd)
-    return refuse4("invalid_input", "cwd is required");
-  if (!input.label || input.label.length > 32)
-    return refuse4("invalid_input", "label must be 1 to 32 characters");
-  if (input.session_key !== undefined) {
-    const bad = validateSessionKey(input.session_key);
-    if (bad)
-      return bad;
-  }
-  if (!EXECUTOR_HOSTS2.includes(input.host))
-    return refuse4("invalid_input", `host must be one of ${EXECUTOR_HOSTS2.join(", ")}`);
-  if (!input.entry || input.entry.trim() === "")
-    return refuse4("invalid_input", "entry is required");
-  for (const [key, value] of Object.entries(input.env ?? {})) {
-    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key))
-      return refuse4("invalid_input", `env name ${JSON.stringify(key)} is not a valid variable name`);
-    if (typeof value !== "string" || /[\0\n\r]/.test(value))
-      return refuse4("invalid_input", `env ${key} must be a single-line string`);
-  }
-  return null;
-}
-function isSessionState(value) {
-  return typeof value === "string" && SESSION_STATES.includes(value);
-}
-
-// plugins/immune-brain/runtime/session/herdr_provider.ts
-var SUPPORTED_HERDR_PROTOCOLS = [22];
-var HERDR_PROMPT_TIMEOUT_MS = 30000;
-var HOST_KIND = { "claude-code": "claude", pi: "pi", antigravity: "agy" };
-function herdrAgentName(label, token) {
-  const suffix = token.toLowerCase().replace(/[^a-z0-9_-]+/g, "").slice(-12);
-  const folded = label.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^[^a-z]+/, "").replace(/[-_]+$/g, "") || "lane";
-  if (!suffix)
-    return folded.slice(0, 32).replace(/[-_]+$/g, "") || "lane";
-  const prefixBudget = 32 - 1 - suffix.length;
-  const prefix = folded.slice(0, prefixBudget).replace(/[-_]+$/g, "") || "lane".slice(0, prefixBudget);
-  return `${prefix}-${suffix}`;
-}
-var HERDR_CLI = {
-  schema: () => ["api", "schema", "--json"],
-  tabList: (workspace) => ["tab", "list", "--workspace", workspace],
-  tabCreate: (workspace, cwd, label, env = {}) => [
-    "tab",
-    "create",
-    "--workspace",
-    workspace,
-    "--cwd",
-    cwd,
-    "--label",
-    label,
-    ...Object.entries(env).flatMap(([key, value]) => ["--env", `${key}=${value}`]),
-    "--no-focus"
-  ],
-  tabGet: (tab) => ["tab", "get", tab],
-  paneGet: (pane) => ["pane", "get", pane],
-  agentStart: (label, kind, pane, hostArgs) => ["agent", "start", label, "--kind", kind, "--pane", pane, "--", ...hostArgs],
-  prompt: (pane, text, timeoutMs) => ["agent", "prompt", pane, text, "--wait", "--until", "working", "--until", "blocked", "--timeout", String(timeoutMs)],
-  wait: (pane, timeoutMs) => [
-    "agent",
-    "wait",
-    pane,
-    "--until",
-    "idle",
-    "--until",
-    "done",
-    "--until",
-    "blocked",
-    "--until",
-    "unknown",
-    ...timeoutMs ? ["--timeout", String(timeoutMs)] : []
-  ],
-  get: (pane) => ["agent", "get", pane],
-  read: (pane, source, lines) => ["pane", "read", pane, "--source", source === "visible" ? "visible" : "recent-unwrapped", ...lines ? ["--lines", String(lines)] : []],
-  sendKeys: (pane, key) => ["agent", "send-keys", pane, key],
-  paneClose: (pane) => ["pane", "close", pane],
-  tabClose: (tab) => ["tab", "close", tab],
-  paneRun: (pane, command) => ["pane", "run", pane, command],
-  waitOutput: (pane, regex) => ["pane", "wait-output", pane, "--regex", regex, "--source", "recent", "--lines", "400"]
-};
-function defaultHerdrExec(env) {
-  return (args, signal) => runCommand(env, "herdr", args, signal);
-}
-function createHerdrViewer(options) {
-  const workspace = options.env.HERDR_WORKSPACE_ID;
-  if (options.env.HERDR_ENV !== "1" || !workspace)
-    return null;
-  const exec = options.exec ?? defaultHerdrExec(options.env);
-  return async ({ cwd, label, argv, env }) => {
-    if (argv.length === 0)
-      return refuse4("invalid_input", "argv is empty");
-    const created = await exec(HERDR_CLI.tabCreate(workspace, cwd, label, env));
-    if (created.missing)
-      return refuse4("provider_unavailable", "the herdr executable is not on PATH");
-    if (created.code !== 0)
-      return refuse4("start_failed", `herdr tab create failed: ${failure(created)}`);
-    const pane = pick(parseJson(created.stdout), ["result", "root_pane", "pane_id"]);
-    if (typeof pane !== "string" || !pane)
-      return refuse4("start_failed", "herdr tab create returned no result.root_pane.pane_id");
-    const ran = await exec(HERDR_CLI.paneRun(pane, `${argv.map(shellWord).join(" ")} && exit`));
-    if (ran.code !== 0)
-      return refuse4("start_failed", `herdr pane run failed: ${failure(ran)}`);
-    return { ok: true };
-  };
-}
-function encodeHerdrHandle(ids) {
-  return `herdr:${[ids.workspace, ids.tab, ids.pane, ids.token].map(encodeURIComponent).join("/")}`;
-}
-function decodeHerdrHandle(handle) {
-  if (!handle.startsWith("herdr:"))
-    return null;
-  const parts = handle.slice("herdr:".length).split("/");
-  if (parts.length !== 4 || parts.some((part) => part === ""))
-    return null;
-  try {
-    const [workspace, tab, pane, token] = parts.map(decodeURIComponent);
-    return { workspace, tab, pane, token };
-  } catch {
-    return null;
-  }
-}
-function herdrTokenMark(token) {
-  return `[imm:${token}]`;
-}
-function shellWord(value) {
-  return /^[A-Za-z0-9_./:=@%+-]+$/.test(value) ? value : `'${value.replace(/'/g, `'\\''`)}'`;
-}
-function sentinelCommand(argv, token) {
-  return {
-    line: `${argv.map(shellWord).join(" ")}; printf 'IMM_%s_%s_%s\\n' ${token} DONE "$?"`,
-    regex: `IMM_${token}_DONE_[0-9]+`
-  };
-}
-function parseHerdrState(stdout) {
-  const value = pick(parseJson(stdout.trim()), ["result", "agent", "agent_status"]);
-  return isSessionState(value) ? value : "unknown";
-}
-function herdrErrorCode(result) {
-  for (const text of [result.stderr, result.stdout]) {
-    const code = pick(parseJson(text.trim()), ["error", "code"]);
-    if (typeof code === "string")
-      return code;
-  }
-  return;
-}
-var EXITED_CODES = new Set(["pane_not_found", "agent_not_running", "agent_not_found"]);
-var STALLED = Symbol("entry stalled");
-var HOST_GONE_CODES = new Set(["agent_not_running", "agent_not_found"]);
-function detected(state) {
-  return { state, provenance: state === "unknown" ? "none" : "detected" };
-}
-function failure(result) {
-  return (result.stderr || result.stdout).trim().slice(0, 500) || `herdr exited ${result.code}`;
-}
-function protocolOf(schema) {
-  for (const path of [["protocol"], ["protocol_version"], ["version", "protocol"], ["info", "protocol"]]) {
-    const value = pick(schema, path);
-    if (typeof value === "number")
-      return value;
-    if (typeof value === "string" && /^\d+$/.test(value))
-      return Number(value);
-  }
-  return;
-}
-function createHerdrSessionProvider(options) {
-  const exec = options.exec ?? defaultHerdrExec(options.env);
-  const promptTimeoutMs = options.promptTimeoutMs ?? HERDR_PROMPT_TIMEOUT_MS;
-  const workspace = options.env.HERDR_WORKSPACE_ID ?? "";
-  const run = async (args, signal) => {
-    const result = await exec(args, signal);
-    if (result.missing)
-      return refuse4("provider_unavailable", "the herdr executable is not on PATH");
-    return result;
-  };
-  const isRefusal = (value) => typeof value === "object" && value !== null && value.ok === false;
-  const own = async (handle) => {
-    const ids = decodeHerdrHandle(handle);
-    if (!ids)
-      return refuse4("not_owned", "handle is not a Herdr session handle", handle);
-    if (!workspace || ids.workspace !== workspace)
-      return refuse4("not_owned", "session is not in the Parent's own Herdr workspace", handle);
-    const pane = await run(HERDR_CLI.paneGet(ids.pane));
-    if (isRefusal(pane))
-      return pane;
-    const tab = await run(HERDR_CLI.tabGet(ids.tab));
-    if (isRefusal(tab))
-      return tab;
-    const marked = tab.code === 0 && String(pick(parseJson(tab.stdout), ["result", "tab", "label"]) ?? "").endsWith(herdrTokenMark(ids.token));
-    if (pane.code !== 0) {
-      if (herdrErrorCode(pane) !== "pane_not_found")
-        return refuse4("provider_error", `herdr pane get failed: ${failure(pane)}`, handle);
-      if (tab.code === 0 && !marked)
-        return refuse4("not_owned", "tab was not created for this session", handle);
-      return { ids, gone: true };
-    }
-    const info = pick(parseJson(pane.stdout), ["result", "pane"]);
-    if (pick(info, ["workspace_id"]) !== ids.workspace || pick(info, ["tab_id"]) !== ids.tab) {
-      return refuse4("not_owned", "pane is not in this session's tab", handle);
-    }
-    if (tab.code !== 0)
-      return refuse4("provider_error", `herdr tab get failed: ${failure(tab)}`, handle);
-    if (!marked)
-      return refuse4("not_owned", "tab was not created for this session", handle);
-    return { ids, gone: false };
-  };
-  const goneRefusal = (handle) => refuse4("state_refused", "the session's pane is gone; nothing was sent; create a new session", handle);
-  const observe = async (handle, pane) => {
-    const result = await run(HERDR_CLI.get(pane));
-    if (isRefusal(result))
-      return result;
-    if (result.code !== 0)
-      return { state: "unknown", provenance: "none" };
-    return detected(parseHerdrState(result.stdout));
-  };
-  async function submit(handle, pane, text, entry = false) {
-    const result = await run(HERDR_CLI.prompt(pane, text, promptTimeoutMs));
-    if (isRefusal(result))
-      return result;
-    if (entry && herdrErrorCode(result) === "agent_prompt_stalled")
-      return STALLED;
-    if (herdrErrorCode(result) === "agent_blocked")
-      return refuse4("state_refused", "session is blocked; Herdr sent nothing", handle);
-    if (result.code !== 0)
-      return refuse4("provider_error", `herdr agent prompt failed; inspect the session state before repeating: ${failure(result)}`, handle);
-    return detected(parseHerdrState(result.stdout));
-  }
-  const submitEntry = async (handle, pane, text) => {
-    const after = await submit(handle, pane, text, true);
-    if (after === STALLED)
-      return {
-        ok: true,
-        handle,
-        entry_submitted: false,
-        state: "unknown",
-        provenance: "none",
-        attention: "The Executor Host never started working on its entry: a dialog (such as sign-in or a selection) may hold the terminal, and the entry text may now sit in it. Ask the user to look at this tab and answer the dialog, then resume this session; do not send the entry again before the user has seen it."
-      };
-    if (isRefusal(after))
-      return after;
-    return { ok: true, handle, entry_submitted: true, ...after };
-  };
-  const startHost = async (handle, pane, label, host, hostArgs, token) => {
-    const started = await run(HERDR_CLI.agentStart(herdrAgentName(label, token), HOST_KIND[host], pane, hostArgs));
-    if (isRefusal(started))
-      return { ...started, handle };
-    if (started.code === 0)
-      return null;
-    if (herdrErrorCode(started) === "agent_not_ready") {
-      return { ok: true, handle, entry_submitted: false, state: "blocked", provenance: "detected" };
-    }
-    return refuse4("start_failed", `herdr agent start failed: ${failure(started)}`, handle);
-  };
-  return {
-    provider: "herdr",
-    protocolVersion: SUPERVISED_SESSION_PROTOCOL,
-    async probe() {
-      if (options.env.HERDR_ENV !== "1")
-        return refuse4("provider_unavailable", "not running inside Herdr (HERDR_ENV is not 1)");
-      if (!workspace)
-        return refuse4("provider_unavailable", "HERDR_WORKSPACE_ID is not set");
-      const result = await run(HERDR_CLI.schema());
-      if (isRefusal(result))
-        return result;
-      if (result.code !== 0)
-        return refuse4("provider_unavailable", `herdr api schema failed: ${failure(result)}`);
-      const protocol = protocolOf(parseJson(result.stdout));
-      if (protocol === undefined)
-        return refuse4("protocol_mismatch", "herdr api schema did not state a protocol version");
-      if (!SUPPORTED_HERDR_PROTOCOLS.includes(protocol)) {
-        return refuse4("protocol_mismatch", `herdr protocol ${protocol} is not one of ${SUPPORTED_HERDR_PROTOCOLS.join(", ")}`);
-      }
-      return { ok: true };
-    },
-    async createSession(input) {
-      const invalid = validateCreateInput(input);
-      if (invalid)
-        return invalid;
-      if (input.resume !== undefined) {
-        const handle = input.resume;
-        const found = await own(handle);
-        if (isRefusal(found))
-          return found;
-        if (found.gone)
-          return goneRefusal(handle);
-        const pane = found.ids.pane;
-        const got = await run(HERDR_CLI.get(pane));
-        if (isRefusal(got))
-          return got;
-        const code = got.code === 0 ? undefined : herdrErrorCode(got);
-        if (code && HOST_GONE_CODES.has(code)) {
-          const restarted = await startHost(handle, pane, input.label, input.host, input.hostArgs, found.ids.token);
-          if (restarted)
-            return restarted;
-        } else {
-          const current = got.code === 0 ? detected(parseHerdrState(got.stdout)) : { state: "unknown", provenance: "none" };
-          const refused = resumeRefusal(handle, current);
-          if (refused)
-            return refused;
-        }
-        return submitEntry(handle, pane, input.entry);
-      }
-      if (!workspace)
-        return refuse4("provider_unavailable", "HERDR_WORKSPACE_ID is not set");
-      const token = input.session_key ?? randomBytes2(6).toString("hex");
-      const created = await run(HERDR_CLI.tabCreate(workspace, input.cwd, `${input.label} ${herdrTokenMark(token)}`, input.env));
-      if (isRefusal(created))
-        return created;
-      if (created.code !== 0)
-        return refuse4("start_failed", `herdr tab create failed: ${failure(created)}`);
-      const json = parseJson(created.stdout);
-      const tab = pick(json, ["result", "tab", "tab_id"]);
-      const pane = pick(json, ["result", "root_pane", "pane_id"]);
-      if (typeof tab !== "string" || typeof pane !== "string" || !tab || !pane) {
-        return refuse4("start_failed", "herdr tab create returned no result.tab.tab_id and result.root_pane.pane_id");
-      }
-      const handle = encodeHerdrHandle({ workspace, tab, pane, token });
-      const started = await startHost(handle, pane, input.label, input.host, input.hostArgs, token);
-      if (started)
-        return started;
-      return submitEntry(handle, pane, input.entry);
-    },
-    async sendInstruction(handle, text) {
-      if (!text.trim())
-        return refuse4("invalid_input", "instruction text is empty", handle);
-      const found = await own(handle);
-      if (isRefusal(found))
-        return found;
-      if (found.gone)
-        return goneRefusal(handle);
-      const ids = found.ids;
-      const current = await observe(handle, ids.pane);
-      if (isRefusal(current))
-        return current;
-      const refused = instructionRefusal(handle, current);
-      if (refused)
-        return refused;
-      const after = await submit(handle, ids.pane, text);
-      if (isRefusal(after))
-        return after;
-      return { ok: true, ...after };
-    },
-    async awaitTransition(handle, waitOptions) {
-      const found = await own(handle);
-      if (isRefusal(found))
-        return found;
-      if (found.gone)
-        return { ok: true, transition: "exited", state: "unknown", provenance: "none" };
-      const ids = found.ids;
-      const result = await run(HERDR_CLI.wait(ids.pane, waitOptions?.timeoutMs), waitOptions?.signal);
-      if (isRefusal(result))
-        return result;
-      if (result.aborted)
-        return { ok: true, transition: "timeout", state: "unknown", provenance: "none" };
-      if (result.code === 0) {
-        const state = parseHerdrState(result.stdout);
-        return { ok: true, transition: "changed", ...detected(state) };
-      }
-      const code = herdrErrorCode(result);
-      if (code === "timeout")
-        return { ok: true, transition: "timeout", state: "unknown", provenance: "none" };
-      if (code && EXITED_CODES.has(code))
-        return { ok: true, transition: "exited", state: "unknown", provenance: "none" };
-      return refuse4("provider_error", `herdr agent wait failed: ${failure(result)}`, handle);
-    },
-    async readOutput(handle, source, readOptions) {
-      const found = await own(handle);
-      if (isRefusal(found))
-        return found;
-      if (found.gone)
-        return refuse4("state_refused", "the session's pane is gone; there is no output to read", handle);
-      const ids = found.ids;
-      const result = await run(HERDR_CLI.read(ids.pane, source, readOptions?.lines));
-      if (isRefusal(result))
-        return result;
-      if (result.code !== 0)
-        return refuse4("provider_error", `herdr pane read failed: ${failure(result)}`, handle);
-      return { ok: true, text: result.stdout, source };
-    },
-    async observeState(handle) {
-      const found = await own(handle);
-      if (isRefusal(found))
-        return found;
-      if (found.gone)
-        return refuse4("provider_error", "herdr pane get failed: pane_not_found", handle);
-      const ids = found.ids;
-      const current = await observe(handle, ids.pane);
-      if (isRefusal(current))
-        return current;
-      return { ok: true, ...current };
-    },
-    async stopSession(handle) {
-      const found = await own(handle);
-      if (isRefusal(found))
-        return found;
-      if (found.gone)
-        return { ok: true };
-      const ids = found.ids;
-      await run(HERDR_CLI.sendKeys(ids.pane, "ctrl+c"));
-      const closed = await run(HERDR_CLI.paneClose(ids.pane));
-      if (isRefusal(closed))
-        return closed;
-      if (closed.code !== 0)
-        return refuse4("provider_error", `herdr pane close failed: ${failure(closed)}`, handle);
-      return { ok: true };
-    },
-    async closeSession(handle, record) {
-      const found = await own(handle);
-      if (isRefusal(found))
-        return found;
-      const unproven = closeRecordRefusal(handle, record);
-      if (unproven)
-        return unproven;
-      const closed = await run(HERDR_CLI.tabClose(found.ids.tab));
-      if (isRefusal(closed))
-        return closed;
-      if (closed.code !== 0 && found.gone)
-        return { ok: true };
-      if (closed.code !== 0)
-        return refuse4("provider_error", `herdr tab close failed: ${failure(closed)}`, handle);
-      return { ok: true };
-    },
-    async findSession(session_key) {
-      const bad = validateSessionKey(session_key);
-      if (bad)
-        return bad;
-      if (!workspace)
-        return refuse4("provider_unavailable", "HERDR_WORKSPACE_ID is not set");
-      const listed = await run(HERDR_CLI.tabList(workspace));
-      if (isRefusal(listed))
-        return listed;
-      if (listed.code !== 0)
-        return refuse4("provider_error", `herdr tab list failed: ${failure(listed)}`);
-      const parsed = parseJson(listed.stdout);
-      const tabs = pick(parsed, ["result", "tabs"]) ?? pick(parsed, ["tabs"]);
-      if (!Array.isArray(tabs))
-        return refuse4("provider_error", "herdr tab list returned no tabs");
-      for (const tab of tabs) {
-        if (!String(pick(tab, ["label"]) ?? "").endsWith(herdrTokenMark(session_key)))
-          continue;
-        const tabId = pick(tab, ["tab_id"]);
-        if (typeof tabId !== "string" || !tabId)
-          continue;
-        if (typeof pick(tab, ["workspace_id"]) === "string" && pick(tab, ["workspace_id"]) !== workspace)
-          continue;
-        const paneId = pick(tab, ["root_pane", "pane_id"]) ?? pick(tab, ["pane_id"]);
-        if (typeof paneId !== "string" || !paneId)
-          continue;
-        return { ok: true, handle: encodeHerdrHandle({ workspace, tab: tabId, pane: paneId, token: session_key }) };
-      }
-      return { ok: true, not_found: true };
-    },
-    async closeWithProof(handle, session_key) {
-      const bad = validateSessionKey(session_key);
-      if (bad)
-        return bad;
-      const ids = decodeHerdrHandle(handle);
-      if (!ids || !workspace || ids.workspace !== workspace || ids.token !== session_key) {
-        return refuse4("not_owned", "handle was not created for this session key", handle);
-      }
-      const found = await own(handle);
-      if (isRefusal(found))
-        return found;
-      if (found.gone) {
-        const listed = await run(HERDR_CLI.tabList(workspace));
-        if (isRefusal(listed))
-          return listed;
-        if (listed.code !== 0)
-          return refuse4("provider_error", `herdr tab list failed: ${failure(listed)}`, handle);
-        const parsed = parseJson(listed.stdout);
-        const tabs = pick(parsed, ["result", "tabs"]) ?? pick(parsed, ["tabs"]);
-        if (!Array.isArray(tabs))
-          return refuse4("provider_error", "herdr tab list returned no tabs", handle);
-        const survivor = tabs.find((tab) => String(pick(tab, ["label"]) ?? "").endsWith(herdrTokenMark(session_key)));
-        if (!survivor)
-          return { ok: true, exited: true, handle, session_key };
-        const survivorTab = pick(survivor, ["tab_id"]);
-        if (survivorTab !== ids.tab)
-          return refuse4("not_owned", "a live tab carries this session key for another session; nothing was closed", handle);
-        const closing = await run(HERDR_CLI.tabClose(ids.tab));
-        if (isRefusal(closing))
-          return closing;
-        if (closing.code !== 0)
-          return refuse4("provider_error", `herdr tab close failed: ${failure(closing)}`, handle);
-        return { ok: true, exited: true, handle, session_key };
-      }
-      const paneClosed = await run(HERDR_CLI.paneClose(found.ids.pane));
-      if (isRefusal(paneClosed))
-        return paneClosed;
-      if (paneClosed.code !== 0)
-        return refuse4("provider_error", `herdr pane close failed: ${failure(paneClosed)}`, handle);
-      const gone = await run(HERDR_CLI.paneGet(found.ids.pane));
-      if (!isRefusal(gone) && gone.code === 0)
-        return refuse4("provider_error", "herdr pane close did not end the pane", handle);
-      if (!isRefusal(gone) && herdrErrorCode(gone) !== "pane_not_found")
-        return refuse4("provider_error", `herdr pane get failed: ${failure(gone)}`, handle);
-      const tabClosed = await run(HERDR_CLI.tabClose(found.ids.tab));
-      if (isRefusal(tabClosed))
-        return tabClosed;
-      if (tabClosed.code !== 0)
-        return refuse4("provider_error", `herdr tab close failed: ${failure(tabClosed)}`, handle);
-      return { ok: true, exited: true, handle, session_key };
-    },
-    async reconcile(handles) {
-      const sessions = [];
-      for (const handle of handles) {
-        const found = await own(handle);
-        if (isRefusal(found)) {
-          if (found.code !== "not_owned")
-            return found;
-          sessions.push({ handle, state: "unknown", provenance: "none", refused: found.code });
-          continue;
-        }
-        if (found.gone) {
-          sessions.push({ handle, state: "unknown", provenance: "none" });
-          continue;
-        }
-        const current = await observe(handle, found.ids.pane);
-        if (isRefusal(current))
-          return current;
-        sessions.push({ handle, ...current });
-      }
-      return { ok: true, sessions };
-    },
-    async runCommand(input) {
-      if (!input.cwd)
-        return refuse4("invalid_input", "cwd is required");
-      if (!input.label || input.label.length > 32)
-        return refuse4("invalid_input", "label must be 1 to 32 characters");
-      if (input.argv.length === 0)
-        return refuse4("invalid_input", "argv is empty");
-      if (!workspace)
-        return refuse4("provider_unavailable", "HERDR_WORKSPACE_ID is not set");
-      const token = randomBytes2(6).toString("hex");
-      const created = await run(HERDR_CLI.tabCreate(workspace, input.cwd, `${input.label} ${herdrTokenMark(token)}`, input.env));
-      if (isRefusal(created))
-        return created;
-      if (created.code !== 0)
-        return refuse4("start_failed", `herdr tab create failed: ${failure(created)}`);
-      const json = parseJson(created.stdout);
-      const tab = pick(json, ["result", "tab", "tab_id"]);
-      const pane = pick(json, ["result", "root_pane", "pane_id"]);
-      if (typeof tab !== "string" || typeof pane !== "string" || !tab || !pane) {
-        return refuse4("start_failed", "herdr tab create returned no result.tab.tab_id and result.root_pane.pane_id");
-      }
-      const handle = encodeHerdrHandle({ workspace, tab, pane, token });
-      const { line, regex } = sentinelCommand(input.argv, token);
-      const ran = await run(HERDR_CLI.paneRun(pane, line));
-      if (isRefusal(ran))
-        return { ...ran, handle };
-      if (ran.code !== 0)
-        return refuse4("start_failed", `herdr pane run failed: ${failure(ran)}`, handle);
-      const waited = await run(HERDR_CLI.waitOutput(pane, regex));
-      if (isRefusal(waited))
-        return { ...waited, handle };
-      if (waited.code !== 0)
-        return refuse4("provider_error", `herdr pane wait-output failed; the command may still run in its tab: ${failure(waited)}`, handle);
-      const matched = String(pick(parseJson(waited.stdout), ["result", "matched_line"]) ?? waited.stdout);
-      const status = new RegExp(`IMM_${token}_DONE_([0-9]+)`).exec(matched);
-      if (!status)
-        return refuse4("provider_error", "herdr pane wait-output returned no exit status", handle);
-      return { ok: true, handle, exit_code: Number(status[1]) };
-    },
-    async sendKeys(handle, key) {
-      const found = await own(handle);
-      if (isRefusal(found))
-        return found;
-      if (found.gone)
-        return goneRefusal(handle);
-      const result = await run(HERDR_CLI.sendKeys(found.ids.pane, key));
-      if (isRefusal(result))
-        return result;
-      if (result.code !== 0)
-        return refuse4("provider_error", `herdr agent send-keys failed: ${failure(result)}`, handle);
-      return { ok: true };
-    }
-  };
-}
-
-// plugins/immune-brain/runtime/session/herdr_core_provider.ts
-import { randomBytes as randomBytes3 } from "node:crypto";
-var HERDR_CORE_MIN_VERSION = [0, 1, 19];
-var HERDR_CORE_GENERATION = 1;
-var HERDR_CORE_METHODS = [
-  "terminal.run",
-  "terminal.get",
-  "terminal.list",
-  "terminal.send",
-  "terminal.wait",
-  "terminal.read",
-  "terminal.keys",
-  "terminal.interrupt",
-  "terminal.kill",
-  "terminal.rm"
-];
-var HOST_STATUS_MINIMUM = {
-  "claude-code": { binary: "claude", version: [2, 1, 295] },
-  pi: { binary: "pi", version: [1, 1, 0] },
-  antigravity: { binary: "agy", version: [1, 4, 0] }
-};
-var OWNER_LABEL = "imm-session";
-var HERDR_CORE_READY_TIMEOUT_MS = 30000;
-var SCROLLBACK_LINES = 200;
-var SESSION_KEY_LABEL = "imm-session-key";
-var HC_CLI = {
-  schema: () => ["schema", "--json"],
-  status: () => ["server", "status", "--json"],
-  list: () => ["list", "--json"],
-  run: (name, cwd, token, argv, sessionKey) => ["run", "--bg", "--json", "--no-parent", "--name", name, "--cwd", cwd, "--label", `${OWNER_LABEL}=${token}`, ...sessionKey !== undefined ? ["--label", `${SESSION_KEY_LABEL}=${sessionKey}`] : [], "--", ...argv],
-  get: (address) => ["get", address, "--json"],
-  send: (address, text, ifState) => ["send", address, text, ...ifState ? ["--if", ifState] : [], "--json"],
-  wait: (address, timeoutSeconds) => ["wait", address, ...timeoutSeconds ? ["--timeout", String(timeoutSeconds)] : [], "--json"],
-  read: (address, lines) => ["read", address, "--lines", String(lines), "--json"],
-  keys: (address, key) => ["keys", address, key, "--json"],
-  interrupt: (address) => ["interrupt", address, "--json"],
-  kill: (address) => ["kill", address, "--json"],
-  rm: (address) => ["rm", address, "--json"]
-};
-var HC_SELECTION_ENV = ["HC_SESSION", "XDG_RUNTIME_DIR", "XDG_STATE_HOME", "XDG_CONFIG_HOME"];
-function encodeHerdrCoreHandle(ids) {
-  return `herdr-core:${encodeURIComponent(ids.address)}/${encodeURIComponent(ids.token)}`;
-}
-function decodeHerdrCoreHandle(handle) {
-  if (!handle.startsWith("herdr-core:"))
-    return null;
-  const parts = handle.slice("herdr-core:".length).split("/");
-  if (parts.length !== 2 || parts.some((part) => part === ""))
-    return null;
-  try {
-    const [address, token] = parts.map(decodeURIComponent);
-    return { address, token };
-  } catch {
-    return null;
-  }
-}
-function herdrCoreName(label, token) {
-  const suffix = token.toLowerCase().replace(/[^a-z0-9_-]+/g, "").slice(0, 12);
-  const folded = label.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "lane";
-  if (!suffix)
-    return folded.slice(0, 32).replace(/[-_]+$/g, "") || "lane";
-  const prefixBudget = 32 - 1 - suffix.length;
-  const prefix = folded.slice(0, prefixBudget).replace(/[-_]+$/g, "") || "lane".slice(0, prefixBudget);
-  return `${prefix}-${suffix}`;
-}
-function coreState(word) {
-  if (typeof word === "string" && isSessionState(word) && word !== "unknown")
-    return { state: word, provenance: "reported" };
-  return { state: "unknown", provenance: "none" };
-}
-function hcErrorKind(result) {
-  for (const text of [result.stderr, result.stdout]) {
-    const kind = pick(parseJson(text.trim()), ["error", "kind"]);
-    if (typeof kind === "string")
-      return kind;
-  }
-  return;
-}
-function failure2(result) {
-  return (result.stderr || result.stdout).trim().slice(0, 500) || `hc exited ${result.code}`;
-}
-function newToken() {
-  return randomBytes3(12).toString("hex");
-}
-function createHerdrCoreSessionProvider(options) {
-  const exec = options.exec ?? ((command, args, signal) => runCommand(options.env, command, args, signal));
-  const readyTimeoutMs = options.readyTimeoutMs ?? HERDR_CORE_READY_TIMEOUT_MS;
-  const pollMs = options.pollMs ?? 250;
-  const sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
-  const isRefusal = (value) => typeof value === "object" && value !== null && value.ok === false;
-  const hc = async (args, signal) => {
-    const result = await exec("hc", args, signal);
-    if (result.missing)
-      return refuse4("provider_unavailable", "the hc executable is not on PATH");
-    return result;
-  };
-  const owned = async (handle) => {
-    const ids = decodeHerdrCoreHandle(handle);
-    if (!ids)
-      return refuse4("not_owned", "handle is not a herdr-core session handle", handle);
-    const result = await hc(HC_CLI.get(ids.address));
-    if (isRefusal(result))
-      return result;
-    if (result.code !== 0) {
-      if (hcErrorKind(result) === "not_found")
-        return refuse4("not_owned", "no such terminal on this core", handle);
-      return refuse4("provider_error", `hc get failed: ${failure2(result)}`, handle);
-    }
-    const terminal = parseJson(result.stdout);
-    if (pick(terminal, ["labels", OWNER_LABEL]) !== ids.token)
-      return refuse4("not_owned", "terminal was not created for this session", handle);
-    return { ids, terminal };
-  };
-  const observed = (terminal) => pick(terminal, ["state"]) === "finished" ? { state: "unknown", provenance: "none" } : coreState(pick(terminal, ["status", "state"]));
-  const send = async (handle, address, text, ifState) => {
-    const result = await hc(HC_CLI.send(address, text, ifState));
-    if (isRefusal(result))
-      return result;
-    if (result.code !== 0) {
-      const kind = hcErrorKind(result);
-      if (kind === "status_mismatch")
-        return refuse4("state_refused", "session is not idle; core sent nothing", handle);
-      if (kind === "blocked")
-        return refuse4("state_refused", "session is blocked; core sent nothing", handle);
-      return refuse4("provider_error", `hc send failed; inspect the session state before repeating: ${failure2(result)}`, handle);
-    }
-    const json = parseJson(result.stdout);
-    if (pick(json, ["started"]) === true)
-      return { state: "working", provenance: "reported" };
-    return coreState(pick(json, ["status"]));
-  };
-  const selection = Object.fromEntries(HC_SELECTION_ENV.flatMap((key) => options.env[key] ? [[key, options.env[key]]] : []));
-  const openViewer = async (address, name, cwd) => {
-    if (!options.viewer)
-      return { opened: false, reason: `not inside Herdr; watch it with \`hc attach ${address}\` in another terminal` };
-    const opened = await options.viewer({ cwd, label: `${name} (hc ${address})`, argv: ["hc", "attach", address], env: selection });
-    return opened.ok ? { opened: true } : { opened: false, reason: opened.reason };
-  };
-  const hostVersionRefusal = async (host) => {
-    const { binary, version } = HOST_STATUS_MINIMUM[host];
-    const result = await exec(binary, ["--version"]);
-    if (result.missing)
-      return refuse4("provider_unavailable", `the ${binary} executable is not on PATH`);
-    const found = parseVersion(`${result.stdout}
-${result.stderr}`);
-    if (result.code !== 0 || !found)
-      return refuse4("provider_unavailable", `${binary} --version reported no version`);
-    if (!versionAtLeast(found, version)) {
-      return refuse4("provider_unavailable", `${binary} ${found.join(".")} does not report OSC 7501; ${version.join(".")} or newer is required on herdr-core`);
-    }
-    return null;
-  };
-  return {
-    provider: "herdr-core",
-    protocolVersion: SUPERVISED_SESSION_PROTOCOL,
-    async probe() {
-      const schema = await hc(HC_CLI.schema());
-      if (isRefusal(schema))
-        return schema;
-      if (schema.code !== 0)
-        return refuse4("provider_unavailable", `hc schema failed: ${failure2(schema)}`);
-      const json = parseJson(schema.stdout);
-      const version = parseVersion(String(pick(json, ["info", "version"]) ?? ""));
-      if (!version || !versionAtLeast(version, HERDR_CORE_MIN_VERSION)) {
-        return refuse4("protocol_mismatch", `herdr-core ${HERDR_CORE_MIN_VERSION.join(".")} or newer is required`);
-      }
-      const generation = /Protocol generation (\d+)/.exec(String(pick(json, ["info", "description"]) ?? ""));
-      if (!generation || Number(generation[1]) !== HERDR_CORE_GENERATION) {
-        return refuse4("protocol_mismatch", `herdr-core protocol generation ${HERDR_CORE_GENERATION} is required`);
-      }
-      const methods = new Set((Array.isArray(pick(json, ["methods"])) ? pick(json, ["methods"]) : []).map((method) => pick(method, ["name"])));
-      const missing = HERDR_CORE_METHODS.filter((method) => !methods.has(method));
-      if (missing.length > 0)
-        return refuse4("protocol_mismatch", `herdr-core lacks ${missing.join(", ")}`);
-      const status = await hc(HC_CLI.status());
-      if (isRefusal(status))
-        return status;
-      if (status.code !== 0)
-        return refuse4("provider_unavailable", `no herdr-core server answered: ${failure2(status)}`);
-      return { ok: true };
-    },
-    async createSession(input) {
-      const invalid = validateCreateInput(input);
-      if (invalid)
-        return invalid;
-      if (input.resume !== undefined) {
-        const found = await owned(input.resume);
-        if (isRefusal(found))
-          return found;
-        if (pick(found.terminal, ["state"]) === "finished") {
-          return refuse4("state_refused", "the session's terminal finished; core cannot restart it in place; nothing was sent; create a new session", input.resume);
-        }
-        const current = observed(found.terminal);
-        const refused = resumeRefusal(input.resume, current);
-        if (refused)
-          return refused;
-        const after = await send(input.resume, found.ids.address, input.entry, current.state === "idle" ? "idle" : undefined);
-        if (isRefusal(after))
-          return after;
-        return { ok: true, handle: input.resume, entry_submitted: true, ...after };
-      }
-      const tooOld = await hostVersionRefusal(input.host);
-      if (tooOld)
-        return tooOld;
-      const token = newToken();
-      const name = herdrCoreName(input.label, token);
-      const envPrefix = Object.entries(input.env ?? {}).map(([key, value]) => `${key}=${value}`);
-      const argv = [...envPrefix.length > 0 ? ["env", ...envPrefix] : [], HOST_STATUS_MINIMUM[input.host].binary, ...input.hostArgs];
-      const started = await hc(HC_CLI.run(name, input.cwd, token, argv, input.session_key));
-      if (isRefusal(started))
-        return started;
-      if (started.code !== 0)
-        return refuse4("start_failed", `hc run failed: ${failure2(started)}`);
-      const address = pick(parseJson(started.stdout), ["address"]);
-      if (typeof address !== "string" || !address)
-        return refuse4("start_failed", "hc run returned no address");
-      const handle = encodeHerdrCoreHandle({ address, token });
-      const viewer = options.viewer ? await openViewer(address, name, input.cwd) : undefined;
-      const shown = viewer ? { viewer } : {};
-      const deadline = Date.now() + readyTimeoutMs;
-      for (;; ) {
-        const found = await owned(handle);
-        if (isRefusal(found))
-          return { ...found, handle };
-        if (pick(found.terminal, ["state"]) === "finished")
-          return refuse4("start_failed", "the Executor Host exited before it reported a status", handle);
-        const current = observed(found.terminal);
-        if (current.state === "blocked")
-          return { ok: true, handle, entry_submitted: false, ...current, ...shown };
-        if (current.state === "idle") {
-          const after = await send(handle, address, input.entry, "idle");
-          if (isRefusal(after))
-            return after;
-          return { ok: true, handle, entry_submitted: true, ...after, ...shown };
-        }
-        if (Date.now() >= deadline) {
-          return {
-            ok: true,
-            handle,
-            entry_submitted: false,
-            state: "unknown",
-            provenance: "none",
-            attention: `The Executor Host reported no status within ${readyTimeoutMs} ms and the entry was not submitted. It may be waiting on a startup dialog (such as workspace trust) or report no status at all; look ${viewer?.opened ? "in its viewer tab" : `with \`hc attach ${address}\` in another terminal`}, answer it there, then resume this session.`,
-            ...shown
-          };
-        }
-        await sleep(pollMs);
-      }
-    },
-    async sendInstruction(handle, text) {
-      if (!text.trim())
-        return refuse4("invalid_input", "instruction text is empty", handle);
-      const found = await owned(handle);
-      if (isRefusal(found))
-        return found;
-      const current = observed(found.terminal);
-      const refused = instructionRefusal(handle, current);
-      if (refused)
-        return refused;
-      const after = await send(handle, found.ids.address, text, current.state === "idle" ? "idle" : undefined);
-      if (isRefusal(after))
-        return after;
-      return { ok: true, ...after };
-    },
-    async awaitTransition(handle, waitOptions) {
-      const found = await owned(handle);
-      if (isRefusal(found))
-        return found;
-      const bounded = waitOptions?.timeoutMs !== undefined && waitOptions.timeoutMs > 0;
-      for (;; ) {
-        const result = await hc(HC_CLI.wait(found.ids.address, bounded ? waitOptions.timeoutMs / 1000 : undefined), waitOptions?.signal);
-        if (isRefusal(result))
-          return result;
-        if (result.aborted)
-          return { ok: true, transition: "timeout", state: "unknown", provenance: "none" };
-        if (result.code !== 0) {
-          if (hcErrorKind(result) === "finished")
-            return { ok: true, transition: "exited", state: "unknown", provenance: "none" };
-          return refuse4("provider_error", `hc wait failed: ${failure2(result)}`, handle);
-        }
-        const json = parseJson(result.stdout);
-        const reason = pick(json, ["reason"]);
-        if (reason === "exit")
-          return { ok: true, transition: "exited", state: "unknown", provenance: "none" };
-        if (reason === "timeout") {
-          if (!bounded)
-            continue;
-          return { ok: true, transition: "timeout", state: "unknown", provenance: "none" };
-        }
-        if (reason === "message")
-          continue;
-        return { ok: true, transition: "changed", ...coreState(pick(json, ["status"])) };
-      }
-    },
-    async readOutput(handle, source, readOptions) {
-      const found = await owned(handle);
-      if (isRefusal(found))
-        return found;
-      const result = await hc(HC_CLI.read(found.ids.address, source === "visible" ? 0 : readOptions?.lines ?? SCROLLBACK_LINES));
-      if (isRefusal(result))
-        return result;
-      if (result.code !== 0)
-        return refuse4("provider_error", `hc read failed: ${failure2(result)}`, handle);
-      const text = pick(parseJson(result.stdout), ["text"]);
-      return { ok: true, text: typeof text === "string" ? text : "", source };
-    },
-    async observeState(handle) {
-      const found = await owned(handle);
-      if (isRefusal(found))
-        return found;
-      return { ok: true, ...observed(found.terminal) };
-    },
-    async attachSession(handle) {
-      const found = await owned(handle);
-      if (isRefusal(found))
-        return found;
-      if (pick(found.terminal, ["state"]) === "finished")
-        return refuse4("state_refused", "the session's terminal finished; there is nothing to watch", handle);
-      const name = String(pick(found.terminal, ["name"]) ?? "lane");
-      const cwd = String(pick(found.terminal, ["cwd"]) ?? options.env.PWD ?? process.cwd());
-      const viewer = await openViewer(found.ids.address, name, cwd);
-      return viewer.opened ? { ok: true } : refuse4("provider_unavailable", viewer.reason, handle);
-    },
-    async stopSession(handle) {
-      const found = await owned(handle);
-      if (isRefusal(found))
-        return found;
-      if (pick(found.terminal, ["state"]) === "finished")
-        return { ok: true };
-      await hc(HC_CLI.interrupt(found.ids.address));
-      const killed = await hc(HC_CLI.kill(found.ids.address));
-      if (isRefusal(killed))
-        return killed;
-      if (killed.code !== 0 && hcErrorKind(killed) !== "finished")
-        return refuse4("provider_error", `hc kill failed: ${failure2(killed)}`, handle);
-      return { ok: true };
-    },
-    async closeSession(handle, record) {
-      const found = await owned(handle);
-      if (isRefusal(found))
-        return found;
-      const unproven = closeRecordRefusal(handle, record);
-      if (unproven)
-        return unproven;
-      if (pick(found.terminal, ["state"]) !== "finished") {
-        const killed = await hc(HC_CLI.kill(found.ids.address));
-        if (isRefusal(killed))
-          return killed;
-        if (killed.code !== 0 && hcErrorKind(killed) !== "finished")
-          return refuse4("provider_error", `hc kill failed: ${failure2(killed)}`, handle);
-      }
-      const removed = await hc(HC_CLI.rm(found.ids.address));
-      if (isRefusal(removed))
-        return removed;
-      if (removed.code !== 0)
-        return refuse4("provider_error", `hc rm failed: ${failure2(removed)}`, handle);
-      return { ok: true };
-    },
-    async findSession(session_key) {
-      const bad = validateSessionKey(session_key);
-      if (bad)
-        return bad;
-      const listed = await hc(HC_CLI.list());
-      if (isRefusal(listed))
-        return listed;
-      if (listed.code !== 0)
-        return refuse4("provider_error", `hc list failed: ${failure2(listed)}`);
-      const parsed = parseJson(listed.stdout);
-      const terminals = pick(parsed, ["terminals"]) ?? pick(parsed, ["result", "terminals"]);
-      if (!Array.isArray(terminals))
-        return refuse4("provider_error", "hc list returned no terminals");
-      for (const terminal of terminals) {
-        if (pick(terminal, ["state"]) === "finished")
-          continue;
-        if (pick(terminal, ["labels", SESSION_KEY_LABEL]) !== session_key)
-          continue;
-        const address = pick(terminal, ["address"]);
-        const token = pick(terminal, ["labels", OWNER_LABEL]);
-        if (typeof address !== "string" || !address || typeof token !== "string" || !token)
-          continue;
-        return { ok: true, handle: encodeHerdrCoreHandle({ address, token }) };
-      }
-      return { ok: true, not_found: true };
-    },
-    async closeWithProof(handle, session_key) {
-      const bad = validateSessionKey(session_key);
-      if (bad)
-        return bad;
-      const ids = decodeHerdrCoreHandle(handle);
-      if (!ids)
-        return refuse4("not_owned", "handle is not a herdr-core session handle", handle);
-      const found = await owned(handle);
-      if (isRefusal(found)) {
-        if (found.code !== "not_owned")
-          return found;
-        const listed = await hc(HC_CLI.list());
-        if (isRefusal(listed))
-          return listed;
-        if (listed.code !== 0)
-          return refuse4("provider_error", `hc list failed: ${failure2(listed)}`, handle);
-        const parsed = parseJson(listed.stdout);
-        const terminals = pick(parsed, ["terminals"]) ?? pick(parsed, ["result", "terminals"]);
-        if (Array.isArray(terminals)) {
-          const survivor = terminals.some((t) => pick(t, ["state"]) !== "finished" && pick(t, ["labels", SESSION_KEY_LABEL]) === session_key);
-          if (!survivor)
-            return { ok: true, exited: true, handle, session_key };
-        }
-        return found;
-      }
-      if (pick(found.terminal, ["labels", SESSION_KEY_LABEL]) !== undefined && pick(found.terminal, ["labels", SESSION_KEY_LABEL]) !== session_key) {
-        return refuse4("not_owned", "terminal was not created for this session key", handle);
-      }
-      if (pick(found.terminal, ["labels", SESSION_KEY_LABEL]) === undefined && pick(found.terminal, ["labels", OWNER_LABEL]) !== session_key) {
-        return refuse4("not_owned", "terminal was not created for this session key", handle);
-      }
-      if (pick(found.terminal, ["state"]) !== "finished") {
-        const killed = await hc(HC_CLI.kill(found.ids.address));
-        if (isRefusal(killed))
-          return killed;
-        if (killed.code !== 0 && hcErrorKind(killed) !== "finished")
-          return refuse4("provider_error", `hc kill failed: ${failure2(killed)}`, handle);
-      }
-      const removed = await hc(HC_CLI.rm(found.ids.address));
-      if (isRefusal(removed))
-        return removed;
-      if (removed.code !== 0)
-        return refuse4("provider_error", `hc rm failed: ${failure2(removed)}`, handle);
-      return { ok: true, exited: true, handle, session_key };
-    },
-    async reconcile(handles) {
-      const sessions = [];
-      for (const handle of handles) {
-        const found = await owned(handle);
-        if (isRefusal(found)) {
-          if (found.code === "provider_unavailable")
-            return found;
-          sessions.push({ handle, state: "unknown", provenance: "none", ...found.code === "not_owned" ? { refused: found.code } : {} });
-          continue;
-        }
-        sessions.push({ handle, ...observed(found.terminal) });
-      }
-      return { ok: true, sessions };
-    },
-    async sendKeys(handle, key) {
-      const found = await owned(handle);
-      if (isRefusal(found))
-        return found;
-      const result = await hc(HC_CLI.keys(found.ids.address, key));
-      if (isRefusal(result))
-        return result;
-      if (result.code !== 0)
-        return refuse4("provider_error", `hc keys failed: ${failure2(result)}`, handle);
-      return { ok: true };
-    }
-  };
-}
-
-// plugins/immune-brain/runtime/session/provider_registry.ts
-var EXECUTOR_HOSTS3 = ["claude-code", "pi", "antigravity"];
-function herdrCheck(env) {
-  if (env.HERDR_ENV !== "1")
-    return { ok: false, reason: "not running inside Herdr (HERDR_ENV is not 1)" };
-  if (!env.HERDR_WORKSPACE_ID)
-    return { ok: false, reason: "HERDR_WORKSPACE_ID is not set" };
-  return { ok: true };
-}
-var HERDR_RECOVERY = "run inside Herdr with HERDR_ENV=1 and HERDR_WORKSPACE_ID set to the Parent workspace";
-var HERDR_CORE_RECOVERY = "ensure hc 0.1.19+ is installed and a core server answers (hc server status --json)";
-var HERDR_DESCRIPTOR = {
-  name: "herdr",
-  checkEnv: herdrCheck,
-  recovery: HERDR_RECOVERY,
-  factory: (env) => createHerdrSessionProvider({ env }),
-  roles: {
-    executor: { hosts: [...EXECUTOR_HOSTS3], workspace: "local_path", find_by_key: true, exit_proof: true },
-    authority: { hosts: [...EXECUTOR_HOSTS3] },
-    advisory: { hosts: [...EXECUTOR_HOSTS3] }
-  }
-};
-var HERDR_CORE_DESCRIPTOR = {
-  name: "herdr-core",
-  checkEnv: () => ({ ok: true }),
-  recovery: HERDR_CORE_RECOVERY,
-  factory: (env) => createHerdrCoreSessionProvider({ env, viewer: createHerdrViewer({ env }) ?? undefined }),
-  roles: {
-    executor: { hosts: [], workspace: "local_path", find_by_key: true, exit_proof: false }
-  }
-};
-var SESSION_PROVIDER_REGISTRY = [HERDR_DESCRIPTOR, HERDR_CORE_DESCRIPTOR];
-function resolveSessionProvider(options) {
-  const registry = options.registry ?? SESSION_PROVIDER_REGISTRY;
-  const reasons = [];
-  for (const name of options.providers) {
-    const descriptor = registry.find((d) => d.name === name);
-    if (!descriptor) {
-      reasons.push({ provider: name, reason: `unknown session provider ${JSON.stringify(name)}`, recovery: "choose one of herdr, herdr-core" });
-      continue;
-    }
-    const envCheck = descriptor.checkEnv(options.env);
-    if (!envCheck.ok) {
-      reasons.push({ provider: name, reason: envCheck.reason, recovery: descriptor.recovery });
-      continue;
-    }
-    if (options.role === "executor") {
-      const admission = descriptor.roles.executor;
-      if (!admission) {
-        reasons.push({ provider: name, reason: "no executor role", recovery: descriptor.recovery });
-        continue;
-      }
-      if (!admission.hosts.includes(options.host)) {
-        reasons.push({ provider: name, reason: `host ${options.host} not admitted`, recovery: `use one of ${admission.hosts.join(", ") || "none admitted"}` });
-        continue;
-      }
-      if (admission.workspace !== "local_path") {
-        reasons.push({ provider: name, reason: "no local_path workspace", recovery: descriptor.recovery });
-        continue;
-      }
-      if (!admission.find_by_key) {
-        reasons.push({ provider: name, reason: "no find_by_key", recovery: descriptor.recovery });
-        continue;
-      }
-      return { ok: true, provider: name, descriptor };
-    }
-    const admission = descriptor.roles[options.role];
-    if (!admission) {
-      reasons.push({ provider: name, reason: `no ${options.role} role`, recovery: descriptor.recovery });
-      continue;
-    }
-    if (!admission.hosts.includes(options.host)) {
-      reasons.push({ provider: name, reason: `host ${options.host} not admitted`, recovery: `use one of ${admission.hosts.join(", ") || "none admitted"}` });
-      continue;
-    }
-    return { ok: true, provider: name, descriptor };
-  }
-  return { ok: false, code: "lane_session_unavailable", reasons };
-}
-
-// plugins/immune-brain/runtime/lane_sessions/index.ts
-init_plugin_source_skew();
-init_batch_state();
-
-// plugins/immune-brain/runtime/lane_sessions/session_port_adapter.ts
-function isRefusal(value) {
-  return typeof value === "object" && value !== null && value.ok === false;
-}
-function refusalReason(value) {
-  return typeof value.reason === "string" ? value.reason : "provider failure";
-}
-function isPaneNotFound(reason) {
-  return reason.includes("pane_not_found");
-}
-
-class SessionPortAdapter {
-  provider;
-  port;
-  host;
-  hostArgs;
-  constructor(port, host, hostArgs = []) {
-    this.port = port;
-    this.provider = port.provider;
-    this.host = host;
-    this.hostArgs = [...hostArgs];
-  }
-  async open(input) {
-    const result = await this.port.createSession({
-      cwd: input.cwd,
-      label: input.label,
-      host: this.host,
-      hostArgs: this.hostArgs,
-      entry: input.entry,
-      session_key: input.key,
-      ...input.env && Object.keys(input.env).length > 0 ? { env: input.env } : {}
-    });
-    if (isRefusal(result))
-      return { ok: false, code: result.code, reason: result.reason };
-    return { ok: true, handle: result.handle, entry_submitted: result.entry_submitted, ...result.attention !== undefined ? { attention: result.attention ?? null } : {} };
-  }
-  async resume(handle, entry) {
-    const result = await this.port.createSession({
-      cwd: ".",
-      label: "resume",
-      host: this.host,
-      hostArgs: this.hostArgs,
-      entry,
-      resume: handle
-    });
-    if (isRefusal(result)) {
-      return { ok: false, code: result.code, reason: result.reason };
-    }
-    return { ok: true, entry_submitted: result.entry_submitted };
-  }
-  async find(key) {
-    if (!this.port.findSession)
-      return { ok: true, not_found: true };
-    const result = await this.port.findSession(key);
-    if (isRefusal(result)) {
-      const reason = refusalReason(result);
-      if (isPaneNotFound(reason))
-        return { ok: true, not_found: true };
-      return { ok: false, code: result.code, reason: result.reason };
-    }
-    return result;
-  }
-  async observe(handle) {
-    const result = await this.port.observeState(handle);
-    if (isRefusal(result)) {
-      const reason = refusalReason(result);
-      if (isPaneNotFound(reason))
-        return { ok: true, state: "exited" };
-      return { ok: true, state: "unknown" };
-    }
-    if (result.state === "working" || result.state === "blocked" || result.state === "idle" || result.state === "done" || result.state === "error" || result.state === "unknown") {
-      return { ok: true, state: result.state };
-    }
-    return { ok: true, state: "unknown" };
-  }
-  async send(handle, text) {
-    const result = await this.port.sendInstruction(handle, text);
-    if (isRefusal(result))
-      return { ok: false, code: result.code, reason: result.reason };
-    return { ok: true, state: result.state };
-  }
-  async stop(handle) {
-    const result = await this.port.stopSession(handle);
-    if (isRefusal(result)) {
-      const reason = refusalReason(result);
-      if (isPaneNotFound(reason))
-        return { ok: true };
-      return { ok: false, code: result.code, reason: result.reason };
-    }
-    return { ok: true };
-  }
-  async closeWithProof(handle, key) {
-    if (!this.port.closeWithProof)
-      return { ok: false, code: "provider_unavailable", reason: `provider ${this.provider} has no close proof` };
-    const result = await this.port.closeWithProof(handle, key);
-    if (isRefusal(result)) {
-      const reason = refusalReason(result);
-      if (isPaneNotFound(reason))
-        return { ok: true, exited: true, handle, key };
-      return { ok: false, code: result.code, reason: result.reason };
-    }
-    return { ok: true, exited: true, handle, key };
-  }
-}
-
-// plugins/immune-brain/runtime/lane_sessions/index.ts
-function hostArgsFor(deps, taskId) {
-  if (!deps.hostArgs)
-    return [];
-  return typeof deps.hostArgs === "function" ? deps.hostArgs(taskId) : [...deps.hostArgs];
-}
-function resumeChildren(record) {
-  return record.children.map((child) => {
-    const identity = record.intent_identities?.[child.task_id];
-    return {
-      task_id: child.task_id,
-      slice_id: child.slice_id,
-      blocked_by: [...child.blocked_by],
-      status: "enrollable",
-      reason: null,
-      intent_path: identity?.intent_path ?? null,
-      intent_revision: identity?.intent_revision ?? null,
-      intent_content_hash: identity?.intent_content_hash ?? null,
-      ...identity?.intent_authority_hash ? { intent_authority_hash: identity.intent_authority_hash } : {}
-    };
-  });
-}
-function claudePluginDirOrNull(resolve) {
-  try {
-    return (resolve ?? runtimeClaudePluginDir)() ?? null;
-  } catch {
-    return null;
-  }
-}
-function executorSessionTarget(input) {
-  const choice = laneExecutorChoice(input.root, input.executor, input.host) ?? { host: input.host };
-  const hostArgs = [];
-  if (choice.model)
-    hostArgs.push("--model", choice.model);
-  if (choice.effort)
-    hostArgs.push(choice.host === "pi" ? "--thinking" : "--effort", choice.effort);
-  if (choice.host === "claude-code") {
-    const pluginDir = claudePluginDirOrNull(input.pluginDir);
-    if (pluginDir)
-      hostArgs.push("--plugin-dir", pluginDir);
-  }
-  return { host: choice.host, hostArgs };
-}
-function portFor(provider, env, registry, createPort) {
-  if (createPort) {
-    try {
-      return createPort(provider, env);
-    } catch {
-      return null;
-    }
-  }
-  const descriptor = registry.find((d) => d.name === provider);
-  if (!descriptor)
-    return null;
-  return descriptor.factory(env);
-}
-function openBatchSessionPort(input) {
-  const registry = input.providerRegistry ?? SESSION_PROVIDER_REGISTRY;
-  if (!input.provider)
-    return { ok: false, reason: "lane_session_unavailable: no session provider recorded for this batch", recovery: "retire the stale batch" };
-  const descriptor = registry.find((d) => d.name === input.provider);
-  if (!descriptor)
-    return { ok: false, reason: `lane_session_unavailable: recorded provider ${input.provider} is not registered`, recovery: "retire the stale batch" };
-  const check = descriptor.checkEnv(input.env);
-  if (!check.ok)
-    return { ok: false, reason: `lane_session_unavailable: ${check.reason}`, recovery: descriptor.recovery };
-  const raw = portFor(input.provider, input.env, registry, input.createPort);
-  if (!raw)
-    return { ok: false, reason: "lane_session_unavailable: provider factory failed", recovery: "retry inside Herdr" };
-  const target = executorSessionTarget({ root: input.root, executor: input.executor, host: input.host, pluginDir: input.claudePluginDir });
-  return { ok: true, port: new SessionPortAdapter(raw, target.host, input.hostArgs ?? target.hostArgs) };
-}
-function refusalFromReasons(reasons) {
-  const detail = reasons.map((r) => `${r.provider}: ${r.reason}`).join("; ");
-  return {
-    ok: false,
-    code: "lane_session_unavailable",
-    reason: `lane_session_unavailable: ${detail}`,
-    recovery: reasons[0]?.recovery ?? "run inside Herdr with HERDR_ENV=1 and HERDR_WORKSPACE_ID set",
-    reasons
-  };
-}
-function toBatchInput(agreement, deps, now, sessions) {
-  return {
-    root: deps.root,
-    batch_id: agreement.batch_id,
-    initiative_slug: agreement.initiative_slug,
-    ...deps.entry_kind ? { entry_kind: deps.entry_kind } : {},
-    registry: deps.registry,
-    capability: deps.capability,
-    children: agreement.children,
-    plan_digest: agreement.plan_digest,
-    base_head: agreement.base_head,
-    confirmation_time: deps.confirmation_time ?? now,
-    budget: agreement.budget,
-    now,
-    kernel: deps.kernel,
-    ...deps.git ? { git: deps.git } : {},
-    ...deps.tracker ? { tracker: deps.tracker } : {},
-    ...deps.max_parallel !== undefined ? { max_parallel: deps.max_parallel } : { max_parallel: agreement.children.length },
-    ...agreement.branch ? { branch: agreement.branch } : {},
-    confirmation: agreement.confirmation,
-    return_policy: agreement.return_policy,
-    interaction_mode: agreement.interaction_mode,
-    ...agreement.final_verification.commands.length > 0 ? { final_verification: [...agreement.final_verification.commands] } : {},
-    final_verification_required: agreement.final_verification.required,
-    executor_freeze: { ...deps.executor ? { request: deps.executor } : {}, parentHost: deps.host },
-    ...deps.executor_runtime ? { executor_runtime: deps.executor_runtime } : {},
-    ...deps.max_parallel !== undefined ? { max_parallel: deps.max_parallel } : {},
-    ...deps.lane_instruction !== undefined ? { lane_instruction: deps.lane_instruction } : {},
-    ...deps.lane_session_close !== undefined ? { lane_session_close: deps.lane_session_close } : {},
-    ...deps.lane_offers !== undefined ? { lane_offers: deps.lane_offers } : {},
-    ...deps.review_profile !== undefined ? { review_profile: deps.review_profile } : {},
-    ...deps.final_verification !== undefined ? { final_verification: deps.final_verification } : {},
-    ...deps.topology_digest !== undefined ? { topology_digest: deps.topology_digest } : {},
-    sessions
-  };
-}
-async function startLanes(agreement, deps) {
-  const registry = deps.providerRegistry ?? SESSION_PROVIDER_REGISTRY;
-  const target = executorSessionTarget({ root: deps.root, executor: deps.executor, host: deps.host, pluginDir: deps.claudePluginDir });
-  const resolved = resolveSessionProvider({ role: "executor", providers: deps.providers, host: target.host, env: deps.env, registry });
-  if (!resolved.ok)
-    return refusalFromReasons(resolved.reasons);
-  const raw = portFor(resolved.provider, deps.env, registry, deps.createPort);
-  if (!raw)
-    return refusalFromReasons([{ provider: resolved.provider, reason: "provider factory failed", recovery: "retry inside Herdr" }]);
-  const adapter = new SessionPortAdapter(raw, target.host, deps.hostArgs?.length ? hostArgsFor(deps, agreement.children[0]?.task_id ?? "lane") : target.hostArgs);
-  const now = deps.now ?? new Date().toISOString();
-  const input = toBatchInput(agreement, deps, now, adapter);
-  const rawReport = await runLaneBatch(input, null);
-  const report = rawReport;
-  if (Array.isArray(report.handoffs))
-    report.handoffs = report.handoffs.filter((h) => h.role !== "executor");
-  return report;
-}
-async function advanceLanes(root, batchId, deps) {
-  let persisted = null;
-  try {
-    persisted = readAnyBatchRunState(root, batchId);
-  } catch {
-    return { ok: false, code: "lane_session_unavailable", reason: `lane_session_unavailable: unreadable batch ${batchId}`, recovery: "inspect the batch record" };
-  }
-  if (!persisted || !isLaneBatchRecord(persisted)) {
-    return { ok: false, code: "lane_session_unavailable", reason: `lane_session_unavailable: no active v3 batch ${batchId}`, recovery: "start a fresh batch" };
-  }
-  if (persisted.batch_state === "discarding")
-    return { ok: false, code: "lane_session_unavailable", reason: `lane_session_unavailable: batch ${batchId} is being discarded`, recovery: "the loop daemon retries the discard on its next tick" };
-  const recordedProvider = persisted.session_provider ?? null;
-  const registry = deps.providerRegistry ?? SESSION_PROVIDER_REGISTRY;
-  if (recordedProvider) {
-    const descriptor = registry.find((d) => d.name === recordedProvider);
-    if (!descriptor) {
-      return refusalFromReasons([{ provider: recordedProvider, reason: "recorded provider is not registered", recovery: "retire the stale batch" }]);
-    }
-    const check = descriptor.checkEnv(deps.env);
-    if (!check.ok) {
-      return refusalFromReasons([{ provider: recordedProvider, reason: check.reason, recovery: descriptor.recovery }]);
-    }
-    const raw = portFor(recordedProvider, deps.env, registry, deps.createPort);
-    if (!raw)
-      return refusalFromReasons([{ provider: recordedProvider, reason: "provider factory failed", recovery: "retry inside Herdr" }]);
-    const resumeTarget = executorSessionTarget({
-      root: deps.root,
-      executor: persisted.executor_preferences ?? deps.executor,
-      host: deps.host,
-      pluginDir: deps.claudePluginDir
-    });
-    const adapter = new SessionPortAdapter(raw, resumeTarget.host, deps.hostArgs?.length ? hostArgsFor(deps, batchId) : resumeTarget.hostArgs);
-    const now = deps.now ?? new Date().toISOString();
-    const input = {
-      root: deps.root,
-      batch_id: batchId,
-      initiative_slug: persisted.initiative_slug,
-      ...deps.entry_kind ? { entry_kind: deps.entry_kind } : {},
-      registry: deps.registry,
-      capability: deps.capability,
-      children: resumeChildren(persisted),
-      plan_digest: persisted.plan_digest,
-      base_head: persisted.base_head,
-      confirmation_time: deps.confirmation_time ?? now,
-      budget: persisted.budget,
-      now,
-      kernel: deps.kernel,
-      ...deps.git ? { git: deps.git } : {},
-      ...deps.tracker ? { tracker: deps.tracker } : {},
-      max_parallel: deps.max_parallel ?? persisted.max_parallel,
-      ...deps.literal_user_confirmation ? { literal_user_confirmation: true } : {},
-      confirmation: persisted.confirmation,
-      return_policy: persisted.return_policy,
-      interaction_mode: persisted.interaction_mode,
-      ...Array.isArray(persisted.final_verification) ? { final_verification: persisted.final_verification } : {},
-      ...deps.lane_instruction !== undefined ? { lane_instruction: deps.lane_instruction } : {},
-      ...deps.lane_session_close !== undefined ? { lane_session_close: deps.lane_session_close } : {},
-      ...deps.lane_offers !== undefined ? { lane_offers: deps.lane_offers } : {},
-      ...deps.review_profile !== undefined ? { review_profile: deps.review_profile } : {},
-      ...deps.stall_exempt ? { stall_exempt: true } : {},
-      sessions: adapter
-    };
-    const rawAdv = await runLaneBatch(input, persisted);
-    const advReport = rawAdv;
-    if (Array.isArray(advReport.handoffs))
-      advReport.handoffs = advReport.handoffs.filter((h) => h.role !== "executor");
-    return advReport;
-  }
-  const target = executorSessionTarget({ root: deps.root, executor: deps.executor, host: deps.host, pluginDir: deps.claudePluginDir });
-  const resolved = resolveSessionProvider({ role: "executor", providers: deps.providers, host: target.host, env: deps.env, registry });
-  if (!resolved.ok)
-    return refusalFromReasons(resolved.reasons);
-  const raw = portFor(resolved.provider, deps.env, registry, deps.createPort);
-  if (!raw)
-    return refusalFromReasons([{ provider: resolved.provider, reason: "provider factory failed", recovery: "retry inside Herdr" }]);
-  const adapter = new SessionPortAdapter(raw, target.host, deps.hostArgs?.length ? hostArgsFor(deps, batchId) : target.hostArgs);
-  const now = deps.now ?? new Date().toISOString();
-  const input = {
-    root: deps.root,
-    batch_id: batchId,
-    initiative_slug: persisted.initiative_slug,
-    ...deps.entry_kind ? { entry_kind: deps.entry_kind } : {},
-    registry: deps.registry,
-    capability: deps.capability,
-    children: resumeChildren(persisted),
-    plan_digest: persisted.plan_digest,
-    base_head: persisted.base_head,
-    confirmation_time: deps.confirmation_time ?? now,
-    budget: persisted.budget,
-    now,
-    kernel: deps.kernel,
-    ...deps.git ? { git: deps.git } : {},
-    ...deps.tracker ? { tracker: deps.tracker } : {},
-    max_parallel: deps.max_parallel ?? persisted.max_parallel,
-    ...deps.literal_user_confirmation ? { literal_user_confirmation: true } : {},
-    ...deps.lane_instruction !== undefined ? { lane_instruction: deps.lane_instruction } : {},
-    ...deps.lane_session_close !== undefined ? { lane_session_close: deps.lane_session_close } : {},
-    ...deps.lane_offers !== undefined ? { lane_offers: deps.lane_offers } : {},
-    ...deps.review_profile !== undefined ? { review_profile: deps.review_profile } : {},
-    ...deps.stall_exempt ? { stall_exempt: true } : {},
-    sessions: adapter
-  };
-  const raw2 = await runLaneBatch(input, persisted);
-  const report2 = raw2;
-  if (Array.isArray(report2.handoffs))
-    report2.handoffs = report2.handoffs.filter((h) => h.role !== "executor");
-  return report2;
-}
-
-// plugins/immune-brain/runtime/loop_daemon/drive_dispatcher.ts
-init_assurance_projection();
-init_actor_identity();
-
-// plugins/immune-brain/runtime/loop_daemon/interaction/protocol.ts
-var INTERACTION_REQUEST_CONTRACT = "immune_brain/interaction_request/v1";
-var CONTEXT_MAX_BYTES = 8 * 1024;
-
-// plugins/immune-brain/runtime/loop_daemon/guards.ts
-init_no_touch();
-
-// plugins/immune-brain/runtime/loop_daemon/leases.ts
-var DEFAULT_LEASE_TTL_MS = 15 * 60 * 1000;
-var DEFAULT_GATE_TTL_MS = 30 * 1000;
-
-// plugins/immune-brain/runtime/loop_daemon/interaction/local_channel.ts
-init_actor_identity();
-init_storage();
-import { existsSync as existsSync19, mkdirSync as mkdirSync13, readFileSync as readFileSync21, readdirSync as readdirSync11, rmSync as rmSync12, writeFileSync as writeFileSync13 } from "node:fs";
-import { join as join29 } from "node:path";
-var LOCAL_ANSWER_CONTRACT = "immune_brain/interaction_answer/v1";
-var ANSWER_LOOP_INTERACTION_TOOL = "answer_loop_interaction";
-function loopInteractionStateDir(root) {
-  return join29(root, ".imm/state/loop");
-}
-function localInteractionsDir(stateDir) {
-  return join29(stateDir, "interactions");
-}
-function requestPath(stateDir, interactionId) {
-  return join29(localInteractionsDir(stateDir), `${fileName(interactionId)}.json`);
-}
-function answerPath(stateDir, interactionId) {
-  return join29(localInteractionsDir(stateDir), `${fileName(interactionId)}.answer.json`);
-}
-function fileName(interactionId) {
-  if (!interactionId || /[/\\]/.test(interactionId) || interactionId.startsWith("."))
-    throw new Error(`interaction_id_invalid: ${interactionId} is not a local request file name`);
-  return interactionId;
-}
-function readJson(path) {
-  if (!existsSync19(path))
-    return null;
-  try {
-    return JSON.parse(readFileSync21(path, "utf8"));
-  } catch {
-    return null;
-  }
-}
-function readLocalRequest(stateDir, interactionId) {
-  const record = readJson(requestPath(stateDir, interactionId));
-  if (!record || record.contract !== INTERACTION_REQUEST_CONTRACT || record.interaction_id !== interactionId)
-    return null;
-  return record;
-}
-function readLocalRequests(stateDir) {
-  const dir = localInteractionsDir(stateDir);
-  if (!existsSync19(dir))
-    return [];
-  const records = [];
-  for (const entry of readdirSync11(dir).sort()) {
-    if (!entry.endsWith(".json") || entry.endsWith(".answer.json"))
-      continue;
-    const id = entry.slice(0, -".json".length);
-    const record = readLocalRequest(stateDir, id);
-    if (record)
-      records.push(record);
-  }
-  return records;
-}
-function readLocalAnswer(stateDir, interactionId) {
-  const answer = readJson(answerPath(stateDir, interactionId));
-  if (!answer || answer.contract !== LOCAL_ANSWER_CONTRACT || answer.interaction_id !== interactionId)
-    return null;
-  if (answer.confirmation?.tool !== ANSWER_LOOP_INTERACTION_TOOL || typeof answer.confirmation.confirmed_at !== "string")
-    return null;
-  if (answer.actor !== LITERAL_USER_ACTOR_ID || typeof answer.value !== "string")
-    return null;
-  return answer;
-}
-function writeLocalAnswer(stateDir, answer, now = new Date().toISOString()) {
-  const value = { contract: LOCAL_ANSWER_CONTRACT, actor: LITERAL_USER_ACTOR_ID, answered_at: now, ...answer };
-  mkdirSync13(localInteractionsDir(stateDir), { recursive: true, mode: 448 });
-  writeFileSync13(answerPath(stateDir, value.interaction_id), `${JSON.stringify(value, null, 2)}
-`, {
-    mode: 384
-  });
-  return value;
-}
-function localDecisionAuthorityRoot(root, taskId) {
-  return findLaneRelayTarget(root, taskId)?.lane_path ?? root;
-}
-function localDecisionRecordRevision(root, taskId) {
-  const revision = readTaskRecordRaw(localDecisionAuthorityRoot(root, taskId), taskId).revision;
-  return revision && revision !== "missing" ? revision : null;
-}
-
-// plugins/immune-brain/runtime/loop_daemon/jobs.ts
-var LOOP_JOB_MAX_RUNTIME_MS = 12 * 60 * 60 * 1000;
-// plugins/immune-brain/runtime/loop_daemon/repair_agent.ts
-init_no_touch();
-init_workspace_scope();
-var LOG_EXCERPT_BYTE_LIMIT = 16 * 1024;
-
-// plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts
-var LANE_DIALOG_HOLD_MAX_MS = 60 * 60000;
-var LANE_DRIVE_MAX_MS = 6 * 60 * 60000;
-
-// plugins/immune-brain/runtime/loop_daemon/work_items.ts
-init_batch_plan();
-var LEVEL_EVENT_KINDS = new Set([
-  "E5_READY_TASK",
-  "E6_LANE_DECISION_NEEDED",
-  "E8_PR_CHECK_FAILED",
-  "E9_PR_CONFLICT",
-  "E11_PR_READY_OR_MERGED"
-]);
-
-// plugins/immune-brain/runtime/loop_daemon/steering.ts
-var STEER_LOOP_WORK_ITEM_TOOL = "steer_loop_work_item";
-var LOOP_STEERING_REQUEST_CONTRACT = "assurance_kernel/loop_steering_request/v1";
-var LOOP_STEERING_ACTIONS = ["pause", "resume", "abandon"];
-function isLoopSteeringAction(value) {
-  return typeof value === "string" && LOOP_STEERING_ACTIONS.includes(value);
-}
-function steeringDir(stateDir) {
-  return join30(stateDir, "steering");
-}
-function steeringBindingDigest(target, action, reason) {
-  return `sha256:${createHash27("sha256").update(`${target}\x00${action}\x00${reason ?? ""}`).digest("hex")}`;
-}
-function writeSteeringRequest(stateDir, request) {
-  const dir = steeringDir(stateDir);
-  mkdirSync14(dir, { recursive: true, mode: 448 });
-  try {
-    chmodSync4(dir, 448);
-  } catch {}
-  const path = join30(dir, `${randomUUID11()}.json`);
-  writeFileSync14(path, `${JSON.stringify(request, null, 2)}
-`, { mode: 384 });
-  try {
-    chmodSync4(path, 384);
-  } catch {}
-  return path;
-}
-
-// plugins/immune-brain/runtime/host-core/mcp_runtime.ts
 var MCP_PROTOCOL_VERSION = "2025-06-18";
 var TOOLS = [
   { name: "status", description: "Read the Kernel Assurance Projection for an exact task.", privileged: false },
@@ -22664,10 +19723,7 @@ var TOOLS = [
   { name: "repair_authority_state", description: "Repair a proven recoverable stale backend claim.", privileged: false },
   { name: "resolve_finding", description: "Resolve one open blocking or advisory finding whose cause is fixed and verified.", privileged: false },
   { name: "refute_finding", description: "Refute one open finding by binding the fresh passing QA attestation that contradicts it.", privileged: false },
-  { name: "loop_interactions", description: "List the local Loop Interaction requests this checkout's daemon is waiting on.", privileged: false, optionalTaskId: true },
-  { name: "answer_loop_interaction", description: "Answer one pending local Loop Interaction request under the native confirmation.", privileged: true, optionalTaskId: true },
-  { name: "submit_session_result", description: "Write one supervised session's JSON result into its allocated result slot.", privileged: false },
-  { name: "steer_loop_work_item", description: "Pause, resume or abandon one Loop work item under the native confirmation; the daemon applies it on its next tick.", privileged: true, optionalTaskId: true }
+  { name: "submit_session_result", description: "Write one supervised session's JSON result into its allocated result slot.", privileged: false }
 ];
 function listMcpTools() {
   return TOOLS.map((tool) => ({
@@ -22719,12 +19775,6 @@ function listMcpTools() {
         } : {
           ...tool.name === "submit_session_result" ? {} : { task_id: { type: "string" } },
           ...tool.name === "submit_session_result" ? { slot_id: { type: "string" }, result: { type: "string" } } : {},
-          ...tool.name === "answer_loop_interaction" ? { interaction_id: { type: "string" }, answer: { type: "string" } } : {},
-          ...tool.name === "steer_loop_work_item" ? {
-            target: { type: "string", description: "One WorkItem target, e.g. issue-42 or pr-17." },
-            action: { type: "string", enum: ["pause", "resume", "abandon"] },
-            reason: { type: "string" }
-          } : {},
           ...tool.name === "approve_breaking_intent_revision" || tool.name === "revise_intent" ? { next_intent: { type: "object" } } : {},
           ...tool.name === "stop" || tool.name === "request_authorization" ? { reason: { type: "string" } } : {},
           ...tool.name === "request_authorization" ? {
@@ -22739,9 +19789,9 @@ function listMcpTools() {
           ...tool.name === "refute_finding" ? { finding_id: { type: "string" }, attestation_id: { type: "string" } } : {}
         }
       },
-      required: tool.name === "start_unattended_batch" ? [] : tool.name === "retire_stale_batch" ? ["initiative_slug"] : tool.name === "submit_session_result" ? ["slot_id", "result"] : tool.name === "loop_interactions" ? [] : tool.name === "answer_loop_interaction" ? ["interaction_id", "answer"] : tool.name === "steer_loop_work_item" ? ["target", "action"] : tool.name === "resolve_finding" ? ["task_id", "finding_id"] : tool.name === "refute_finding" ? ["task_id", "finding_id", "attestation_id"] : tool.name === "revise_intent" ? ["task_id", "next_intent"] : ["task_id"]
+      required: tool.name === "start_unattended_batch" ? [] : tool.name === "retire_stale_batch" ? ["initiative_slug"] : tool.name === "submit_session_result" ? ["slot_id", "result"] : tool.name === "resolve_finding" ? ["task_id", "finding_id"] : tool.name === "refute_finding" ? ["task_id", "finding_id", "attestation_id"] : tool.name === "revise_intent" ? ["task_id", "next_intent"] : ["task_id"]
     },
-    annotations: tool.privileged ? privilegedAnnotations() : { readOnlyHint: tool.name === "status" || tool.name === "loop_interactions" }
+    annotations: tool.privileged ? privilegedAnnotations() : { readOnlyHint: tool.name === "status" }
   }));
 }
 function supportsElicitationProtocol(value) {
@@ -22785,9 +19835,9 @@ function createMcpRuntime(profile, options = {}) {
   let negotiatedRoots = false;
   let rootsWorkspace;
   let rootsProvider = options.rootsProvider;
-  const connectionId = randomUUID12();
+  const connectionId = randomUUID11();
   const resolveWorkspace = async (meta, signal) => {
-    let workspace = typeof meta.workspace === "string" && isAbsolute13(meta.workspace) ? meta.workspace : undefined;
+    let workspace = typeof meta.workspace === "string" && isAbsolute12(meta.workspace) ? meta.workspace : undefined;
     if (!workspace && rootsProvider && (negotiatedRoots || options.rootsProvider)) {
       if (rootsWorkspace === undefined) {
         let roots;
@@ -22928,26 +19978,6 @@ function createMcpRuntime(profile, options = {}) {
         refuseSuppliedAuthority(args);
         return runtime.retireStaleBatch(initiativeSlug, gatedToolMeta(name, initiativeSlug, workspace, meta));
       }
-      if (name === "loop_interactions") {
-        refuseSuppliedAuthority(args);
-        return runtime.listLoopInteractions(typeof args.task_id === "string" && args.task_id ? args.task_id : undefined);
-      }
-      if (name === "answer_loop_interaction") {
-        refuseSuppliedAuthority(args);
-        if (typeof args.interaction_id !== "string" || !args.interaction_id)
-          throw new Error("interaction_id is required");
-        if (typeof args.answer !== "string" || !args.answer)
-          throw new Error("answer is required");
-        requireTrustedHost(true);
-        return runtime.answerLoopInteraction(args.interaction_id, args.answer, {
-          sessionId: hookSessionId ?? meta.sessionId ?? connectionId,
-          toolCallId: meta.toolCallId ?? `call-${name}`,
-          taskId: typeof args.task_id === "string" ? args.task_id : "",
-          ...meta.workspace ? { workspace: meta.workspace } : {},
-          interactive: meta.interactive ?? options.interactive ?? negotiatedInteractive,
-          signal: meta.signal
-        });
-      }
       if (name === "submit_session_result") {
         refuseSuppliedAuthority(args);
         if (typeof args.slot_id !== "string")
@@ -22955,24 +19985,6 @@ function createMcpRuntime(profile, options = {}) {
         if (typeof args.result !== "string")
           throw new Error("result is required");
         return { contract: "immune_brain/session_result/v1", slot_id: args.slot_id, sha256: writeSlotResult(workspace, args.slot_id, args.result) };
-      }
-      if (name === "steer_loop_work_item") {
-        refuseSuppliedAuthority(args);
-        if (typeof args.target !== "string" || !args.target)
-          throw new Error("target is required");
-        if (!isLoopSteeringAction(args.action))
-          throw new Error("action must be one of pause, resume, abandon");
-        if (args.reason !== undefined && typeof args.reason !== "string")
-          throw new Error("reason must be a string");
-        requireTrustedHost(true);
-        return runtime.steerLoopWorkItem(args.target, args.action, args.reason ?? null, {
-          sessionId: hookSessionId ?? meta.sessionId ?? connectionId,
-          toolCallId: meta.toolCallId ?? `call-${name}`,
-          taskId: typeof args.task_id === "string" ? args.task_id : "",
-          ...meta.workspace ? { workspace: meta.workspace } : {},
-          interactive: meta.interactive ?? options.interactive ?? negotiatedInteractive,
-          signal: meta.signal
-        });
       }
       const taskId = String(args.task_id ?? "");
       if (!taskId)
@@ -23043,7 +20055,7 @@ function metaWorkspacePath(meta) {
   if (!Array.isArray(paths) || typeof paths[0] !== "string")
     return;
   const first = paths[0].trim();
-  return first && isAbsolute13(first) ? first : undefined;
+  return first && isAbsolute12(first) ? first : undefined;
 }
 function firstFileRootPath(roots) {
   for (const root of roots ?? []) {
@@ -23052,7 +20064,7 @@ function firstFileRootPath(roots) {
       continue;
     try {
       const path = fileURLToPath3(uri);
-      if (isAbsolute13(path))
+      if (isAbsolute12(path))
         return path;
     } catch {}
   }
@@ -23214,44 +20226,6 @@ async function writeReply(output, reply) {
   });
 }
 function elicitationParams(input) {
-  if (input.steering) {
-    const s = input.steering;
-    return {
-      mode: "form",
-      message: `Apply this local Loop steering action?
-
-${[
-        `Operation: ${input.operation}`,
-        `Target: ${s.target}`,
-        `Action: ${s.action}`,
-        s.reason ? `Reason: ${s.reason}` : null,
-        "Confirming writes one request under .imm/state/loop/steering/ and the daemon applies it on its next tick. Declining or cancelling writes nothing."
-      ].filter(Boolean).join(`
-`)}`,
-      requestedSchema: { type: "object", properties: {} }
-    };
-  }
-  if (input.interaction) {
-    const i = input.interaction;
-    return {
-      mode: "form",
-      message: `Answer this local Loop Interaction request?
-
-${[
-        `Operation: ${input.operation}`,
-        `Request: ${i.interaction_id}`,
-        `Kind: ${i.kind}`,
-        i.subject ? `Subject: ${i.subject}` : null,
-        i.binding ? `Binding: ${i.binding}` : null,
-        `Question: ${i.prompt}`,
-        `Answer: ${i.answer}`
-      ].filter(Boolean).join(`
-`)}
-
-Accepting records this answer; the daemon applies it on its next tick. Declining or cancelling writes nothing.`,
-      requestedSchema: { type: "object", properties: {} }
-    };
-  }
   if (input.operation === "retire_stale_batch") {
     const d = input.batchDisposition;
     const details = [
@@ -23836,19 +20810,19 @@ var CLAUDE_CAPABILITY = validateHostCapabilityDeclaration({
 });
 
 // plugins/immune-brain/runtime/host-core/hook_event_log.ts
-import { lstatSync as lstatSync18, readdirSync as readdirSync13, rmSync as rmSync15 } from "node:fs";
-import { dirname as dirname17, join as join32 } from "node:path";
+import { lstatSync as lstatSync18, readdirSync as readdirSync11, rmSync as rmSync13 } from "node:fs";
+import { dirname as dirname17, join as join30 } from "node:path";
 import { tmpdir as tmpdir6 } from "node:os";
 
 // plugins/immune-brain/runtime/host-core/private_file.ts
-import { createHash as createHash28 } from "node:crypto";
-import { constants as constants7, closeSync as closeSync7, fstatSync as fstatSync4, ftruncateSync, lstatSync as lstatSync17, mkdirSync as mkdirSync15, openSync as openSync7, readSync, rmSync as rmSync14, writeSync } from "node:fs";
-import { join as join31 } from "node:path";
+import { createHash as createHash27 } from "node:crypto";
+import { constants as constants7, closeSync as closeSync7, fstatSync as fstatSync4, ftruncateSync, lstatSync as lstatSync17, mkdirSync as mkdirSync13, openSync as openSync7, readSync, rmSync as rmSync12, writeSync } from "node:fs";
+import { join as join29 } from "node:path";
 function sessionHash(sessionId) {
-  return createHash28("sha256").update(sessionId).digest("hex");
+  return createHash27("sha256").update(sessionId).digest("hex");
 }
 function cacheDir(root, cacheName) {
-  return join31(root, cacheName);
+  return join29(root, cacheName);
 }
 function ownedByUs(stat) {
   if (stat.isSymbolicLink())
@@ -23865,7 +20839,7 @@ function ensurePrivateDir(dir) {
       return false;
   }
   try {
-    mkdirSync15(dir, { mode: 448 });
+    mkdirSync13(dir, { mode: 448 });
   } catch {
     return false;
   }
@@ -23901,7 +20875,7 @@ function dropPrivate(path) {
   try {
     const stat = lstatSync17(path);
     if (ownedByUs(stat) && stat.isFile())
-      rmSync14(path, { force: true });
+      rmSync12(path, { force: true });
   } catch {}
 }
 function readPrivate(path, maxBytes = Number.POSITIVE_INFINITY) {
@@ -23950,7 +20924,7 @@ class MemoryHookEventLog {
   }
 }
 function hookEventPath(cacheName, sessionId, root = tmpdir6()) {
-  return join32(cacheDir(root, cacheName), `${sessionHash(sessionId)}.jsonl`);
+  return join30(cacheDir(root, cacheName), `${sessionHash(sessionId)}.jsonl`);
 }
 
 class FileHookEventLog {
@@ -23972,7 +20946,7 @@ class FileHookEventLog {
     if (!ensurePrivateDir(dir))
       return [];
     try {
-      return readdirSync13(dir).filter((name) => name.endsWith(".jsonl") && !name.endsWith(".events.jsonl")).flatMap((name) => this.readFile(join32(dir, name)));
+      return readdirSync11(dir).filter((name) => name.endsWith(".jsonl") && !name.endsWith(".events.jsonl")).flatMap((name) => this.readFile(join30(dir, name)));
     } catch {
       return [];
     }
@@ -24008,7 +20982,7 @@ class FileHookEventLog {
       const stat = lstatSync18(path);
       if (!ownedByUs(stat) || stat.isSymbolicLink() || !stat.isFile() || (stat.mode & 511) !== 384)
         return;
-      rmSync15(path, { force: true });
+      rmSync13(path, { force: true });
     } catch {}
   }
 }
@@ -24216,7 +21190,7 @@ class VerifierObservation {
 
 // plugins/immune-brain/runtime/claude/review_host.ts
 import { realpathSync as realpathSync18 } from "node:fs";
-import { basename as basename5, dirname as dirname18, isAbsolute as isAbsolute14, join as join33 } from "node:path";
+import { basename as basename5, dirname as dirname18, isAbsolute as isAbsolute13, join as join31 } from "node:path";
 import { tmpdir as tmpdir7 } from "node:os";
 var AGENT_TOOL = "Agent";
 var VERIFIER_AGENTS = ["immune-brain-review-verifier", "immune-brain:immune-brain-review-verifier"];
@@ -24299,9 +21273,9 @@ function readSyncAgentTranscript(post, stop) {
   if (stop.agentTranscriptPath)
     return readAgentTranscript(stop.agentTranscriptPath);
   const session = post.transcriptPath;
-  if (!session || !isAbsolute14(session) || !AGENT_ID_PATTERN.test(post.agentId))
+  if (!session || !isAbsolute13(session) || !AGENT_ID_PATTERN.test(post.agentId))
     return;
-  const derived = join33(dirname18(session), basename5(session, ".jsonl"), "subagents", `agent-${post.agentId}.jsonl`);
+  const derived = join31(dirname18(session), basename5(session, ".jsonl"), "subagents", `agent-${post.agentId}.jsonl`);
   return readAgentTranscript(derived);
 }
 function parseReviewMarker(prompt) {
@@ -24403,7 +21377,7 @@ class ClaudeReviewHost {
   }
 }
 function hookPath(value) {
-  return typeof value === "string" && value.trim() && isAbsolute14(value) ? value : undefined;
+  return typeof value === "string" && value.trim() && isAbsolute13(value) ? value : undefined;
 }
 function parseHookStdin(raw) {
   let payload;
@@ -24523,9 +21497,9 @@ function parseHookStdin(raw) {
 // plugins/immune-brain/runtime/claude/lane_guard.ts
 init_lane_workspace();
 import { lstatSync as lstatSync19, realpathSync as realpathSync19 } from "node:fs";
-import { randomUUID as randomUUID13 } from "node:crypto";
+import { randomUUID as randomUUID12 } from "node:crypto";
 import { homedir as homedir2, tmpdir as tmpdir8 } from "node:os";
-import { join as join35 } from "node:path";
+import { join as join33 } from "node:path";
 
 // plugins/immune-brain/runtime/assurance/active_task_notice.ts
 init_storage();
@@ -24572,7 +21546,7 @@ init_coordinator();
 init_batch_preflight();
 init_intent();
 init_storage();
-import { createHash as createHash29 } from "node:crypto";
+import { createHash as createHash28 } from "node:crypto";
 var UNCHANGED_CONTINUATION_LIMIT = 1;
 var USER_WAIT_GUIDANCE = "If the remaining step is an action only the user can perform, waiting for it is a valid stop: stop without repeating the request you already made.";
 function bindRun(binding) {
@@ -24586,7 +21560,7 @@ function releasesRunBinding(prompt, phase) {
   return phase === "planner" || phase === "brainstorm" || /^(?:stop|cancel|pause)(?:\s+(?:execution|the task|this run))?[.!\s]*$/i.test(prompt.trim()) || /^(?:请)?(?:停止|取消|暂停)(?:执行|任务|本次运行|这个任务)?[。！!\s]*$/.test(prompt.trim());
 }
 function digest(value) {
-  return createHash29("sha256").update(JSON.stringify(value)).digest("hex");
+  return createHash28("sha256").update(JSON.stringify(value)).digest("hex");
 }
 function hasContiguousLaneRebind(record, fromDigest) {
   if (!isLaneBatchRecord(record))
@@ -24895,8 +21869,8 @@ function decideRunContinuation(previous, observation) {
 }
 
 // plugins/immune-brain/runtime/assurance/alias_file.ts
-import { closeSync as closeSync8, constants as constants8, fstatSync as fstatSync5, openSync as openSync8, readSync as readSync2, statSync as statSync6 } from "node:fs";
-import { join as join34 } from "node:path";
+import { closeSync as closeSync8, constants as constants8, fstatSync as fstatSync5, openSync as openSync8, readSync as readSync2, statSync as statSync5 } from "node:fs";
+import { join as join32 } from "node:path";
 var MAX_ALIAS_BYTES = 64 * 1024;
 function readAliasFile(path, maxBytes = MAX_ALIAS_BYTES) {
   let fd;
@@ -24924,7 +21898,7 @@ function readAliasFile(path, maxBytes = MAX_ALIAS_BYTES) {
 }
 function localSkillExists(dir, name) {
   try {
-    statSync6(join34(dir, name, "SKILL.md"));
+    statSync5(join32(dir, name, "SKILL.md"));
     return true;
   } catch (error) {
     return !isAbsent(error);
@@ -24963,10 +21937,10 @@ async function activeTaskHookOutput(payload) {
   return JSON.stringify({ hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: notice } });
 }
 function entryLogPath(sessionId, root) {
-  return join35(cacheDir(root, CLAUDE_CACHE_DIR), `${sessionHash(sessionId)}.entry`);
+  return join33(cacheDir(root, CLAUDE_CACHE_DIR), `${sessionHash(sessionId)}.entry`);
 }
 function admissionPath(toolUseId, root) {
-  return join35(cacheDir(root, CLAUDE_CACHE_DIR), `${sessionHash(toolUseId)}.admit`);
+  return join33(cacheDir(root, CLAUDE_CACHE_DIR), `${sessionHash(toolUseId)}.admit`);
 }
 function sessionIdOf(payload) {
   return typeof payload.session_id === "string" ? payload.session_id : "";
@@ -24975,17 +21949,17 @@ function cwdOf(payload) {
   return typeof payload.cwd === "string" && payload.cwd ? payload.cwd : process.cwd();
 }
 function claudeLocalNames(cwd, home) {
-  const roots = [join35(cwd, ".claude"), join35(home, ".claude")];
+  const roots = [join33(cwd, ".claude"), join33(home, ".claude")];
   return {
     alias: (name) => {
       for (const root of roots) {
-        const body = readAliasFile(join35(root, "commands", `${name}.md`));
+        const body = readAliasFile(join33(root, "commands", `${name}.md`));
         if (body !== null)
           return body;
       }
       return null;
     },
-    skill: (name) => roots.some((root) => localSkillExists(join35(root, "skills"), name))
+    skill: (name) => roots.some((root) => localSkillExists(join33(root, "skills"), name))
   };
 }
 function readPhaseEntryState(sessionId, root = tmpdir8(), read = readPrivate) {
@@ -25040,7 +22014,7 @@ function recordPhaseEntryPrompt(payload, locations = {}) {
       workspace = realpathSync19(cwdOf(payload));
     } catch {}
   }
-  const line = phaseEntryLogLine(entry, workspace ? { token: randomUUID13(), workspace } : undefined);
+  const line = phaseEntryLogLine(entry, workspace ? { token: randomUUID12(), workspace } : undefined);
   return appendPhaseEntry(sessionId, line, locations.root ?? tmpdir8(), locations);
 }
 function gatedOperation(payload) {
@@ -25136,7 +22110,7 @@ import { realpathSync as realpathSync21, openSync as openSync9, fstatSync as fst
 import { tmpdir as tmpdir9, homedir as homedir3 } from "node:os";
 
 // plugins/immune-brain/runtime/assurance/review_mediation.ts
-import { createHash as createHash30 } from "node:crypto";
+import { createHash as createHash29 } from "node:crypto";
 function extractVerdictJson(input) {
   if (typeof input === "string") {
     const first = input.indexOf("{");
@@ -25168,7 +22142,7 @@ function verdictFingerprint(raw) {
   });
 }
 function digestOfReviewerBytes(bytes) {
-  return `sha256:${createHash30("sha256").update(bytes).digest("hex")}`;
+  return `sha256:${createHash29("sha256").update(bytes).digest("hex")}`;
 }
 var RELEASED_REVIEW_RECOVERY = "Call advance_assurance to obtain a new Review reservation, then dispatch one fresh reviewer with the returned envelope unchanged";
 var RETAINED_REVIEW_RECOVERY = "Await the dispatched reviewer once (a Port session's await_command when the reservation carries one), then call submit_review once; do not poll submit_review and do not dispatch another reviewer";
@@ -25228,9 +22202,9 @@ async function submitMediatedReview(coordinator, ctx, taskId, verdictInput, insp
 init_coordinator();
 init_storage();
 init_batch_state();
-import { existsSync as existsSync21, lstatSync as lstatSync20, realpathSync as realpathSync20, renameSync as renameSync6, rmSync as rmSync16 } from "node:fs";
-import { randomUUID as randomUUID14 } from "node:crypto";
-import { join as join36 } from "node:path";
+import { existsSync as existsSync18, lstatSync as lstatSync20, realpathSync as realpathSync20, renameSync as renameSync6, rmSync as rmSync14 } from "node:fs";
+import { randomUUID as randomUUID13 } from "node:crypto";
+import { join as join34 } from "node:path";
 var NATIVE_OPERATIONS = new Set(["start_unattended_batch", "retire_stale_batch", "request_authorization", "approve_breaking_intent_revision", "request_stop", "stop"]);
 var PARENT_IDENTITY_LOST = "no matching persisted batch identity";
 var SUSPENDED_REVIEW_OPERATIONS = new Set(["advance_assurance", "submit_review"]);
@@ -25249,21 +22223,21 @@ var blank = () => ({
   stop_blocks: 0,
   native_failures: 0
 });
-var statePath2 = (host, sessionId, root) => join36(cacheDir(root, host.cache_name), `${sessionHash(sessionId)}.continuation`);
-var callPath = (host, toolId, root) => join36(cacheDir(root, host.cache_name), `${sessionHash(toolId)}.continuation-call`);
+var statePath2 = (host, sessionId, root) => join34(cacheDir(root, host.cache_name), `${sessionHash(sessionId)}.continuation`);
+var callPath = (host, toolId, root) => join34(cacheDir(root, host.cache_name), `${sessionHash(toolId)}.continuation-call`);
 function drop(host, path, root) {
-  if (!existsSync21(path))
+  if (!existsSync18(path))
     return;
   if (!ensurePrivateDir(cacheDir(root, host.cache_name)))
     return;
   try {
     const stat = lstatSync20(path);
     if (stat.isFile() && ownedByUs(stat))
-      rmSync16(path);
+      rmSync14(path);
   } catch {}
 }
 function readLast(path, dir) {
-  if (dir && existsSync21(dir) && !ensurePrivateDir(dir))
+  if (dir && existsSync18(dir) && !ensurePrivateDir(dir))
     throw new Error("continuation directory could not be verified");
   let stat;
   try {
@@ -25301,7 +22275,7 @@ function readMetadata(host, sessionId, root) {
 }
 function save(host, sessionId, root, value) {
   const path = statePath2(host, sessionId, root);
-  const temporary = `${path}.${randomUUID14()}`;
+  const temporary = `${path}.${randomUUID13()}`;
   if (!appendPrivate(temporary, cacheDir(root, host.cache_name), JSON.stringify(value) + `
 `))
     throw new Error("continuation metadata could not be written");
@@ -25358,7 +22332,7 @@ async function applyRunContinuationEvent(host, root, session, event) {
   if (event.kind === "prompt") {
     if (event.releases)
       drop(host, statePath2(host, sessionId, root), root);
-    else if (existsSync21(statePath2(host, sessionId, root)))
+    else if (existsSync18(statePath2(host, sessionId, root)))
       resumeSuspendedRun(host, root, sessionId);
     return { kind: "none" };
   }
@@ -25732,9 +22706,50 @@ init_storage();
 init_intent();
 init_canary_application();
 init_authority_port();
-import { existsSync as existsSync24, readFileSync as readFileSync25, writeFileSync as writeFileSync16 } from "node:fs";
+import { existsSync as existsSync21, readFileSync as readFileSync23, writeFileSync as writeFileSync14 } from "node:fs";
 import { execFileSync as execFileSync15 } from "node:child_process";
-import { join as join40 } from "node:path";
+import { join as join38 } from "node:path";
+// plugins/immune-brain/runtime/kernel/enrollment_confirmation.ts
+function verifyEnrollmentConfirmation(_root, input, _intent) {
+  if (input.source === "user_session")
+    return { ok: true };
+  return { ok: false, reason: `unknown_confirmation_source: ${String(input.source)}` };
+}
+
+// plugins/immune-brain/runtime/kernel/enrollment_authority.ts
+var ENROLLMENT_CAPABILITY_BRAND = Symbol.for("assurance-kernel.enrollment-capability-brand");
+function createEnrollmentAuthorityRegistry() {
+  return createCapabilityRegistry(ENROLLMENT_CAPABILITY_BRAND, {
+    validateBinding(binding) {
+      const missing = [];
+      for (const [key, value] of Object.entries(binding)) {
+        if (value === undefined || value === null || value === "")
+          missing.push(key);
+      }
+      if (missing.length > 0)
+        throw new Error(`enrollment capability binding is incomplete: ${missing.join(", ")}`);
+    },
+    validateAndProject(state, expected) {
+      for (const key of Object.keys(expected)) {
+        if (state[key] !== expected[key])
+          throw new Error(`enrollment capability ${key} mismatch`);
+      }
+      return {
+        task_id: state.task_id,
+        intent_path: state.intent_path,
+        intent_revision: state.intent_revision,
+        intent_content_hash: state.intent_content_hash,
+        preparation_digest: state.preparation_digest,
+        actor_id: state.actor_id,
+        confirmation_ref: state.confirmation_ref,
+        issued_at: state.issued_at,
+        nonce: state.nonce
+      };
+    }
+  }, "enrollment");
+}
+
+// plugins/immune-brain/runtime/host-core/runtime.ts
 init_storage();
 init_workflow_autocommit();
 init_qa();
@@ -25763,12 +22778,12 @@ init_actor_identity();
 
 // plugins/immune-brain/runtime/staged_intent.ts
 import { execFileSync as execFileSync13 } from "node:child_process";
-import { readFileSync as readFileSync23, writeFileSync as writeFileSync15 } from "node:fs";
-import { join as join37 } from "node:path";
+import { readFileSync as readFileSync21, writeFileSync as writeFileSync13 } from "node:fs";
+import { join as join35 } from "node:path";
 function captureStagedIntent(root, relativePath) {
   return {
     path: relativePath,
-    bytes: readFileSync23(join37(root, relativePath)),
+    bytes: readFileSync21(join35(root, relativePath)),
     index_state: execFileSync13("git", ["ls-files", "--stage", "-z", "--", relativePath], {
       cwd: root,
       stdio: ["ignore", "pipe", "pipe"]
@@ -25776,7 +22791,7 @@ function captureStagedIntent(root, relativePath) {
   };
 }
 function restoreStagedIntent(root, snapshot) {
-  writeFileSync15(join37(root, snapshot.path), snapshot.bytes);
+  writeFileSync13(join35(root, snapshot.path), snapshot.bytes);
   execFileSync13("git", ["update-index", "--force-remove", "--", snapshot.path], {
     cwd: root,
     stdio: ["ignore", "pipe", "pipe"]
@@ -25788,7 +22803,7 @@ function restoreStagedIntent(root, snapshot) {
       stdio: ["pipe", "ignore", "pipe"]
     });
   }
-  const restoredBytes = readFileSync23(join37(root, snapshot.path));
+  const restoredBytes = readFileSync21(join35(root, snapshot.path));
   if (!restoredBytes.equals(snapshot.bytes)) {
     throw new Error("failed to restore prior intent bytes");
   }
@@ -25811,36 +22826,2029 @@ init_github_issue_tracker();
 init_backend_claim();
 init_batch_preflight();
 
-// plugins/immune-brain/runtime/host-core/loop_interactions.ts
-var LOOP_INTERACTIONS_CONTRACT = "immune_brain/loop_interactions/v1";
-function answerableLoopInteraction(request) {
-  return request.kind !== "plan_approval" && request.kind !== "notice";
+// plugins/immune-brain/runtime/unattended/batch_agreement.ts
+init_batch_authority();
+var CONFIRMATION_SOURCES = new Set(["native_gate"]);
+var RETURN_POLICIES = new Set(["checkout_delivery", "retain_branch"]);
+var INTERACTION_MODES = new Set(["interactive_host", "parent_relayed"]);
+function invalid(reason) {
+  return { ok: false, code: "batch_agreement_invalid", reason: `batch_agreement_invalid: ${reason}` };
 }
-var LOCAL_ACTION = {
-  plan_approval: "answer it by running `drive` on the published TaskIntent in your own Host session",
-  notice: "act on the notice in your own Host session"
+function authorizeBatch2(input) {
+  if (!input || typeof input !== "object")
+    return invalid("agreement must be an object");
+  if (typeof input.batch_id !== "string" || !input.batch_id)
+    return invalid("batch_id must be a non-empty string");
+  if (typeof input.initiative_slug !== "string" || !input.initiative_slug)
+    return invalid("initiative_slug must be a non-empty string");
+  if (!Array.isArray(input.children) || input.children.length === 0)
+    return invalid("children must be a non-empty array");
+  if (typeof input.base_head !== "string" || !input.base_head)
+    return invalid("base_head must be a non-empty string");
+  if (!input.budget || typeof input.budget !== "object" || !Number.isInteger(input.budget.max_children) || input.budget.max_children <= 0 || !Number.isInteger(input.budget.qa_failure_limit) || input.budget.qa_failure_limit <= 0)
+    return invalid("budget must carry positive max_children and qa_failure_limit");
+  const confirmation = input.confirmation;
+  if (!confirmation || typeof confirmation !== "object")
+    return invalid("confirmation must be an object");
+  if (typeof confirmation.source !== "string" || !CONFIRMATION_SOURCES.has(confirmation.source))
+    return invalid(`unknown confirmation.source ${String(confirmation.source)}`);
+  if (typeof confirmation.ref !== "string" || !confirmation.ref)
+    return invalid("confirmation.ref must be a non-empty string");
+  const fv = input.final_verification;
+  if (!fv || typeof fv !== "object")
+    return invalid("final_verification must be an object");
+  if (typeof fv.required !== "boolean")
+    return invalid("final_verification.required must be a boolean");
+  if (!Array.isArray(fv.commands))
+    return invalid("final_verification.commands must be an array");
+  for (const command of fv.commands) {
+    if (typeof command !== "string" || !command.trim())
+      return invalid("final_verification.commands must be non-empty strings");
+  }
+  if (typeof input.return_policy !== "string" || !RETURN_POLICIES.has(input.return_policy))
+    return invalid(`unknown return_policy ${String(input.return_policy)}`);
+  if (typeof input.interaction_mode !== "string" || !INTERACTION_MODES.has(input.interaction_mode))
+    return invalid(`unknown interaction_mode ${String(input.interaction_mode)}`);
+  let planDigest;
+  try {
+    planDigest = computeBatchPlanDigest(input.children);
+  } catch (error) {
+    return invalid(error instanceof Error ? error.message : "invalid child plan");
+  }
+  if (input.plan_digest !== undefined && input.plan_digest !== planDigest)
+    return invalid("plan_digest does not match the confirmed child plan");
+  if (input.plan_source !== undefined && input.plan_source !== "single_task")
+    return invalid(`unknown plan_source ${String(input.plan_source)}`);
+  const agreement = {
+    batch_id: input.batch_id,
+    initiative_slug: input.initiative_slug,
+    children: input.children.map((child) => ({ ...child, blocked_by: [...child.blocked_by] })),
+    plan_digest: planDigest,
+    ...input.plan_source ? { plan_source: input.plan_source } : {},
+    ...input.branch ? { branch: input.branch } : {},
+    base_head: input.base_head,
+    budget: { ...input.budget },
+    confirmation: { source: confirmation.source, ref: confirmation.ref },
+    final_verification: { required: fv.required, commands: [...fv.commands] },
+    return_policy: input.return_policy,
+    interaction_mode: input.interaction_mode,
+    ...input.actor ? { actor: input.actor } : {}
+  };
+  return { ok: true, agreement };
+}
+
+// plugins/immune-brain/runtime/session/herdr_provider.ts
+import { randomBytes as randomBytes2 } from "node:crypto";
+
+// plugins/immune-brain/runtime/session/exec.ts
+import { spawn as spawn4 } from "node:child_process";
+function runCommand(env, command, args, signal) {
+  return new Promise((resolve) => {
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+    if (signal?.aborted) {
+      resolve({ code: null, stdout, stderr, aborted: true });
+      return;
+    }
+    const child = spawn4(command, args, { env, stdio: ["ignore", "pipe", "pipe"] });
+    const abort = () => {
+      child.kill("SIGTERM");
+      finish({ code: null, stdout, stderr, aborted: true });
+    };
+    const finish = (result) => {
+      if (settled)
+        return;
+      settled = true;
+      signal?.removeEventListener("abort", abort);
+      resolve(result);
+    };
+    signal?.addEventListener("abort", abort, { once: true });
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    child.once("error", (error) => finish({ code: null, stdout, stderr: stderr || error.message, missing: error.code === "ENOENT" }));
+    child.once("close", (code) => finish({ code, stdout, stderr }));
+  });
+}
+function parseJson(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return;
+  }
+}
+function pick(value, path) {
+  let current = value;
+  for (const key of path) {
+    if (current === null || typeof current !== "object")
+      return;
+    current = current[key];
+  }
+  return current;
+}
+function parseVersion(text) {
+  const match = /(\d+)\.(\d+)\.(\d+)/.exec(text);
+  return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : null;
+}
+function versionAtLeast(version, minimum) {
+  for (let index = 0;index < 3; index++) {
+    if (version[index] !== minimum[index])
+      return version[index] > minimum[index];
+  }
+  return true;
+}
+
+// plugins/immune-brain/runtime/session/supervised_session_port.ts
+var SUPERVISED_SESSION_PROTOCOL = 1;
+var SESSION_STATES = ["working", "blocked", "idle", "done", "error", "unknown"];
+var EXECUTOR_HOSTS2 = ["claude-code", "pi", "antigravity"];
+var SESSION_KEY_PATTERN = /^[a-z0-9-]{1,64}$/;
+function refuse3(code, reason, handle) {
+  return handle === undefined ? { ok: false, code, reason } : { ok: false, code, reason, handle };
+}
+function instructionRefusal(handle, observed) {
+  if (observed.state === "idle" || observed.state === "done")
+    return null;
+  return refuse3("state_refused", `session is ${observed.state}; an instruction is sent only to an idle or done session and nothing was sent`, handle);
+}
+function resumeRefusal(handle, observed) {
+  if (observed.state === "idle" || observed.state === "done")
+    return null;
+  return refuse3("state_refused", `session is ${observed.state}; the entry is resubmitted only to an idle or done session and nothing was sent`, handle);
+}
+function closeRecordRefusal(handle, record) {
+  const unmet = [];
+  if (typeof record?.task_id !== "string" || !/^[a-z0-9][a-z0-9._-]*$/i.test(record.task_id))
+    unmet.push("task_id");
+  const at = record?.recorded_at;
+  if (typeof at !== "string" || !Number.isFinite(Date.parse(at)) || new Date(Date.parse(at)).toISOString() !== at)
+    unmet.push("recorded_at");
+  if (unmet.length === 0)
+    return null;
+  return refuse3("close_unproven", `no recorded session close: ${unmet.join(", ")}; take task_id and at from the batch report's session_closes`, handle);
+}
+function validateSessionKey(key) {
+  if (!SESSION_KEY_PATTERN.test(key))
+    return refuse3("invalid_input", `session_key must match [a-z0-9-]{1,64}: ${JSON.stringify(key)}`);
+  return null;
+}
+function validateCreateInput(input) {
+  if (!input.cwd)
+    return refuse3("invalid_input", "cwd is required");
+  if (!input.label || input.label.length > 32)
+    return refuse3("invalid_input", "label must be 1 to 32 characters");
+  if (input.session_key !== undefined) {
+    const bad = validateSessionKey(input.session_key);
+    if (bad)
+      return bad;
+  }
+  if (!EXECUTOR_HOSTS2.includes(input.host))
+    return refuse3("invalid_input", `host must be one of ${EXECUTOR_HOSTS2.join(", ")}`);
+  if (!input.entry || input.entry.trim() === "")
+    return refuse3("invalid_input", "entry is required");
+  for (const [key, value] of Object.entries(input.env ?? {})) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key))
+      return refuse3("invalid_input", `env name ${JSON.stringify(key)} is not a valid variable name`);
+    if (typeof value !== "string" || /[\0\n\r]/.test(value))
+      return refuse3("invalid_input", `env ${key} must be a single-line string`);
+  }
+  return null;
+}
+function isSessionState(value) {
+  return typeof value === "string" && SESSION_STATES.includes(value);
+}
+
+// plugins/immune-brain/runtime/session/herdr_provider.ts
+var SUPPORTED_HERDR_PROTOCOLS = [22];
+var HERDR_PROMPT_TIMEOUT_MS = 30000;
+var HOST_KIND = { "claude-code": "claude", pi: "pi", antigravity: "agy" };
+function herdrAgentName(label, token) {
+  const suffix = token.toLowerCase().replace(/[^a-z0-9_-]+/g, "").slice(-12);
+  const folded = label.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^[^a-z]+/, "").replace(/[-_]+$/g, "") || "lane";
+  if (!suffix)
+    return folded.slice(0, 32).replace(/[-_]+$/g, "") || "lane";
+  const prefixBudget = 32 - 1 - suffix.length;
+  const prefix = folded.slice(0, prefixBudget).replace(/[-_]+$/g, "") || "lane".slice(0, prefixBudget);
+  return `${prefix}-${suffix}`;
+}
+var HERDR_CLI = {
+  schema: () => ["api", "schema", "--json"],
+  tabList: (workspace) => ["tab", "list", "--workspace", workspace],
+  tabCreate: (workspace, cwd, label, env = {}) => [
+    "tab",
+    "create",
+    "--workspace",
+    workspace,
+    "--cwd",
+    cwd,
+    "--label",
+    label,
+    ...Object.entries(env).flatMap(([key, value]) => ["--env", `${key}=${value}`]),
+    "--no-focus"
+  ],
+  tabGet: (tab) => ["tab", "get", tab],
+  paneGet: (pane) => ["pane", "get", pane],
+  agentStart: (label, kind, pane, hostArgs) => ["agent", "start", label, "--kind", kind, "--pane", pane, "--", ...hostArgs],
+  prompt: (pane, text, timeoutMs) => ["agent", "prompt", pane, text, "--wait", "--until", "working", "--until", "blocked", "--timeout", String(timeoutMs)],
+  wait: (pane, timeoutMs) => [
+    "agent",
+    "wait",
+    pane,
+    "--until",
+    "idle",
+    "--until",
+    "done",
+    "--until",
+    "blocked",
+    "--until",
+    "unknown",
+    ...timeoutMs ? ["--timeout", String(timeoutMs)] : []
+  ],
+  get: (pane) => ["agent", "get", pane],
+  read: (pane, source, lines) => ["pane", "read", pane, "--source", source === "visible" ? "visible" : "recent-unwrapped", ...lines ? ["--lines", String(lines)] : []],
+  sendKeys: (pane, key) => ["agent", "send-keys", pane, key],
+  paneClose: (pane) => ["pane", "close", pane],
+  tabClose: (tab) => ["tab", "close", tab],
+  paneRun: (pane, command) => ["pane", "run", pane, command],
+  waitOutput: (pane, regex) => ["pane", "wait-output", pane, "--regex", regex, "--source", "recent", "--lines", "400"]
 };
-function listPendingLoopInteractions(root, taskId) {
-  const stateDir = loopInteractionStateDir(root);
-  const pending = readLocalRequests(stateDir).filter((request) => !taskId || request.subject.task_id === taskId).map((request) => {
-    const answerable = answerableLoopInteraction(request);
-    const answer = readLocalAnswer(stateDir, request.interaction_id);
+function defaultHerdrExec(env) {
+  return (args, signal) => runCommand(env, "herdr", args, signal);
+}
+function createHerdrViewer(options) {
+  const workspace = options.env.HERDR_WORKSPACE_ID;
+  if (options.env.HERDR_ENV !== "1" || !workspace)
+    return null;
+  const exec = options.exec ?? defaultHerdrExec(options.env);
+  return async ({ cwd, label, argv, env }) => {
+    if (argv.length === 0)
+      return refuse3("invalid_input", "argv is empty");
+    const created = await exec(HERDR_CLI.tabCreate(workspace, cwd, label, env));
+    if (created.missing)
+      return refuse3("provider_unavailable", "the herdr executable is not on PATH");
+    if (created.code !== 0)
+      return refuse3("start_failed", `herdr tab create failed: ${failure(created)}`);
+    const pane = pick(parseJson(created.stdout), ["result", "root_pane", "pane_id"]);
+    if (typeof pane !== "string" || !pane)
+      return refuse3("start_failed", "herdr tab create returned no result.root_pane.pane_id");
+    const ran = await exec(HERDR_CLI.paneRun(pane, `${argv.map(shellWord).join(" ")} && exit`));
+    if (ran.code !== 0)
+      return refuse3("start_failed", `herdr pane run failed: ${failure(ran)}`);
+    return { ok: true };
+  };
+}
+function encodeHerdrHandle(ids) {
+  return `herdr:${[ids.workspace, ids.tab, ids.pane, ids.token].map(encodeURIComponent).join("/")}`;
+}
+function decodeHerdrHandle(handle) {
+  if (!handle.startsWith("herdr:"))
+    return null;
+  const parts = handle.slice("herdr:".length).split("/");
+  if (parts.length !== 4 || parts.some((part) => part === ""))
+    return null;
+  try {
+    const [workspace, tab, pane, token] = parts.map(decodeURIComponent);
+    return { workspace, tab, pane, token };
+  } catch {
+    return null;
+  }
+}
+function herdrTokenMark(token) {
+  return `[imm:${token}]`;
+}
+function shellWord(value) {
+  return /^[A-Za-z0-9_./:=@%+-]+$/.test(value) ? value : `'${value.replace(/'/g, `'\\''`)}'`;
+}
+function sentinelCommand(argv, token) {
+  return {
+    line: `${argv.map(shellWord).join(" ")}; printf 'IMM_%s_%s_%s\\n' ${token} DONE "$?"`,
+    regex: `IMM_${token}_DONE_[0-9]+`
+  };
+}
+function parseHerdrState(stdout) {
+  const value = pick(parseJson(stdout.trim()), ["result", "agent", "agent_status"]);
+  return isSessionState(value) ? value : "unknown";
+}
+function herdrErrorCode(result) {
+  for (const text of [result.stderr, result.stdout]) {
+    const code = pick(parseJson(text.trim()), ["error", "code"]);
+    if (typeof code === "string")
+      return code;
+  }
+  return;
+}
+var EXITED_CODES = new Set(["pane_not_found", "agent_not_running", "agent_not_found"]);
+var STALLED = Symbol("entry stalled");
+var HOST_GONE_CODES = new Set(["agent_not_running", "agent_not_found"]);
+function detected(state) {
+  return { state, provenance: state === "unknown" ? "none" : "detected" };
+}
+function failure(result) {
+  return (result.stderr || result.stdout).trim().slice(0, 500) || `herdr exited ${result.code}`;
+}
+function protocolOf(schema) {
+  for (const path of [["protocol"], ["protocol_version"], ["version", "protocol"], ["info", "protocol"]]) {
+    const value = pick(schema, path);
+    if (typeof value === "number")
+      return value;
+    if (typeof value === "string" && /^\d+$/.test(value))
+      return Number(value);
+  }
+  return;
+}
+function createHerdrSessionProvider(options) {
+  const exec = options.exec ?? defaultHerdrExec(options.env);
+  const promptTimeoutMs = options.promptTimeoutMs ?? HERDR_PROMPT_TIMEOUT_MS;
+  const workspace = options.env.HERDR_WORKSPACE_ID ?? "";
+  const run = async (args, signal) => {
+    const result = await exec(args, signal);
+    if (result.missing)
+      return refuse3("provider_unavailable", "the herdr executable is not on PATH");
+    return result;
+  };
+  const isRefusal = (value) => typeof value === "object" && value !== null && value.ok === false;
+  const own = async (handle) => {
+    const ids = decodeHerdrHandle(handle);
+    if (!ids)
+      return refuse3("not_owned", "handle is not a Herdr session handle", handle);
+    if (!workspace || ids.workspace !== workspace)
+      return refuse3("not_owned", "session is not in the Parent's own Herdr workspace", handle);
+    const pane = await run(HERDR_CLI.paneGet(ids.pane));
+    if (isRefusal(pane))
+      return pane;
+    const tab = await run(HERDR_CLI.tabGet(ids.tab));
+    if (isRefusal(tab))
+      return tab;
+    const marked = tab.code === 0 && String(pick(parseJson(tab.stdout), ["result", "tab", "label"]) ?? "").endsWith(herdrTokenMark(ids.token));
+    if (pane.code !== 0) {
+      if (herdrErrorCode(pane) !== "pane_not_found")
+        return refuse3("provider_error", `herdr pane get failed: ${failure(pane)}`, handle);
+      if (tab.code === 0 && !marked)
+        return refuse3("not_owned", "tab was not created for this session", handle);
+      return { ids, gone: true };
+    }
+    const info = pick(parseJson(pane.stdout), ["result", "pane"]);
+    if (pick(info, ["workspace_id"]) !== ids.workspace || pick(info, ["tab_id"]) !== ids.tab) {
+      return refuse3("not_owned", "pane is not in this session's tab", handle);
+    }
+    if (tab.code !== 0)
+      return refuse3("provider_error", `herdr tab get failed: ${failure(tab)}`, handle);
+    if (!marked)
+      return refuse3("not_owned", "tab was not created for this session", handle);
+    return { ids, gone: false };
+  };
+  const goneRefusal = (handle) => refuse3("state_refused", "the session's pane is gone; nothing was sent; create a new session", handle);
+  const observe = async (handle, pane) => {
+    const result = await run(HERDR_CLI.get(pane));
+    if (isRefusal(result))
+      return result;
+    if (result.code !== 0)
+      return { state: "unknown", provenance: "none" };
+    return detected(parseHerdrState(result.stdout));
+  };
+  async function submit(handle, pane, text, entry = false) {
+    const result = await run(HERDR_CLI.prompt(pane, text, promptTimeoutMs));
+    if (isRefusal(result))
+      return result;
+    if (entry && herdrErrorCode(result) === "agent_prompt_stalled")
+      return STALLED;
+    if (herdrErrorCode(result) === "agent_blocked")
+      return refuse3("state_refused", "session is blocked; Herdr sent nothing", handle);
+    if (result.code !== 0)
+      return refuse3("provider_error", `herdr agent prompt failed; inspect the session state before repeating: ${failure(result)}`, handle);
+    return detected(parseHerdrState(result.stdout));
+  }
+  const submitEntry = async (handle, pane, text) => {
+    const after = await submit(handle, pane, text, true);
+    if (after === STALLED)
+      return {
+        ok: true,
+        handle,
+        entry_submitted: false,
+        state: "unknown",
+        provenance: "none",
+        attention: "The Executor Host never started working on its entry: a dialog (such as sign-in or a selection) may hold the terminal, and the entry text may now sit in it. Ask the user to look at this tab and answer the dialog, then resume this session; do not send the entry again before the user has seen it."
+      };
+    if (isRefusal(after))
+      return after;
+    return { ok: true, handle, entry_submitted: true, ...after };
+  };
+  const startHost = async (handle, pane, label, host, hostArgs, token) => {
+    const started = await run(HERDR_CLI.agentStart(herdrAgentName(label, token), HOST_KIND[host], pane, hostArgs));
+    if (isRefusal(started))
+      return { ...started, handle };
+    if (started.code === 0)
+      return null;
+    if (herdrErrorCode(started) === "agent_not_ready") {
+      return { ok: true, handle, entry_submitted: false, state: "blocked", provenance: "detected" };
+    }
+    return refuse3("start_failed", `herdr agent start failed: ${failure(started)}`, handle);
+  };
+  return {
+    provider: "herdr",
+    protocolVersion: SUPERVISED_SESSION_PROTOCOL,
+    async probe() {
+      if (options.env.HERDR_ENV !== "1")
+        return refuse3("provider_unavailable", "not running inside Herdr (HERDR_ENV is not 1)");
+      if (!workspace)
+        return refuse3("provider_unavailable", "HERDR_WORKSPACE_ID is not set");
+      const result = await run(HERDR_CLI.schema());
+      if (isRefusal(result))
+        return result;
+      if (result.code !== 0)
+        return refuse3("provider_unavailable", `herdr api schema failed: ${failure(result)}`);
+      const protocol = protocolOf(parseJson(result.stdout));
+      if (protocol === undefined)
+        return refuse3("protocol_mismatch", "herdr api schema did not state a protocol version");
+      if (!SUPPORTED_HERDR_PROTOCOLS.includes(protocol)) {
+        return refuse3("protocol_mismatch", `herdr protocol ${protocol} is not one of ${SUPPORTED_HERDR_PROTOCOLS.join(", ")}`);
+      }
+      return { ok: true };
+    },
+    async createSession(input) {
+      const invalid = validateCreateInput(input);
+      if (invalid)
+        return invalid;
+      if (input.resume !== undefined) {
+        const handle = input.resume;
+        const found = await own(handle);
+        if (isRefusal(found))
+          return found;
+        if (found.gone)
+          return goneRefusal(handle);
+        const pane = found.ids.pane;
+        const got = await run(HERDR_CLI.get(pane));
+        if (isRefusal(got))
+          return got;
+        const code = got.code === 0 ? undefined : herdrErrorCode(got);
+        if (code && HOST_GONE_CODES.has(code)) {
+          const restarted = await startHost(handle, pane, input.label, input.host, input.hostArgs, found.ids.token);
+          if (restarted)
+            return restarted;
+        } else {
+          const current = got.code === 0 ? detected(parseHerdrState(got.stdout)) : { state: "unknown", provenance: "none" };
+          const refused = resumeRefusal(handle, current);
+          if (refused)
+            return refused;
+        }
+        return submitEntry(handle, pane, input.entry);
+      }
+      if (!workspace)
+        return refuse3("provider_unavailable", "HERDR_WORKSPACE_ID is not set");
+      const token = input.session_key ?? randomBytes2(6).toString("hex");
+      const created = await run(HERDR_CLI.tabCreate(workspace, input.cwd, `${input.label} ${herdrTokenMark(token)}`, input.env));
+      if (isRefusal(created))
+        return created;
+      if (created.code !== 0)
+        return refuse3("start_failed", `herdr tab create failed: ${failure(created)}`);
+      const json = parseJson(created.stdout);
+      const tab = pick(json, ["result", "tab", "tab_id"]);
+      const pane = pick(json, ["result", "root_pane", "pane_id"]);
+      if (typeof tab !== "string" || typeof pane !== "string" || !tab || !pane) {
+        return refuse3("start_failed", "herdr tab create returned no result.tab.tab_id and result.root_pane.pane_id");
+      }
+      const handle = encodeHerdrHandle({ workspace, tab, pane, token });
+      const started = await startHost(handle, pane, input.label, input.host, input.hostArgs, token);
+      if (started)
+        return started;
+      return submitEntry(handle, pane, input.entry);
+    },
+    async sendInstruction(handle, text) {
+      if (!text.trim())
+        return refuse3("invalid_input", "instruction text is empty", handle);
+      const found = await own(handle);
+      if (isRefusal(found))
+        return found;
+      if (found.gone)
+        return goneRefusal(handle);
+      const ids = found.ids;
+      const current = await observe(handle, ids.pane);
+      if (isRefusal(current))
+        return current;
+      const refused = instructionRefusal(handle, current);
+      if (refused)
+        return refused;
+      const after = await submit(handle, ids.pane, text);
+      if (isRefusal(after))
+        return after;
+      return { ok: true, ...after };
+    },
+    async awaitTransition(handle, waitOptions) {
+      const found = await own(handle);
+      if (isRefusal(found))
+        return found;
+      if (found.gone)
+        return { ok: true, transition: "exited", state: "unknown", provenance: "none" };
+      const ids = found.ids;
+      const result = await run(HERDR_CLI.wait(ids.pane, waitOptions?.timeoutMs), waitOptions?.signal);
+      if (isRefusal(result))
+        return result;
+      if (result.aborted)
+        return { ok: true, transition: "timeout", state: "unknown", provenance: "none" };
+      if (result.code === 0) {
+        const state = parseHerdrState(result.stdout);
+        return { ok: true, transition: "changed", ...detected(state) };
+      }
+      const code = herdrErrorCode(result);
+      if (code === "timeout")
+        return { ok: true, transition: "timeout", state: "unknown", provenance: "none" };
+      if (code && EXITED_CODES.has(code))
+        return { ok: true, transition: "exited", state: "unknown", provenance: "none" };
+      return refuse3("provider_error", `herdr agent wait failed: ${failure(result)}`, handle);
+    },
+    async readOutput(handle, source, readOptions) {
+      const found = await own(handle);
+      if (isRefusal(found))
+        return found;
+      if (found.gone)
+        return refuse3("state_refused", "the session's pane is gone; there is no output to read", handle);
+      const ids = found.ids;
+      const result = await run(HERDR_CLI.read(ids.pane, source, readOptions?.lines));
+      if (isRefusal(result))
+        return result;
+      if (result.code !== 0)
+        return refuse3("provider_error", `herdr pane read failed: ${failure(result)}`, handle);
+      return { ok: true, text: result.stdout, source };
+    },
+    async observeState(handle) {
+      const found = await own(handle);
+      if (isRefusal(found))
+        return found;
+      if (found.gone)
+        return refuse3("provider_error", "herdr pane get failed: pane_not_found", handle);
+      const ids = found.ids;
+      const current = await observe(handle, ids.pane);
+      if (isRefusal(current))
+        return current;
+      return { ok: true, ...current };
+    },
+    async stopSession(handle) {
+      const found = await own(handle);
+      if (isRefusal(found))
+        return found;
+      if (found.gone)
+        return { ok: true };
+      const ids = found.ids;
+      await run(HERDR_CLI.sendKeys(ids.pane, "ctrl+c"));
+      const closed = await run(HERDR_CLI.paneClose(ids.pane));
+      if (isRefusal(closed))
+        return closed;
+      if (closed.code !== 0)
+        return refuse3("provider_error", `herdr pane close failed: ${failure(closed)}`, handle);
+      return { ok: true };
+    },
+    async closeSession(handle, record) {
+      const found = await own(handle);
+      if (isRefusal(found))
+        return found;
+      const unproven = closeRecordRefusal(handle, record);
+      if (unproven)
+        return unproven;
+      const closed = await run(HERDR_CLI.tabClose(found.ids.tab));
+      if (isRefusal(closed))
+        return closed;
+      if (closed.code !== 0 && found.gone)
+        return { ok: true };
+      if (closed.code !== 0)
+        return refuse3("provider_error", `herdr tab close failed: ${failure(closed)}`, handle);
+      return { ok: true };
+    },
+    async findSession(session_key) {
+      const bad = validateSessionKey(session_key);
+      if (bad)
+        return bad;
+      if (!workspace)
+        return refuse3("provider_unavailable", "HERDR_WORKSPACE_ID is not set");
+      const listed = await run(HERDR_CLI.tabList(workspace));
+      if (isRefusal(listed))
+        return listed;
+      if (listed.code !== 0)
+        return refuse3("provider_error", `herdr tab list failed: ${failure(listed)}`);
+      const parsed = parseJson(listed.stdout);
+      const tabs = pick(parsed, ["result", "tabs"]) ?? pick(parsed, ["tabs"]);
+      if (!Array.isArray(tabs))
+        return refuse3("provider_error", "herdr tab list returned no tabs");
+      for (const tab of tabs) {
+        if (!String(pick(tab, ["label"]) ?? "").endsWith(herdrTokenMark(session_key)))
+          continue;
+        const tabId = pick(tab, ["tab_id"]);
+        if (typeof tabId !== "string" || !tabId)
+          continue;
+        if (typeof pick(tab, ["workspace_id"]) === "string" && pick(tab, ["workspace_id"]) !== workspace)
+          continue;
+        const paneId = pick(tab, ["root_pane", "pane_id"]) ?? pick(tab, ["pane_id"]);
+        if (typeof paneId !== "string" || !paneId)
+          continue;
+        return { ok: true, handle: encodeHerdrHandle({ workspace, tab: tabId, pane: paneId, token: session_key }) };
+      }
+      return { ok: true, not_found: true };
+    },
+    async closeWithProof(handle, session_key) {
+      const bad = validateSessionKey(session_key);
+      if (bad)
+        return bad;
+      const ids = decodeHerdrHandle(handle);
+      if (!ids || !workspace || ids.workspace !== workspace || ids.token !== session_key) {
+        return refuse3("not_owned", "handle was not created for this session key", handle);
+      }
+      const found = await own(handle);
+      if (isRefusal(found))
+        return found;
+      if (found.gone) {
+        const listed = await run(HERDR_CLI.tabList(workspace));
+        if (isRefusal(listed))
+          return listed;
+        if (listed.code !== 0)
+          return refuse3("provider_error", `herdr tab list failed: ${failure(listed)}`, handle);
+        const parsed = parseJson(listed.stdout);
+        const tabs = pick(parsed, ["result", "tabs"]) ?? pick(parsed, ["tabs"]);
+        if (!Array.isArray(tabs))
+          return refuse3("provider_error", "herdr tab list returned no tabs", handle);
+        const survivor = tabs.find((tab) => String(pick(tab, ["label"]) ?? "").endsWith(herdrTokenMark(session_key)));
+        if (!survivor)
+          return { ok: true, exited: true, handle, session_key };
+        const survivorTab = pick(survivor, ["tab_id"]);
+        if (survivorTab !== ids.tab)
+          return refuse3("not_owned", "a live tab carries this session key for another session; nothing was closed", handle);
+        const closing = await run(HERDR_CLI.tabClose(ids.tab));
+        if (isRefusal(closing))
+          return closing;
+        if (closing.code !== 0)
+          return refuse3("provider_error", `herdr tab close failed: ${failure(closing)}`, handle);
+        return { ok: true, exited: true, handle, session_key };
+      }
+      const paneClosed = await run(HERDR_CLI.paneClose(found.ids.pane));
+      if (isRefusal(paneClosed))
+        return paneClosed;
+      if (paneClosed.code !== 0)
+        return refuse3("provider_error", `herdr pane close failed: ${failure(paneClosed)}`, handle);
+      const gone = await run(HERDR_CLI.paneGet(found.ids.pane));
+      if (!isRefusal(gone) && gone.code === 0)
+        return refuse3("provider_error", "herdr pane close did not end the pane", handle);
+      if (!isRefusal(gone) && herdrErrorCode(gone) !== "pane_not_found")
+        return refuse3("provider_error", `herdr pane get failed: ${failure(gone)}`, handle);
+      const tabClosed = await run(HERDR_CLI.tabClose(found.ids.tab));
+      if (isRefusal(tabClosed))
+        return tabClosed;
+      if (tabClosed.code !== 0)
+        return refuse3("provider_error", `herdr tab close failed: ${failure(tabClosed)}`, handle);
+      return { ok: true, exited: true, handle, session_key };
+    },
+    async reconcile(handles) {
+      const sessions = [];
+      for (const handle of handles) {
+        const found = await own(handle);
+        if (isRefusal(found)) {
+          if (found.code !== "not_owned")
+            return found;
+          sessions.push({ handle, state: "unknown", provenance: "none", refused: found.code });
+          continue;
+        }
+        if (found.gone) {
+          sessions.push({ handle, state: "unknown", provenance: "none" });
+          continue;
+        }
+        const current = await observe(handle, found.ids.pane);
+        if (isRefusal(current))
+          return current;
+        sessions.push({ handle, ...current });
+      }
+      return { ok: true, sessions };
+    },
+    async runCommand(input) {
+      if (!input.cwd)
+        return refuse3("invalid_input", "cwd is required");
+      if (!input.label || input.label.length > 32)
+        return refuse3("invalid_input", "label must be 1 to 32 characters");
+      if (input.argv.length === 0)
+        return refuse3("invalid_input", "argv is empty");
+      if (!workspace)
+        return refuse3("provider_unavailable", "HERDR_WORKSPACE_ID is not set");
+      const token = randomBytes2(6).toString("hex");
+      const created = await run(HERDR_CLI.tabCreate(workspace, input.cwd, `${input.label} ${herdrTokenMark(token)}`, input.env));
+      if (isRefusal(created))
+        return created;
+      if (created.code !== 0)
+        return refuse3("start_failed", `herdr tab create failed: ${failure(created)}`);
+      const json = parseJson(created.stdout);
+      const tab = pick(json, ["result", "tab", "tab_id"]);
+      const pane = pick(json, ["result", "root_pane", "pane_id"]);
+      if (typeof tab !== "string" || typeof pane !== "string" || !tab || !pane) {
+        return refuse3("start_failed", "herdr tab create returned no result.tab.tab_id and result.root_pane.pane_id");
+      }
+      const handle = encodeHerdrHandle({ workspace, tab, pane, token });
+      const { line, regex } = sentinelCommand(input.argv, token);
+      const ran = await run(HERDR_CLI.paneRun(pane, line));
+      if (isRefusal(ran))
+        return { ...ran, handle };
+      if (ran.code !== 0)
+        return refuse3("start_failed", `herdr pane run failed: ${failure(ran)}`, handle);
+      const waited = await run(HERDR_CLI.waitOutput(pane, regex));
+      if (isRefusal(waited))
+        return { ...waited, handle };
+      if (waited.code !== 0)
+        return refuse3("provider_error", `herdr pane wait-output failed; the command may still run in its tab: ${failure(waited)}`, handle);
+      const matched = String(pick(parseJson(waited.stdout), ["result", "matched_line"]) ?? waited.stdout);
+      const status = new RegExp(`IMM_${token}_DONE_([0-9]+)`).exec(matched);
+      if (!status)
+        return refuse3("provider_error", "herdr pane wait-output returned no exit status", handle);
+      return { ok: true, handle, exit_code: Number(status[1]) };
+    },
+    async sendKeys(handle, key) {
+      const found = await own(handle);
+      if (isRefusal(found))
+        return found;
+      if (found.gone)
+        return goneRefusal(handle);
+      const result = await run(HERDR_CLI.sendKeys(found.ids.pane, key));
+      if (isRefusal(result))
+        return result;
+      if (result.code !== 0)
+        return refuse3("provider_error", `herdr agent send-keys failed: ${failure(result)}`, handle);
+      return { ok: true };
+    }
+  };
+}
+
+// plugins/immune-brain/runtime/session/herdr_core_provider.ts
+import { randomBytes as randomBytes3 } from "node:crypto";
+var HERDR_CORE_MIN_VERSION = [0, 1, 19];
+var HERDR_CORE_GENERATION = 1;
+var HERDR_CORE_METHODS = [
+  "terminal.run",
+  "terminal.get",
+  "terminal.list",
+  "terminal.send",
+  "terminal.wait",
+  "terminal.read",
+  "terminal.keys",
+  "terminal.interrupt",
+  "terminal.kill",
+  "terminal.rm"
+];
+var HOST_STATUS_MINIMUM = {
+  "claude-code": { binary: "claude", version: [2, 1, 295] },
+  pi: { binary: "pi", version: [1, 1, 0] },
+  antigravity: { binary: "agy", version: [1, 4, 0] }
+};
+var OWNER_LABEL = "imm-session";
+var HERDR_CORE_READY_TIMEOUT_MS = 30000;
+var SCROLLBACK_LINES = 200;
+var SESSION_KEY_LABEL = "imm-session-key";
+var HC_CLI = {
+  schema: () => ["schema", "--json"],
+  status: () => ["server", "status", "--json"],
+  list: () => ["list", "--json"],
+  run: (name, cwd, token, argv, sessionKey) => ["run", "--bg", "--json", "--no-parent", "--name", name, "--cwd", cwd, "--label", `${OWNER_LABEL}=${token}`, ...sessionKey !== undefined ? ["--label", `${SESSION_KEY_LABEL}=${sessionKey}`] : [], "--", ...argv],
+  get: (address) => ["get", address, "--json"],
+  send: (address, text, ifState) => ["send", address, text, ...ifState ? ["--if", ifState] : [], "--json"],
+  wait: (address, timeoutSeconds) => ["wait", address, ...timeoutSeconds ? ["--timeout", String(timeoutSeconds)] : [], "--json"],
+  read: (address, lines) => ["read", address, "--lines", String(lines), "--json"],
+  keys: (address, key) => ["keys", address, key, "--json"],
+  interrupt: (address) => ["interrupt", address, "--json"],
+  kill: (address) => ["kill", address, "--json"],
+  rm: (address) => ["rm", address, "--json"]
+};
+var HC_SELECTION_ENV = ["HC_SESSION", "XDG_RUNTIME_DIR", "XDG_STATE_HOME", "XDG_CONFIG_HOME"];
+function encodeHerdrCoreHandle(ids) {
+  return `herdr-core:${encodeURIComponent(ids.address)}/${encodeURIComponent(ids.token)}`;
+}
+function decodeHerdrCoreHandle(handle) {
+  if (!handle.startsWith("herdr-core:"))
+    return null;
+  const parts = handle.slice("herdr-core:".length).split("/");
+  if (parts.length !== 2 || parts.some((part) => part === ""))
+    return null;
+  try {
+    const [address, token] = parts.map(decodeURIComponent);
+    return { address, token };
+  } catch {
+    return null;
+  }
+}
+function herdrCoreName(label, token) {
+  const suffix = token.toLowerCase().replace(/[^a-z0-9_-]+/g, "").slice(0, 12);
+  const folded = label.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "lane";
+  if (!suffix)
+    return folded.slice(0, 32).replace(/[-_]+$/g, "") || "lane";
+  const prefixBudget = 32 - 1 - suffix.length;
+  const prefix = folded.slice(0, prefixBudget).replace(/[-_]+$/g, "") || "lane".slice(0, prefixBudget);
+  return `${prefix}-${suffix}`;
+}
+function coreState(word) {
+  if (typeof word === "string" && isSessionState(word) && word !== "unknown")
+    return { state: word, provenance: "reported" };
+  return { state: "unknown", provenance: "none" };
+}
+function hcErrorKind(result) {
+  for (const text of [result.stderr, result.stdout]) {
+    const kind = pick(parseJson(text.trim()), ["error", "kind"]);
+    if (typeof kind === "string")
+      return kind;
+  }
+  return;
+}
+function failure2(result) {
+  return (result.stderr || result.stdout).trim().slice(0, 500) || `hc exited ${result.code}`;
+}
+function newToken() {
+  return randomBytes3(12).toString("hex");
+}
+function createHerdrCoreSessionProvider(options) {
+  const exec = options.exec ?? ((command, args, signal) => runCommand(options.env, command, args, signal));
+  const readyTimeoutMs = options.readyTimeoutMs ?? HERDR_CORE_READY_TIMEOUT_MS;
+  const pollMs = options.pollMs ?? 250;
+  const sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+  const isRefusal = (value) => typeof value === "object" && value !== null && value.ok === false;
+  const hc = async (args, signal) => {
+    const result = await exec("hc", args, signal);
+    if (result.missing)
+      return refuse3("provider_unavailable", "the hc executable is not on PATH");
+    return result;
+  };
+  const owned = async (handle) => {
+    const ids = decodeHerdrCoreHandle(handle);
+    if (!ids)
+      return refuse3("not_owned", "handle is not a herdr-core session handle", handle);
+    const result = await hc(HC_CLI.get(ids.address));
+    if (isRefusal(result))
+      return result;
+    if (result.code !== 0) {
+      if (hcErrorKind(result) === "not_found")
+        return refuse3("not_owned", "no such terminal on this core", handle);
+      return refuse3("provider_error", `hc get failed: ${failure2(result)}`, handle);
+    }
+    const terminal = parseJson(result.stdout);
+    if (pick(terminal, ["labels", OWNER_LABEL]) !== ids.token)
+      return refuse3("not_owned", "terminal was not created for this session", handle);
+    return { ids, terminal };
+  };
+  const observed = (terminal) => pick(terminal, ["state"]) === "finished" ? { state: "unknown", provenance: "none" } : coreState(pick(terminal, ["status", "state"]));
+  const send = async (handle, address, text, ifState) => {
+    const result = await hc(HC_CLI.send(address, text, ifState));
+    if (isRefusal(result))
+      return result;
+    if (result.code !== 0) {
+      const kind = hcErrorKind(result);
+      if (kind === "status_mismatch")
+        return refuse3("state_refused", "session is not idle; core sent nothing", handle);
+      if (kind === "blocked")
+        return refuse3("state_refused", "session is blocked; core sent nothing", handle);
+      return refuse3("provider_error", `hc send failed; inspect the session state before repeating: ${failure2(result)}`, handle);
+    }
+    const json = parseJson(result.stdout);
+    if (pick(json, ["started"]) === true)
+      return { state: "working", provenance: "reported" };
+    return coreState(pick(json, ["status"]));
+  };
+  const selection = Object.fromEntries(HC_SELECTION_ENV.flatMap((key) => options.env[key] ? [[key, options.env[key]]] : []));
+  const openViewer = async (address, name, cwd) => {
+    if (!options.viewer)
+      return { opened: false, reason: `not inside Herdr; watch it with \`hc attach ${address}\` in another terminal` };
+    const opened = await options.viewer({ cwd, label: `${name} (hc ${address})`, argv: ["hc", "attach", address], env: selection });
+    return opened.ok ? { opened: true } : { opened: false, reason: opened.reason };
+  };
+  const hostVersionRefusal = async (host) => {
+    const { binary, version } = HOST_STATUS_MINIMUM[host];
+    const result = await exec(binary, ["--version"]);
+    if (result.missing)
+      return refuse3("provider_unavailable", `the ${binary} executable is not on PATH`);
+    const found = parseVersion(`${result.stdout}
+${result.stderr}`);
+    if (result.code !== 0 || !found)
+      return refuse3("provider_unavailable", `${binary} --version reported no version`);
+    if (!versionAtLeast(found, version)) {
+      return refuse3("provider_unavailable", `${binary} ${found.join(".")} does not report OSC 7501; ${version.join(".")} or newer is required on herdr-core`);
+    }
+    return null;
+  };
+  return {
+    provider: "herdr-core",
+    protocolVersion: SUPERVISED_SESSION_PROTOCOL,
+    async probe() {
+      const schema = await hc(HC_CLI.schema());
+      if (isRefusal(schema))
+        return schema;
+      if (schema.code !== 0)
+        return refuse3("provider_unavailable", `hc schema failed: ${failure2(schema)}`);
+      const json = parseJson(schema.stdout);
+      const version = parseVersion(String(pick(json, ["info", "version"]) ?? ""));
+      if (!version || !versionAtLeast(version, HERDR_CORE_MIN_VERSION)) {
+        return refuse3("protocol_mismatch", `herdr-core ${HERDR_CORE_MIN_VERSION.join(".")} or newer is required`);
+      }
+      const generation = /Protocol generation (\d+)/.exec(String(pick(json, ["info", "description"]) ?? ""));
+      if (!generation || Number(generation[1]) !== HERDR_CORE_GENERATION) {
+        return refuse3("protocol_mismatch", `herdr-core protocol generation ${HERDR_CORE_GENERATION} is required`);
+      }
+      const methods = new Set((Array.isArray(pick(json, ["methods"])) ? pick(json, ["methods"]) : []).map((method) => pick(method, ["name"])));
+      const missing = HERDR_CORE_METHODS.filter((method) => !methods.has(method));
+      if (missing.length > 0)
+        return refuse3("protocol_mismatch", `herdr-core lacks ${missing.join(", ")}`);
+      const status = await hc(HC_CLI.status());
+      if (isRefusal(status))
+        return status;
+      if (status.code !== 0)
+        return refuse3("provider_unavailable", `no herdr-core server answered: ${failure2(status)}`);
+      return { ok: true };
+    },
+    async createSession(input) {
+      const invalid = validateCreateInput(input);
+      if (invalid)
+        return invalid;
+      if (input.resume !== undefined) {
+        const found = await owned(input.resume);
+        if (isRefusal(found))
+          return found;
+        if (pick(found.terminal, ["state"]) === "finished") {
+          return refuse3("state_refused", "the session's terminal finished; core cannot restart it in place; nothing was sent; create a new session", input.resume);
+        }
+        const current = observed(found.terminal);
+        const refused = resumeRefusal(input.resume, current);
+        if (refused)
+          return refused;
+        const after = await send(input.resume, found.ids.address, input.entry, current.state === "idle" ? "idle" : undefined);
+        if (isRefusal(after))
+          return after;
+        return { ok: true, handle: input.resume, entry_submitted: true, ...after };
+      }
+      const tooOld = await hostVersionRefusal(input.host);
+      if (tooOld)
+        return tooOld;
+      const token = newToken();
+      const name = herdrCoreName(input.label, token);
+      const envPrefix = Object.entries(input.env ?? {}).map(([key, value]) => `${key}=${value}`);
+      const argv = [...envPrefix.length > 0 ? ["env", ...envPrefix] : [], HOST_STATUS_MINIMUM[input.host].binary, ...input.hostArgs];
+      const started = await hc(HC_CLI.run(name, input.cwd, token, argv, input.session_key));
+      if (isRefusal(started))
+        return started;
+      if (started.code !== 0)
+        return refuse3("start_failed", `hc run failed: ${failure2(started)}`);
+      const address = pick(parseJson(started.stdout), ["address"]);
+      if (typeof address !== "string" || !address)
+        return refuse3("start_failed", "hc run returned no address");
+      const handle = encodeHerdrCoreHandle({ address, token });
+      const viewer = options.viewer ? await openViewer(address, name, input.cwd) : undefined;
+      const shown = viewer ? { viewer } : {};
+      const deadline = Date.now() + readyTimeoutMs;
+      for (;; ) {
+        const found = await owned(handle);
+        if (isRefusal(found))
+          return { ...found, handle };
+        if (pick(found.terminal, ["state"]) === "finished")
+          return refuse3("start_failed", "the Executor Host exited before it reported a status", handle);
+        const current = observed(found.terminal);
+        if (current.state === "blocked")
+          return { ok: true, handle, entry_submitted: false, ...current, ...shown };
+        if (current.state === "idle") {
+          const after = await send(handle, address, input.entry, "idle");
+          if (isRefusal(after))
+            return after;
+          return { ok: true, handle, entry_submitted: true, ...after, ...shown };
+        }
+        if (Date.now() >= deadline) {
+          return {
+            ok: true,
+            handle,
+            entry_submitted: false,
+            state: "unknown",
+            provenance: "none",
+            attention: `The Executor Host reported no status within ${readyTimeoutMs} ms and the entry was not submitted. It may be waiting on a startup dialog (such as workspace trust) or report no status at all; look ${viewer?.opened ? "in its viewer tab" : `with \`hc attach ${address}\` in another terminal`}, answer it there, then resume this session.`,
+            ...shown
+          };
+        }
+        await sleep(pollMs);
+      }
+    },
+    async sendInstruction(handle, text) {
+      if (!text.trim())
+        return refuse3("invalid_input", "instruction text is empty", handle);
+      const found = await owned(handle);
+      if (isRefusal(found))
+        return found;
+      const current = observed(found.terminal);
+      const refused = instructionRefusal(handle, current);
+      if (refused)
+        return refused;
+      const after = await send(handle, found.ids.address, text, current.state === "idle" ? "idle" : undefined);
+      if (isRefusal(after))
+        return after;
+      return { ok: true, ...after };
+    },
+    async awaitTransition(handle, waitOptions) {
+      const found = await owned(handle);
+      if (isRefusal(found))
+        return found;
+      const bounded = waitOptions?.timeoutMs !== undefined && waitOptions.timeoutMs > 0;
+      for (;; ) {
+        const result = await hc(HC_CLI.wait(found.ids.address, bounded ? waitOptions.timeoutMs / 1000 : undefined), waitOptions?.signal);
+        if (isRefusal(result))
+          return result;
+        if (result.aborted)
+          return { ok: true, transition: "timeout", state: "unknown", provenance: "none" };
+        if (result.code !== 0) {
+          if (hcErrorKind(result) === "finished")
+            return { ok: true, transition: "exited", state: "unknown", provenance: "none" };
+          return refuse3("provider_error", `hc wait failed: ${failure2(result)}`, handle);
+        }
+        const json = parseJson(result.stdout);
+        const reason = pick(json, ["reason"]);
+        if (reason === "exit")
+          return { ok: true, transition: "exited", state: "unknown", provenance: "none" };
+        if (reason === "timeout") {
+          if (!bounded)
+            continue;
+          return { ok: true, transition: "timeout", state: "unknown", provenance: "none" };
+        }
+        if (reason === "message")
+          continue;
+        return { ok: true, transition: "changed", ...coreState(pick(json, ["status"])) };
+      }
+    },
+    async readOutput(handle, source, readOptions) {
+      const found = await owned(handle);
+      if (isRefusal(found))
+        return found;
+      const result = await hc(HC_CLI.read(found.ids.address, source === "visible" ? 0 : readOptions?.lines ?? SCROLLBACK_LINES));
+      if (isRefusal(result))
+        return result;
+      if (result.code !== 0)
+        return refuse3("provider_error", `hc read failed: ${failure2(result)}`, handle);
+      const text = pick(parseJson(result.stdout), ["text"]);
+      return { ok: true, text: typeof text === "string" ? text : "", source };
+    },
+    async observeState(handle) {
+      const found = await owned(handle);
+      if (isRefusal(found))
+        return found;
+      return { ok: true, ...observed(found.terminal) };
+    },
+    async attachSession(handle) {
+      const found = await owned(handle);
+      if (isRefusal(found))
+        return found;
+      if (pick(found.terminal, ["state"]) === "finished")
+        return refuse3("state_refused", "the session's terminal finished; there is nothing to watch", handle);
+      const name = String(pick(found.terminal, ["name"]) ?? "lane");
+      const cwd = String(pick(found.terminal, ["cwd"]) ?? options.env.PWD ?? process.cwd());
+      const viewer = await openViewer(found.ids.address, name, cwd);
+      return viewer.opened ? { ok: true } : refuse3("provider_unavailable", viewer.reason, handle);
+    },
+    async stopSession(handle) {
+      const found = await owned(handle);
+      if (isRefusal(found))
+        return found;
+      if (pick(found.terminal, ["state"]) === "finished")
+        return { ok: true };
+      await hc(HC_CLI.interrupt(found.ids.address));
+      const killed = await hc(HC_CLI.kill(found.ids.address));
+      if (isRefusal(killed))
+        return killed;
+      if (killed.code !== 0 && hcErrorKind(killed) !== "finished")
+        return refuse3("provider_error", `hc kill failed: ${failure2(killed)}`, handle);
+      return { ok: true };
+    },
+    async closeSession(handle, record) {
+      const found = await owned(handle);
+      if (isRefusal(found))
+        return found;
+      const unproven = closeRecordRefusal(handle, record);
+      if (unproven)
+        return unproven;
+      if (pick(found.terminal, ["state"]) !== "finished") {
+        const killed = await hc(HC_CLI.kill(found.ids.address));
+        if (isRefusal(killed))
+          return killed;
+        if (killed.code !== 0 && hcErrorKind(killed) !== "finished")
+          return refuse3("provider_error", `hc kill failed: ${failure2(killed)}`, handle);
+      }
+      const removed = await hc(HC_CLI.rm(found.ids.address));
+      if (isRefusal(removed))
+        return removed;
+      if (removed.code !== 0)
+        return refuse3("provider_error", `hc rm failed: ${failure2(removed)}`, handle);
+      return { ok: true };
+    },
+    async findSession(session_key) {
+      const bad = validateSessionKey(session_key);
+      if (bad)
+        return bad;
+      const listed = await hc(HC_CLI.list());
+      if (isRefusal(listed))
+        return listed;
+      if (listed.code !== 0)
+        return refuse3("provider_error", `hc list failed: ${failure2(listed)}`);
+      const parsed = parseJson(listed.stdout);
+      const terminals = pick(parsed, ["terminals"]) ?? pick(parsed, ["result", "terminals"]);
+      if (!Array.isArray(terminals))
+        return refuse3("provider_error", "hc list returned no terminals");
+      for (const terminal of terminals) {
+        if (pick(terminal, ["state"]) === "finished")
+          continue;
+        if (pick(terminal, ["labels", SESSION_KEY_LABEL]) !== session_key)
+          continue;
+        const address = pick(terminal, ["address"]);
+        const token = pick(terminal, ["labels", OWNER_LABEL]);
+        if (typeof address !== "string" || !address || typeof token !== "string" || !token)
+          continue;
+        return { ok: true, handle: encodeHerdrCoreHandle({ address, token }) };
+      }
+      return { ok: true, not_found: true };
+    },
+    async closeWithProof(handle, session_key) {
+      const bad = validateSessionKey(session_key);
+      if (bad)
+        return bad;
+      const ids = decodeHerdrCoreHandle(handle);
+      if (!ids)
+        return refuse3("not_owned", "handle is not a herdr-core session handle", handle);
+      const found = await owned(handle);
+      if (isRefusal(found)) {
+        if (found.code !== "not_owned")
+          return found;
+        const listed = await hc(HC_CLI.list());
+        if (isRefusal(listed))
+          return listed;
+        if (listed.code !== 0)
+          return refuse3("provider_error", `hc list failed: ${failure2(listed)}`, handle);
+        const parsed = parseJson(listed.stdout);
+        const terminals = pick(parsed, ["terminals"]) ?? pick(parsed, ["result", "terminals"]);
+        if (Array.isArray(terminals)) {
+          const survivor = terminals.some((t) => pick(t, ["state"]) !== "finished" && pick(t, ["labels", SESSION_KEY_LABEL]) === session_key);
+          if (!survivor)
+            return { ok: true, exited: true, handle, session_key };
+        }
+        return found;
+      }
+      if (pick(found.terminal, ["labels", SESSION_KEY_LABEL]) !== undefined && pick(found.terminal, ["labels", SESSION_KEY_LABEL]) !== session_key) {
+        return refuse3("not_owned", "terminal was not created for this session key", handle);
+      }
+      if (pick(found.terminal, ["labels", SESSION_KEY_LABEL]) === undefined && pick(found.terminal, ["labels", OWNER_LABEL]) !== session_key) {
+        return refuse3("not_owned", "terminal was not created for this session key", handle);
+      }
+      if (pick(found.terminal, ["state"]) !== "finished") {
+        const killed = await hc(HC_CLI.kill(found.ids.address));
+        if (isRefusal(killed))
+          return killed;
+        if (killed.code !== 0 && hcErrorKind(killed) !== "finished")
+          return refuse3("provider_error", `hc kill failed: ${failure2(killed)}`, handle);
+      }
+      const removed = await hc(HC_CLI.rm(found.ids.address));
+      if (isRefusal(removed))
+        return removed;
+      if (removed.code !== 0)
+        return refuse3("provider_error", `hc rm failed: ${failure2(removed)}`, handle);
+      return { ok: true, exited: true, handle, session_key };
+    },
+    async reconcile(handles) {
+      const sessions = [];
+      for (const handle of handles) {
+        const found = await owned(handle);
+        if (isRefusal(found)) {
+          if (found.code === "provider_unavailable")
+            return found;
+          sessions.push({ handle, state: "unknown", provenance: "none", ...found.code === "not_owned" ? { refused: found.code } : {} });
+          continue;
+        }
+        sessions.push({ handle, ...observed(found.terminal) });
+      }
+      return { ok: true, sessions };
+    },
+    async sendKeys(handle, key) {
+      const found = await owned(handle);
+      if (isRefusal(found))
+        return found;
+      const result = await hc(HC_CLI.keys(found.ids.address, key));
+      if (isRefusal(result))
+        return result;
+      if (result.code !== 0)
+        return refuse3("provider_error", `hc keys failed: ${failure2(result)}`, handle);
+      return { ok: true };
+    }
+  };
+}
+
+// plugins/immune-brain/runtime/session/provider_registry.ts
+var EXECUTOR_HOSTS3 = ["claude-code", "pi", "antigravity"];
+function herdrCheck(env) {
+  if (env.HERDR_ENV !== "1")
+    return { ok: false, reason: "not running inside Herdr (HERDR_ENV is not 1)" };
+  if (!env.HERDR_WORKSPACE_ID)
+    return { ok: false, reason: "HERDR_WORKSPACE_ID is not set" };
+  return { ok: true };
+}
+var HERDR_RECOVERY = "run inside Herdr with HERDR_ENV=1 and HERDR_WORKSPACE_ID set to the Parent workspace";
+var HERDR_CORE_RECOVERY = "ensure hc 0.1.19+ is installed and a core server answers (hc server status --json)";
+var HERDR_DESCRIPTOR = {
+  name: "herdr",
+  checkEnv: herdrCheck,
+  recovery: HERDR_RECOVERY,
+  factory: (env) => createHerdrSessionProvider({ env }),
+  roles: {
+    executor: { hosts: [...EXECUTOR_HOSTS3], workspace: "local_path", find_by_key: true, exit_proof: true },
+    authority: { hosts: [...EXECUTOR_HOSTS3] },
+    advisory: { hosts: [...EXECUTOR_HOSTS3] }
+  }
+};
+var HERDR_CORE_DESCRIPTOR = {
+  name: "herdr-core",
+  checkEnv: () => ({ ok: true }),
+  recovery: HERDR_CORE_RECOVERY,
+  factory: (env) => createHerdrCoreSessionProvider({ env, viewer: createHerdrViewer({ env }) ?? undefined }),
+  roles: {
+    executor: { hosts: [], workspace: "local_path", find_by_key: true, exit_proof: false }
+  }
+};
+var SESSION_PROVIDER_REGISTRY = [HERDR_DESCRIPTOR, HERDR_CORE_DESCRIPTOR];
+function resolveSessionProvider(options) {
+  const registry = options.registry ?? SESSION_PROVIDER_REGISTRY;
+  const reasons = [];
+  for (const name of options.providers) {
+    const descriptor = registry.find((d) => d.name === name);
+    if (!descriptor) {
+      reasons.push({ provider: name, reason: `unknown session provider ${JSON.stringify(name)}`, recovery: "choose one of herdr, herdr-core" });
+      continue;
+    }
+    const envCheck = descriptor.checkEnv(options.env);
+    if (!envCheck.ok) {
+      reasons.push({ provider: name, reason: envCheck.reason, recovery: descriptor.recovery });
+      continue;
+    }
+    if (options.role === "executor") {
+      const admission = descriptor.roles.executor;
+      if (!admission) {
+        reasons.push({ provider: name, reason: "no executor role", recovery: descriptor.recovery });
+        continue;
+      }
+      if (!admission.hosts.includes(options.host)) {
+        reasons.push({ provider: name, reason: `host ${options.host} not admitted`, recovery: `use one of ${admission.hosts.join(", ") || "none admitted"}` });
+        continue;
+      }
+      if (admission.workspace !== "local_path") {
+        reasons.push({ provider: name, reason: "no local_path workspace", recovery: descriptor.recovery });
+        continue;
+      }
+      if (!admission.find_by_key) {
+        reasons.push({ provider: name, reason: "no find_by_key", recovery: descriptor.recovery });
+        continue;
+      }
+      return { ok: true, provider: name, descriptor };
+    }
+    const admission = descriptor.roles[options.role];
+    if (!admission) {
+      reasons.push({ provider: name, reason: `no ${options.role} role`, recovery: descriptor.recovery });
+      continue;
+    }
+    if (!admission.hosts.includes(options.host)) {
+      reasons.push({ provider: name, reason: `host ${options.host} not admitted`, recovery: `use one of ${admission.hosts.join(", ") || "none admitted"}` });
+      continue;
+    }
+    return { ok: true, provider: name, descriptor };
+  }
+  return { ok: false, code: "lane_session_unavailable", reasons };
+}
+
+// plugins/immune-brain/runtime/lane_sessions/index.ts
+init_plugin_source_skew();
+init_batch_state();
+
+// plugins/immune-brain/runtime/lane_sessions/session_port_adapter.ts
+function isRefusal(value) {
+  return typeof value === "object" && value !== null && value.ok === false;
+}
+function refusalReason(value) {
+  return typeof value.reason === "string" ? value.reason : "provider failure";
+}
+function isPaneNotFound(reason) {
+  return reason.includes("pane_not_found");
+}
+
+class SessionPortAdapter {
+  provider;
+  port;
+  host;
+  hostArgs;
+  constructor(port, host, hostArgs = []) {
+    this.port = port;
+    this.provider = port.provider;
+    this.host = host;
+    this.hostArgs = [...hostArgs];
+  }
+  async open(input) {
+    const result = await this.port.createSession({
+      cwd: input.cwd,
+      label: input.label,
+      host: this.host,
+      hostArgs: this.hostArgs,
+      entry: input.entry,
+      session_key: input.key,
+      ...input.env && Object.keys(input.env).length > 0 ? { env: input.env } : {}
+    });
+    if (isRefusal(result))
+      return { ok: false, code: result.code, reason: result.reason };
+    return { ok: true, handle: result.handle, entry_submitted: result.entry_submitted, ...result.attention !== undefined ? { attention: result.attention ?? null } : {} };
+  }
+  async resume(handle, entry) {
+    const result = await this.port.createSession({
+      cwd: ".",
+      label: "resume",
+      host: this.host,
+      hostArgs: this.hostArgs,
+      entry,
+      resume: handle
+    });
+    if (isRefusal(result)) {
+      return { ok: false, code: result.code, reason: result.reason };
+    }
+    return { ok: true, entry_submitted: result.entry_submitted };
+  }
+  async find(key) {
+    if (!this.port.findSession)
+      return { ok: true, not_found: true };
+    const result = await this.port.findSession(key);
+    if (isRefusal(result)) {
+      const reason = refusalReason(result);
+      if (isPaneNotFound(reason))
+        return { ok: true, not_found: true };
+      return { ok: false, code: result.code, reason: result.reason };
+    }
+    return result;
+  }
+  async observe(handle) {
+    const result = await this.port.observeState(handle);
+    if (isRefusal(result)) {
+      const reason = refusalReason(result);
+      if (isPaneNotFound(reason))
+        return { ok: true, state: "exited" };
+      return { ok: true, state: "unknown" };
+    }
+    if (result.state === "working" || result.state === "blocked" || result.state === "idle" || result.state === "done" || result.state === "error" || result.state === "unknown") {
+      return { ok: true, state: result.state };
+    }
+    return { ok: true, state: "unknown" };
+  }
+  async send(handle, text) {
+    const result = await this.port.sendInstruction(handle, text);
+    if (isRefusal(result))
+      return { ok: false, code: result.code, reason: result.reason };
+    return { ok: true, state: result.state };
+  }
+  async stop(handle) {
+    const result = await this.port.stopSession(handle);
+    if (isRefusal(result)) {
+      const reason = refusalReason(result);
+      if (isPaneNotFound(reason))
+        return { ok: true };
+      return { ok: false, code: result.code, reason: result.reason };
+    }
+    return { ok: true };
+  }
+  async closeWithProof(handle, key) {
+    if (!this.port.closeWithProof)
+      return { ok: false, code: "provider_unavailable", reason: `provider ${this.provider} has no close proof` };
+    const result = await this.port.closeWithProof(handle, key);
+    if (isRefusal(result)) {
+      const reason = refusalReason(result);
+      if (isPaneNotFound(reason))
+        return { ok: true, exited: true, handle, key };
+      return { ok: false, code: result.code, reason: result.reason };
+    }
+    return { ok: true, exited: true, handle, key };
+  }
+}
+
+// plugins/immune-brain/runtime/lane_sessions/index.ts
+function hostArgsFor(deps, taskId) {
+  if (!deps.hostArgs)
+    return [];
+  return typeof deps.hostArgs === "function" ? deps.hostArgs(taskId) : [...deps.hostArgs];
+}
+function resumeChildren(record) {
+  return record.children.map((child) => {
+    const identity = record.intent_identities?.[child.task_id];
     return {
-      interaction_id: request.interaction_id,
-      kind: request.kind,
-      authority: request.authority,
-      subject: request.subject,
-      binding: request.binding,
-      prompt: request.prompt,
-      ...request.options && request.options.length > 0 ? { options: [...request.options] } : {},
-      ...request.context === undefined ? {} : { context: request.context },
-      answer: request.answer,
-      answerable,
-      ...answerable ? {} : { local_action: LOCAL_ACTION[request.kind] ?? "" },
-      answered: answer !== null
+      task_id: child.task_id,
+      slice_id: child.slice_id,
+      blocked_by: [...child.blocked_by],
+      status: "enrollable",
+      reason: null,
+      intent_path: identity?.intent_path ?? null,
+      intent_revision: identity?.intent_revision ?? null,
+      intent_content_hash: identity?.intent_content_hash ?? null,
+      ...identity?.intent_authority_hash ? { intent_authority_hash: identity.intent_authority_hash } : {}
     };
   });
-  return { contract: LOOP_INTERACTIONS_CONTRACT, state_dir: stateDir, pending, pending_count: pending.length };
+}
+function claudePluginDirOrNull(resolve) {
+  try {
+    return (resolve ?? runtimeClaudePluginDir)() ?? null;
+  } catch {
+    return null;
+  }
+}
+function executorSessionTarget(input) {
+  const choice = laneExecutorChoice(input.root, input.executor, input.host) ?? { host: input.host };
+  const hostArgs = [];
+  if (choice.model)
+    hostArgs.push("--model", choice.model);
+  if (choice.effort)
+    hostArgs.push(choice.host === "pi" ? "--thinking" : "--effort", choice.effort);
+  if (choice.host === "claude-code") {
+    const pluginDir = claudePluginDirOrNull(input.pluginDir);
+    if (pluginDir)
+      hostArgs.push("--plugin-dir", pluginDir);
+  }
+  return { host: choice.host, hostArgs };
+}
+function portFor(provider, env, registry, createPort) {
+  if (createPort) {
+    try {
+      return createPort(provider, env);
+    } catch {
+      return null;
+    }
+  }
+  const descriptor = registry.find((d) => d.name === provider);
+  if (!descriptor)
+    return null;
+  return descriptor.factory(env);
+}
+function openBatchSessionPort(input) {
+  const registry = input.providerRegistry ?? SESSION_PROVIDER_REGISTRY;
+  if (!input.provider)
+    return { ok: false, reason: "lane_session_unavailable: no session provider recorded for this batch", recovery: "retire the stale batch" };
+  const descriptor = registry.find((d) => d.name === input.provider);
+  if (!descriptor)
+    return { ok: false, reason: `lane_session_unavailable: recorded provider ${input.provider} is not registered`, recovery: "retire the stale batch" };
+  const check = descriptor.checkEnv(input.env);
+  if (!check.ok)
+    return { ok: false, reason: `lane_session_unavailable: ${check.reason}`, recovery: descriptor.recovery };
+  const raw = portFor(input.provider, input.env, registry, input.createPort);
+  if (!raw)
+    return { ok: false, reason: "lane_session_unavailable: provider factory failed", recovery: "retry inside Herdr" };
+  const target = executorSessionTarget({ root: input.root, executor: input.executor, host: input.host, pluginDir: input.claudePluginDir });
+  return { ok: true, port: new SessionPortAdapter(raw, target.host, input.hostArgs ?? target.hostArgs) };
+}
+function refusalFromReasons(reasons) {
+  const detail = reasons.map((r) => `${r.provider}: ${r.reason}`).join("; ");
+  return {
+    ok: false,
+    code: "lane_session_unavailable",
+    reason: `lane_session_unavailable: ${detail}`,
+    recovery: reasons[0]?.recovery ?? "run inside Herdr with HERDR_ENV=1 and HERDR_WORKSPACE_ID set",
+    reasons
+  };
+}
+function toBatchInput(agreement, deps, now, sessions) {
+  return {
+    root: deps.root,
+    batch_id: agreement.batch_id,
+    initiative_slug: agreement.initiative_slug,
+    ...deps.entry_kind ? { entry_kind: deps.entry_kind } : {},
+    registry: deps.registry,
+    capability: deps.capability,
+    children: agreement.children,
+    plan_digest: agreement.plan_digest,
+    base_head: agreement.base_head,
+    confirmation_time: deps.confirmation_time ?? now,
+    budget: agreement.budget,
+    now,
+    kernel: deps.kernel,
+    ...deps.git ? { git: deps.git } : {},
+    ...deps.tracker ? { tracker: deps.tracker } : {},
+    ...deps.max_parallel !== undefined ? { max_parallel: deps.max_parallel } : { max_parallel: agreement.children.length },
+    ...agreement.branch ? { branch: agreement.branch } : {},
+    confirmation: agreement.confirmation,
+    return_policy: agreement.return_policy,
+    interaction_mode: agreement.interaction_mode,
+    ...agreement.final_verification.commands.length > 0 ? { final_verification: [...agreement.final_verification.commands] } : {},
+    final_verification_required: agreement.final_verification.required,
+    executor_freeze: { ...deps.executor ? { request: deps.executor } : {}, parentHost: deps.host },
+    ...deps.executor_runtime ? { executor_runtime: deps.executor_runtime } : {},
+    ...deps.max_parallel !== undefined ? { max_parallel: deps.max_parallel } : {},
+    ...deps.lane_instruction !== undefined ? { lane_instruction: deps.lane_instruction } : {},
+    ...deps.lane_session_close !== undefined ? { lane_session_close: deps.lane_session_close } : {},
+    ...deps.lane_offers !== undefined ? { lane_offers: deps.lane_offers } : {},
+    ...deps.review_profile !== undefined ? { review_profile: deps.review_profile } : {},
+    ...deps.final_verification !== undefined ? { final_verification: deps.final_verification } : {},
+    ...deps.topology_digest !== undefined ? { topology_digest: deps.topology_digest } : {},
+    sessions
+  };
+}
+async function startLanes(agreement, deps) {
+  const registry = deps.providerRegistry ?? SESSION_PROVIDER_REGISTRY;
+  const target = executorSessionTarget({ root: deps.root, executor: deps.executor, host: deps.host, pluginDir: deps.claudePluginDir });
+  const resolved = resolveSessionProvider({ role: "executor", providers: deps.providers, host: target.host, env: deps.env, registry });
+  if (!resolved.ok)
+    return refusalFromReasons(resolved.reasons);
+  const raw = portFor(resolved.provider, deps.env, registry, deps.createPort);
+  if (!raw)
+    return refusalFromReasons([{ provider: resolved.provider, reason: "provider factory failed", recovery: "retry inside Herdr" }]);
+  const adapter = new SessionPortAdapter(raw, target.host, deps.hostArgs?.length ? hostArgsFor(deps, agreement.children[0]?.task_id ?? "lane") : target.hostArgs);
+  const now = deps.now ?? new Date().toISOString();
+  const input = toBatchInput(agreement, deps, now, adapter);
+  const rawReport = await runLaneBatch(input, null);
+  const report = rawReport;
+  if (Array.isArray(report.handoffs))
+    report.handoffs = report.handoffs.filter((h) => h.role !== "executor");
+  return report;
+}
+async function advanceLanes(root, batchId, deps) {
+  let persisted = null;
+  try {
+    persisted = readAnyBatchRunState(root, batchId);
+  } catch {
+    return { ok: false, code: "lane_session_unavailable", reason: `lane_session_unavailable: unreadable batch ${batchId}`, recovery: "inspect the batch record" };
+  }
+  if (!persisted || !isLaneBatchRecord(persisted)) {
+    return { ok: false, code: "lane_session_unavailable", reason: `lane_session_unavailable: no active v3 batch ${batchId}`, recovery: "start a fresh batch" };
+  }
+  if (persisted.batch_state === "discarding")
+    return { ok: false, code: "lane_session_unavailable", reason: `lane_session_unavailable: batch ${batchId} is being discarded`, recovery: "the loop daemon retries the discard on its next tick" };
+  const recordedProvider = persisted.session_provider ?? null;
+  const registry = deps.providerRegistry ?? SESSION_PROVIDER_REGISTRY;
+  if (recordedProvider) {
+    const descriptor = registry.find((d) => d.name === recordedProvider);
+    if (!descriptor) {
+      return refusalFromReasons([{ provider: recordedProvider, reason: "recorded provider is not registered", recovery: "retire the stale batch" }]);
+    }
+    const check = descriptor.checkEnv(deps.env);
+    if (!check.ok) {
+      return refusalFromReasons([{ provider: recordedProvider, reason: check.reason, recovery: descriptor.recovery }]);
+    }
+    const raw = portFor(recordedProvider, deps.env, registry, deps.createPort);
+    if (!raw)
+      return refusalFromReasons([{ provider: recordedProvider, reason: "provider factory failed", recovery: "retry inside Herdr" }]);
+    const resumeTarget = executorSessionTarget({
+      root: deps.root,
+      executor: persisted.executor_preferences ?? deps.executor,
+      host: deps.host,
+      pluginDir: deps.claudePluginDir
+    });
+    const adapter = new SessionPortAdapter(raw, resumeTarget.host, deps.hostArgs?.length ? hostArgsFor(deps, batchId) : resumeTarget.hostArgs);
+    const now = deps.now ?? new Date().toISOString();
+    const input = {
+      root: deps.root,
+      batch_id: batchId,
+      initiative_slug: persisted.initiative_slug,
+      ...deps.entry_kind ? { entry_kind: deps.entry_kind } : {},
+      registry: deps.registry,
+      capability: deps.capability,
+      children: resumeChildren(persisted),
+      plan_digest: persisted.plan_digest,
+      base_head: persisted.base_head,
+      confirmation_time: deps.confirmation_time ?? now,
+      budget: persisted.budget,
+      now,
+      kernel: deps.kernel,
+      ...deps.git ? { git: deps.git } : {},
+      ...deps.tracker ? { tracker: deps.tracker } : {},
+      max_parallel: deps.max_parallel ?? persisted.max_parallel,
+      ...deps.literal_user_confirmation ? { literal_user_confirmation: true } : {},
+      confirmation: persisted.confirmation,
+      return_policy: persisted.return_policy,
+      interaction_mode: persisted.interaction_mode,
+      ...Array.isArray(persisted.final_verification) ? { final_verification: persisted.final_verification } : {},
+      ...deps.lane_instruction !== undefined ? { lane_instruction: deps.lane_instruction } : {},
+      ...deps.lane_session_close !== undefined ? { lane_session_close: deps.lane_session_close } : {},
+      ...deps.lane_offers !== undefined ? { lane_offers: deps.lane_offers } : {},
+      ...deps.review_profile !== undefined ? { review_profile: deps.review_profile } : {},
+      ...deps.stall_exempt ? { stall_exempt: true } : {},
+      sessions: adapter
+    };
+    const rawAdv = await runLaneBatch(input, persisted);
+    const advReport = rawAdv;
+    if (Array.isArray(advReport.handoffs))
+      advReport.handoffs = advReport.handoffs.filter((h) => h.role !== "executor");
+    return advReport;
+  }
+  const target = executorSessionTarget({ root: deps.root, executor: deps.executor, host: deps.host, pluginDir: deps.claudePluginDir });
+  const resolved = resolveSessionProvider({ role: "executor", providers: deps.providers, host: target.host, env: deps.env, registry });
+  if (!resolved.ok)
+    return refusalFromReasons(resolved.reasons);
+  const raw = portFor(resolved.provider, deps.env, registry, deps.createPort);
+  if (!raw)
+    return refusalFromReasons([{ provider: resolved.provider, reason: "provider factory failed", recovery: "retry inside Herdr" }]);
+  const adapter = new SessionPortAdapter(raw, target.host, deps.hostArgs?.length ? hostArgsFor(deps, batchId) : target.hostArgs);
+  const now = deps.now ?? new Date().toISOString();
+  const input = {
+    root: deps.root,
+    batch_id: batchId,
+    initiative_slug: persisted.initiative_slug,
+    ...deps.entry_kind ? { entry_kind: deps.entry_kind } : {},
+    registry: deps.registry,
+    capability: deps.capability,
+    children: resumeChildren(persisted),
+    plan_digest: persisted.plan_digest,
+    base_head: persisted.base_head,
+    confirmation_time: deps.confirmation_time ?? now,
+    budget: persisted.budget,
+    now,
+    kernel: deps.kernel,
+    ...deps.git ? { git: deps.git } : {},
+    ...deps.tracker ? { tracker: deps.tracker } : {},
+    max_parallel: deps.max_parallel ?? persisted.max_parallel,
+    ...deps.literal_user_confirmation ? { literal_user_confirmation: true } : {},
+    ...deps.lane_instruction !== undefined ? { lane_instruction: deps.lane_instruction } : {},
+    ...deps.lane_session_close !== undefined ? { lane_session_close: deps.lane_session_close } : {},
+    ...deps.lane_offers !== undefined ? { lane_offers: deps.lane_offers } : {},
+    ...deps.review_profile !== undefined ? { review_profile: deps.review_profile } : {},
+    ...deps.stall_exempt ? { stall_exempt: true } : {},
+    sessions: adapter
+  };
+  const raw2 = await runLaneBatch(input, persisted);
+  const report2 = raw2;
+  if (Array.isArray(report2.handoffs))
+    report2.handoffs = report2.handoffs.filter((h) => h.role !== "executor");
+  return report2;
+}
+
+// plugins/immune-brain/runtime/unattended/batch_kernel_port.ts
+init_batch_git();
+init_assurance_projection();
+init_batch_authority();
+
+// plugins/immune-brain/runtime/kernel/enrollment.ts
+init_sqlite_store();
+init_intent();
+init_spec_binding();
+init_batch_authority();
+init_pi_canary_prepare();
+init_workspace_scope();
+init_run_identity();
+init_storage();
+function singleTaskEnrollmentDirt(root, intentPath, intent) {
+  const binding = inspectSpecBinding(intent);
+  return dirtyWorkspacePaths(root, [intentPath, ...binding.ok && binding.binding ? [binding.binding.active] : []]);
+}
+
+class EnrollmentRehearsalError extends Error {
+  blockers;
+  constructor(blockers) {
+    super(`Kernel enrollment rehearsal failed: ${blockers.join("; ")}`);
+    this.name = "EnrollmentRehearsalError";
+    this.blockers = blockers;
+  }
+}
+function runEnrollmentPreconditionChecks(root, input, capability, registry, mode, beforeLock, onReady) {
+  const blockers = [];
+  let validated = null;
+  try {
+    validated = registry.inspect(capability, input.capability_binding);
+    if (mode === "fail_fast" && validated.task_id !== input.task_id)
+      throw new Error("enrollment capability task mismatch");
+  } catch (error) {
+    if (mode === "fail_fast")
+      throw error;
+    blockers.push(`capability: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  beforeLock(validated);
+  return withKernelStoreLock(root, () => {
+    let current = null;
+    let workspace = null;
+    let intent = null;
+    let gitBaseHead = null;
+    let claimedScopePaths = [];
+    const fail = (report, error) => {
+      if (mode === "fail_fast")
+        throw error instanceof Error ? error : new Error(String(error));
+      blockers.push(report);
+    };
+    const localRun = reconcileKernelAuthority(root, input.task_id);
+    const localTerminal = localRun.state === "terminal_owner" && withKernelRead(root, (db) => readRunRowByTask(db, input.task_id)) !== null;
+    if (localTerminal) {
+      fail("local run is terminal; same-task re-enrollment is forbidden", new Error(`task ${input.task_id} is terminal; same-task re-enrollment is forbidden`));
+    } else {
+      current = readTaskRecordRaw(root, input.task_id);
+      if (current.record)
+        fail("task record already exists", new Error(`task ${input.task_id} already has a TaskRecord`));
+    }
+    workspace = readWorkspaceStateRaw(root);
+    if (workspace.state.current_working !== null)
+      fail(`workspace already owned by ${workspace.state.current_working}`, new Error(`workspace is already owned by ${workspace.state.current_working}`));
+    try {
+      intent = readTaskIntent(root, input.task_id);
+    } catch (error) {
+      fail(`intent: ${error instanceof Error ? error.message : String(error)}`, error);
+    }
+    if (intent) {
+      const binding = inspectSpecBinding(intent.intent);
+      if (!binding.ok)
+        fail(binding.message, new Error(binding.message));
+      if (input.confirmation) {
+        const verdict = verifyEnrollmentConfirmation(root, input.confirmation, {
+          risk: intent.intent.risk,
+          scope_hint: intent.intent.scope_hint
+        });
+        if (!verdict.ok) {
+          const message = `confirmation: ${verdict.reason}`;
+          fail(message, new Error(message));
+        }
+      }
+    }
+    try {
+      gitBaseHead = readGitHead(root);
+    } catch (error) {
+      fail(`git base: ${error instanceof Error ? error.message : String(error)}`, error);
+    }
+    if (intent && gitBaseHead) {
+      try {
+        if (!input.batch) {
+          const binding = inspectSpecBinding(intent.intent);
+          claimedScopePaths = [input.intent_path, ...binding.ok && binding.binding ? [binding.binding.active] : []];
+          const dirty = singleTaskEnrollmentDirt(root, input.intent_path, intent.intent);
+          if (dirty.length > 0) {
+            const message = `workspace_not_clean: ${dirty.join(", ")}`;
+            fail(message, new Error(message));
+          }
+        } else {
+          const disclosed = new Set(input.disclosed_scope_paths ?? []);
+          const dirty = dirtyScopePaths(root, intent.intent.scope_hint, input.task_id);
+          const unlisted = dirty.filter((path) => !disclosed.has(path));
+          if (unlisted.length > 0) {
+            const message = `task scope is already dirty before Enrollment: ${unlisted.join(", ")}; the confirmed Enrollment gate did not list these paths, so enroll again from the Host to review them`;
+            fail(message, new Error(message));
+          } else
+            claimedScopePaths = dirty;
+        }
+      } catch (error) {
+        fail(`scope: ${error instanceof Error ? error.message : String(error)}`, error);
+      }
+    }
+    const state = {
+      validated,
+      current,
+      workspace,
+      intent,
+      gitBaseHead,
+      claimedScopePaths
+    };
+    return onReady ? onReady(state) : { ...state, blockers };
+  });
+}
+function buildTaskRecordV4(input, intent, gitBaseHead) {
+  return {
+    contract: "assurance_kernel/task_record/v4",
+    task_id: input.task_id,
+    intent_snapshot: intent.intent,
+    intent_ref: {
+      path: input.intent_path,
+      content_hash: intent.content_hash
+    },
+    lifecycle: "active",
+    artifact_state: "active",
+    baseline: intent.content_hash,
+    git_base_head: gitBaseHead,
+    attestations: [],
+    findings: [],
+    history: []
+  };
+}
+function runEnrollmentRehearsal(root, input, capability, registry) {
+  const preconditions = runEnrollmentPreconditionChecks(root, input, capability, registry, "report", () => {
+    return;
+  });
+  return {
+    rehearsed: true,
+    writes_performed: false,
+    evidence: {
+      contract: "assurance_kernel/enrollment_rehearsal/v1",
+      task_id: input.task_id,
+      outcome: preconditions.blockers.length === 0 ? "ready" : "not_ready",
+      blockers: preconditions.blockers,
+      claimed_scope_paths: preconditions.claimedScopePaths,
+      generated_at: input.now
+    }
+  };
+}
+function enrollmentEventId(taskId, now) {
+  return enrollmentEventIdFor(taskId, now);
+}
+var CANCELLATION_BOUNDARY = Promise.resolve();
+async function enrollTask(root, registry, request) {
+  const { binding, batch, now, checkpoint, disclosed_scope_paths, confirmation } = request;
+  const capability = registry.issue(binding);
+  const input = {
+    task_id: binding.task_id,
+    intent_path: binding.intent_path,
+    intent_revision: binding.intent_revision,
+    preparation_digest: binding.preparation_digest,
+    capability,
+    capability_binding: binding,
+    ...batch ? { batch } : {},
+    ...disclosed_scope_paths ? { disclosed_scope_paths } : {},
+    ...confirmation ? { confirmation } : {},
+    now
+  };
+  const { eventId, digest } = digestForEnrollment(input);
+  const committed = readCommittedEnrollmentResult(root, input.task_id, eventId, digest);
+  if (committed) {
+    const result = {
+      record: committed.record,
+      backend_claim: committed.claim,
+      workspace: { revision: "", state: committed.workspace }
+    };
+    return checkpoint ? { outcome: "enrolled", result } : result;
+  }
+  const rehearsal = runEnrollmentRehearsal(root, input, capability, registry);
+  if (!rehearsal.rehearsed || rehearsal.evidence.outcome !== "ready")
+    throw new EnrollmentRehearsalError(rehearsal.evidence.blockers);
+  await CANCELLATION_BOUNDARY;
+  if (checkpoint && !checkpoint())
+    return { outcome: "cancelled" };
+  const result = enrollCanaryTask(root, input, registry);
+  return checkpoint ? { outcome: "enrolled", result } : result;
+}
+function digestForEnrollment(input) {
+  const eventId = enrollmentEventId(input.task_id, input.now);
+  return {
+    eventId,
+    digest: enrollmentRequestDigest({
+      task_id: input.task_id,
+      intent_path: input.intent_path,
+      intent_revision: input.intent_revision,
+      intent_content_hash: input.capability_binding.intent_content_hash,
+      preparation_digest: input.preparation_digest,
+      enrollment_event_id: eventId,
+      actor_id: input.capability_binding.actor_id,
+      confirmation_ref: input.capability_binding.confirmation_ref,
+      nonce: input.capability_binding.nonce
+    })
+  };
+}
+function enrollCanaryTask(root, input, registry) {
+  const { eventId, digest } = digestForEnrollment(input);
+  const replayed = readCommittedEnrollmentResult(root, input.task_id, eventId, digest);
+  if (replayed)
+    return {
+      record: replayed.record,
+      backend_claim: replayed.claim,
+      workspace: { revision: "", state: replayed.workspace }
+    };
+  let gitBaseHead = null;
+  let consumed = false;
+  try {
+    return runEnrollmentPreconditionChecks(root, input, input.capability, registry, "fail_fast", () => {
+      const recomputed = preparePiCanary(root, { task_id: input.task_id, now: input.now });
+      if (recomputed.digest !== input.preparation_digest)
+        throw new Error("enrollment preparation digest mismatch");
+      gitBaseHead = recomputed.git_base_head;
+      if (!gitBaseHead)
+        throw new Error(recomputed.git_error ?? "enrollment requires a committed Git HEAD");
+    }, (checks) => {
+      if (!checks.validated || !checks.intent || !checks.workspace || !checks.current)
+        throw new Error("enrollment precondition state incomplete");
+      const locked = preparePiCanary(root, { task_id: input.task_id, now: input.now });
+      if (locked.digest !== input.preparation_digest)
+        throw new Error("enrollment preparation digest mismatch");
+      if (checks.intent.intent.revision !== input.intent_revision)
+        throw new Error("intent revision mismatch");
+      if (checks.intent.content_hash !== checks.validated.intent_content_hash)
+        throw new Error("intent content hash mismatch");
+      if (checks.gitBaseHead !== gitBaseHead)
+        throw new Error("Git HEAD moved after the enrollment confirmation");
+      if (input.batch) {
+        const batch = input.batch.registry.inspect(input.batch.capability, input.batch.binding);
+        if (input.batch.registry.consumedChildren(input.batch.capability).length === 0)
+          assertBatchLineageOrigin(root, batch.base_head, input.batch.expected_head);
+        if (checks.gitBaseHead !== input.batch.expected_head)
+          throw new Error(`batch_head_lineage_broken: expected ${input.batch.expected_head}, found ${checks.gitBaseHead}`);
+      }
+      registry.consume(input.capability, input.capability_binding);
+      consumed = true;
+      if (input.batch)
+        input.batch.registry.consumeChild(input.batch.capability, input.batch.binding, input.task_id);
+      if (!gitBaseHead)
+        throw new Error("enrollment requires a committed Git HEAD");
+      const record = buildTaskRecordV4(input, checks.intent, gitBaseHead);
+      const nextWorkspace = {
+        ...checks.workspace.state,
+        current_working: input.task_id
+      };
+      const claim = {
+        contract: "assurance_kernel/backend_claim/v2",
+        backend: "kernel",
+        task_id: input.task_id,
+        intent_revision: input.intent_revision,
+        intent_content_hash: checks.intent.content_hash,
+        enrollment_event_id: eventId,
+        lifecycle_status: "active",
+        created_at: input.now,
+        updated_at: input.now
+      };
+      const mutation = commitEnrollmentLocked(root, input.task_id, {
+        contract: "assurance_kernel/workspace_transaction/v2",
+        task_id: input.task_id,
+        expected_record_hash: checks.current.revision,
+        next_record_content: `${JSON.stringify(record, null, 2)}
+`,
+        expected_workspace_hash: checks.workspace.revision,
+        next_workspace_content: `${JSON.stringify(nextWorkspace, null, 2)}
+`
+      }, claim, digest);
+      writeEnrollmentBaseline(root, checks.claimedScopePaths, !input.batch);
+      return {
+        record: mutation.record,
+        backend_claim: claim,
+        workspace: { revision: "", state: mutation.workspace }
+      };
+    });
+  } catch (error) {
+    const ownership = (() => {
+      try {
+        return {
+          known: true,
+          owned: reconcileKernelAuthority(root, input.task_id).owner_task_id === input.task_id
+        };
+      } catch {
+        return { known: false, owned: false };
+      }
+    })();
+    if (consumed && input.batch && ownership.known && !ownership.owned)
+      input.batch.registry.releaseChild(input.batch.capability, input.task_id);
+    throw error;
+  }
+}
+
+// plugins/immune-brain/runtime/unattended/batch_kernel_port.ts
+init_storage();
+init_batch_preflight();
+function batchQaFailureFacts(record) {
+  const failed = record.history.filter((event) => event.type === "request_rework" && event.authority?.authority_kind === "qa");
+  return {
+    qa_failure_count: failed.length,
+    last_qa_failure_at: failed.at(-1)?.at ?? null,
+    recovery_findings: record.findings.filter((f) => f.status === "open").map((f) => ({ id: f.id, kind: f.kind, status: f.status, acceptance_id: f.acceptance_id }))
+  };
+}
+function createBatchKernelPort(input) {
+  const project = input.deps?.projectAssurance ?? projectAssurance;
+  const readRecord = input.deps?.readTaskRecordRaw ?? readTaskRecordRaw;
+  const deriveEnrollment = input.deps?.deriveChildEnrollment ?? deriveChildEnrollment;
+  const enrollKernelTask = input.deps?.enrollTask ?? enrollTask;
+  const base = {
+    canStartTask: async (taskId) => {
+      if (!input.parent)
+        return true;
+      const task = input.parent.tasks.find((child) => child.task_id === taskId);
+      if (!task)
+        throw new Error("authorized child absent from confirmed Parent topology");
+      const authorizedIds = new Set(input.registry.children(input.capability).map((child) => child.task_id));
+      const external = task.blocked_by.filter((id) => !authorizedIds.has(id));
+      if (!external.length)
+        return true;
+      const observation = await observeParentCompletion(input.root, input.parent.initiative_id, external);
+      return observation.missing_task_ids.length === 0;
+    },
+    enrollTask: async ({ root, task_id, batch }) => {
+      const now = new Date().toISOString();
+      const derived = deriveEnrollment(root, batch.registry, {
+        capability: batch.capability,
+        binding: input.binding,
+        task_id,
+        expected_head: batch.binding.expected_head,
+        now
+      });
+      await enrollKernelTask(root, input.enrollmentRegistry, {
+        binding: derived.binding,
+        batch: {
+          registry: batch.registry,
+          capability: batch.capability,
+          binding: input.binding,
+          expected_head: batch.binding.expected_head
+        },
+        now
+      });
+      const recordRaw = readRecord(root, task_id);
+      return { record_revision: recordRaw.revision };
+    },
+    advanceTask: input.advanceTask,
+    projectTask: async (root, taskId) => {
+      const fresh = await project(root, taskId);
+      if (!fresh.claim || fresh.projection.lifecycle !== "active" || fresh.error !== null)
+        return fresh;
+      const { record, revision } = readRecord(root, taskId);
+      if (!record || revision !== fresh.projection.record_revision)
+        throw new Error(`Kernel recovery projection changed for ${taskId}`);
+      return { ...fresh, ...batchQaFailureFacts(record) };
+    },
+    ownsTaskClaim: (taskId) => input.registry.isChildConsumed(input.capability, taskId),
+    validateBatchAuthorization: (request) => request.registry.inspect(request.capability, request.binding)
+  };
+  const port = { ...base, ...input.overrides ?? {} };
+  const overriddenOwnsTaskClaim = port.ownsTaskClaim;
+  return {
+    ...port,
+    ownsTaskClaim: (taskId) => {
+      if (input.resume.isResuming && taskId === readActiveClaimTaskId(input.root)) {
+        return isOwnBatchClaim(input.root, input.resume.existingBatch, taskId, input.resume.batchBranch);
+      }
+      return overriddenOwnsTaskClaim(taskId);
+    }
+  };
 }
 
 // plugins/immune-brain/runtime/unattended/batch_disposition.ts
@@ -25849,8 +24857,8 @@ init_storage_paths();
 init_batch_reasons();
 init_batch_preflight();
 init_batch_state();
-import { existsSync as existsSync22 } from "node:fs";
-import { join as join38 } from "node:path";
+import { existsSync as existsSync19 } from "node:fs";
+import { join as join36 } from "node:path";
 var SERIAL_IN_FLIGHT = new Set(["enrolled", "settled"]);
 var LANE_IN_FLIGHT = new Set(["lane_admitted", "enrolled", "settled", "lane_committed"]);
 var RETIRE_REASON = "Retired by an explicit literal-user disposition: the batch plan moved past this record, so its authorization could neither reconfirm nor continue. " + "Recorded child commits, child states and the batch branch are preserved as evidence. " + "Children this batch never executed carry no commit, no batch trailer and no approval; nothing infers their delivery from this record.";
@@ -25870,7 +24878,7 @@ function laneChildLifecycleOf(root, child) {
   if (!lane)
     return kernelLifecycleOf(root, child.task_id);
   try {
-    if (!existsSync22(join38(lane.path, KERNEL_DB_RELATIVE)))
+    if (!existsSync19(join36(lane.path, KERNEL_DB_RELATIVE)))
       return null;
     if (readActiveClaimTaskId(lane.path) === child.task_id)
       return null;
@@ -26050,9 +25058,9 @@ init_batch_state();
 init_session_result_slot();
 init_host_port();
 import { execFileSync as execFileSync14 } from "node:child_process";
-import { accessSync as accessSync3, constants as constants9, existsSync as existsSync23, readFileSync as readFileSync24 } from "node:fs";
-import { createHash as createHash31 } from "node:crypto";
-import { delimiter as delimiter4, dirname as dirname19, join as join39 } from "node:path";
+import { accessSync as accessSync3, constants as constants9, existsSync as existsSync20, readFileSync as readFileSync22 } from "node:fs";
+import { createHash as createHash30 } from "node:crypto";
+import { delimiter as delimiter4, dirname as dirname19, join as join37 } from "node:path";
 import { fileURLToPath as fileURLToPath4 } from "node:url";
 var REVIEW_PROFILE_RECOVERY = "Set `agents.reviewer` (a user `agents.profiles` name, `host[:model][@effort]` or { host, model?, effort? }) in the user or project configuration, then call `advance_assurance`";
 var REVIEW_BINARY = {
@@ -26094,7 +25102,7 @@ var CLAUDE_REVIEW_SETTINGS = JSON.stringify({
 });
 function reviewBinary(host) {
   const name = REVIEW_BINARY[host];
-  return (process.env.PATH ?? "").split(delimiter4).map((dir) => join39(dir || ".", name)).find((path) => {
+  return (process.env.PATH ?? "").split(delimiter4).map((dir) => join37(dir || ".", name)).find((path) => {
     try {
       accessSync3(path, constants9.X_OK);
       return true;
@@ -26114,8 +25122,8 @@ function reviewSessionRunner(env = process.env) {
   }
   let dir = dirname19(fileURLToPath4(import.meta.url));
   for (let level = 0;level < 5; level++) {
-    const candidate = join39(dir, "bin", "imm-session");
-    if (existsSync23(candidate))
+    const candidate = join37(dir, "bin", "imm-session");
+    if (existsSync20(candidate))
       return candidate;
     dir = dirname19(dir);
   }
@@ -26125,7 +25133,7 @@ function git9(root, argv) {
   return execFileSync14("git", argv, { cwd: root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] });
 }
 function digest2(bytes) {
-  return `sha256:${createHash31("sha256").update(bytes).digest("hex")}`;
+  return `sha256:${createHash30("sha256").update(bytes).digest("hex")}`;
 }
 function reviewTreeState(root) {
   return {
@@ -26180,7 +25188,7 @@ function sessionSpec(runner, label, input) {
 function sessionAwaitOutcome(awaitRecord) {
   let record;
   try {
-    record = JSON.parse(readFileSync24(awaitRecord, "utf8"));
+    record = JSON.parse(readFileSync22(awaitRecord, "utf8"));
   } catch {
     return null;
   }
@@ -26260,7 +25268,7 @@ class CliReviewHost {
     requireReviewBinary(profile);
     const slotId = `verify-${request.operationId}`;
     const slot = allocateResultSlot(review.root, slotId, request.prompt, "verify-packet.md");
-    const awaitRecord = join39(slot.directory, "session-await.json");
+    const awaitRecord = join37(slot.directory, "session-await.json");
     const label = `verify ${request.taskId}`.slice(0, 32);
     const actorId = `cli-verifier:${profile.host}:${request.operationId}`;
     const session = withSlot(slot, () => sessionSpec(sessionRunner, label, {
@@ -26323,7 +25331,7 @@ ${receiptInstruction(profile.host, slotId, slot.result)}`,
     const tree = reviewTreeState(root);
     const slotId = `review-${request.operationId}`;
     const slot = allocateResultSlot(root, slotId, request.snapshotPrompt);
-    const awaitRecord = join39(slot.directory, "session-await.json");
+    const awaitRecord = join37(slot.directory, "session-await.json");
     const actorId = `cli:${profile.host}:${request.operationId}`;
     const session = withSlot(slot, () => sessionSpec(sessionRunner, `review ${request.taskId}`.slice(0, 32), {
       root,
@@ -26421,12 +25429,12 @@ async function executeOrdinaryKernelOperation(input) {
   const operation = input.operation.op === "revise_intent" ? { ...input.operation, next_intent: parseProjectTaskIntent(root, input.operation.next_intent) } : input.operation;
   const priorIntent = (input.readIntent ?? readTaskIntentForRecord)(root, taskId);
   const nextScope = operation.op === "revise_intent" ? operation.next_intent.scope_hint : undefined;
-  const sidecar = join40(root, priorIntent.intent_ref.path);
-  const priorBytes = operation.op === "revise_intent" ? readFileSync25(sidecar) : null;
+  const sidecar = join38(root, priorIntent.intent_ref.path);
+  const priorBytes = operation.op === "revise_intent" ? readFileSync23(sidecar) : null;
   const priorStaged = priorBytes !== null ? captureStagedIntent(root, priorIntent.intent_ref.path) : null;
   try {
     if (priorBytes) {
-      writeFileSync16(sidecar, `${JSON.stringify(operation.next_intent, null, 2)}
+      writeFileSync14(sidecar, `${JSON.stringify(operation.next_intent, null, 2)}
 `);
       execFileSync15("git", ["add", "--", priorIntent.intent_ref.path], { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
     }
@@ -26622,7 +25630,7 @@ class HostRuntime {
     const gate = evaluateNativeGate({ operation, interactive, decision: result.decision });
     if (!gate.ok)
       throw gate.error;
-    const { reworkExits: _exits, verifierDispute: _dispute, steering: _steering, ...refBinding } = binding;
+    const { reworkExits: _exits, verifierDispute: _dispute, ...refBinding } = binding;
     return {
       confirmation_ref: this.profile.confirmationRef({
         connectionId: meta.sessionId,
@@ -26668,7 +25676,7 @@ class HostRuntime {
     try {
       if (!this.profile.selectedParent(meta.toolCallId, this.cwd, slug))
         return result;
-      if (existsSync24(join40(this.cwd, ".imm", "audit", taskId)))
+      if (existsSync21(join38(this.cwd, ".imm", "audit", taskId)))
         execFileSync15("git", ["-C", this.cwd, "add", "--", `.imm/audit/${taskId}`], { stdio: "ignore" });
       const batch = await this.startUnattendedBatch(slug, meta, { reuseOnly: true });
       return { ...result, batch, ...batch.state === "started" && batch.report?.tracker ? { tracker: batch.report.tracker } : {} };
@@ -26724,87 +25732,6 @@ class HostRuntime {
         actor_id: "executor"
       }
     });
-  }
-  async steerLoopWorkItem(target, action, reason, meta) {
-    if (!target)
-      throw new Error("target is required");
-    if (!isLoopSteeringAction(action))
-      throw new Error(`action must be one of ${LOOP_STEERING_ACTIONS.join(", ")}`);
-    const normalized = reason && reason.trim().length > 0 ? reason.trim() : null;
-    const gate = await this.gate(STEER_LOOP_WORK_ITEM_TOOL, { ...meta }, { bindingDigest: steeringBindingDigest(target, action, normalized), steering: { target, action, reason: normalized } });
-    const request = {
-      contract: LOOP_STEERING_REQUEST_CONTRACT,
-      target,
-      action,
-      reason: normalized,
-      requested_at: new Date().toISOString(),
-      confirmation: {
-        tool: STEER_LOOP_WORK_ITEM_TOOL,
-        confirmed_at: new Date().toISOString(),
-        confirmation_ref: gate.confirmation_ref
-      }
-    };
-    const path = writeSteeringRequest(loopInteractionStateDir(this.cwd), request);
-    return {
-      state: "steering_requested",
-      target,
-      action,
-      reason: normalized,
-      request_path: path,
-      confirmation_ref: gate.confirmation_ref,
-      next: action === "abandon" ? "The daemon moves this item to `abandoned` on its next tick and leaves any running Kernel run untouched; do not repeat the request." : `The daemon applies this \`${action}\` on its next tick and removes the request file; do not repeat it.`
-    };
-  }
-  async listLoopInteractions(taskId) {
-    return listPendingLoopInteractions(this.cwd, taskId);
-  }
-  async answerLoopInteraction(interactionId, answer, meta) {
-    if (!interactionId)
-      throw new Error("interaction_id is required");
-    if (!answer)
-      throw new Error("answer is required");
-    const stateDir = loopInteractionStateDir(this.cwd);
-    const request = readLocalRequest(stateDir, interactionId);
-    if (!request)
-      throw new Error(`interaction_not_pending: ${interactionId} is not a pending local request in ${stateDir}`);
-    if (request.kind === "plan_approval")
-      throw new Error(`answer_with_drive: a plan_approval is answered by your own \`drive\` entry on the published TaskIntent, not by ${ANSWER_LOOP_INTERACTION_TOOL}`);
-    if (request.kind === "notice")
-      throw new Error(`interaction_not_answerable: ${interactionId} is a notice`);
-    const taskId = request.subject.task_id ?? meta.taskId;
-    const current = request.binding.record_revision ? localDecisionRecordRevision(this.cwd, taskId) : null;
-    if (request.binding.record_revision && request.binding.record_revision !== current)
-      throw new Error(`interaction_stale: ${interactionId} was bound to record revision ${request.binding.record_revision}, the owner of ${taskId} now holds ${current ?? "an unreadable record"}; list the pending requests again`);
-    const gate = await this.gate(ANSWER_LOOP_INTERACTION_TOOL, { ...meta, taskId }, {
-      interaction: {
-        interaction_id: interactionId,
-        kind: request.kind,
-        subject: Object.entries(request.subject).map(([key, value]) => `${key}=${String(value)}`).join(" "),
-        binding: Object.entries(request.binding).filter(([, value]) => Boolean(value)).map(([key, value]) => `${key}=${String(value)}`).join(" "),
-        prompt: request.prompt,
-        answer
-      }
-    });
-    writeLocalAnswer(stateDir, {
-      interaction_id: interactionId,
-      kind: request.kind,
-      subject: request.subject,
-      binding: request.binding,
-      value: answer,
-      confirmation: {
-        tool: ANSWER_LOOP_INTERACTION_TOOL,
-        confirmed_at: new Date().toISOString(),
-        confirmation_ref: gate.confirmation_ref
-      }
-    });
-    return {
-      state: "interaction_answered",
-      interaction_id: interactionId,
-      task_id: taskId,
-      answer,
-      confirmation_ref: gate.confirmation_ref,
-      next: "The daemon applies this answer through the Lane decision relay on its next tick; do not answer it again."
-    };
   }
   async authorize(taskId, operation, meta, extra = {}) {
     if (operation === "approve_breaking_intent_revision" && this.env[LANE_EXECUTOR_ENV] === LANE_EXECUTOR_HEADLESS)
@@ -26962,7 +25889,7 @@ class HostRuntime {
       throw new Error("approve_breaking_intent_revision requires next_intent");
     const nextIntentHash = nextIntent ? canonicalIntentHash(nextIntent) : undefined;
     const nextIntentRef = nextIntent ? { path: `docs/plans/${nextIntent.task_id}.intent.json`, content_hash: nextIntentHash } : undefined;
-    const sidecar = nextIntent ? join40(this.cwd, priorIntent.intent_ref.path) : undefined;
+    const sidecar = nextIntent ? join38(this.cwd, priorIntent.intent_ref.path) : undefined;
     const stagedSnapshot = sidecar ? captureStagedIntent(this.cwd, priorIntent.intent_ref.path) : undefined;
     const restoreStagedIntent2 = () => {
       if (!stagedSnapshot)
@@ -26975,7 +25902,7 @@ class HostRuntime {
       if (sidecar && nextIntent) {
         if (op === "approve_breaking_intent_revision" && classifyIntentRevision(priorIntent.intent, nextIntent) !== "breaking")
           throw new Error("approve_breaking_intent_revision requires a breaking revision");
-        writeFileSync16(sidecar, `${JSON.stringify(nextIntent, null, 2)}
+        writeFileSync14(sidecar, `${JSON.stringify(nextIntent, null, 2)}
 `);
         execFileSync15("git", ["add", "--", priorIntent.intent_ref.path], { cwd: this.cwd, stdio: ["ignore", "pipe", "pipe"] });
         const preparedRecord = await readTaskRecordRaw(this.cwd, taskId);
@@ -27773,8 +26700,8 @@ async function runHook() {
     return;
   const cwd = typeof payload?.cwd === "string" && payload.cwd ? payload.cwd : process.cwd();
   if (!readActiveClaimTaskId(cwd)) {
-    const batchesDir = join41(cwd, ".imm", "state", "batches");
-    const activeBatch = existsSync25(batchesDir) && readdirSync14(batchesDir).some((file) => {
+    const batchesDir = join39(cwd, ".imm", "state", "batches");
+    const activeBatch = existsSync22(batchesDir) && readdirSync12(batchesDir).some((file) => {
       if (!file.endsWith(".json") || file.endsWith(".report.json"))
         return false;
       try {

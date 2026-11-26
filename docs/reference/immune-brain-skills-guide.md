@@ -101,7 +101,7 @@ Canary Work 和 Work 不再是用户工作流入口。相关 extension/tool sour
 4. 不与本插件的其他 skill 重名。
 5. 不与本地 local user skill or command 重名：同名的用户或项目 command 会被当作 alias 解析，同名的用户或项目 skill 会让裸名入口不签发运行令牌（Pi 上 `skill:` 前缀同样不签发），只剩 Claude Code 上的 `/immune-brain:<name>` 可用。
 
-Managed 主链路与常规独立 Skill 使用动词（`clarify → draw-up → drive`），不设兼容 alias；当裸名与宿主内置命令冲突且需与同名守护进程 CLI / GitHub 指令保持一致时，使用 `imm-` 前缀（如 `imm-loop`）。
+Managed 主链路与常规独立 Skill 使用动词（`clarify → draw-up → drive`），不设兼容 alias。
 
 ## Surface 与验证
 

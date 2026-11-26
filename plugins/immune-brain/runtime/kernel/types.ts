@@ -10,13 +10,19 @@ export const TASK_RISKS = ["routine", "material", "critical"] as const;
 export type TaskRisk = (typeof TASK_RISKS)[number];
 
 /**
- * How an Enrollment was confirmed (ADR 0005, ADR 0019, ADR 0039 Decision 8).
- * `user_session` is the interactive literal-user gate and stays the default;
- * `tracker_approval` and `policy_auto` are the unattended sources the Loop
- * daemon uses.
+ * How an Enrollment is confirmed (ADR 0005, ADR 0019): `user_session`, the
+ * interactive literal-user gate, is the only live source. ADR 0043 retired the
+ * Loop daemon's unattended `tracker_approval` and `policy_auto` sources.
  */
-export const ENROLLMENT_CONFIRMATION_SOURCES = ["user_session", "tracker_approval", "policy_auto"] as const;
+export const ENROLLMENT_CONFIRMATION_SOURCES = ["user_session"] as const;
 export type EnrollmentConfirmationSource = (typeof ENROLLMENT_CONFIRMATION_SOURCES)[number];
+/**
+ * The sources a TaskRecord may carry: a record settled before ADR 0043 can still
+ * name a retired unattended source, so reading it stays tolerant. No Enrollment
+ * writes one any more.
+ */
+export const RECORDED_ENROLLMENT_CONFIRMATION_SOURCES = ["user_session", "tracker_approval", "policy_auto"] as const;
+export type RecordedEnrollmentConfirmationSource = (typeof RECORDED_ENROLLMENT_CONFIRMATION_SOURCES)[number];
 
 export type EvidenceStatus = "passed" | "failed" | "blocked";
 
@@ -339,7 +345,7 @@ export interface TaskRecordV4 extends Omit<TaskRecordV3, "contract"> {
 	 * interactive `user_session` default, so every record written before the
 	 * unattended sources existed stays byte-identical.
 	 */
-	confirmation_source?: EnrollmentConfirmationSource;
+	confirmation_source?: RecordedEnrollmentConfirmationSource;
 }
 
 /**

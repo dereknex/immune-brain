@@ -4,10 +4,11 @@ status: accepted
 
 # Unattended Initiative Batch Run
 
-**Status update:** amended by [ADR 0039](0039-loop-daemon.md). Enrollment
-confirmation gains sources `confirmation_source: "user_session" | "tracker_approval" | "policy_auto"`,
-and `.imm/risk-floor.json` path-glob risk elevation is evaluated before
-`policy_auto` admission.
+**Status update:** the unattended confirmation sources that
+[ADR 0039](0039-loop-daemon.md) added (`tracker_approval`, `policy_auto`) are
+superseded by [ADR 0043](0043-loop-daemon-freeze-and-extraction.md). Enrollment confirmation accepts only `user_session`, and
+a Batch Agreement only `native_gate`. The interactive batch architecture below
+stays until that ADR's Slice 3.
 
 ## Context
 
@@ -75,11 +76,8 @@ the enrolled TaskIntent.
    request, resolves a user decision, or creates, switches, or deletes a Git
    worktree, and default `imm-run` behavior is unchanged when the batch tool is
    not invoked.
-7. Under [ADR 0039](0039-loop-daemon.md), Enrollment confirmation extends beyond
-   interactive `user_session` to accept `tracker_approval` (verified owner comment
-   `/approve <plan-digest>` or `<intent-hash>`) and `policy_auto` (for routine
-   tasks under tracked configuration where effective risk after evaluating
-   `.imm/risk-floor.json` path globs remains `routine` and touches no no-touch paths).
+7. *Superseded by [ADR 0043](0043-loop-daemon-freeze-and-extraction.md):* Enrollment confirmation has no unattended source;
+   only the literal user confirms.
 
 ## Rejected Alternatives
 

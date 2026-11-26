@@ -41,7 +41,7 @@ const ROLES = [
 	"immune-brain-review-verifier",
 	"immune-brain-ui-review",
 ];
-const SKILLS = ["authority-review", "clarify", "draw-up", "drive", "fix-pr", "imm-loop", "prune-docs", "prune-tests", "revisit", "slim"];
+const SKILLS = ["authority-review", "clarify", "draw-up", "drive", "fix-pr", "prune-docs", "prune-tests", "revisit", "slim"];
 
 const scratch: string[] = [];
 function scratchDir(label: string): string {
@@ -157,6 +157,7 @@ describe("Antigravity artifact boundary (AC1)", () => {
 			expect(existsSync(join(ARTIFACT, absent))).toBe(false);
 		}
 		expect(existsSync(join(ARTIFACT, "runtime/claude/mcp_server.ts"))).toBe(true);
+		expect(files(ARTIFACT).filter((path) => /imm-loop|loop_daemon|decision_model|loop_interactions/.test(path))).toEqual([]);
 	});
 
 	it("rejects string-valued tools and cross-host components", () => {

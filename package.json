@@ -63,7 +63,6 @@
     "#kernel/reducer": "./plugins/immune-brain/runtime/kernel/reducer.ts"
   },
   "bin": {
-    "imm-loop": "./plugins/immune-brain/bin/imm-loop",
     "imm-kernel": "./plugins/immune-brain/bin/imm-kernel",
     "imm-session": "./plugins/immune-brain/bin/imm-session",
     "imm-tracker": "./plugins/immune-brain/bin/imm-tracker",
@@ -83,7 +82,6 @@
     "plugins/immune-brain/runtime/plan_core.ts",
     "plugins/immune-brain/runtime/commands/kernel.ts",
     "plugins/immune-brain/runtime/kernel",
-    "plugins/immune-brain/runtime/decision_model",
     "plugins/immune-brain/runtime/config",
     "plugins/immune-brain/runtime/authorization_operation.ts",
     "plugins/immune-brain/runtime/canonical_json.ts",
@@ -105,7 +103,6 @@
     "plugins/immune-brain/runtime/assurance",
     "plugins/immune-brain/runtime/unattended",
     "plugins/immune-brain/runtime/session",
-    "plugins/immune-brain/runtime/loop_daemon",
     "plugins/immune-brain/runtime/claude",
     "plugins/immune-brain/runtime/antigravity",
     "plugins/immune-brain/runtime/host-core",
