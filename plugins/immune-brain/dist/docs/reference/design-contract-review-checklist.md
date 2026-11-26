@@ -80,6 +80,12 @@ neighbors.
   present where the interface needs them.
 - Responsive readability is preserved: spacing and alignment remain legible
   across supported viewport ranges.
+- The layout does the explaining: headings, grouping, placement, and control
+  affordance carry meaning, so a control or section does not need a secondary
+  label, subtitle, or description that restates its title, its visible value,
+  or what its position already shows. Each added line of explanation must name
+  something the layout cannot (a consequence, a constraint, a unit, or a
+  non-obvious rule); otherwise remove it.
 - Progressive disclosure is respected: advanced controls and secondary detail do
   not crowd the primary path.
 - Product cohesion is visible: the UI should feel intentionally composed for the

@@ -131,6 +131,11 @@ failure.
 - **Error microcopy** states what happened, why, and the recovery action.
 - **Empty states** explain what is missing, why it matters, and the single next
   useful action.
+- **No over-explanation**: avoid unnecessary secondary labels and
+  descriptions; let the layout do the explaining. A finding names the redundant
+  text (a helper line that repeats the label, a section subtitle that restates
+  its heading, a caption that narrates the obvious action) and the fix removes
+  it or moves essential detail behind progressive disclosure.
 - **Restorable truncation**: text cut with an ellipsis or `line-clamp` can be
   read in full through expansion, a detail view, or an accessible tooltip.
 - **Honest content**: no invented metrics, testimonials, logos, or activity, and

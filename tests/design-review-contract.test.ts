@@ -152,7 +152,7 @@ describe("design-review L4: heuristics, states, copy, motion and accessibility",
 		expectAll(section(UX, "Surface-Mode Calibration"), ["Operate", "Read", "Persuade", "Experience", "n/a", "denominator"]);
 	});
 
-	test("requires the eight-state matrix, three-part error copy, restorable truncation and honest content", () => {
+	test("requires the eight-state matrix, three-part error copy, no over-explanation, restorable truncation and honest content", () => {
 		const states = section(UX, "4. Interactive State Matrix and Content");
 		expectAll(states, [
 			"`default`",
@@ -174,7 +174,9 @@ describe("design-review L4: heuristics, states, copy, motion and accessibility",
 			"browser",
 			"phone chrome",
 			"RTL",
+			"avoid unnecessary secondary labels and descriptions; let the layout do the explaining",
 		]);
+		expect(section(REVIEW_CHECKLIST, "5. Style-Neutral Anti-Slop Checks")).toContain("The layout does the explaining");
 		expect(read(UX)).toContain("i18n-review-checklist.md");
 	});
 
