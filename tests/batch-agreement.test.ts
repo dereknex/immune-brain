@@ -192,6 +192,9 @@ describe("batch-agreement", () => {
 				expect(membrane).toEqual({ ok: false, reason: `unknown_confirmation_source: ${source}` });
 			}
 			expect(verifyEnrollmentConfirmation(root, { source: "user_session" }, { risk: "routine", scope_hint: [] })).toEqual({ ok: true });
+			// ADR 0043 Slice 2: the headless source is admitted only when the caller states it is enabled.
+			expect(verifyEnrollmentConfirmation(root, { source: "external_approval", external_approval_enabled: true }, { risk: "critical", scope_hint: [] })).toEqual({ ok: true });
+			expect(verifyEnrollmentConfirmation(root, { source: "external_approval" }, { risk: "routine", scope_hint: [] })).toEqual({ ok: false, reason: "external_approval_disabled" });
 			expect(() => createBatchAuthorityRegistry().issue({
 				batch_id: "b-daemon-actor", initiative_slug: "init", plan_digest: computeBatchPlanDigest(kids), branch: "imm/init", base_head: baseHead,
 				budget: { max_children: 2, qa_failure_limit: 2 }, actor_id: "loop-daemon", confirmation_ref: "r", nonce: "n",

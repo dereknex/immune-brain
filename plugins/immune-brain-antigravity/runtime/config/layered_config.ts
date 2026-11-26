@@ -33,7 +33,7 @@ export const BATCH_MAX_PARALLEL = { min: 1, max: 8, default: 1 } as const;
  * `herdr` is retired (warning only, never resolved); `session_providers` selects the Lane session provider.
  * `loop` and `decision_models` are retired with the in-repo Loop daemon (ADR 0043): either one is an
  * unknown key, `config_invalid`, until `imm-kernel config migrate --write` strips it. */
-const FILE_KEYS = ["contract", "agents", "herdr", "session_providers", "git_integration", "initiative_carrier", "batch", "review_verifier"];
+const FILE_KEYS = ["contract", "agents", "herdr", "session_providers", "git_integration", "external_approval", "initiative_carrier", "batch", "review_verifier"];
 
 /** Provider names a user may configure in `session_providers` (test-only `fake`/`process` excluded). */
 const REGISTERED_SESSION_PROVIDERS = ["herdr", "herdr-core"] as const;
@@ -151,6 +151,12 @@ export function resolveConfig(root: string, options: { userConfigPath?: string; 
 	const gitBroken = diagnostics.find((d) => d.severity === "error" && ["git_integration", "$", "contract"].includes(d.key_path));
 	const gitIntegration = gitBroken ? { value: "manual", source: gitBroken.file === projectPath ? "project" : "user" }
 		: git.find((g) => g.value === "manual") ?? git[0] ?? { value: "manual", source: "default" };
+	// Permission key (ADR 0043 Slice 2): `false` wins wherever it is set, and an invalid value or a
+	// void file behaves as `false`, so a project file never re-enables what the user turned off.
+	const external = valid((o) => o.external_approval, "external_approval", (v) => typeof v === "boolean", "expected true or false");
+	const externalBroken = diagnostics.find((d) => d.severity === "error" && ["external_approval", "$", "contract"].includes(d.key_path));
+	const externalApproval = externalBroken ? { value: false, source: externalBroken.file === projectPath ? "project" : "user" }
+		: external.find((e) => e.value === false) ?? external[0] ?? { value: false, source: "default" };
 
 	return {
 		contract: "immune_brain/effective_config/v2",
@@ -159,6 +165,7 @@ export function resolveConfig(root: string, options: { userConfigPath?: string; 
 		session_providers: sessionProviders,
 		batch: { valid: !errorsUnder("batch"), max_parallel: maxParallel, final_verification: finalVerification, single_task_final_verification: singleTaskFinalVerification },
 		git_integration: leaf(gitIntegration.value, gitIntegration.source),
+		external_approval: { value: externalApproval.value === true, source: externalApproval.source },
 		initiative_carrier: carrier,
 		review_verifier: reviewVerifier,
 		diagnostics,

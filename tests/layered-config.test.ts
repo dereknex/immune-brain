@@ -141,6 +141,34 @@ test("permission keys take the stricter value across layers", () => {
 	expect(f.read().git_integration).toEqual({ value: "manual", source: "default" });
 });
 
+// ADR 0043 Slice 2: external_approval is a permission key, default false; false wins wherever it is
+// set, and an invalid value or a void file behaves as false.
+test("external_approval defaults to false and takes the stricter value across layers", () => {
+	const f = fixture();
+	expect(f.read().external_approval).toEqual({ value: false, source: "default" });
+	f.user({ external_approval: true });
+	expect(f.read().external_approval).toEqual({ value: true, source: "user" });
+	f.user({});
+	f.project({ external_approval: true });
+	expect(f.read().external_approval).toEqual({ value: true, source: "project" });
+	f.user({ external_approval: false });
+	expect(f.read().external_approval).toEqual({ value: false, source: "user" });
+	f.user({ external_approval: true });
+	f.project({ external_approval: false });
+	expect(f.read().external_approval).toEqual({ value: false, source: "project" });
+	expect(f.read().diagnostics).toEqual([]);
+	// A non-boolean or a void file resolves false and reports config_invalid.
+	f.project({ external_approval: "yes" });
+	const invalid = f.read();
+	expect(invalid.external_approval).toEqual({ value: false, source: "project" });
+	expect(errorAt(invalid, "external_approval")).toMatchObject({ code: "config_invalid", file: f.projectPath });
+	f.project({});
+	writeFileSync(f.userPath, "{");
+	const broken = f.read();
+	expect(broken.external_approval).toEqual({ value: false, source: "user" });
+	expect(errorAt(broken, "$")).toMatchObject({ code: "config_invalid", file: f.userPath });
+});
+
 // ADR 0043 retired the Loop daemon: a top-level `loop` or `decision_models` key in either file is
 // config_invalid and blocks the batch, and the effective configuration carries neither.
 test("a retired loop or decision_models key is config_invalid in either file and blocks the batch", () => {
@@ -239,6 +267,13 @@ test("CLI config --json prints the v2 effective configuration and exits on error
 	expect(JSON.parse(result.stdout).diagnostics).toContainEqual(expect.objectContaining({ code: "config_invalid", key_path: "loop" }));
 	f.project({});
 	writeFileSync(userPath, "{"); result = run(); expect(result.status).toBe(1);
+	writeFileSync(userPath, JSON.stringify({ contract: USER, external_approval: "yes" }));
+	result = run(); expect(result.status).toBe(1);
+	expect(JSON.parse(result.stdout).external_approval).toEqual({ value: false, source: "user" });
+	expect(JSON.parse(result.stdout).diagnostics).toContainEqual(expect.objectContaining({ code: "config_invalid", key_path: "external_approval" }));
+	writeFileSync(userPath, JSON.stringify({ contract: USER, external_approval: true }));
+	result = run(); expect(result.status).toBe(0);
+	expect(JSON.parse(result.stdout).external_approval).toEqual({ value: true, source: "user" });
 });
 
 test("config migrate rewrites v1 user and project files as v2: dry run writes nothing, --write writes", () => {
@@ -325,19 +360,20 @@ test("config migrate --write deletes stored herdr, loop and decision_models keys
 	const f = fixture();
 	const configHome = join(temp, `xdg-retired-${counter}`), userPath = join(configHome, "immune-brain/config.json");
 	mkdirSync(join(configHome, "immune-brain"), { recursive: true });
-	const userBefore = { contract: USER, herdr: true, decision_models: {}, initiative_carrier: "local", agents: { executor: "pi" } };
+	const userBefore = { contract: USER, herdr: true, decision_models: {}, initiative_carrier: "local", agents: { executor: "pi" }, external_approval: true };
 	const projectBefore = { contract: PROJECT, herdr: false, loop: { mode: "off" }, batch: { max_parallel: 3 }, review_verifier: "on" };
 	writeFileSync(userPath, JSON.stringify(userBefore));
 	writeFileSync(f.projectPath, JSON.stringify(projectBefore));
 	const dry = migrateConfig(f.root, { userConfigPath: userPath });
-	expect(dry.user.after).toEqual({ contract: USER, initiative_carrier: "local", agents: { executor: "pi" } });
+	// A v2 external_approval value is kept as written, with no key material added beside it.
+	expect(dry.user.after).toEqual({ contract: USER, initiative_carrier: "local", agents: { executor: "pi" }, external_approval: true });
 	expect(dry.project.after).toEqual({ contract: PROJECT, batch: { max_parallel: 3 }, review_verifier: "on" });
 	expect(dry.user.changed).toBe(true);
 	expect(dry.project.changed).toBe(true);
 	expect(readFileSync(userPath, "utf8")).toBe(JSON.stringify(userBefore));
 	const wrote = migrateConfig(f.root, { userConfigPath: userPath, write: true });
 	expect(wrote.written).toBe(true);
-	expect(JSON.parse(readFileSync(userPath, "utf8"))).toEqual({ contract: USER, initiative_carrier: "local", agents: { executor: "pi" } });
+	expect(JSON.parse(readFileSync(userPath, "utf8"))).toEqual({ contract: USER, initiative_carrier: "local", agents: { executor: "pi" }, external_approval: true });
 	expect(JSON.parse(readFileSync(f.projectPath, "utf8"))).toEqual({ contract: PROJECT, batch: { max_parallel: 3 }, review_verifier: "on" });
 	expect(resolveConfig(f.root, { userConfigPath: userPath }).diagnostics).toEqual([]);
 });

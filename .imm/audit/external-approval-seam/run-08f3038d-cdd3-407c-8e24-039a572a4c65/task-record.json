@@ -1,0 +1,161 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "external-approval-seam",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "external-approval-seam",
+    "goal": "Deliver ADR 0043 Slice 2 per docs/specs/external-approval-seam.spec.md: add strictest-wins boolean external_approval (default false) to v2 layered config, admit external_approval in Kernel Enrollment confirmation recording confirmation_source on TaskRecordV4, expose imm-kernel approve <task-id> [--finding <id> --resolution <text> | --stop <reason>] [--actor <id>] --json and extend imm-kernel inspect [--task <id> [--run <run-id>]] --json for open user decisions and settled .imm/audit/ proof verification, and amend ADR 0043/0041, config docs, instruction guards, and Host bundles with zero takt coupling (BR-REQ-1..4, BR-DEC-1..5, BR-OUT-1..4, BR-SCN-1..2).",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "Per docs/specs/external-approval-seam.spec.md AC1 (agreed seams: tests/layered-config.test.ts, tests/batch-agreement.test.ts, tests/kernel-enrollment-authority.test.ts), layered_config.ts resolves boolean external_approval in v2 user/project configs with default false and strictest-wins merge (false in either layer or invalid/broken config yields false and non-boolean emits config_invalid causing imm-kernel config --json to exit 1), migrateConfig preserves v2 external_approval, verifyEnrollmentConfirmation admits external_approval only when external_approval_enabled is true across routine/material/critical while rejecting disabled/tracker_approval/policy_auto, and enrollTask persists confirmation_source: external_approval on TaskRecordV4 while leaving user_session omitted (BR-DEC-1, BR-DEC-2, BR-OUT-4).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/layered-config.test.ts\",\n      \"tests/batch-agreement.test.ts\",\n      \"tests/kernel-enrollment-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "Per docs/specs/external-approval-seam.spec.md AC2 and BR-SCN-1..2 (agreed seams: tests/external-approval-cli.test.ts, tests/kernel-inspect.test.ts, tests/v4-runtime-launchers.test.ts), imm-kernel approve <task-id> [--finding <id> --resolution <text> | --stop <reason>] [--actor <id>] --json fails closed with exit 1 external_approval_disabled when external_approval is unset/false, rejects untracked intents (exit 1 intent_untracked), duplicate/stale/terminal transitions (exit 1), and malformed flag combinations (exit 2 invalid_command), and when external_approval is true executes headless Enrollment, resolve_user_decision (including verifier disputes under literal-user), and stop while keeping runKernelCommand synchronous; imm-kernel inspect [--task <id> [--run <run-id>]] --json exposes unresolved_user_decisions summaries when active and verified .imm/audit/<task-id>/<run-id>/ metadata when settled, rejecting missing (task_audit_missing) or tampered (task_audit_invalid) audit pairs with exit 1 and creating no state on idle workspaces (BR-REQ-3, BR-REQ-4, BR-DEC-3, BR-DEC-5, BR-OUT-2, BR-OUT-3).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/external-approval-cli.test.ts\",\n      \"tests/kernel-inspect.test.ts\",\n      \"tests/v4-runtime-launchers.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "Per docs/specs/external-approval-seam.spec.md AC3 (agreed seams: tests/runtime-layering-boundary.test.ts, tests/claude-host-package.test.ts, tests/antigravity-host-package.test.ts, tests/dist-docs-sync-contract.test.ts), ADR 0043 Decision 4 and Slice 2, ADR 0041 Decision 2, and docs/reference/immune-brain-config.md document external_approval, imm-kernel approve, and imm-kernel inspect [--task] with zero takt/gate/v1, GateRequest, GateResponse, .takt/, or returning policy_auto clauses; BASELINE.md and executor.md forbid Managed/Agent sessions from invoking imm-kernel approve while keeping Claude PreToolUse Bash unrouted; runtime/kernel imports nothing from runtime/config or runtime/host-core; and Claude, Antigravity, and dist/ checks pass with zero drift (BR-REQ-1, BR-REQ-2, BR-DEC-4, BR-OUT-1).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/runtime-layering-boundary.test.ts\",\n      \"tests/claude-host-package.test.ts\",\n      \"tests/antigravity-host-package.test.ts\",\n      \"tests/dist-docs-sync-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/adr/0041-simplified-configuration.md",
+      "docs/adr/0043-loop-daemon-freeze-and-extraction.md",
+      "docs/reference/immune-brain-config.md",
+      "docs/specs/external-approval-seam.spec.md",
+      "plugins/immune-brain-antigravity",
+      "plugins/immune-brain/BASELINE.md",
+      "plugins/immune-brain/dist/BASELINE.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/docs/reference/immune-brain-config.md",
+      "plugins/immune-brain/dist/role-prompts/executor.md",
+      "plugins/immune-brain/runtime/commands/kernel.ts",
+      "plugins/immune-brain/runtime/config/layered_config.ts",
+      "plugins/immune-brain/runtime/kernel/enrollment.ts",
+      "plugins/immune-brain/runtime/kernel/enrollment_confirmation.ts",
+      "plugins/immune-brain/runtime/kernel/types.ts",
+      "plugins/immune-brain/runtime/prompts/executor.md",
+      "plugins/immune-brain/runtime/v4_runtime.ts",
+      "plugins/immune-brain/skills/BASELINE.md",
+      "tests/batch-agreement.test.ts",
+      "tests/dist-docs-sync-contract.test.ts",
+      "tests/external-approval-cli.test.ts",
+      "tests/kernel-enrollment-authority.test.ts",
+      "tests/kernel-inspect.test.ts",
+      "tests/layered-config.test.ts",
+      "tests/v4-runtime-launchers.test.ts"
+    ],
+    "scope_size_reason": "Cohesive end-to-end ADR 0043 Slice 2 authority seam spanning v2 config, Kernel confirmation membrane, CLI approve/inspect, ADR/config docs, synced dist mirrors, and focused tests.",
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/external-approval-seam.intent.json",
+    "content_hash": "sha256:dfc8bfcb620f148202c0afed1247168819242c71af8d6613a875b216c2348ba2"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:dfc8bfcb620f148202c0afed1247168819242c71af8d6613a875b216c2348ba2",
+  "git_base_head": "e58b23f7e5ccaad8496cb5a80c7d7d2ca2f6ecb8",
+  "attestations": [
+    {
+      "id": "approval-qa-bd6bf1df",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:dfc8bfcb620f148202c0afed1247168819242c71af8d6613a875b216c2348ba2",
+      "diff_hash": "sha256:5e163658386abd39ce80c4d9d0fa21907fd3c602fb1bf531221f440fe2412672",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:f8774bd26289ed683b3f8887ae160a84677014ee731cbc4c2125557b914054f7",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:f8774bd26289ed683b3f8887ae160a84677014ee731cbc4c2125557b914054f7"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:f8774bd26289ed683b3f8887ae160a84677014ee731cbc4c2125557b914054f7"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:f8774bd26289ed683b3f8887ae160a84677014ee731cbc4c2125557b914054f7"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-7d302403",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:dfc8bfcb620f148202c0afed1247168819242c71af8d6613a875b216c2348ba2",
+      "diff_hash": "sha256:5e163658386abd39ce80c4d9d0fa21907fd3c602fb1bf531221f440fe2412672",
+      "actor_id": "cli:pi:50b88fe5-6df0-4825-9258-7b75e1327eac",
+      "summary": "Reviewed 7824e73 vs e58b23f: all 38 changed paths covered (CLI approve/inspect, v2 external_approval key, Kernel confirmation membrane and TaskRecordV4 provenance, ADR 0041/0043 and config reference, instruction guards, focused tests, both Host bundles); the 12 plugins/immune-brain-antigravity mirror paths are proven byte-identical by blob OID at base and review to their plugins/immune-brain counterparts whose diffs were read in full, and both *.mjs bundle diffs were read in full and match the changed bundled sources with no drift; blast radius medium - central CLI dispatch runtime/commands/kernel.ts, v2 config resolver, Kernel Enrollment membrane and persisted TaskRecordV4 shape, plus generated Host mirrors.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "e58b23f7e5ccaad8496cb5a80c7d7d2ca2f6ecb8",
+        "review_commit": "7824e734967ee6752bb586cd15612c1c1cc8513b"
+      },
+      "reviewer_verdict_sha256": "sha256:7c6229cb418b288e03bff8b28e426205b0d8807651812631eccb24f35ad5c3d7"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:external-approval-seam:2026-11-26T15:05:27.408Z",
+      "at": "2026-11-26T15:05:27.408Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/external-approval-seam.intent.json"
+    },
+    {
+      "id": "record_approval:external-approval-seam:2026-11-26T15:06:04.504Z",
+      "at": "2026-11-26T15:06:04.504Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-bd6bf1df\naction_v2_sha256:c3c52dfb8083102fa37d8c298e0565ef457eb2bcd696e829c1640a5ff6578932",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-11-26T15:06:04.505Z"
+      }
+    },
+    {
+      "id": "record_approval:external-approval-seam:2026-11-26T15:32:26.658Z",
+      "at": "2026-11-26T15:32:26.658Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-7d302403\naction_v2_sha256:44bc8f18352f0bee05e923719d63cd1eccdd84c2cfa7603d26971f08503238ba",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:pi:50b88fe5-6df0-4825-9258-7b75e1327eac",
+        "confirmation_ref": "claude:cli:pi:50b88fe5-6df0-4825-9258-7b75e1327eac",
+        "issued_at": "2026-11-26T15:32:26.658Z"
+      },
+      "review_started_at": "2026-11-26T15:25:55.250Z",
+      "review_submitted_at": "2026-11-26T15:32:24.931Z",
+      "reviewer_model": "auto/deepseek-v4.1-flash"
+    },
+    {
+      "id": "complete:external-approval-seam:2026-11-26T15:32:31.585Z",
+      "at": "2026-11-26T15:32:31.585Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:b117d0f90e2be909a25b91d1bcdd3c44e452e0d94a093dfab334e79a8b37c83e"
+    }
+  ]
+}

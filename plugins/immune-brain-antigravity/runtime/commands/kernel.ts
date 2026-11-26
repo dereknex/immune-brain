@@ -1,6 +1,7 @@
 import {
 	closeSync,
 	constants as fsConstants,
+	existsSync,
 	lstatSync,
 	openSync,
 	readFileSync,
@@ -26,6 +27,7 @@ import {
 	canonicalIntentHash,
 	parseProjectTaskIntent,
 	parseTaskIntentV1,
+	readTaskIntent,
 } from "../kernel/intent";
 import {
 	floorMatchingScopeEntries,
@@ -55,6 +57,19 @@ import { readBackendClaim } from "../kernel/backend_claim";
 import { inspectEnrollmentGitBase, type EnrollmentGitBase } from "../assurance/enrollment_git_base";
 import { probeKernelStore } from "../kernel";
 import { scopeEstimateFailure } from "../kernel/intent_readiness";
+import { randomUUID } from "node:crypto";
+import { dirname } from "node:path";
+import { resolveConfig } from "../config/layered_config";
+import { canonicalActorId, LITERAL_USER_ACTOR_ID } from "../kernel/actor_identity";
+import { enrollmentScopeDisclosure, enrollTask } from "../kernel/enrollment";
+import { createEnrollmentAuthorityRegistry } from "../kernel/enrollment_authority";
+import { preparePiCanary } from "../kernel/pi_canary_prepare";
+import { createMutationAuthorityRegistry, digestOfAction, type CapabilityBindingV2 } from "../kernel/authority_port";
+import { capabilityActionFor, createCanaryApplication } from "../kernel/canary_application";
+import { projectAssurance } from "../kernel/assurance_projection";
+import { currentRunId, localRunId, readAuditTaskPair, recoverKernelStoreFollowUps } from "../kernel/storage";
+import { auditEvidencePaths, auditRunDirPath, auditRunRecordPath } from "../kernel/storage_paths";
+import { stagePlanningArtifactTransition } from "../assurance/verdict_authority";
 
 export interface KernelCommandResult {
 	stdout: string;
@@ -182,7 +197,12 @@ function readWorkspaceOwner(root: string): string | null {
  * `inspect --json` is a read-only Inspect Projection. It never journals,
  * never takes a Kernel store lock, and never becomes authority.
  */
-function runInspect(root: string): KernelExecution {
+interface InspectTarget {
+	task_id: string | null;
+	run_id: string | null;
+}
+
+function runInspect(root: string, target: InspectTarget = { task_id: null, run_id: null }): KernelExecution {
 	try {
 		const layout = inspectStorageLayout(root);
 		const claim = readBackendClaim(root);
@@ -208,6 +228,10 @@ function runInspect(root: string): KernelExecution {
 			outside_routine_allowlist: [] as string[],
 		};
 		const ok = layout.layout === "ready" || layout.layout === "migration_uncommitted";
+		// A named task without an active claim, or an explicit run, reads settled
+		// audit evidence: read-only, lock-free, journal-free (BR-DEC-5).
+		if (target.task_id !== null && (target.run_id !== null || !claim || claim.task_id !== target.task_id))
+			return runInspectAudit(root, target.task_id, target.run_id, { layout, kernel, risk: idleRisk });
 		if (!claim || !ok || layout.layout !== "ready") {
 			return {
 				result: jsonResult({
@@ -277,9 +301,10 @@ function runInspect(root: string): KernelExecution {
 		const diffHash = identity.diff_hash;
 		const changedPaths = identity.changed_paths;
 		const decision = projectTask(intent, record, diffHash, record.intent_ref.content_hash, changedPaths, floor);
-		const openUserDecisionCount = record.findings.filter(
+		const openUserDecisions = record.findings.filter(
 			(finding) => finding.kind === "unresolved_user_decision" && finding.status === "open",
-		).length;
+		);
+		const openUserDecisionCount = openUserDecisions.length;
 		const resolved = resolveProjectedRisk(intent, changedPaths, floor);
 		return {
 			result: jsonResult({
@@ -311,6 +336,11 @@ function runInspect(root: string): KernelExecution {
 						replan_required_ids: decision.replan_required_ids,
 						independence_violations: decision.independence_violations,
 						open_user_decision_count: openUserDecisionCount,
+						unresolved_user_decisions: openUserDecisions.map((finding) => ({
+							id: finding.id,
+							summary: finding.summary,
+							acceptance_id: finding.acceptance_id ?? null,
+						})),
 						completion_ready: decision.complete,
 						authorization: deriveAssuranceAuthorization({
 							next_obligation: decision.next_obligation,
@@ -329,12 +359,74 @@ function runInspect(root: string): KernelExecution {
 					outside_routine_allowlist: routineAllowlistEscapes(intent, changedPaths, floor),
 				},
 				unobservable: UNOBSERVABLE,
+				...(target.task_id !== null ? { audit: null } : {}),
 			}),
 			journal: journalFor("inspect", null, "ok", "command_ok", claim.task_id, null),
 		};
 	} catch (error) {
 		return sourceFailure("inspect", error);
 	}
+}
+
+const RUN_ID_PATTERN = /^run-[A-Za-z0-9-]+$/;
+
+/**
+ * Settled audit verification for `inspect --task <id> [--run <run-id>]`.
+ * The run is the explicit `--run`, else the local terminal run when the store
+ * already exists (never created here), else the single run directory the audit
+ * tree holds. `readAuditTaskPair` validates the pair's identity and hashes.
+ */
+function runInspectAudit(
+	root: string,
+	taskId: string,
+	explicitRunId: string | null,
+	base: { layout: unknown; kernel: unknown; risk: unknown },
+): KernelExecution {
+	const failure = (code: string, message: string): KernelExecution => ({
+		result: errorResult(code, message, 1),
+		journal: journalFor("inspect", null, "rejected", "source_invalid", taskId, null),
+	});
+	let runId = explicitRunId;
+	if (runId === null) {
+		try {
+			const local = localRunId(root, taskId);
+			if (local !== null && local !== currentRunId(root, taskId)) runId = local;
+		} catch {
+			runId = null;
+		}
+	}
+	let pair: ReturnType<typeof readAuditTaskPair>;
+	try {
+		pair = readAuditTaskPair(root, taskId, runId ?? undefined);
+	} catch (error) {
+		return failure("task_audit_invalid", error instanceof Error ? error.message : String(error));
+	}
+	if (!pair) return failure("task_audit_missing", `no settled audit evidence for task ${taskId}`);
+	const recordPath = runId !== null ? auditRunRecordPath(taskId, runId) : auditEvidencePaths(root, taskId).record;
+	const auditDir = dirname(recordPath);
+	const dirName = auditDir.slice(auditDir.lastIndexOf("/") + 1);
+	const record = pair.record as { lifecycle?: string; phase?: string; intent_ref?: { content_hash?: string }; confirmation_source?: string };
+	return {
+		result: jsonResult({
+			contract: "assurance_kernel/inspect/v1",
+			layout: base.layout,
+			kernel: base.kernel,
+			assurance: null,
+			risk: base.risk,
+			unobservable: UNOBSERVABLE,
+			audit: {
+				valid: true,
+				task_id: taskId,
+				run_id: runId ?? (RUN_ID_PATTERN.test(dirName) ? dirName : null),
+				lifecycle: record.lifecycle ?? record.phase ?? null,
+				audit_dir: auditDir,
+				intent_content_hash: record.intent_ref?.content_hash ?? null,
+				final_record_hash: pair.proof.final_record_hash,
+				confirmation_source: record.confirmation_source ?? null,
+			},
+		}),
+		journal: journalFor("inspect", null, "ok", "command_ok", taskId, null),
+	};
 }
 
 const INTENT_SIDECAR_PREFIX = "docs/plans/";
@@ -1221,6 +1313,24 @@ function runIntentValidate(args: string[], root: string): KernelExecution {
 	};
 }
 
+function parseInspectFlags(flags: string[]): InspectTarget | null {
+	let json = false;
+	let task: string | null = null;
+	let run: string | null = null;
+	for (let i = 0; i < flags.length; i++) {
+		const flag = flags[i];
+		if (flag === "--json" && !json) json = true;
+		else if (flag === "--task" && task === null && flags[i + 1] !== undefined) task = flags[++i];
+		else if (flag === "--run" && run === null && flags[i + 1] !== undefined) run = flags[++i];
+		else return null;
+	}
+	if (!json) return null;
+	if (run !== null && task === null) return null;
+	if (task !== null && !TASK_ID_PATTERN.test(task)) return null;
+	if (run !== null && !RUN_ID_PATTERN.test(run)) return null;
+	return { task_id: task, run_id: run };
+}
+
 function executeKernelCommand(args: string[], root: string): KernelExecution {
 	const command = args[0] ?? "";
 	const flags = args.slice(1);
@@ -1261,9 +1371,10 @@ function executeKernelCommand(args: string[], root: string): KernelExecution {
 		return runStatus(root);
 	}
 	if (command === "inspect") {
-		if (flags.length !== 1 || flags[0] !== "--json")
+		const target = parseInspectFlags(flags);
+		if (!target)
 			return {
-				result: errorResult("invalid_command", "inspect accepts only --json", 2),
+				result: errorResult("invalid_command", "inspect accepts only [--task <task-id> [--run <run-id>]] --json", 2),
 				journal: journalFor(
 					command,
 					null,
@@ -1273,7 +1384,7 @@ function executeKernelCommand(args: string[], root: string): KernelExecution {
 					"Run imm-kernel inspect --json.",
 				),
 			};
-		return runInspect(root);
+		return runInspect(root, target);
 	}
 	if (command === "migrate") {
 		if (flags.length !== 1 || flags[0] !== "--storage-layout")
@@ -1489,6 +1600,237 @@ export function runKernelCommand(
 		...execution.result,
 		stderr: `${execution.result.stderr}${warning}`,
 	};
+}
+
+// ---------------------------------------------------------------------------
+// `imm-kernel approve`: the opt-in single-machine external approval seam
+// (ADR 0043 Slice 2). Default-off behind v2 `external_approval`; only
+// Enrollment, `resolve_user_decision` and `stop` are reachable. High-risk
+// exception actions and headless QA/Review stay out (BR-OUT-2, BR-OUT-3).
+// ---------------------------------------------------------------------------
+
+const APPROVAL_RESULT_CONTRACT = "assurance_kernel/approval_result/v1";
+
+interface ApproveArgs {
+	task_id: string;
+	mode: "enroll" | "resolve_user_decision" | "stop";
+	finding_id?: string;
+	resolution?: string;
+	reason?: string;
+	actor: string | null;
+}
+
+function parseApproveArgs(args: string[]): ApproveArgs | string {
+	const taskId = args[1];
+	if (taskId === undefined || taskId.startsWith("--")) return "approve requires <task-id>";
+	if (!TASK_ID_PATTERN.test(taskId)) return `invalid task id: ${taskId}`;
+	const values = new Map<string, string>();
+	let json = false;
+	const rest = args.slice(2);
+	for (let i = 0; i < rest.length; i++) {
+		const flag = rest[i];
+		if (flag === "--json") {
+			if (json) return "duplicate flag --json";
+			json = true;
+			continue;
+		}
+		if (flag !== "--finding" && flag !== "--resolution" && flag !== "--stop" && flag !== "--actor")
+			return `unknown flag: ${flag}`;
+		if (values.has(flag)) return `duplicate flag ${flag}`;
+		const value = rest[i + 1];
+		if (value === undefined) return `${flag} requires a value`;
+		values.set(flag, value);
+		i++;
+	}
+	if (!json) return "approve requires --json";
+	const finding = values.get("--finding");
+	const resolution = values.get("--resolution");
+	const stop = values.get("--stop");
+	const actor = values.get("--actor");
+	if (actor !== undefined && actor.trim().length === 0) return "--actor must be non-empty";
+	if (stop !== undefined && (finding !== undefined || resolution !== undefined))
+		return "--stop cannot be combined with --finding or --resolution";
+	if ((finding === undefined) !== (resolution === undefined))
+		return "--finding and --resolution must be given together";
+	if (finding !== undefined && (finding.trim().length === 0 || resolution!.trim().length === 0))
+		return "--finding and --resolution must be non-empty";
+	if (stop !== undefined && stop.trim().length === 0) return "--stop requires a non-empty reason";
+	const base = { task_id: taskId, actor: actor ?? null };
+	if (stop !== undefined) return { ...base, mode: "stop", reason: stop };
+	if (finding !== undefined) return { ...base, mode: "resolve_user_decision", finding_id: finding, resolution: resolution! };
+	return { ...base, mode: "enroll" };
+}
+
+function gitTracked(root: string, path: string): boolean {
+	try {
+		execFileSync("git", ["ls-files", "--error-unmatch", "--", path], { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+function errorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
+}
+
+/** Reporting only: a read fault must not turn a committed Enrollment into a rejection. */
+function runIdForTask(root: string, taskId: string): string | null {
+	try {
+		return currentRunId(root, taskId);
+	} catch {
+		return null;
+	}
+}
+
+async function approveEnroll(root: string, input: ApproveArgs, actorId: string, confirmationRef: string): Promise<KernelCommandResult> {
+	const taskId = input.task_id;
+	// The sidecar itself is checked first: an untracked TaskIntent is a
+	// planning-input fault, not an Enrollment rejection.
+	const sidecar = intentSidecarPath(taskId);
+	if (existsSync(resolve(root, sidecar)) && !gitTracked(root, sidecar))
+		return errorResult("intent_untracked", `planning inputs must be Git-tracked before approval: ${sidecar}`, 1);
+	let read: ReturnType<typeof readTaskIntent>;
+	try {
+		read = readTaskIntent(root, taskId);
+	} catch (error) {
+		return errorResult("enrollment_rejected", errorMessage(error), 1);
+	}
+	const spec = inspectSpecBinding(read.intent);
+	const required = [read.intent_ref.path, ...(spec.ok && spec.binding ? [spec.binding.active] : [])];
+	const untracked = required.filter((path) => !gitTracked(root, path));
+	if (untracked.length > 0)
+		return errorResult("intent_untracked", `planning inputs must be Git-tracked before approval: ${untracked.join(", ")}`, 1);
+	const now = new Date().toISOString();
+	try {
+		const preparation = preparePiCanary(root, { task_id: taskId, now });
+		if (!preparation.intent) return errorResult("enrollment_rejected", "enrollment requires a readable TaskIntent", 1);
+		const disclosure = enrollmentScopeDisclosure(root, taskId);
+		const result = await enrollTask(root, createEnrollmentAuthorityRegistry(), {
+			binding: {
+				task_id: taskId,
+				intent_path: preparation.intent.path,
+				intent_revision: preparation.intent.revision,
+				intent_content_hash: preparation.intent.content_hash,
+				preparation_digest: preparation.digest,
+				actor_id: actorId,
+				confirmation_ref: confirmationRef,
+				nonce: randomUUID(),
+			},
+			now,
+			disclosed_scope_paths: disclosure.paths,
+			confirmation: { source: "external_approval", external_approval_enabled: true },
+		});
+		return jsonResult({
+			contract: APPROVAL_RESULT_CONTRACT,
+			action: "enroll",
+			task_id: taskId,
+			run_id: runIdForTask(root, taskId),
+			lifecycle: result.record.lifecycle,
+			intent_content_hash: result.record.intent_ref.content_hash,
+			git_base_head: result.record.git_base_head ?? null,
+			confirmation_source: result.record.confirmation_source ?? null,
+		});
+	} catch (error) {
+		return errorResult("enrollment_rejected", errorMessage(error), 1);
+	}
+}
+
+async function approveRunOperation(root: string, input: ApproveArgs, actorId: string, confirmationRef: string): Promise<KernelCommandResult> {
+	const taskId = input.task_id;
+	const rejected = input.mode === "stop" ? "stop_rejected" : "decision_resolution_rejected";
+	const claim = readBackendClaim(root);
+	if (!claim || claim.task_id !== taskId || claim.lifecycle_status !== "active")
+		return errorResult("no_active_claim", `task ${taskId} has no active backend claim`, 1);
+	try {
+		recoverKernelStoreFollowUps(root, taskId);
+		const record = readTaskRecordRaw(root, taskId).record;
+		if (!record) return errorResult("no_active_claim", `task ${taskId} has no TaskRecord`, 1);
+		const priorIntent = readTaskIntent(root, taskId, record.intent_ref.path, record.intent_snapshot);
+		const projected = await projectAssurance(root, taskId);
+		if (projected.error) return errorResult(rejected, projected.error, 1);
+		const projection = projected.projection;
+		const now = new Date().toISOString();
+		const op = input.mode === "stop" ? "stop" : "resolve_user_decision";
+		const payload = op === "stop"
+			? { reason: input.reason! }
+			: { finding_id: input.finding_id!, resolution: input.resolution! };
+		const action = capabilityActionFor({ op, task_id: taskId, at: now, actor_id: actorId, ...payload });
+		const registry = createMutationAuthorityRegistry();
+		const app = createCanaryApplication(registry);
+		const binding: CapabilityBindingV2 = {
+			authority_kind: "user",
+			task_id: taskId,
+			...(projection.run_id ? { run_id: projection.run_id } : {}),
+			action_digest: digestOfAction(action),
+			expected_record_hash: projection.record_revision,
+			intent_revision: projection.intent_revision,
+			intent_content_hash: projection.intent_content_hash,
+			diff_hash: projection.diff_hash,
+			actor_id: actorId,
+			confirmation_ref: confirmationRef,
+			findings_digest: null,
+		};
+		const capability = registry.issue(binding);
+		const result = app.execute({
+			root,
+			task_id: taskId,
+			operation: { op, capability, actor_id: actorId, ...payload } as never,
+			prior_intent_token: priorIntent.token,
+			now,
+		});
+		if (op === "stop" || input.resolution === "accept_verifier_dispute")
+			stagePlanningArtifactTransition(root, result.record);
+		if (op === "stop")
+			return jsonResult({
+				contract: APPROVAL_RESULT_CONTRACT,
+				action: "stop",
+				task_id: taskId,
+				run_id: projection.run_id,
+				lifecycle: result.record.lifecycle,
+				audit_dir: projection.run_id ? auditRunDirPath(taskId, projection.run_id) : null,
+			});
+		return jsonResult({
+			contract: APPROVAL_RESULT_CONTRACT,
+			action: "resolve_user_decision",
+			task_id: taskId,
+			run_id: projection.run_id,
+			lifecycle: result.record.lifecycle,
+			finding_id: input.finding_id,
+			resolution: input.resolution,
+		});
+	} catch (error) {
+		return errorResult(rejected, errorMessage(error), 1);
+	}
+}
+
+/**
+ * `imm-kernel approve <task-id> [--finding <id> --resolution <text> | --stop <reason>] [--actor <id>] --json`.
+ * Async (Enrollment is), so it is exported beside the synchronous
+ * `runKernelCommand` instead of changing that function's contract.
+ */
+export async function runKernelApproveCommand(args: string[], root = process.cwd()): Promise<KernelCommandResult> {
+	const parsed = parseApproveArgs(args);
+	if (typeof parsed === "string") return errorResult("invalid_command", parsed, 2);
+	let enabled = false;
+	try {
+		enabled = resolveConfig(root).external_approval.value === true;
+	} catch {
+		enabled = false;
+	}
+	if (!enabled)
+		return errorResult(
+			"external_approval_disabled",
+			"imm-kernel approve requires external_approval: true in the effective v2 configuration",
+			1,
+		);
+	const layout = inspectStorageLayout(root);
+	if (layout.layout !== "ready")
+		return errorResult("layout_not_ready", layout.reason ?? `storage layout is ${layout.layout}`, 1);
+	const actorId = parsed.actor !== null ? canonicalActorId(parsed.actor) : LITERAL_USER_ACTOR_ID;
+	const confirmationRef = parsed.actor !== null ? `external_approval:${actorId}` : "external_approval";
+	if (parsed.mode === "enroll") return approveEnroll(root, parsed, actorId, confirmationRef);
+	return approveRunOperation(root, parsed, actorId, confirmationRef);
 }
 
 async function main(args: string[]): Promise<number> {

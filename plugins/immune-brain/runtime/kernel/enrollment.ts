@@ -330,6 +330,8 @@ function buildTaskRecordV4(
 		attestations: [],
 		findings: [],
 		history: [],
+		// A `user_session` record omits the source, byte-identical to earlier records.
+		...(input.confirmation?.source === "external_approval" ? { confirmation_source: "external_approval" as const } : {}),
 	};
 }
 

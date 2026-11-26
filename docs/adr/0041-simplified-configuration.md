@@ -4,7 +4,8 @@ Status: accepted; supersedes [ADR 0034](0034-layered-configuration.md) and the
 separate verifier model of ADR 0039 (#284 D1). Issue #564.
 
 Amended by [ADR 0043](0043-loop-daemon-freeze-and-extraction.md): the `loop` and `decision_models` keys, the Loop role
-catalog and the decision models are retired. The Decision below states the
+catalog and the decision models are retired, and Slice 2 adds the
+`external_approval` permission key. The Decision below states the
 configuration as amended.
 
 ## Context
@@ -26,7 +27,10 @@ project without editing a shared file.
    choices live in that repository's project file. Nothing checks whether Git
    tracks the project file.
 2. **Permission keys take the stricter value.** `git_integration` (`manual`
-   wins).
+   wins) and `external_approval` (`false` wins; default `false`). An invalid
+   value or a broken file resolves to the stricter value and stays an error
+   diagnostic. `external_approval: true` is the only way to enable
+   `imm-kernel approve` (ADR 0043 Decision 4).
 3. **Four roles.** `executor` (Lane Executor), `reviewer` (with findings
    verification and advisory review), `planner` and `triage`. The last two are
    accepted so existing files stay valid; nothing reads them.

@@ -30,7 +30,8 @@ runtime action only constructs the dispatch envelope; it does not store
 evidence or change task state. Preserve failed and blocked attempts. Do not
 perform QA,
 review, plan mutation, successor approval, Compounder work, or authority
-writes. Files beyond the estimate follow the same accepted goal and acceptance;
+writes. Never invoke `imm-kernel approve` or change `external_approval`:
+that seam belongs to the user's own orchestrator, never to an Agent session. Files beyond the estimate follow the same accepted goal and acceptance;
 respect hard no-touch paths and disclose them for Review. A scope-only revision
 that keeps the bound Spec path is compatible through `revise_intent`; no
 same-directory rule applies. Acceptance changes remain breaking and user-gated,

@@ -26,7 +26,7 @@ import { fileURLToPath } from "node:url";
 import process from "node:process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { runKernelCommand } from "./commands/kernel";
+import { runKernelApproveCommand, runKernelCommand } from "./commands/kernel";
 import { resolveConfig } from "./config/layered_config.ts";
 import {
 	inspectRoutingPolicy,
@@ -208,6 +208,9 @@ async function runKernelCli(args: string[], root: string): Promise<{
 	if (sub === "intent") return runKernelCommand(args, root);
 	if (sub === "status" && args.includes("--json")) return runKernelCommand(args, root);
 	if (sub === "inspect" && args.includes("--json")) return runKernelCommand(args, root);
+	// Opt-in external approval seam (ADR 0043 Slice 2); fails closed unless
+	// v2 `external_approval: true`. Managed/Agent sessions never call it.
+	if (sub === "approve") return runKernelApproveCommand(args, root);
 	if (sub === "audit") {
 		// Explicit read-only legacy audit: bounded, no symlink, deterministic
 		// redacted projection. Never writes journal or workflow state.
@@ -229,7 +232,7 @@ async function runKernelCli(args: string[], root: string): Promise<{
 	}
 	return {
 		stdout: "",
-		stderr: "invalid_kernel_command: imm-kernel supports intent author|validate, migrate --storage-layout, status --json, inspect --json, and audit --legacy only\n",
+		stderr: "invalid_kernel_command: imm-kernel supports intent author|validate, migrate --storage-layout, status --json, inspect [--task <task-id> [--run <run-id>]] --json, approve <task-id> --json, and audit --legacy only\n",
 		returncode: 2,
 	};
 }

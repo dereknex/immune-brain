@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "external-approval-seam",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:external-approval-seam:2026-11-26T15:32:31.585Z",
+  "final_record_hash": "sha256:b2ba0013ea11fcd3bc8b75a94f0cece3141f053f9c13b9d92ffbdb3860f63348",
+  "terminalized_at": "2026-11-26T15:32:31.585Z"
+}

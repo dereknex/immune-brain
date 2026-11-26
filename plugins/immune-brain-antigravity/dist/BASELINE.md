@@ -126,6 +126,12 @@ An existing grant for one of these never inherits another: a stage-only
 instruction stays stage-only, a commit is not push or publication authority,
 and a valid batch capability commits only its own scope-bounded child.
 
+`imm-kernel approve` is the user's own external approval seam (ADR 0043
+Decision 4), enabled only by `external_approval: true`. A Managed, Lane,
+Parent, or Agent session never invokes `imm-kernel approve`, in any mode, and
+never sets `external_approval` to reach it; its gates use the current Host's
+native interaction. Read-only `imm-kernel inspect --json` stays available.
+
 Routine Managed enrollment is the first step of an explicit `drive` entry and uses one current-Host native confirmation bound to the TaskIntent content hash after Planner validation. Planner and Brainstorm stop with candidate artifacts and never invoke Enrollment, whether or not the request also asks for execution; explicit Plan-only requests stop the same way. `drive` opens the native gate directly without chat pre-confirmation. Enrollment validates intent, Git ownership, scope, workspace claim, and final authority preconditions without executing acceptance descriptors; deterministic QA executes them after implementation. Once the user has entered `drive`, the routine task proceeds from that single confirmation through enrollment, execution, and QA with no further confirmation. Do not request confirmation for local in-scope edits, local verification, ordinary Direct rework, scoped diff review, or completion reporting. Managed evidence, QA, Review, and completion authority remain governed by their Managed contracts; R2 does not weaken them. Managed native-authority failures fail closed with one stable reason and exactly one same-Host recovery action; never offer a Pi, Direct Path, cross-Host/worktree, or unmanaged fallback.
 
 Run entry decision hosting (ADR 0025): a literal-user `drive` entry needs no chat confirmation, while Enrollment and unattended batch start each keep one native gate. Within that entry, only a side-effect-free rejection is retried, at most twice, and preflight is rerun before each retry; `plan_changed`, `head_moved` and a claim conflict are never retried. When preflight names a deterministic fix, apply it, commit the fixed files alone in one commit even under `Git integration: manual`, list that commit in the manifest, then retry. Push, PR, credentials, breaking intent revision and rework exits still stop for the user.

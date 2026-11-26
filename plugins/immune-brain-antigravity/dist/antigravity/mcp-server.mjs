@@ -1085,7 +1085,7 @@ var init_types = __esm(() => {
   TASK_LIFECYCLES = ["active", "done", "stopped"];
   TASK_ARTIFACT_STATES = ["active", "frozen"];
   TASK_RISKS = ["routine", "material", "critical"];
-  RECORDED_ENROLLMENT_CONFIRMATION_SOURCES = ["user_session", "tracker_approval", "policy_auto"];
+  RECORDED_ENROLLMENT_CONFIRMATION_SOURCES = ["user_session", "external_approval", "tracker_approval", "policy_auto"];
   REDUCED_MUTATION_BRAND = Symbol("assurance-kernel-reduced-mutation-v2");
   MUTATION_AUTHORITY_CAPABILITY_BRAND = Symbol("assurance-kernel-mutation-authority-capability");
 });
@@ -8088,6 +8088,9 @@ function resolveConfig(root, options = {}) {
   const git = valid((o) => o.git_integration, "git_integration", oneOf(["manual", "auto"]), "expected manual or auto");
   const gitBroken = diagnostics.find((d) => d.severity === "error" && ["git_integration", "$", "contract"].includes(d.key_path));
   const gitIntegration = gitBroken ? { value: "manual", source: gitBroken.file === projectPath ? "project" : "user" } : git.find((g) => g.value === "manual") ?? git[0] ?? { value: "manual", source: "default" };
+  const external = valid((o) => o.external_approval, "external_approval", (v) => typeof v === "boolean", "expected true or false");
+  const externalBroken = diagnostics.find((d) => d.severity === "error" && ["external_approval", "$", "contract"].includes(d.key_path));
+  const externalApproval = externalBroken ? { value: false, source: externalBroken.file === projectPath ? "project" : "user" } : external.find((e) => e.value === false) ?? external[0] ?? { value: false, source: "default" };
   return {
     contract: "immune_brain/effective_config/v2",
     files: { user: userPath, project: projectPath },
@@ -8095,6 +8098,7 @@ function resolveConfig(root, options = {}) {
     session_providers: sessionProviders,
     batch: { valid: !errorsUnder("batch"), max_parallel: maxParallel, final_verification: finalVerification, single_task_final_verification: singleTaskFinalVerification },
     git_integration: leaf(gitIntegration.value, gitIntegration.source),
+    external_approval: { value: externalApproval.value === true, source: externalApproval.source },
     initiative_carrier: carrier,
     review_verifier: reviewVerifier,
     diagnostics
@@ -8107,7 +8111,7 @@ var object3 = (v) => v !== null && typeof v === "object" && !Array.isArray(v), l
 var init_layered_config = __esm(() => {
   init_agent_roles();
   BATCH_MAX_PARALLEL = { min: 1, max: 8, default: 1 };
-  FILE_KEYS = ["contract", "agents", "herdr", "session_providers", "git_integration", "initiative_carrier", "batch", "review_verifier"];
+  FILE_KEYS = ["contract", "agents", "herdr", "session_providers", "git_integration", "external_approval", "initiative_carrier", "batch", "review_verifier"];
   REGISTERED_SESSION_PROVIDERS = ["herdr", "herdr-core"];
 });
 
@@ -22172,9 +22176,13 @@ import { execFileSync as execFileSync15 } from "node:child_process";
 import { join as join37 } from "node:path";
 // plugins/immune-brain/runtime/kernel/enrollment_confirmation.ts
 function verifyEnrollmentConfirmation(_root, input, _intent) {
-  if (input.source === "user_session")
+  const source = input.source;
+  if (source === "user_session")
     return { ok: true };
-  return { ok: false, reason: `unknown_confirmation_source: ${String(input.source)}` };
+  if (source === "external_approval") {
+    return input.external_approval_enabled === true ? { ok: true } : { ok: false, reason: "external_approval_disabled" };
+  }
+  return { ok: false, reason: `unknown_confirmation_source: ${String(source)}` };
 }
 
 // plugins/immune-brain/runtime/kernel/enrollment_authority.ts
@@ -24065,7 +24073,8 @@ function buildTaskRecordV4(input, intent, gitBaseHead) {
     git_base_head: gitBaseHead,
     attestations: [],
     findings: [],
-    history: []
+    history: [],
+    ...input.confirmation?.source === "external_approval" ? { confirmation_source: "external_approval" } : {}
   };
 }
 function runEnrollmentRehearsal(root, input, capability, registry) {
