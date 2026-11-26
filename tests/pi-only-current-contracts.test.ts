@@ -99,7 +99,7 @@ describe("current Pi-only contracts", () => {
       expect({ path, retired: content.match(retiredSkill)?.[0] }).toEqual({ path, retired: undefined });
     }
     const chinese = readFileSync(resolve(ROOT, "README.zh-CN.md"), "utf8");
-    for (const skill of ["clarify", "draw-up", "drive", "fix-pr", "prune-docs", "slim", "prune-tests", "revisit", "imm-loop"]) {
+    for (const skill of ["clarify", "draw-up", "drive", "fix-pr", "prune-docs", "slim", "prune-tests", "revisit", "design-review", "imm-loop"]) {
       expect(chinese).toContain(`\`${skill}\``);
     }
     expect(chinese).not.toContain("按模型排名");

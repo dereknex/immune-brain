@@ -28,7 +28,7 @@ Pi、Claude Code 与 Antigravity（`plugins/immune-brain-antigravity/`）是支�
 - [推荐工作流：与 mattpocock/skills 组合使用](#推荐工作流与-mattpocockskills-组合使用)
 - [实战案例](#实战案例)
 - [核心设计哲学：把“判断”变成“查表”](#核心设计哲学把判断变成查表用确定性工程驾驭多模型)
-- [9 个 Skills](#9-个-skills)
+- [10 个 Skills](#10-个-skills)
 - [生命周期](#生命周期)
 - [无人值守批次运行](#无人值守批次运行)
 - [配置](#配置)
@@ -63,7 +63,7 @@ pi update npm:immune-brain        # 升级到下一个已晋升版本
 pi install npm:immune-brain@next
 ```
 
-无需额外 server 配置，通过 Pi 安装后 9 个公开 Skill 即自动可用。
+无需额外 server 配置，通过 Pi 安装后 10 个公开 Skill 即自动可用。
 
 ### 在 Claude Code 中使用
 
@@ -158,6 +158,7 @@ Immune-Brain 提供两种清晰的工作模式：日常轻量编码走 **Host-na
 | Agent 指令文件膨胀 | `/slim` | → 将 tracked `AGENTS.md` / `CLAUDE.md` 压到最小必要上下文 |
 | 测试用例膨胀、重复 | `/prune-tests` | → 只读审计测试，仅合并或删除经审批、有退休或覆盖率证据的条目 |
 | 工作流在哪里遇到阻力、如何改进 | `/revisit` | → 基于会话证据诊断工作流阻力 |
+| 界面或 `DESIGN.md` 需要 UI/UX 审查 | `/design-review` | → 只读报告构图、可用性、无障碍与设计契约偏移，不改文件 |
 | 启动、停止或查看仓库后台 Loop 守护进程 | `/imm-loop` | → 通过 `bin/imm-loop` 查看状态/日志、执行 dry-run 或启停后台守护进程 |
 
 > **核心原则：Skill 显式调用**
@@ -450,7 +451,7 @@ Immune-Brain 的核心假设是：**不要让弱模型做架构决策，把它�
 
 ---
 
-## 9 个 Skills
+## 10 个 Skills
 
 | Skill | 类型 | 何时使用 | 职责 |
 |---|---|---|---|
@@ -462,11 +463,12 @@ Immune-Brain 的核心假设是：**不要让弱模型做架构决策，把它�
 | `slim` | 独立 | Agent instruction 膨胀 | 将 tracked AGENTS/CLAUDE/GEMINI.md 压到最小必要上下文 |
 | `prune-tests` | 独立 | 测试膨胀或重复 | 合并、参数化或删除经审批的测试条目，不弱化断言 |
 | `revisit` | 独立 | 工作流阻力诊断 | 追溯证据，推荐一个后续步骤；不对模型排名 |
+| `design-review` | 独立 | UI/UX 或设计契约审查 | 只读发现项附 `Before -> After` 修复建议；不改文件、不生成 `DESIGN.md` |
 | `imm-loop` | 独立 | 后台 Loop 守护进程控制 | 查看状态/日志、运行 dry-run tick，启停与暂停 `bin/imm-loop` |
 
 Executor、QA、Review、Compounder 等为 `drive` 内部调度的角色，无需手动调用。
 
-所有 9 个 Skill 均显式调用。新需求开发时：若需求含糊先调 `clarify`，目标清晰直接调 `draw-up`，完成确认后调 `drive` 推进闭环。
+所有 10 个 Skill 均显式调用。新需求开发时：若需求含糊先调 `clarify`，目标清晰直接调 `draw-up`，完成确认后调 `drive` 推进闭环。
 
 ### Managed Path 入口（brainstorm → planner → loop）
 
@@ -523,6 +525,12 @@ Executor、QA、Review、Compounder 等为 `drive` 内部调度的角色，无�
 
 - **触发方式：** 显式要求工作流健康回顾或工作流阻力诊断。
 - **职责：** 从 pi session logs 与可选的已提交审计记录中定位并核验证据链，然后推荐一项改进，或说明证据不足。使用量与返工次数仅用于定位上下文，不代表原因。不对模型排名。只读；不审查 diff。
+
+#### `design-review` — UI/UX 与设计契约审查
+
+- **触发方式：** 显式要求 Immune-Brain 对代码、diff、截图、在线页面或 `DESIGN.md` 做 UI/UX、界面或设计契约审查。
+- **职责：** 按打包的评审标准检查（`DESIGN.md` 优先级与体积预算、CRAP 与 Gestalt 构图、Laws of UX、Nielsen 启发式、控件状态、动效、WCAG 2.1 AA）；整页或多文件目标最多使用两个只读子代理视角。没有渲染界面时，依赖渲染的检查列为未验证。
+- **从不做：** 修改被审文件、生成兜底 `DESIGN.md`、套用默认风格、向主机外发送项目内容，或充当 Managed Review 结论。
 
 ---
 
@@ -710,7 +718,7 @@ Immune-Brain 读取两个 JSON 文件，Pi 与 Claude Code 共用（[ADR 0041](d
 package.json                          # Pi package manifest（skills + extensions）
 plugins/immune-brain/
 ├── .pi-extension/                    # Pi TUI + Kernel 扩展
-├── skills/                           # 9 个公开 Skills（触发 shim）
+├── skills/                           # 10 个公开 Skills（触发 shim）
 ├── dist/                             # 构建后的 skill 契约与参考文档
 ├── runtime/                          # Bun + TypeScript 运行时与 Kernel
 └── bin/                              # CLI wrappers（→ runtime/v4_runtime.ts）

@@ -65,7 +65,7 @@ function routeLine(loader: string, prefix: string): string {
 }
 
 // The Planner and Brainstorm start on the user's request, by slash command or in
-// natural language (ADR 0020); the other six public Skills need an explicit entry.
+// natural language (ADR 0020); the other public Skills need an explicit entry.
 const REQUEST_TRIGGERED: Record<string, string> = {
 	"draw-up": "Use when the user asks for an Immune-Brain Spec, Plan, or TaskIntent for a repository change.",
 	"clarify": "Use when the user asks to clarify or explore requirements before Immune-Brain planning.",
@@ -82,6 +82,7 @@ const TRIGGER_CASES: Array<[name: string, explicit: string, ordinary: string, sc
 	["slim", "minimize AGENTS.md with Immune-Brain", "what does this instruction mean", "tracked AGENTS.md"],
 	["prune-tests", "prune redundant tests with Immune-Brain", "is this test redundant", "redundant, bloated, or orphaned tests"],
 	["revisit", "review-retro with Immune-Brain", "review this function", "workflow-health retro"],
+	["design-review", "review this interface design with Immune-Brain", "style this component", "design-contract review"],
 	["imm-loop", "start the Immune-Brain Loop daemon", "explain this for loop", "Loop daemon"],
 ];
 

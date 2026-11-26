@@ -58,7 +58,7 @@ export const INTERNAL_ROLE_PROMPTS: Record<InternalRole, RolePromptSpec> = {
 		file: "ui-review.md",
 		review_gate: "imm-ui-review",
 		authority: "advisory",
-		tool_policy: "no tools",
+		tool_policy: "read-only tools",
 	},
 	executor: {
 		file: "executor.md",

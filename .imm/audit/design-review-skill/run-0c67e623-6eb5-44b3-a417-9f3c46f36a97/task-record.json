@@ -1,0 +1,176 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "design-review-skill",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "design-review-skill",
+    "goal": "Publish standalone read-only Skill design-review across Claude Code, Pi, and Antigravity with the 4-layer UI/UX and DESIGN.md contract rubric (CRAP, 8 Gestalt principles, 6 Laws of UX, Nielsen 10 with surface-mode calibration, whole-page/empty-state composition, style/token/dead-i18n convergence, and DESIGN.md 46,080 B budget/purity guard), adaptive 2-lens read-only subagent isolation, and shared reference alignment with internal role ui-review, per docs/specs/design-review-skill.spec.md.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "Source BR-REQ-1; meet D1, D7, and BR-SCN-3 in docs/specs/design-review-skill.spec.md. Agreed seam: plugins/immune-brain/tests/skill-registry-consistency.test.ts and tests/skill-dist-consistency.test.ts plus scripts/sync-dist-docs.ts --check. Done looks like: design-review is registered in plugins/immune-brain/skills/registry.yaml (role execute, role_class discovery, canonical true, next_actions []), plugins/immune-brain/skills/design-review/SKILL.md has pure-English Immune-Brain-scoped frontmatter and resolves every section-route anchor to a unique heading in dist/design-review.md or dist/BASELINE.md, dist/design-review.md is declared as owned in scripts/dist-sync-manifest.ts with byte length > 2x SKILL.md, and sync-dist-docs.ts --check exits 0. Negative: SKILL.md description rejects CJK characters and forbidden authority tokens (; / manifest / never / owns / authority / framing only), current surfaces contain no retired imm-* skill names, and dist/ contains zero undeclared files.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test plugins/immune-brain/tests/skill-registry-consistency.test.ts tests/skill-dist-consistency.test.ts && bun scripts/sync-dist-docs.ts --check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "Source BR-REQ-2; meet D1-D6 in docs/specs/design-review-skill.spec.md. Agreed seam: tests/design-review-contract.test.ts, tests/layering-rules-contract.test.ts, tests/code-quality-guard-contract.test.ts, and tests/role-prompt-bridge.test.ts. Done looks like: tests/design-review-contract.test.ts verifies dist/design-review.md and docs/reference/{ux-heuristic-checklist,design-contract-review-checklist,design-contract-audit-rubric}.md cover L1 (DESIGN.md priority, >40 KB warning and 46,080 B truncation/visual-purity guard, style/constant dedup, token drift, dead i18n keys, stale package docs), L2 (CRAP, all 8 Gestalt principles, 4 whole-page/empty-state composition rules, <=6px optical exemption), L3 (all 6 Laws of UX), L4 (Nielsen 10, 4 surface modes, 8-state controls, 3-part error copy, restorable truncation, anti-slop, i18n/RTL, <=300ms GPU motion, WCAG 2.1 AA), 4 modalities with Unverified (no rendered surface), adaptive dual-lens (composition-and-ux and contract-and-hygiene, <=2 read-only children) vs solo (<=2 files, DESIGN.md-only, --solo/--deep), escalation triggers, 5-step fix ladder, and shared ui-review.md reference routing + workflow-and-subagents.md tool-policy alignment. Negative: contracts forbid fallback DESIGN.md generation, default SaaS style imposition, outbound telemetry/report URLs, and source/Kernel writes; ui-review.md excludes Layering Rules and Code Quality Guard.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/design-review-contract.test.ts\",\n      \"tests/layering-rules-contract.test.ts\",\n      \"tests/code-quality-guard-contract.test.ts\",\n      \"tests/role-prompt-bridge.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "Source BR-REQ-4; meet D6, D7, and BR-SCN-3 in docs/specs/design-review-skill.spec.md. Agreed seam: tests/antigravity-host-package.test.ts, tests/pi-only-current-contracts.test.ts, and tests/direct-first-routing-contract.test.ts plus scripts/build-claude-plugin.ts --check and scripts/build-antigravity-plugin.ts --check. Done looks like: docs/agents/derived-files.json declares plugins/immune-brain-antigravity/dist/design-review.md and plugins/immune-brain-antigravity/skills/design-review/SKILL.md, generated Claude and Antigravity immune-brain-ui-review.md definitions match runtime/prompts/ui-review.md, CONTEXT.md, README.md, README.zh-CN.md, plugins/immune-brain/README.md, and plugins/immune-brain/USER_GUIDE.md list design-review as a standalone host-native Skill, and all three test files plus both build --check scripts exit 0. Negative: build --check scripts fail on any drifted or undeclared generated artifact, and direct-first-routing-contract.test.ts confirms design-review remains host-native without auto-entering the Managed Path.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/antigravity-host-package.test.ts tests/pi-only-current-contracts.test.ts tests/direct-first-routing-contract.test.ts && bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "CONTEXT.md",
+      "README.md",
+      "README.zh-CN.md",
+      "docs/agents/derived-files.json",
+      "docs/plans/design-review-skill.intent.json",
+      "docs/reference/design-contract-audit-rubric.md",
+      "docs/reference/design-contract-review-checklist.md",
+      "docs/reference/ux-heuristic-checklist.md",
+      "docs/reference/workflow-and-subagents.md",
+      "docs/specs/design-review-skill.spec.md",
+      "plugins/immune-brain-antigravity/agents/immune-brain-ui-review.md",
+      "plugins/immune-brain-antigravity/dist/design-review.md",
+      "plugins/immune-brain-antigravity/dist/docs/reference/design-contract-audit-rubric.md",
+      "plugins/immune-brain-antigravity/dist/docs/reference/design-contract-review-checklist.md",
+      "plugins/immune-brain-antigravity/dist/docs/reference/ux-heuristic-checklist.md",
+      "plugins/immune-brain-antigravity/dist/registry.yaml",
+      "plugins/immune-brain-antigravity/dist/role-prompts/ui-review.md",
+      "plugins/immune-brain-antigravity/runtime/prompts/ui-review.md",
+      "plugins/immune-brain-antigravity/skills/design-review/SKILL.md",
+      "plugins/immune-brain-antigravity/skills/registry.yaml",
+      "plugins/immune-brain/README.md",
+      "plugins/immune-brain/USER_GUIDE.md",
+      "plugins/immune-brain/agents/immune-brain-ui-review.md",
+      "plugins/immune-brain/dist/design-review.md",
+      "plugins/immune-brain/dist/docs/reference/design-contract-audit-rubric.md",
+      "plugins/immune-brain/dist/docs/reference/design-contract-review-checklist.md",
+      "plugins/immune-brain/dist/docs/reference/ux-heuristic-checklist.md",
+      "plugins/immune-brain/dist/registry.yaml",
+      "plugins/immune-brain/dist/role-prompts/ui-review.md",
+      "plugins/immune-brain/runtime/prompts/ui-review.md",
+      "plugins/immune-brain/skills/design-review/SKILL.md",
+      "plugins/immune-brain/skills/registry.yaml",
+      "plugins/immune-brain/tests/skill-registry-consistency.test.ts",
+      "scripts/dist-sync-manifest.ts",
+      "tests/antigravity-host-package.test.ts",
+      "tests/design-review-contract.test.ts",
+      "tests/direct-first-routing-contract.test.ts",
+      "tests/e2e/install.e2e.ts",
+      "tests/pi-only-current-contracts.test.ts",
+      "tests/skill-dist-consistency.test.ts"
+    ],
+    "scope_size_reason": "Atomic public Skill addition requires synchronized SKILL.md loader, owned dist contract, shared docs/reference checklists and dist mirrors, registry.yaml, ui-review role prompt and generated Claude/Antigravity definitions, derived-files.json, READMEs, and five skill-inventory contract test suites that enforce whole-package parity.",
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/design-review-skill.intent.json",
+    "content_hash": "sha256:ef324f688cadd131d8cf065af314a291e0e0ff3e10b9bb0408c531393d806377"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:ef324f688cadd131d8cf065af314a291e0e0ff3e10b9bb0408c531393d806377",
+  "git_base_head": "b4ec48210a02cd01436a4b24a47843bd2eeead1a",
+  "attestations": [
+    {
+      "id": "approval-qa-aec5b2f0",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ef324f688cadd131d8cf065af314a291e0e0ff3e10b9bb0408c531393d806377",
+      "diff_hash": "sha256:137ddcf41cc8866facd75023a4f702bd071c3c0dae96c24dc5bb10e7696e8e5b",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:fd8ffd5cd8e9f94c086f7e1b041945d74e77882dd8dad874f552dede25ae3535",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:fd8ffd5cd8e9f94c086f7e1b041945d74e77882dd8dad874f552dede25ae3535"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:fd8ffd5cd8e9f94c086f7e1b041945d74e77882dd8dad874f552dede25ae3535"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:fd8ffd5cd8e9f94c086f7e1b041945d74e77882dd8dad874f552dede25ae3535"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-a2b14d88",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ef324f688cadd131d8cf065af314a291e0e0ff3e10b9bb0408c531393d806377",
+      "diff_hash": "sha256:137ddcf41cc8866facd75023a4f702bd071c3c0dae96c24dc5bb10e7696e8e5b",
+      "actor_id": "cli:claude-code:5cb84fe3-7f3d-4b77-a3c0-2b027d16dc68",
+      "summary": "AC1-AC3 met: design-review registered (execute/discovery/canonical, next_actions []) with English Immune-Brain-scoped loader whose anchors match dist/design-review.md headings, owned manifest entry, derived-files declarations, shared reference checklists covering L1-L4 with byte-identical dist/Antigravity mirrors (blob OIDs verified), ui-review prompt routed to shared references without Layering Rules/Code Quality Guard, and ui-review tool_policy aligned to read-only tools per D6 (still inside the read-only bound pinned by tests/claude-host-package.test.ts); blast radius low — docs, prompts, registries and generated mirrors, one runtime string in role_prompt_bridge.ts and its bundled mcp-server.mjs copies, no persisted shape or migration.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "b4ec48210a02cd01436a4b24a47843bd2eeead1a",
+        "review_commit": "69dd6dd1c1849b1b72da5d718c266e8f11c67c13"
+      },
+      "reviewer_verdict_sha256": "sha256:aab010106ec86113d48130e80cd09ee04123d7acbc3628ed398edb9b7c51c65d"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:design-review-skill:2026-11-26T09:22:56.429Z",
+      "at": "2026-11-26T09:22:56.429Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/design-review-skill.intent.json"
+    },
+    {
+      "id": "record_approval:design-review-skill:2026-11-26T09:23:42.687Z",
+      "at": "2026-11-26T09:23:42.687Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-aec5b2f0\naction_v2_sha256:9d611d5020486bdeeb587caa1f344e9b814fd42fe58519035cd5eccc6de86158",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-11-26T09:23:42.687Z"
+      }
+    },
+    {
+      "id": "record_approval:design-review-skill:2026-11-26T09:56:53.762Z",
+      "at": "2026-11-26T09:56:53.762Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-a2b14d88\naction_v2_sha256:98d04a8c151d0a30b1a67f44b2c7853b196a647091e76fbe850b3384ca083ee3",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:5cb84fe3-7f3d-4b77-a3c0-2b027d16dc68",
+        "confirmation_ref": "claude:cli:claude-code:5cb84fe3-7f3d-4b77-a3c0-2b027d16dc68",
+        "issued_at": "2026-11-26T09:56:53.762Z"
+      },
+      "review_started_at": "2026-11-26T09:55:08.070Z",
+      "review_submitted_at": "2026-11-26T09:56:51.365Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:design-review-skill:2026-11-26T09:57:01.098Z",
+      "at": "2026-11-26T09:57:01.098Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:b1fc0b55365b6af14bd3183b83a33e58b652a5132b425cf6e87fd28f33972ed4"
+    }
+  ]
+}

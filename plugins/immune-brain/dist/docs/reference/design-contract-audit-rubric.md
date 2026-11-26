@@ -125,6 +125,18 @@ intentionally omits a section and documents why.
 - Can the contract be parsed section-by-section by an agent without resolving
   ambiguity?
 
+### 12. Context Budget and Visual Purity
+
+- Does the `DESIGN.md` stay within the single-read budget? Warn above 40 KB.
+  Above 46,080 B a single read truncates, so the rules past that boundary never
+  reach an implementation agent: report it with the measured byte size.
+- Does it hold only visual and interaction decisions? Non-visual runtime
+  mechanics (observer timers, cursor-merge algorithms, `sessionStorage` schemas,
+  cache or sync protocols) belong in code documentation or an architecture
+  record, linked from the contract rather than restated in it.
+- When it is over budget, can detail move to linked references while tokens,
+  composition rules, and state coverage stay in the first read?
+
 ## Severity
 
 - **Gap**: A section or dimension is entirely absent.
@@ -136,6 +148,8 @@ intentionally omits a section and documents why.
   miss entries in one theme.
 - **Accessibility gap**: The contract omits minimum contrast, focus visibility,
   or color-only signaling rules.
+- **Budget/purity drift**: The contract exceeds the single-read budget, or
+  carries non-visual runtime mechanics that crowd out visual rules.
 
 ## Guardrails
 

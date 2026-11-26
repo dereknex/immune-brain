@@ -17,7 +17,7 @@ const PLUGIN = "plugins/immune-brain";
 const ANTIGRAVITY = "plugins/immune-brain-antigravity";
 
 /** The public Skills every Host must expose; each is also a slash command on Claude Code. */
-const SKILLS = ["authority-review", "clarify", "draw-up", "drive", "fix-pr", "imm-loop", "prune-docs", "prune-tests", "revisit", "slim"];
+const SKILLS = ["authority-review", "clarify", "design-review", "draw-up", "drive", "fix-pr", "imm-loop", "prune-docs", "prune-tests", "revisit", "slim"];
 /** The Kernel MCP tools Claude Code and Antigravity must list (their names are Host-neutral). */
 const MCP_TOOLS = [
 	"advance_assurance", "answer_loop_interaction", "approve_breaking_intent_revision", "loop_interactions", "refute_finding", "repair_authority_state",

@@ -1,131 +1,211 @@
 # UI/UX Usability Heuristic & Experience Checklist
 
-This document compiles authoritative user experience (UX), user interface (UI), and heuristic usability principles. It serves as a progressive disclosure review lens for agents and human experts to evaluate applications page by page, component by component.
+This document is the style-neutral usability rubric shared by the `design-review`
+Skill and the `imm-ui-review` role. Load only the sections the review surface
+needs. An approved project `DESIGN.md` overrides any generic default here; the
+accessibility floor in section 6 is never waived.
+
+Cite findings by principle ID: `N1`-`N10` (Nielsen), `CRAP-*`, `GES-*`
+(Gestalt), `LAW-*` (Laws of UX), `STATE-*`, `MOTION-*`, and `A11Y-*`.
 
 ---
 
-## 1. Nielsen 10 Usability Heuristics (Nielsen's 10)
+## 1. Nielsen Heuristics by Intent
 
-| **Heuristic / 原则** | **Explanation / 解释** | **Checkpoints / 检查要点** |
+The ten usability heuristics, grouped by what they protect.
+
+### Perception and Feedback
+
+| ID | Heuristic | Checkpoints |
 | :--- | :--- | :--- |
-| **Visibility of System Status**<br>系统状态可见 | The system should always keep users informed about what is going on, through appropriate feedback within a reasonable time. | - Loading indicators or skeletons for async calls.<br>- Progress bars for long-running operations.<br>- Clear active states on buttons and tabs. |
-| **Match Between System and Real World**<br>符合现实世界 | The system should speak the users' language. Use words, phrases, and concepts familiar to the user, rather than internal jargon. | - Avoid displaying raw DB errors or stack traces to the user.<br>- Use intuitive naming conventions for tabs, menus, and actions.<br>- Map digital interactions to real-world expectations. |
-| **User Control and Freedom**<br>用户可控 | Users often perform actions by mistake and need a clearly marked "emergency exit" to leave the unwanted action without hassle. | - Support undo, cancel, or step-back on critical inputs.<br>- Allow canceling long-running background tasks.<br>- Clear "Close" or "Dismiss" options on modals and popups. |
-| **Consistency and Standards**<br>一致性 | Users should not have to wonder whether different words, situations, or actions mean the same thing. Follow platform conventions. | - Unified color palette (primary, secondary, danger, warning).<br>- Consistent button styling (e.g., solid for primary, outlined secondary).<br>- Same terminology used across all screens. |
-| **Error Prevention**<br>防止错误 | Even better than good error messages is a careful design which prevents a problem from occurring in the first place. | - Disable "Submit" buttons until mandatory fields are filled.<br>- Provide real-time validation alerts *before* submission.<br>- Double-confirm high-risk actions (e.g., delete, reset). |
-| **Recognition Rather than Recall**<br>识别优于记忆 | Minimize the user's memory load by making elements, actions, and options visible. Avoid making users remember information between pages. | - Auto-suggestion in complex search bars.<br>- Persistent labels on input fields (avoid placeholder-only labeling).<br>- Contextual help or tooltips near unfamiliar controls. |
-| **Flexibility and Efficiency of Use**<br>灵活高效 | Shortcuts — hidden from novice users — may speed up the interaction for the expert user so that the system can cater to both. | - Keyboard shortcuts for power operations.<br>- Default smart values (pre-populating fields with common choices).<br>- Bulk action capabilities in list views. |
-| **Aesthetic and Minimalist Design**<br>简洁设计 | Interfaces should not contain information which is irrelevant or rarely needed. Every extra unit of information competes with relevant info. | - High signal-to-noise ratio: prioritize core features.<br>- Clean typography with balanced padding and margins.<br>- Eliminate visual clutter and excessive lines or borders. |
-| **Help Users Recognize and Recover**<br>帮助用户恢复错误 | Error messages should be expressed in plain language (no error codes), precisely indicate the problem, and constructively suggest a solution. | - Use clear, readable explanations instead of `Error 500`.<br>- Provide direct action buttons (e.g., "Retry", "Contact Support").<br>- Highlight the exact input field that caused the error. |
-| **Help and Documentation**<br>必要帮助文档 | It is best if the system doesn't need additional explanation. However, it may be necessary to provide documentation to help users. | - Contextual tooltips explaining complex system metrics.<br>- Easily accessible FAQ or Help links in navigation.<br>- Clear step-by-step onboarding for first-time features. |
+| `N1` | Visibility of System Status | Every click, submit, navigation, and long task shows it was received. Async containers use skeletons that match the final layout; long tasks show progress; active tabs and selections are visible. |
+| `N2` | Match Between System and the Real World | Labels express user intent in the user's language, not column names or internal jargon; order and grouping follow real-world expectations. |
+
+### Control and Error Prevention
+
+| ID | Heuristic | Checkpoints |
+| :--- | :--- | :--- |
+| `N3` | User Control and Freedom | Cancel, undo, back, or dismiss is clearly available; long-running work can be cancelled; every screen has a stable way back and no dead end. |
+| `N5` | Error Prevention | Constraints, previews, and field-level validation prevent mistakes before commit; submit is guarded against double submission; destructive actions require confirmation or offer undo. |
+| `N9` | Help Users Recognize, Diagnose, and Recover from Errors | Errors sit next to their cause, avoid raw codes and stack traces, and offer a recovery action. |
+
+### Cognitive Load Reduction
+
+| ID | Heuristic | Checkpoints |
+| :--- | :--- | :--- |
+| `N4` | Consistency and Standards | One term, color role, and component behavior per meaning; platform conventions are followed. |
+| `N6` | Recognition Rather than Recall | Options, context, and prior choices stay visible; inputs keep persistent labels rather than placeholder-only labels. |
+| `N8` | Aesthetic and Minimalist Design | Nothing competes with the primary goal: remove low-value controls, duplicate explanations, and decorative clutter. |
+
+### Efficiency and Fallbacks
+
+| ID | Heuristic | Checkpoints |
+| :--- | :--- | :--- |
+| `N7` | Flexibility and Efficiency of Use | Shortcuts, bulk actions, remembered preferences, and smart defaults serve repeat users without blocking new ones. |
+| `N10` | Help and Documentation | Contextual help sits beside unfamiliar controls; first-time features explain the next step. |
+
+### Surface-Mode Calibration
+
+Classify the surface before scoring, because the same rule weighs differently.
+
+| Mode | Surface | Weigh most | Often `n/a` |
+| :--- | :--- | :--- | :--- |
+| Operate | Dashboards, forms, tools, admin | `N1`, `N3`, `N5`, `N7`, `N9` | none by default |
+| Read | Docs, articles, reference | `N2`, `N4`, `N6`, `N8` | `N7` shortcuts, `N5` without input |
+| Persuade | Landing, pricing, onboarding offers | `N2`, `N4`, `N8` | `N7`, `N10` |
+| Experience | Games, showcases, immersive media | `N1`, `N3` | `N6`, `N10` when the interaction is the content |
+
+A heuristic that cannot apply to the surface is marked `n/a` with a one-line
+reason and removed from the denominator before any coverage or score is stated.
+`n/a` never excuses an accessibility obligation.
 
 ---
 
-## 2. Information Architecture (IA)
+## 2. CRAP and Gestalt Principles
 
-- **Clear Categorization (清晰分类)**:
-  - Users must immediately comprehend what each module or section does.
-  - Logical grouping of functions (e.g., "Analytics" contains only charts, "Settings" contains only configurations).
-- **Explicit Visual Hierarchy (层级明确)**:
-  - Essential content must appear first and capture immediate visual focus. Secondary actions belong in nested menus or muted elements.
-  - High-impact metrics should be larger and bolder than administrative metadata.
-- **Stable Navigation Paths (路径稳定)**:
-  - Back buttons must reliably return the user to the previous state.
-  - No dead-ends: every screen must have at least one stable way to navigate back or go home.
-- **Natural Terminology (自然命名)**:
-  - Labels must represent user intent, not database column names (e.g., "Add Member" instead of `POST /member_v2`).
+Pair each composition judgment with the principle it serves.
 
----
+| ID | CRAP principle | Check |
+| :--- | :--- | :--- |
+| `CRAP-C` | Contrast | Emphasis follows priority: primary content and action differ clearly from secondary material; text meets the contrast floor. |
+| `CRAP-R` | Repetition | Spacing, type scale, radii, icon style, and state treatment repeat consistently. |
+| `CRAP-A` | Alignment | Elements share a grid: text left-aligned, numbers right-aligned, centers optically aligned. |
+| `CRAP-P` | Proximity | Related items sit closer to each other than to unrelated items. |
 
-## 3. Feedback First Interactive Loop
+| ID | Gestalt principle | Check |
+| :--- | :--- | :--- |
+| `GES-SIM` | Similarity | Things that behave alike look alike; interactive and static elements are distinguishable. |
+| `GES-CON` | Continuation | The eye follows one path through steps, lists, and timelines without breaks. |
+| `GES-CLO` | Closure | Partial shapes such as steppers, skeletons, and clipped carousels read as one whole and signal that more exists. |
+| `GES-PRO` | Proximity | Labels, fields, help, and errors group with the control they describe. |
+| `GES-FIG` | Figure/Ground | Foreground layers such as dialogs, popovers, and selection separate from the background in every theme. |
+| `GES-SYM` | Symmetry | Paired or comparable content is balanced; asymmetry is deliberate and marks hierarchy. |
+| `GES-REG` | Common Region | A border or surface encloses only items that belong together; avoid cards nested only for decoration. |
+| `GES-FAT` | Common Fate | Items that move, expand, or update together are related, and unrelated items do not. |
 
-An interface feels "alive" and interactive when feedback is immediate and continuous:
-
-```mermaid
-graph TD
-    A[User Clicks Action] --> B{Task Duration?}
-    B -->|< 100ms| C[Instant Active State & Success Feedback]
-    B -->|100ms - 1s| D[Visual Ripple / Button Loading Spinner]
-    B -->|> 1s| E[Skeleton Loading / Persistent Progress Bar]
-    E --> F{Completion Status?}
-    F -->|Success| G[Clear Banner / Success Notification]
-    F -->|Error| H[Readable Error Notification with 'Retry' Option]
-```
-
-- **Interactive Hover and Active States**:
-  - Buttons must transition color/scale smoothly on hover.
-  - Clicking a button triggers a satisfying change (visual ripple, spinner, or instant state toggle) so the user knows the click registered.
-- **Async Loading Skeletons**:
-  - Content containers must display skeleton loaders matching their final layout to prevent jarring page layout shifts.
-- **Long-Task Trackers**:
-  - Background processes must show a visible task status tracker (e.g., "Generating Report... 45%").
-- **Error Recovery Loops**:
-  - If a service fails, don't just show an error message. Provide a recovery button: "Try Again", "Reload Page", or "Pre-populate Cached State".
+Information architecture follows from the same principles: categories are
+comprehensible at a glance, essential content comes first, navigation paths are
+stable, and whitespace guides the eye rather than filling a template.
 
 ---
 
-## 4. Visual Principles & Layout Excellence
+## 3. Laws of UX
 
-- **Alignment (对齐)**: Align all elements to a clean, consistent grid (left-aligned text, right-aligned numbers, centered icons). Misaligned lines signal poor craftsmanship.
-- **Contrast (对比)**: Ensure contrast ratios satisfy WCAG AA standards (minimum 4.5:1 for normal text). Dark modes must feature distinct visual depths (elevation shadows, varying card shades).
-- **Proximity (亲密性)**: Related elements must be grouped closely together. Unrelated elements must be separated by generous white space.
-- **Repetition (重复)**: Standardize repeating design patterns (margins, padding sizes, font scales, icon shapes) to create familiarity.
-- **Whitespace (留白)**: Give your layout room to breathe. Use negative space strategically to guide the user's eye and prevent overwhelming density.
+Each law has a measurable check. Report the observed value with the finding.
 
----
-
-## 5. Core Product Experience Principles
-
-- **Don't Make Me Think**: The primary path should be obvious without reading instructions. Labels, grouping, and visual priority should make the next action self-evident.
-- **Progressive Disclosure**: Show the most important action or decision first; reveal advanced settings, secondary metadata, and rare actions only when they are needed. Flatly-listed operations must not exceed 2 actions; all other low-frequency actions must collapse under dropdown/more menus.
-- **Recognition over Recall**: Keep context, options, and prior choices visible so users do not need to remember information across screens.
-- **Feedback First**: Every click, submit, navigation, and long task should immediately show that the system received the user's intent.
-- **Error Prevention**: Prefer constraints, confirmation, validation, and preview states that prevent mistakes before users commit them.
-- **Empty State Design**: Empty views should explain what is missing, why it matters, and the single next useful action.
-- **Consistency**: Similar actions, states, labels, and component patterns should behave the same way across the product.
-- **Default Smartness**: Use sensible defaults, prefilled values, and preserved preferences to reduce repetitive setup.
-- **User Control**: Users should be able to cancel, undo, back out, retry, or recover without losing orientation.
-- **Less but Better**: Remove low-value controls, duplicate explanations, and decorative clutter that compete with the user's goal.
+| ID | Law | Measurable check |
+| :--- | :--- | :--- |
+| `LAW-FITTS` | Fitts's Law | Touch targets are `>= 44x44px`; desktop pointer targets are `>= 24x24px` (WCAG 2.2 AA minimum); destructive actions are separated from frequent ones. |
+| `LAW-HICK` | Hick's Law | Each decision area shows `1` primary action plus `1-2` secondary visible actions; the rest move behind progressive disclosure (menu, drawer, advanced section). |
+| `LAW-MILLER` | Miller's Law | Groups hold `<= 4` items ideally and `<= 7` at most; long digits, keys, and codes are formatted into groups. |
+| `LAW-JAKOB` | Jakob's Law | Controls follow standard mental models: `Enter` submits, `Escape` dismisses, and returning to a list keeps scroll position and filters. |
+| `LAW-TESLER` | Tesler's Law | The system absorbs unavoidable complexity: auto-trim input, offer smart defaults, and infer what it already knows instead of asking. |
+| `LAW-PEAK` | Peak-End Rule | Key flows end with clear completion feedback and a next step; there is no blank screen or raw error at any low point. |
 
 ---
 
-## 6. 11-Point Heuristic Acceptance Checklist
+## 4. Interactive State Matrix and Content
 
-Before any feature is signed off by QA, it must pass these **11 criteria**:
+### Eight Control States
 
-1. [ ] **Skeleton Loader**: Does every async data container show a smooth skeleton loader rather than a blank white box?
-2. [ ] **Action Spinner**: Do buttons trigger a spinner or disable themselves upon click to prevent double submissions?
-3. [ ] **Undo / Cancel**: Can the user cancel or back out of any modal / form step without losing global navigation?
-4. [ ] **Natural Error Explanation**: Are raw programming exceptions and system logs caught, replaced with human-readable guidance, and logged to console instead?
-5. [ ] **Form Validation**: Are input validation errors highlighted on the specific field in real-time, rather than only in a global pop-up?
-6. [ ] **Responsive Flow**: Does the layout remain perfectly aligned with no broken horizontal scrolling on both standard desktop and narrow viewports?
-7. [ ] **Unified Colors**: Do all interactive states (hover, active, focus, disabled) conform exclusively to the approved theme palette?
-8. [ ] **No Dead-Ends**: Is there a clear, persistent back path or navigation route visible on every single page layout?
-9. [ ] **Smart Defaults**: Are complex dropdowns or configurations pre-populated with sensible smart defaults to minimize user fatigue?
-10. [ ] **Empty States**: If data is empty or missing, is there a beautiful empty state card with a clear call-to-action button (e.g., "Add your first item")?
-11. [ ] **Action & Form Limits**: Are operations grouped to avoid flat listings of >= 3 buttons, and are inputs restricted to readable horizontal limits (max-width recommendation of ~448px or Bento Grid) to prevent stretching on wide screens?
+Every interactive control defines the states it can reach. A missing reachable
+state is a finding; an unreachable one is `n/a`.
+
+| State | Expectation |
+| :--- | :--- |
+| `default` | Affordance shows it is interactive. |
+| `hover` | Pointer feedback that does not move layout. |
+| `:focus-visible` | A visible focus indicator for keyboard users. |
+| `:active` | Immediate pressed feedback. |
+| `disabled` | Visibly inert, with the reason discoverable. |
+| `loading` | `disabled` against repeat activation and announced with `aria-busy`, keeping its size. |
+| `error` | Message tied to the control and announced. |
+| `success` | Confirmation that the action took effect. |
+
+Feedback scales with duration: under 100 ms an instant state change, up to 1 s a
+spinner or busy control, longer a skeleton or progress with a retry path on
+failure.
+
+### Content and Copy
+
+- **Error microcopy** states what happened, why, and the recovery action.
+- **Empty states** explain what is missing, why it matters, and the single next
+  useful action.
+- **Restorable truncation**: text cut with an ellipsis or `line-clamp` can be
+  read in full through expansion, a detail view, or an accessible tooltip.
+- **Honest content**: no invented metrics, testimonials, logos, or activity, and
+  no fake browser or phone chrome framing a screenshot as a product.
+- **Localization**: user-facing copy tolerates expansion, plurals, locale
+  formats, and RTL direction. Use the
+  [i18n review checklist](i18n-review-checklist.md) when localization is in
+  scope.
 
 ---
 
-## 7. Motion & Color Consistency Heuristics (动效与配色启发式校验)
+## 5. Motion
 
-- **Motion Response (动效响应)**: Interactive micro-animations, hover effects, and view transitions must be responsive, smooth, and must not introduce perceptible lag (typically kept under 300ms) or block critical user actions.
-- **Color Accessibility (色彩与对比度)**: All text and interactive element colors must maintain strict WCAG AA color contrast ratios (minimum 4.5:1 for normal text). Brand colors must be applied consistently across states (hover, active, focus).
+- `MOTION-1`: no animation on high-frequency or keyboard-initiated actions.
+- `MOTION-2`: UI transitions are `<= 300ms` and enter with `ease-out`; they
+  never block input.
+- `MOTION-3`: animate only compositor-friendly `transform` and `opacity`.
+- `MOTION-4`: honor `prefers-reduced-motion` by removing or replacing movement
+  while keeping state changes visible.
+- `MOTION-5`: gate hover motion behind
+  `@media (hover: hover) and (pointer: fine)`.
+- Motion communicates a state or spatial change; state is never conveyed by
+  motion alone.
 
 ---
 
-## 8. Design Tier Validation Rules (设计等级差异化校验)
+## 6. Accessibility
 
-When auditing against the pre-implementation `page_design` contract, verify the implementation according to the declared `design_tier`:
+WCAG 2.1 AA is the floor.
+
+- `A11Y-1`: native elements and correct roles; every control has an accessible
+  name; headings and landmarks describe structure.
+- `A11Y-2`: all functions work by keyboard in a logical order, focus stays
+  visible, and dialogs trap and restore focus.
+- `A11Y-3`: text contrast is at least 4.5:1 (3:1 for large text and for UI
+  boundaries and states), in every theme.
+- `A11Y-4`: state is never color-only; pair it with text, icon, or shape.
+- `A11Y-5`: do not block zoom (no `user-scalable=no` or restrictive
+  `maximum-scale`); content survives `200%` zoom and reflows at `320px` width
+  without clipping or two-direction scrolling.
+- `A11Y-6`: status changes and errors are announced to assistive technology.
+
+---
+
+## 7. Acceptance Checklist
+
+1. [ ] Every async container shows a skeleton or progress, never a blank box.
+2. [ ] Actions disable or show busy state to prevent double submission.
+3. [ ] Every modal and form step can be cancelled without losing navigation.
+4. [ ] Raw exceptions are replaced with guidance that names a recovery action.
+5. [ ] Validation errors appear on the specific field.
+6. [ ] The layout holds on desktop and narrow viewports without horizontal scroll.
+7. [ ] Interactive states use the approved theme tokens.
+8. [ ] Every page has a clear way back.
+9. [ ] Complex configuration has smart defaults.
+10. [ ] Empty states carry one clear call to action.
+11. [ ] Visible actions respect `LAW-HICK`, and form inputs are width-bounded
+    (about 448px or a grid) so they do not stretch on wide screens.
+
+---
+
+## 8. Design Tier Validation Rules
+
+When auditing against a pre-implementation `page_design` contract, verify the
+implementation according to its declared `design_tier`.
 
 ### Standard Tier
-- [ ] **Grid & Hierarchy**: Does the layout structure align with the section map and information hierarchy defined in the contract?
-- [ ] **Color Contrast**: Are color contrast ratios compliant with WCAG AA standards?
-- [ ] **Width Safety**: Are inputs constrained by horizontal bounds (`form_stretching_limits`) to prevent stretching across wide screens?
-- [ ] **Action Collapsing**: Are operations structured cleanly with <= 2 visible actions and low-frequency actions collapsed behind `collapsed: true` metadata?
+- [ ] **Grid & Hierarchy**: layout matches the section map and information hierarchy.
+- [ ] **Color Contrast**: contrast meets WCAG AA.
+- [ ] **Width Safety**: inputs respect `form_stretching_limits`.
+- [ ] **Action Collapsing**: at most two high-frequency `visible_actions`, with
+  low-frequency actions collapsed behind `collapsed: true` metadata.
 
 ### Rich Tier
-In addition to all Standard Tier checks, audit the following:
-- [ ] **Motion Contract**: Are the view transitions and micro-animations implemented according to the durations and easing curves defined in the `motion_contract`?
-- [ ] **Aesthetic Genre**: Does the interface reflect the visual styling of the specified `aesthetic_genre` (e.g., Swiss typography, mechanical grids, HSL palettes)?
-- [ ] **Image Strategy**: Do actual images, illustrations, or placeholder styles match the texture and tone guidelines defined in the `image_strategy`?
+In addition to all Standard Tier checks:
+- [ ] **Motion Contract**: durations and easing match the `motion_contract`.
+- [ ] **Aesthetic Genre**: styling reflects the declared `aesthetic_genre`.
+- [ ] **Image Strategy**: imagery matches the `image_strategy` guidance.

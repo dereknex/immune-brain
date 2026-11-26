@@ -28,7 +28,7 @@ Pi, Claude Code, and Antigravity (`plugins/immune-brain-antigravity/`) are the s
 - [Recommended Workflows: Composing with mattpocock/skills](#recommended-workflows-composing-with-mattpocockskills)
 - [Real-World Case Studies](#real-world-case-studies)
 - [Core Philosophy: Turn "Judgment" into "Table Lookup"](#core-philosophy-turn-judgment-into-table-lookup-harnessing-multi-model-tiers-with-determinism)
-- [The 9 Skills](#the-9-skills)
+- [The 10 Skills](#the-10-skills)
 - [Lifecycle](#lifecycle)
 - [Unattended Batch Runs](#unattended-batch-runs)
 - [Configuration](#configuration)
@@ -63,7 +63,7 @@ New versions reach the `latest` npm dist-tag only after they are promoted; insta
 pi install npm:immune-brain@next
 ```
 
-No extra server config is needed. Installing the package via Pi makes all 9 public Skills available automatically.
+No extra server config is needed. Installing the package via Pi makes all 10 public Skills available automatically.
 
 ### In Claude Code
 
@@ -159,6 +159,7 @@ Immune-Brain provides two clean modes: **Host-native** for daily coding, and **M
 | Agent instructions bloated | `/slim` | → Minimizes tracked `AGENTS.md` / `CLAUDE.md` to essential non-discoverable rules |
 | Test suite bloated with redundant cases | `/prune-tests` | → Audits tests read-only, then merges or deletes only approved entries backed by retirement or coverage evidence |
 | Where workflow friction occurs and what to improve | `/revisit` | → Workflow-friction diagnosis from session evidence |
+| An interface or `DESIGN.md` needs a UI/UX critique | `/design-review` | → Read-only report on composition, usability, accessibility, and design-contract drift; no file edits |
 | Run or inspect the background Loop daemon for Issues/PRs | `/imm-loop` | → Inspects status/logs or starts/stops the repository Loop daemon via `bin/imm-loop` |
 
 > **Core Principle: Skill-Explicit Entry**
@@ -448,7 +449,7 @@ Without explicit cost levers, multi-agent workflows compound expenses exponentia
 
 ---
 
-## The 9 Skills
+## The 10 Skills
 
 | Skill | Type | When to use | What it does |
 |---|---|---|---|
@@ -460,11 +461,12 @@ Without explicit cost levers, multi-agent workflows compound expenses exponentia
 | `slim` | Standalone | Bloated agent instructions | Minimizes tracked AGENTS/CLAUDE/GEMINI.md to necessary context |
 | `prune-tests` | Standalone | Bloated or redundant tests | Merges, parameterizes, or deletes approved test entries without weakening assertions |
 | `revisit` | Standalone | Workflow-friction diagnosis | Traces evidence, recommends one next step; no model ranking |
+| `design-review` | Standalone | UI/UX or design-contract critique | Read-only findings with `Before -> After` fixes; never edits files or generates `DESIGN.md` |
 | `imm-loop` | Standalone | Background Loop daemon control | Inspects status/logs, runs dry-run ticks, starts/stops/pauses `bin/imm-loop` |
 
 Internal roles (Executor, QA, Review, Compounder) are dispatched by `drive` — you never invoke them directly.
 
-All 9 skills are invoked explicitly. For new features, start with `clarify` (if requirements are uncertain) or `draw-up` (if requirements are clear), then proceed to `drive` once enrolled.
+All 10 skills are invoked explicitly. For new features, start with `clarify` (if requirements are uncertain) or `draw-up` (if requirements are clear), then proceed to `drive` once enrolled.
 
 ### Managed Path entries (brainstorm → planner → loop)
 
@@ -521,6 +523,12 @@ The three repair/maintenance skills are host-native: they never create a managed
 
 - **Trigger:** explicit request for a workflow-health retro or workflow-friction diagnosis.
 - **What it does:** locates and verifies evidence chains from Pi, Claude Code, and Antigravity CLI session logs and optional committed audit, then recommends one improvement or reports insufficient evidence. Usage and rework counts are locating context, not causes. It ranks no models. Read-only. Not a diff review.
+
+#### `design-review` — UI/UX and design-contract critique
+
+- **Trigger:** explicit request for an Immune-Brain UI/UX, interface, or design-contract review of code, diffs, screenshots, live pages, or `DESIGN.md`.
+- **What it does:** checks the surface against the packaged rubric (`DESIGN.md` priority and size budget, CRAP and Gestalt composition, Laws of UX, Nielsen heuristics, control states, motion, WCAG 2.1 AA), using up to two read-only subagent lenses for whole-page or multi-file targets. Checks that need a rendered page are listed as unverified when none is available.
+- **What it never does:** edit reviewed files, generate a fallback `DESIGN.md`, impose a default style, send project content off the host, or act as a Managed Review verdict.
 
 ---
 
@@ -700,7 +708,7 @@ See [`docs/reference/immune-brain-config.md`](docs/reference/immune-brain-config
 package.json                          # Pi package manifest (skills + extensions)
 plugins/immune-brain/
 ├── .pi-extension/                    # Pi TUI + Kernel authority extension
-├── skills/                           # 9 public Skills (trigger shims)
+├── skills/                           # 10 public Skills (trigger shims)
 ├── dist/                             # Built skill contracts & references
 ├── runtime/                          # Bun + TypeScript runtime & Kernel
 └── bin/                              # CLI wrappers (→ runtime/v4_runtime.ts)
@@ -718,7 +726,7 @@ docs/specs/                           # Living specs (updated in place)
 
 ## FAQ
 
-**Do I need to learn all 9 skills?** No. Most of the time you only need `/draw-up` (to plan and enroll a task) and `/drive` (to build and verify it). Use `clarify` when requirements need clarifying first, and the maintenance skills (`fix-pr`, `imm-loop`, etc.) only when specific repair or daemon needs arise. Ordinary chat and simple edits don't need any skills at all.
+**Do I need to learn all 10 skills?** No. Most of the time you only need `/draw-up` (to plan and enroll a task) and `/drive` (to build and verify it). Use `clarify` when requirements need clarifying first, and the maintenance skills (`fix-pr`, `imm-loop`, etc.) only when specific repair or daemon needs arise. Ordinary chat and simple edits don't need any skills at all.
 
 **What if I interrupt or close the session mid-task?** State is safely stored on disk (`.imm/` + TaskIntent). In Pi or Claude Code, simply re-enter `/drive` to resume — the Kernel projection is authoritative.
 

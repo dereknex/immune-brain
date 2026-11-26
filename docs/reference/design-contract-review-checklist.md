@@ -1,7 +1,9 @@
 # Design Contract Review Checklist
 
-This checklist gives `imm-ui-review` a project-specific, read-only review source
-for design-contract enforcement and style-neutral anti-slop review.
+This checklist gives the `design-review` Skill and the `imm-ui-review` role one
+project-specific, read-only review source for design-contract enforcement,
+whole-page composition, implementation hygiene, and style-neutral anti-slop
+review.
 
 ## 1. Contract Resolution
 
@@ -23,7 +25,44 @@ for design-contract enforcement and style-neutral anti-slop review.
 - Do not write files, bootstrap templates, or synthesize a replacement
   contract.
 
-## 3. Style-Neutral Anti-Slop Checks
+## 3. Whole-Page Composition and State Co-location
+
+Judge the assembled page, not each component in isolation. An approved
+`DESIGN.md` rule overrides any default below.
+
+- **One visual axis**: headings, content, and actions share a unified visual axis
+  and alignment grid across sections; a block that drifts off the axis needs a
+  stated reason.
+- **One border grammar**: separators and containers use a single `1px` border
+  grammar. Report stray `2px` or black rules, and empty states drawn as
+  upload-slot `border-dashed` boxes where nothing can be dropped.
+- **One spacing owner**: the parent `gap-*` (or the platform equivalent) owns
+  spacing between siblings. Children do not stack outer `mt-*` / `mb-*`
+  margins on top of it. An optical alignment offset of `<= 6px` is exempt.
+- **State with action**: co-locate an empty state and its conversion or next
+  action in one container, so explanation and action are read together.
+- **Restrained accent**: secondary panels do not use large accent fills; accent
+  marks the primary action, current selection, or a status that needs attention.
+
+## 4. Implementation Hygiene and Token Convergence
+
+Apply these to the code and documents in the reviewed surface and its direct
+neighbors.
+
+- **Contract budget**: warn when `DESIGN.md` exceeds 40 KB, and report a
+  truncation risk when it exceeds 46,080 B, because a single read stops there and
+  later rules are silently lost.
+- **Duplication**: report duplicated Tailwind class strings and constants across
+  branches of one module and across adjacent pages; one named variant, component,
+  or constant owns each repeated value.
+- **Semantic tokens**: styling uses the project's semantic tokens. Report raw
+  hex or OKLCH values, legacy classes, and one-off values that duplicate a token.
+- **Dead copy**: report dead i18n keys that no source references after the change,
+  checking dynamically composed keys before calling a key unused.
+- **Stale documentation**: report stale frontend package names, paths, or
+  libraries that `AGENTS.md` or `DESIGN.md` still describe.
+
+## 5. Style-Neutral Anti-Slop Checks
 
 - Information hierarchy is intentional: primary goals, core content, and
   secondary details are not competing for the same emphasis.
@@ -46,7 +85,7 @@ for design-contract enforcement and style-neutral anti-slop review.
 - Product cohesion is visible: the UI should feel intentionally composed for the
   project, not like an AI-generated showcase.
 
-## 4. Guardrails
+## 6. Guardrails
 
 - These checks are quality heuristics, not a substitute style system.
 - Do not impose a preset product baseline, default component taxonomy, or
