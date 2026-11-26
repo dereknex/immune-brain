@@ -1,9 +1,17 @@
 import { describe, expect, test } from "bun:test";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import {
 	createEnrollmentAuthorityRegistry,
 	type EnrollmentCapabilityBinding,
+	type EnrollmentConfirmationInput,
+	verifyEnrollmentConfirmation,
 } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
+import { readTaskRecordRaw } from "../plugins/immune-brain/runtime/kernel/storage";
+import { enrollTaskForTest } from "./helpers/kernel-enroll";
 import { createTestEnrollmentCapability } from "./fixtures/enrollment-capability-test-seam";
 import { inspectSpecBinding } from "../plugins/immune-brain/runtime/kernel/spec_binding";
 import { parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
@@ -196,5 +204,81 @@ describe("enrollment Spec binding", () => {
 		expect(message).toContain("at most one scope-bound Spec; found 2:");
 		expect(message).toContain("docs/specs/six.spec.md");
 		expect(message).toContain("docs/specs/seven.spec.md");
+	});
+});
+
+// ADR 0043 Slice 2: the opt-in headless `external_approval` source. The Kernel
+// reads no configuration, so the caller states whether the resolved
+// `external_approval` key enables it; nothing short of `true` is admitted.
+describe("enrollment confirmation membrane", () => {
+	const intent = (risk: string) => ({ risk, scope_hint: [] as string[] });
+
+	test("admits an enabled external_approval at every risk tier", () => {
+		for (const risk of ["routine", "material", "critical"]) {
+			expect(verifyEnrollmentConfirmation("/unused", { source: "external_approval", external_approval_enabled: true }, intent(risk)))
+				.toEqual({ ok: true });
+			expect(verifyEnrollmentConfirmation("/unused", { source: "user_session" }, intent(risk))).toEqual({ ok: true });
+		}
+	});
+
+	test("refuses a disabled external_approval and the retired unattended sources", () => {
+		for (const input of [
+			{ source: "external_approval" },
+			{ source: "external_approval", external_approval_enabled: false },
+			{ source: "external_approval", external_approval_enabled: "true" },
+		]) {
+			expect(verifyEnrollmentConfirmation("/unused", input as EnrollmentConfirmationInput, intent("critical")))
+				.toEqual({ ok: false, reason: "external_approval_disabled" });
+		}
+		for (const source of ["tracker_approval", "policy_auto"]) {
+			expect(verifyEnrollmentConfirmation("/unused", { source, external_approval_enabled: true } as never, intent("routine")))
+				.toEqual({ ok: false, reason: `unknown_confirmation_source: ${source}` });
+		}
+	});
+
+	function repoWithIntent(taskId: string, risk: string) {
+		const root = mkdtempSync(join(tmpdir(), "imm-enroll-confirm-"));
+		mkdirSync(join(root, "docs/plans"), { recursive: true });
+		mkdirSync(join(root, ".imm"), { recursive: true });
+		writeFileSync(join(root, "docs/plans", `${taskId}.intent.json`), `${JSON.stringify({
+			contract: "assurance_kernel/task_intent/v1",
+			task_id: taskId,
+			owner: "user",
+			goal: `goal for ${taskId}`,
+			acceptance: [{ id: "acc-1", assertion: "a", verification: "bun test tests/x.test.ts" }],
+			scope_hint: ["docs/plans", "src"],
+			risk,
+			revision: 1,
+		}, null, 2)}\n`);
+		const git = (...args: string[]) => execFileSync("git", args, { cwd: root, stdio: "ignore" });
+		git("init", "-q");
+		git("add", "-A");
+		git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "fixture");
+		return root;
+	}
+
+	test("enrollment records confirmation_source only for external_approval", async () => {
+		const roots: string[] = [];
+		try {
+			const external = repoWithIntent("ext-task", "critical");
+			roots.push(external);
+			await enrollTaskForTest(external, "ext-task", { confirmation: { source: "external_approval", external_approval_enabled: true } });
+			expect(readTaskRecordRaw(external, "ext-task").record).toMatchObject({ lifecycle: "active", confirmation_source: "external_approval" });
+
+			const session = repoWithIntent("session-task", "routine");
+			roots.push(session);
+			await enrollTaskForTest(session, "session-task", { confirmation: { source: "user_session" } });
+			const record = readTaskRecordRaw(session, "session-task").record;
+			expect(record).toMatchObject({ lifecycle: "active" });
+			expect(record).not.toHaveProperty("confirmation_source");
+
+			const disabled = repoWithIntent("disabled-task", "routine");
+			roots.push(disabled);
+			await expect(enrollTaskForTest(disabled, "disabled-task", { confirmation: { source: "external_approval" } }))
+				.rejects.toThrow("external_approval_disabled");
+			expect(readTaskRecordRaw(disabled, "disabled-task").record).toBeNull();
+		} finally {
+			for (const root of roots) rmSync(root, { recursive: true, force: true });
+		}
 	});
 });

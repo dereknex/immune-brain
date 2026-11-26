@@ -10,18 +10,20 @@ export const TASK_RISKS = ["routine", "material", "critical"] as const;
 export type TaskRisk = (typeof TASK_RISKS)[number];
 
 /**
- * How an Enrollment is confirmed (ADR 0005, ADR 0019): `user_session`, the
- * interactive literal-user gate, is the only live source. ADR 0043 retired the
- * Loop daemon's unattended `tracker_approval` and `policy_auto` sources.
+ * How an Enrollment is confirmed (ADR 0005, ADR 0019): `user_session` is the
+ * interactive literal-user gate; `external_approval` is the opt-in headless
+ * `imm-kernel approve` seam (ADR 0043 Slice 2), admitted only when the caller
+ * states the configuration enables it. ADR 0043 retired the Loop daemon's
+ * unattended `tracker_approval` and `policy_auto` sources.
  */
-export const ENROLLMENT_CONFIRMATION_SOURCES = ["user_session"] as const;
+export const ENROLLMENT_CONFIRMATION_SOURCES = ["user_session", "external_approval"] as const;
 export type EnrollmentConfirmationSource = (typeof ENROLLMENT_CONFIRMATION_SOURCES)[number];
 /**
  * The sources a TaskRecord may carry: a record settled before ADR 0043 can still
  * name a retired unattended source, so reading it stays tolerant. No Enrollment
  * writes one any more.
  */
-export const RECORDED_ENROLLMENT_CONFIRMATION_SOURCES = ["user_session", "tracker_approval", "policy_auto"] as const;
+export const RECORDED_ENROLLMENT_CONFIRMATION_SOURCES = ["user_session", "external_approval", "tracker_approval", "policy_auto"] as const;
 export type RecordedEnrollmentConfirmationSource = (typeof RECORDED_ENROLLMENT_CONFIRMATION_SOURCES)[number];
 
 export type EvidenceStatus = "passed" | "failed" | "blocked";

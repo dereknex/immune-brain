@@ -40,6 +40,7 @@ file:
   "session_providers": ["herdr"],
   "batch": { "max_parallel": 3 },
   "git_integration": "manual",
+  "external_approval": false,
   "initiative_carrier": "github"
 }
 ```
@@ -54,7 +55,8 @@ file:
 ```
 
 - The top-level keys are `contract`, `agents`, `session_providers`, `batch`,
-  `git_integration`, `initiative_carrier` and `review_verifier`. Every key is
+  `git_integration`, `external_approval`, `initiative_carrier` and
+  `review_verifier`. Every key is
   optional except `contract`. An unknown key at any level is invalid. The
   retired `herdr` key is still accepted so existing files warn instead of
   failing, but it is never resolved (see below).
@@ -140,6 +142,7 @@ value winning. **Request** values come from the literal current request (see
 | `agents.<role>` | per role; a whole profile from one layer |
 | `session_providers`, `batch.max_parallel`, `batch.final_verification`, `batch.single_task_final_verification`, `initiative_carrier`, `review_verifier` | first set value |
 | `git_integration` | stricter wins: `manual` if either file sets it |
+| `external_approval` | stricter wins: `false` if either file sets it |
 
 Permission keys take the stricter value so that a local file cannot widen what
 your user file allows. `batch.final_verification` falls back to the test and
@@ -170,6 +173,7 @@ default applies, and its diagnostic stays an error:
 - an `agents` error that leaves Review without a profile: Review reports
   `review_config_invalid` naming the file and key path;
 - `git_integration` invalid: `manual`;
+- `external_approval` invalid (or either file broken): `false`;
 - `initiative_carrier` invalid: none, and the Planner asks.
 
 ## Initiative Carrier
@@ -316,6 +320,38 @@ branch on its own:
 
 ADR 0024 records the decision; ADR 0036 retires the Enrollment commits it
 described, and ADR 0041 sets the precedence above.
+
+## External Approval
+
+Top-level `external_approval` is a boolean permission key that lets a local
+orchestrator, running as you on this machine, approve through
+`imm-kernel --json` instead of a Host's native gate (ADR 0043 Decision 4):
+
+```json
+{ "contract": "immune_brain/user_config/v2", "external_approval": true }
+```
+
+- `false` is the default and wins whenever either file sets it: a project file
+  cannot enable it against a user file that says `false`. A non-boolean value
+  or a broken file resolves to `false` and is reported as `config_invalid`.
+  `imm-kernel config migrate` keeps the key as it is.
+- With `true`, `imm-kernel approve <task-id> --json` enrolls a Git-tracked
+  TaskIntent (the TaskRecord records `confirmation_source: "external_approval"`),
+  `--finding <finding-id> --resolution <text>` resolves one open user decision,
+  and `--stop <reason>` stops the active task and exports its audit evidence.
+  `--actor <actor-id>` names the approving actor (default `literal-user`).
+  Every result uses contract `assurance_kernel/approval_result/v1`.
+- Without `true`, `imm-kernel approve` exits 1 with
+  `external_approval_disabled` before any Kernel write. Malformed flags exit 2
+  with `invalid_command`.
+- `imm-kernel inspect --json` lists an active task's open user decisions as
+  `assurance.projection.unresolved_user_decisions`, and
+  `imm-kernel inspect --task <task-id> [--run <run-id>] --json` verifies a
+  settled task's `.imm/audit/<task-id>/<run-id>/` pair, exiting 1 with
+  `task_audit_missing` or `task_audit_invalid`. Inspect never writes state.
+- Residual-risk acceptance, breaking revisions, rework and Review-retry grants,
+  and QA or Review runs are not reachable through it. Managed and Agent
+  sessions never run `imm-kernel approve`; it is for your own orchestrator.
 
 ## Other Preferences
 

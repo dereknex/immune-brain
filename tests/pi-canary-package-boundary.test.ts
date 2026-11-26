@@ -144,8 +144,12 @@ describe("pi canary package boundary", () => {
 				sequencers.push(`${name}:${usesRehearsal ? "rehearsal" : ""}${usesCommit ? "commit" : ""}`);
 		}
 		// The Host in-place Enrollment tools are retired (drive-always-lanes D1,
-		// D2): the shared Batch child Kernel port is the only production caller.
-		expect([...entryCalls].sort()).toEqual(["runtime/unattended/batch_kernel_port.ts"]);
+		// D2). The production callers are the shared Batch child Kernel port and
+		// the default-off external approval CLI seam (ADR 0043 Slice 2).
+		expect([...entryCalls].sort()).toEqual([
+			"runtime/commands/kernel.ts",
+			"runtime/unattended/batch_kernel_port.ts",
+		]);
 		// Both Hosts' batch children reach the entry only through that port:
 		// HostRuntime constructs the shared port, and Pi batch delegates through PiRuntime.
 		const sources = new Map(productionSources());

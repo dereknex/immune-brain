@@ -117,3 +117,35 @@ describe("dist/docs packaging sync contract", () => {
     expect(runtime).toContain("sha256")
   })
 })
+
+// ADR 0043 Slice 2 (external-approval-seam AC3): the external approval seam is
+// orchestrator-neutral, and no Agent-facing instruction lets a session use it.
+describe("external approval seam packaged contract", () => {
+  const packaged = [
+    "plugins/immune-brain/BASELINE.md",
+    "plugins/immune-brain/dist/BASELINE.md",
+    "plugins/immune-brain/runtime/prompts/executor.md",
+    "plugins/immune-brain/dist/role-prompts/executor.md",
+  ]
+
+  it("BASELINE and the executor prompt forbid Agent sessions from invoking imm-kernel approve", () => {
+    for (const rel of packaged) {
+      const text = read(resolve(REPO_ROOT, rel)).replace(/\s+/g, " ")
+      expect(text, rel).toMatch(/[Nn]ever (invokes?|run) `imm-kernel approve`/)
+    }
+  })
+
+  it("ADR 0043, the config reference and its mirror carry no orchestrator-specific gate schema", () => {
+    for (const rel of [
+      "docs/adr/0043-loop-daemon-freeze-and-extraction.md",
+      "docs/reference/immune-brain-config.md",
+      "plugins/immune-brain/dist/docs/reference/immune-brain-config.md",
+    ]) {
+      const text = read(resolve(REPO_ROOT, rel))
+      for (const banned of ["takt", "GateRequest", "GateResponse", ".takt/", "Ed25519"])
+        expect(text.includes(banned), `${rel} mentions ${banned}`).toBe(false)
+      if (rel.startsWith("docs/adr/")) expect(text).toContain("imm-kernel approve")
+      else expect(text).toContain("external_approval")
+    }
+  })
+})

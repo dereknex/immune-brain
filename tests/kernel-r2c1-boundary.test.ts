@@ -2,8 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import * as kernel from "../plugins/immune-brain/runtime/kernel/index";
+import { runKernelCli } from "../plugins/immune-brain/runtime/v4_runtime";
 
 const REPO_ROOT = join(__dirname, "..");
+const NO_ENROLL_SUBCOMMAND = /\b(?:command|sub)\s*===\s*["']enroll["']/;
 
 describe("legacy API retirement", () => {
 	test("versioned mutation entry points are absent from the public index", () => {
@@ -68,10 +70,18 @@ describe("canonical command surface", () => {
 		expect(source).not.toMatch(/task-status/);
 		expect(source).not.toMatch(/task-record/);
 		expect(source).not.toMatch(/begin-drain/);
-		expect(source).not.toMatch(/\benroll\b/);
+		expect(source).not.toMatch(NO_ENROLL_SUBCOMMAND);
 		expect(source).toMatch(/intent author/);
 		expect(source).toMatch(/intent validate/);
 		expect(source).toMatch(/--stdin/);
+	});
+
+	// ADR 0043 Slice 2: headless Enrollment is reachable only through `approve`,
+	// which fails closed behind v2 `external_approval`.
+	test("there is no enroll subcommand", async () => {
+		const result = await runKernelCli(["enroll", "task-r2c1", "--json"], REPO_ROOT);
+		expect(result.returncode).toBe(2);
+		expect(result.stderr).toContain("invalid_kernel_command");
 	});
 
 	test("canonical runtime manifest carries only the bounded intent surface", () => {
@@ -83,7 +93,7 @@ describe("canonical command surface", () => {
 		expect(source).not.toMatch(/task-status/);
 		expect(source).not.toMatch(/task-record/);
 		expect(source).not.toMatch(/begin-drain/);
-		expect(source).not.toMatch(/["']enroll["']/);
+		expect(source).not.toMatch(NO_ENROLL_SUBCOMMAND);
 		expect(source).toMatch(/intent author/);
 		expect(source).toMatch(/intent validate/);
 	});
