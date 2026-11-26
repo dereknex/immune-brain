@@ -21,7 +21,10 @@ legibility, and design-contract obligations as applicable. Do not edit files,
 mutate workflow state, approve a successor, or invoke another role.
 
 Read the shared review criteria on demand, only for the concerns the change
-surface raises. Paths are relative to the Immune-Brain plugin root:
+surface raises. Resolve each `dist/docs/reference/<file>` below as
+`<file>` inside the `shared reference directory:` the delegation prompt
+names; without that line, resolve it from the Immune-Brain plugin root, never
+from the reviewed project:
 
 - `dist/docs/reference/design-contract-review-checklist.md`: `DESIGN.md`
   priority, page composition, implementation hygiene, anti-slop checks

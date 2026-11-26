@@ -114,7 +114,7 @@ describe("design-review L3: Laws of UX", () => {
 			"`>= 24x24px`",
 			"destructive",
 			"Hick",
-			"`1-2` secondary",
+			"at most `1` secondary",
 			"progressive disclosure",
 			"Miller",
 			"`<= 4`",
@@ -279,14 +279,24 @@ describe("design-review orchestration contract", () => {
 		}
 	});
 
-	test("relative reference links in the packaged contract resolve inside dist", () => {
-		const dist = resolve(ROOT, PLUGIN, "dist");
-		const targets = [...read(CONTRACT).matchAll(/\]\(([^)\s#]+)(?:#[^)]*)?\)/g)].map((match) => match[1]!);
-		expect(targets.length).toBeGreaterThan(0);
-		for (const target of targets) {
-			const file = resolve(dist, target);
-			expect(file.startsWith(dist), target).toBe(true);
-			expect(existsSync(file), target).toBe(true);
+	test("relative reference links in the contract and its loaders resolve to a file and heading inside dist", () => {
+		const slug = (heading: string): string =>
+			heading.trim().toLowerCase().replace(/[^\p{L}\p{N}\s-]/gu, "").replace(/\s/g, "-");
+		const anchors = (file: string): Set<string> =>
+			new Set(readFileSync(file, "utf8").split("\n").filter((line) => /^#{1,6} /.test(line)).map((line) => slug(line.replace(/^#+ /, ""))));
+		for (const host of [PLUGIN, "plugins/immune-brain-antigravity"]) {
+			const dist = resolve(ROOT, host, "dist");
+			for (const source of [`${host}/dist/design-review.md`, `${host}/skills/design-review/SKILL.md`]) {
+				const base = resolve(ROOT, source, "..");
+				const links = [...read(source).matchAll(/\]\(([^)\s#]+)(?:#([^)\s]*))?\)/g)];
+				expect(links.length, source).toBeGreaterThan(0);
+				for (const [, target, anchor] of links) {
+					const file = resolve(base, target!);
+					expect(file.startsWith(dist), `${source} -> ${target}`).toBe(true);
+					expect(existsSync(file), `${source} -> ${target}`).toBe(true);
+					if (anchor) expect(anchors(file).has(anchor), `${source} -> ${target}#${anchor}`).toBe(true);
+				}
+			}
 		}
 	});
 });
@@ -317,6 +327,10 @@ describe("internal ui-review alignment", () => {
 		expect(policy).toBe("read-only tools");
 		expect(buildRoleDelegationPacket({ role: "ui-review", context: { review_gate: "imm-ui-review" } }).prompt)
 			.toContain(`tool_policy: ${policy}`);
+		const referenceLine = buildRoleDelegationPacket({ role: "ui-review", context: { task_id: "t" } }).prompt
+			.split("\n").find((line) => line.startsWith("shared reference directory: "));
+		expect(referenceLine).toBeDefined();
+		expect(existsSync(resolve(referenceLine!.slice("shared reference directory: ".length), "ux-heuristic-checklist.md"))).toBe(true);
 		expect(read("docs/reference/workflow-and-subagents.md"))
 			.toContain(`| \`ui-review\` | \`imm-ui-review\` | advisory | ${policy} |`);
 	});

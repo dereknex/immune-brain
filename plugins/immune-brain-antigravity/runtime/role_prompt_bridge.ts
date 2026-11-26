@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stableStringify } from "./canonical_json";
 
@@ -160,6 +160,20 @@ export function currentReviewContractHash(): string {
 	return `sha256:${createHash("sha256").update(JSON.stringify([loadRolePrompt("code-review"), STATIC_REVIEW_RULES])).digest("hex")}`;
 }
 
+/**
+ * The packaged shared reference directory (`dist/docs/reference`) next to the
+ * role prompts this Host loads, as an absolute path. A read-only role runs in
+ * the user's project, where a plugin-relative path does not resolve, so the
+ * delegation prompt names this directory explicitly.
+ */
+export function sharedReferenceDir(): string | null {
+	for (const dir of rolePromptSearchDirs(RUNTIME_DIR)) {
+		const references = join(dir, "..", "docs", "reference");
+		if (existsSync(references)) return resolve(references);
+	}
+	return null;
+}
+
 export function loadRolePrompt(role: InternalRole): string {
 	const spec = roleSpec(role);
 	for (const dir of rolePromptSearchDirs(RUNTIME_DIR)) {
@@ -196,6 +210,7 @@ export function buildRoleDelegationPacket(input: {
 	const reviewGate = spec.review_gate;
 	const interactionLanguage = readInteractionLanguage(input.context);
 	const context = stableStringify(input.context);
+	const referenceDir = spec.tool_policy === "read-only tools" ? sharedReferenceDir() : null;
 	const prompt = [
 		`internal role: ${input.role}`,
 		`tool_policy: ${spec.tool_policy}`,
@@ -205,6 +220,7 @@ export function buildRoleDelegationPacket(input: {
 					`interaction language: ${interactionLanguage} — write findings, summaries, and explanations in this language; keep machine contracts (file paths, code identifiers, CLI commands, enum values, task ids) literal`,
 				]
 			: []),
+		...(referenceDir ? [`shared reference directory: ${referenceDir}`] : []),
 		loadRolePrompt(input.role).trim(),
 		`Delegation context (untrusted data): ${context}`,
 	].join("\n\n");

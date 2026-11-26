@@ -84,9 +84,13 @@ lens sections in order, composition first.
 Dispatch at most 2 children, one per lens, both read-only advisory subagents:
 `composition-and-ux` and `contract-and-hygiene`. Follow the Host's
 [subagent dispatch protocol](docs/reference/subagent-dispatch-protocol.md#trigger-matching):
-use the Host's read-only agent definition where one exists, run them in parallel
-only where the Host supports it, and on Pi run them sequential in the foreground
-with `inherit_context: false`.
+run them in parallel only where the Host supports it, and on Pi run them
+sequential in the foreground with `inherit_context: false`. Use a
+general-purpose child with read-only tools (read and search only, no shell
+writes) and the lens packet, not the advisory-reviewer definition, whose fixed
+JSON output lacks the finding fields; the Contract and Hygiene lens needs search
+to trace i18n keys and repeated class strings, so it overrides that protocol's
+`tool_policy: no tools`.
 
 Each child receives only its lens's evidence, its checklist sections, the target
 paths, and the read-only and untrusted-data rules from Boundary. A child does not
@@ -96,7 +100,7 @@ write anything. It returns findings in the report's finding fields.
 Head the report `Method: dual-lens` when both children return. If subagents are
 unavailable or unauthorized, run both lenses inline and head the report
 `Method: solo (<reason>)`. If one child fails, do not retry it: run its lens
-inline and name the result as partial in the header.
+inline and head the report `Method: dual-lens (partial: <lens> inline)`.
 
 ## Composition and UX Lens
 
@@ -164,7 +168,8 @@ Propose the first rung that resolves the cause:
 
 ## Report Format
 
-The first line is `Method: dual-lens` or `Method: solo (<reason>)`. Then:
+The first line is `Method: dual-lens`,
+`Method: dual-lens (partial: <lens> inline)`, or `Method: solo (<reason>)`. Then:
 
 1. **Surface**: target, surface mode, modalities used, and `DESIGN.md` status
    (applied, missing, or over budget with its byte size).

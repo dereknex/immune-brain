@@ -95,8 +95,8 @@ Each law has a measurable check. Report the observed value with the finding.
 
 | ID | Law | Measurable check |
 | :--- | :--- | :--- |
-| `LAW-FITTS` | Fitts's Law | Touch targets are `>= 44x44px`; desktop pointer targets are `>= 24x24px` (WCAG 2.2 AA minimum); destructive actions are separated from frequent ones. |
-| `LAW-HICK` | Hick's Law | Each decision area shows `1` primary action plus `1-2` secondary visible actions; the rest move behind progressive disclosure (menu, drawer, advanced section). |
+| `LAW-FITTS` | Fitts's Law | Touch targets are `>= 44x44px`; desktop pointer targets are `>= 24x24px` (WCAG 2.2 SC 2.5.8; advisory above the WCAG 2.1 AA floor, not blocking); destructive actions are separated from frequent ones. |
+| `LAW-HICK` | Hick's Law | Each decision area shows at most `2` visible high-frequency actions (`1` primary plus at most `1` secondary, matching Standard Tier Action Collapsing); the rest move behind progressive disclosure (menu, drawer, advanced section). |
 | `LAW-MILLER` | Miller's Law | Groups hold `<= 4` items ideally and `<= 7` at most; long digits, keys, and codes are formatted into groups. |
 | `LAW-JAKOB` | Jakob's Law | Controls follow standard mental models: `Enter` submits, `Escape` dismisses, and returning to a list keeps scroll position and filters. |
 | `LAW-TESLER` | Tesler's Law | The system absorbs unavoidable complexity: auto-trim input, offer smart defaults, and infer what it already knows instead of asking. |
@@ -118,7 +118,7 @@ state is a finding; an unreachable one is `n/a`.
 | `:focus-visible` | A visible focus indicator for keyboard users. |
 | `:active` | Immediate pressed feedback. |
 | `disabled` | Visibly inert, with the reason discoverable. |
-| `loading` | `disabled` against repeat activation and announced with `aria-busy`, keeping its size. |
+| `loading` | Blocks repeat activation with `aria-disabled="true"` and an ignored activation, not the `disabled` attribute, so focus stays on the control; announced with `aria-busy` and keeps its size. |
 | `error` | Message tied to the control and announced. |
 | `success` | Confirmation that the action took effect. |
 
