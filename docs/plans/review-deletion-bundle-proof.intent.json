@@ -1,0 +1,31 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "review-deletion-bundle-proof",
+  "owner": "user",
+  "goal": "Per docs/specs/review-deletion-bundle-proof.spec.md (D1, D2; SCN-1, SCN-2), add fail-closed whole-file deletion and declared derived-bundle proof rules using only allowlisted read-only Git commands to code-review.md, STATIC_REVIEW_RULES, and dist/drive.md, sync mirrors and Claude/Antigravity bundles, and replace the dangling docs/plans/review-verifier-eval-s1-metrics.intent.json citation in revisit-workflow-health.spec.md.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "Per docs/specs/review-deletion-bundle-proof.spec.md AC1 and SCN-1 (agreed seams: tests/generated-snapshot-review-contract.test.ts, tests/host-neutral-assurance-coordinator.test.ts, tests/cli-review-dispatch.test.ts), code-review.md preserves Generated snapshot proof verbatim and adds Whole-file deletion and declared derived-bundle proof using only allowlisted read-only git commands (--no-pager diff/ls-tree/show/grep) with .imm/risk-floor.json, docs/agents/derived-files.json, settled QA check, and approval.summary fail-closed guards; STATIC_REVIEW_RULES[6] and dist/drive.md reference the new proof; and both Pi (buildReviewPrompt) and Claude (authority-review/SKILL.md) receive identical contract bytes.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/generated-snapshot-review-contract.test.ts\",\n      \"tests/host-neutral-assurance-coordinator.test.ts\",\n      \"tests/cli-review-dispatch.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "Per docs/specs/review-deletion-bundle-proof.spec.md AC2 and SCN-2 (agreed seams: tests/generated-snapshot-review-contract.test.ts, tests/claude-host-package.test.ts, tests/antigravity-host-package.test.ts, tests/dist-docs-sync-contract.test.ts), dist/role-prompts/code-review.md, skills/authority-review/SKILL.md, dist/claude/mcp-server.mjs, and plugins/immune-brain-antigravity/ match canonical sources with zero drift, and docs/specs/revisit-workflow-health.spec.md replaces its deleted docs/plans/review-verifier-eval-s1-metrics.intent.json path with a historical bare-name citation aligned with line 34.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/generated-snapshot-review-contract.test.ts\",\n      \"tests/claude-host-package.test.ts\",\n      \"tests/antigravity-host-package.test.ts\",\n      \"tests/dist-docs-sync-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/specs/review-deletion-bundle-proof.spec.md",
+    "plugins/immune-brain-antigravity",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/drive.md",
+    "plugins/immune-brain/dist/role-prompts/code-review.md",
+    "plugins/immune-brain/runtime/prompts/code-review.md",
+    "plugins/immune-brain/runtime/role_prompt_bridge.ts",
+    "plugins/immune-brain/skills/authority-review/SKILL.md",
+    "tests/generated-snapshot-review-contract.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

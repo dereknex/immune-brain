@@ -32,7 +32,7 @@ Slice results:
   - `docs/reports/workflow-evidence-baseline.md:97` — links WER as the reuse entry.
   - `plugins/immune-brain/runtime/kernel/storage.ts:1083-1146` — `readAuditTaskPair(root, taskId, runId?)` reads through filesystem paths under `root`, checks `final_record_hash`, task identity and terminal lifecycle, and parses v2/v3/v4; an incomplete pair or mismatch throws `KernelStoreSecurityError`.
   - `review-verifier-eval.spec.md:476` — D2 (adopted 2026-10-20) keeps record-based metrics out of the retro.
-  - `docs/plans/review-verifier-eval-s1-metrics.intent.json` — RVE-S1 asks the analyzer for a per-author-model blocking split and owns rounds-to-pass median/p95 and the per-acceptance series.
+  - `review-verifier-eval-s1-metrics.intent.json` (retired under ADR 0043) — RVE-S1 asks the analyzer for a per-author-model blocking split and owns rounds-to-pass median/p95 and the per-acceptance series.
   - `tests/skill-dist-consistency.test.ts:82` — trigger tuple for `revisit` names "cross-model review load".
   - `tests/pi-canary-packed-loader.test.ts:58-64` — packed-file list for the `revisit` Skill.
   - `README.md:127,427,484`, `CONTEXT.md:250` — public descriptions of `revisit` as a review-load ranking.

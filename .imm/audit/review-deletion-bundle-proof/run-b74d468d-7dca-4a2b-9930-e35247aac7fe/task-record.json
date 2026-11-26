@@ -1,0 +1,134 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "review-deletion-bundle-proof",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "review-deletion-bundle-proof",
+    "goal": "Per docs/specs/review-deletion-bundle-proof.spec.md (D1, D2; SCN-1, SCN-2), add fail-closed whole-file deletion and declared derived-bundle proof rules using only allowlisted read-only Git commands to code-review.md, STATIC_REVIEW_RULES, and dist/drive.md, sync mirrors and Claude/Antigravity bundles, and replace the dangling docs/plans/review-verifier-eval-s1-metrics.intent.json citation in revisit-workflow-health.spec.md.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "Per docs/specs/review-deletion-bundle-proof.spec.md AC1 and SCN-1 (agreed seams: tests/generated-snapshot-review-contract.test.ts, tests/host-neutral-assurance-coordinator.test.ts, tests/cli-review-dispatch.test.ts), code-review.md preserves Generated snapshot proof verbatim and adds Whole-file deletion and declared derived-bundle proof using only allowlisted read-only git commands (--no-pager diff/ls-tree/show/grep) with .imm/risk-floor.json, docs/agents/derived-files.json, settled QA check, and approval.summary fail-closed guards; STATIC_REVIEW_RULES[6] and dist/drive.md reference the new proof; and both Pi (buildReviewPrompt) and Claude (authority-review/SKILL.md) receive identical contract bytes.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/generated-snapshot-review-contract.test.ts\",\n      \"tests/host-neutral-assurance-coordinator.test.ts\",\n      \"tests/cli-review-dispatch.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "Per docs/specs/review-deletion-bundle-proof.spec.md AC2 and SCN-2 (agreed seams: tests/generated-snapshot-review-contract.test.ts, tests/claude-host-package.test.ts, tests/antigravity-host-package.test.ts, tests/dist-docs-sync-contract.test.ts), dist/role-prompts/code-review.md, skills/authority-review/SKILL.md, dist/claude/mcp-server.mjs, and plugins/immune-brain-antigravity/ match canonical sources with zero drift, and docs/specs/revisit-workflow-health.spec.md replaces its deleted docs/plans/review-verifier-eval-s1-metrics.intent.json path with a historical bare-name citation aligned with line 34.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/generated-snapshot-review-contract.test.ts\",\n      \"tests/claude-host-package.test.ts\",\n      \"tests/antigravity-host-package.test.ts\",\n      \"tests/dist-docs-sync-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/specs/review-deletion-bundle-proof.spec.md",
+      "plugins/immune-brain-antigravity",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/drive.md",
+      "plugins/immune-brain/dist/role-prompts/code-review.md",
+      "plugins/immune-brain/runtime/prompts/code-review.md",
+      "plugins/immune-brain/runtime/role_prompt_bridge.ts",
+      "plugins/immune-brain/skills/authority-review/SKILL.md",
+      "tests/generated-snapshot-review-contract.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/review-deletion-bundle-proof.intent.json",
+    "content_hash": "sha256:be23042313f85fe604df60304b9e690035f837d079bde0dc8187e666574828bc"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:be23042313f85fe604df60304b9e690035f837d079bde0dc8187e666574828bc",
+  "git_base_head": "b0d106e3cd496afb6da9224f89d7f92b60b60f2d",
+  "attestations": [
+    {
+      "id": "approval-qa-b0055a2a",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:be23042313f85fe604df60304b9e690035f837d079bde0dc8187e666574828bc",
+      "diff_hash": "sha256:d507f45ad52efc62d0e77f1b9be6e6390e6f62c3d91608b46404b882dd8777dd",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:82ebe6a83412d3ac251ce530a4c1911f9d79e06f63fd5dcd3e41fd3bb373ec6f",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:82ebe6a83412d3ac251ce530a4c1911f9d79e06f63fd5dcd3e41fd3bb373ec6f"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:82ebe6a83412d3ac251ce530a4c1911f9d79e06f63fd5dcd3e41fd3bb373ec6f"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-9d788dda",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:be23042313f85fe604df60304b9e690035f837d079bde0dc8187e666574828bc",
+      "diff_hash": "sha256:d507f45ad52efc62d0e77f1b9be6e6390e6f62c3d91608b46404b882dd8777dd",
+      "actor_id": "cli:claude-code:09dcdc08-ed02-4be5-a24b-cd01d9f9db52",
+      "summary": "All 16 changed paths were read from full diffs; mirror paths share identical old and new blob OIDs (606bdb8484f, 3b517bb4edb, 3acaf5739f6, f06ddf8dd36) with their read canonical diffs. code-review.md keeps the Generated snapshot proof unchanged and adds a fail-closed Whole-file deletion and declared derived-bundle proof that uses only allowlisted git --no-pager diff/ls-tree/show/grep commands, with risk-floor.json, derived-files.json, settled-QA check and approval.summary guards (AC1). STATIC_REVIEW_RULES[6], dist/drive.md, SKILL.md and the Claude and Antigravity bundles all carry the same updated rule (AC1/AC2). revisit-workflow-health.spec.md:35 now cites the bare historical name (AC2). Tests at the agreed seam check that both Hosts have the proof text, that it uses only allowlisted commands, that the citation is clean, and that the drive.md anchor is present. Blast radius: medium, covering the review contract hash (role_prompt_bridge.ts, code-review.md) and the packaged Host bundles. No migrations or persisted shape changes.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "b0d106e3cd496afb6da9224f89d7f92b60b60f2d",
+        "review_commit": "31e5599412a0903a61d8e84d12ad488076d50fd9"
+      },
+      "reviewer_verdict_sha256": "sha256:c2efdd96cd192e384e57b1f64ce6ede3212551be0f0a0454cea6ff408a9e6520"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:review-deletion-bundle-proof:2026-11-26T09:11:21.475Z",
+      "at": "2026-11-26T09:11:21.475Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/review-deletion-bundle-proof.intent.json"
+    },
+    {
+      "id": "record_approval:review-deletion-bundle-proof:2026-11-26T09:12:25.806Z",
+      "at": "2026-11-26T09:12:25.806Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-b0055a2a\naction_v2_sha256:c961f7d5b3038acd91927d0291de1fcbe20f22f66c34712aca94bb5290db1dc6",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-11-26T09:12:25.806Z"
+      }
+    },
+    {
+      "id": "record_approval:review-deletion-bundle-proof:2026-11-26T09:26:27.275Z",
+      "at": "2026-11-26T09:26:27.275Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-9d788dda\naction_v2_sha256:cf85a15050271197fc20d527d4d8bd103d113f7bfb9a24b1ca558826ba1597a6",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:09dcdc08-ed02-4be5-a24b-cd01d9f9db52",
+        "confirmation_ref": "claude:cli:claude-code:09dcdc08-ed02-4be5-a24b-cd01d9f9db52",
+        "issued_at": "2026-11-26T09:26:27.276Z"
+      },
+      "review_started_at": "2026-11-26T09:24:56.830Z",
+      "review_submitted_at": "2026-11-26T09:26:24.018Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:review-deletion-bundle-proof:2026-11-26T09:26:34.427Z",
+      "at": "2026-11-26T09:26:34.427Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:411c38fe733c9a1d762a569d4a9527ba409beaceba30dd3d6642f70a9809c32a"
+    }
+  ]
+}
