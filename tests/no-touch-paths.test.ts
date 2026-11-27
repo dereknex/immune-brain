@@ -6,7 +6,6 @@ import { dirname, join } from "node:path";
 import { assertNoTouch } from "../plugins/immune-brain/runtime/no_touch";
 import { parseProjectTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
 import { taskDeliveryIdentity } from "../plugins/immune-brain/runtime/workspace_scope";
-import { integrateLaneCommit, BatchIntegrationError } from "../plugins/immune-brain/runtime/unattended/batch_integration";
 import { runKernelCommand } from "../plugins/immune-brain/runtime/commands/kernel";
 
 const roots: string[] = [];
@@ -79,30 +78,6 @@ function laneChange(path: string) {
 	const head = git(root, "rev-parse", "HEAD"); git(root, "update-ref", "refs/heads/imm/test", head);
 	return { root, branch: "refs/heads/imm/test", batch_head: head, lane_base: base, lane_commit: lane };
 }
-
-test("batch rebuilt candidate integrates former default paths and advances the Parent branch", () => {
-	for (const path of [".github/workflows/ci.yml", ".env", ".changeset/config.json"]) {
-		const input = laneChange(path);
-		const { commit } = integrateLaneCommit(input);
-		expect(git(input.root, "rev-parse", input.branch)).toBe(commit);
-		expect(git(input.root, "rev-parse", input.branch)).not.toBe(input.batch_head);
-	}
-});
-
-test("batch rebuilt candidate refuses Kernel authority state without moving the Parent", () => {
-	for (const path of authority) {
-		const input = laneChange(path);
-		try {
-			integrateLaneCommit(input);
-			throw new Error("integration should refuse");
-		} catch (error) {
-			expect(error).toBeInstanceOf(BatchIntegrationError);
-			expect((error as BatchIntegrationError).reason).toBe("no_touch_path_changed");
-			expect((error as Error).message).toContain(path);
-		}
-		expect(git(input.root, "rev-parse", input.branch)).toBe(input.batch_head);
-	}
-});
 
 test("intent validation accepts former defaults and refuses authority state", () => {
 	const { root } = repo();

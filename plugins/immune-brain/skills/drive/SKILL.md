@@ -12,8 +12,8 @@ and in-scope clarification retain an already-bound run.
 
 Mandatory constraints before any action: verify the active backend claim,
 TaskIntent, and TaskRecord via `imm_kernel_canary` `status` first; invalid or
-contradictory projections fail closed. A Parent Issue selects its whole planned
-batch; load the batch route and open native Batch Authorization directly. A Child
+contradictory projections fail closed. A Parent Issue is not a `drive` target:
+drive its Children one at a time in dependency order. A Child
 Issue selects only its TaskIntent, verifies predecessor settlement and integration,
 then enrolls it in place. With no active claim, a standalone validated
 candidate enrolls in the current worktree through `enroll` with
@@ -31,11 +31,6 @@ references load only under their own condition. Never read the whole contract
 or all references as an entry prerequisite.
 
 - common: [Shared Guards](../../dist/BASELINE.md#shared-guards), [Workflow Activation](../../dist/BASELINE.md#workflow-activation), [Host Confirmation Boundary](../../dist/BASELINE.md#host-confirmation-boundary), [Kernel Canary Routing and Authority](../../dist/drive.md#kernel-canary-routing-and-authority)
-- Parent Issue, unattended batch run, or any question about whether `drive` starts one: [Unattended Batch Opt-In](../../dist/drive-batch.md#unattended-batch-opt-in)
-- parallel batch (`max_parallel`, `lane_offers`, Lane admission or integration): [Parallel Batch Opt-In](../../dist/drive-batch.md#parallel-batch-opt-in)
-- a lane-mode report carries an `executor` handoff, or a Lane's Executor Host session has ended: [Lane Executor Supervision](../../dist/drive-batch.md#lane-executor-supervision)
-- a single-task Lane record or Initiative Parent runs inside Herdr (`HERDR_ENV=1`), including an interactive `executor` handoff: [Herdr Lane Tabs](../../dist/drive-batch.md#herdr-lane-tabs)
-- a lane-mode batch is about to start, to resolve parallelism, Executor Host, model and effort from the layered config and the request: [Lane Preferences](../../dist/drive-batch.md#lane-preferences)
 - steady execution: [Verification and Local Recovery](../../dist/BASELINE.md#verification-and-local-recovery), [Execution Loop](../../dist/drive.md#execution-loop), [Observable Output](../../dist/drive.md#observable-output)
 - rework, scope expansion, breaking revision, user decision, stop, interruption or unknown state before any action: [Decisions and Recovery](../../dist/drive.md#decisions-and-recovery), [Failure Output](../../dist/drive.md#failure-output); re-read `status`, then the pending obligation. Rework submits the verdict before editing, and an uncertain interruption resumes from exact task/run authority facts rather than a summary.
 - review or post-settlement learning: [Review and Learning](../../dist/drive.md#review-and-learning)

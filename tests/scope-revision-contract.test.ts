@@ -25,23 +25,12 @@ describe("scope is an estimate in workflow source contracts (ADR 0028)", () => {
 		expect(source).not.toContain("same-directory addition: submit `revise_intent`");
 	});
 
-	it("batch revisions retain user authority without delegated approval or reseal", () => {
-		const batch = read(`${PLUGIN}/dist/drive-batch.md`);
-		expect(batch).toContain("acceptance changes pauses for the literal user's native gate");
-		expect(batch).not.toContain("confirmation offers one opt-in choice");
-		// The no-reseal and delegation-retirement rules are Kernel authority
-		// (Spec remove-redundant-checks S5 H4), stated once in the Loop contract.
+	it("legacy delegation fields stay readable after the batch retired", () => {
+		// The batch reseal and merge-queue rules retired with `dist/drive-batch.md`
+		// (retire-unattended-batch); ADR 0028's read tolerance stays in the Loop contract.
 		const loop = read(`${PLUGIN}/dist/drive.md`);
-		expect(loop).toContain("the coordinator cannot approve them or reseal the batch");
-		expect(loop).toContain("Existing records with delegation fields remain readable and retireable (ADR 0028)");
-	});
-
-	it("the merge queue regenerates derived outputs on child changes and parks failures", () => {
-		const batch = read(`${PLUGIN}/dist/drive-batch.md`);
-		expect(batch).toContain("regenerates derived outputs whenever a child changes a declared source or output");
-		expect(batch).toContain("failed regeneration parks that child");
-		expect(batch).toContain("child whose whole change is already on the batch head parks with `batch_change_already_present`");
-		expect(batch).toContain("child sharing one identical edit with a sibling still integrates when it carries another change");
+		expect(loop).toContain("Existing records with delegation fields remain readable (ADR 0028)");
+		expect(loop).not.toContain("reseal the batch");
 	});
 
 	it("ADR 0028 is accepted and the superseded ADRs retain their historical decisions", () => {

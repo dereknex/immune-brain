@@ -49,7 +49,7 @@ One TaskIntent acceptance item combining an observable assertion with a focused 
 _Avoid_: implementation step, enrollment rehearsal
 
 **Enrollment**:
-The single native user-authority gate that atomically turns a validated, Git-tracked TaskIntent into an active TaskRecord and workspace claim. It is opened only as the first step of an explicit `drive` entry, never by the Planner or Brainstorm (ADR 0019), and it enrolls the task inside a Lane: no Host tool enrolls a task in the user's own conversation. It does not execute acceptance descriptors.
+The single native user-authority gate that atomically turns a validated, Git-tracked TaskIntent into an active TaskRecord and workspace claim. It is opened only as the first step of an explicit `drive` entry, never by the Planner or Brainstorm (ADR 0019), and it enrolls the task in place in the current worktree after the Host's native confirmation (ADR 0043 Slice 3). It does not execute acceptance descriptors.
 _Avoid_: task creation, planning confirmation, QA
 
 **Task**:
@@ -63,10 +63,6 @@ _Avoid_: suggested files, advisory scope
 **Intent Revision**:
 A replacement TaskIntent revision classified as unchanged, compatible, or breaking. Breaking revisions require literal-user authority before replacing the enrolled intent.
 _Avoid_: scope patch, in-place Plan edit
-
-**Batch Agreement**:
-The self-contained batch contract wrapping the validated BatchAuthorizationBinding plus ordered children, confirmation, final_verification, return_policy, and interaction_mode. One builder `authorizeBatch` validates and issues it for Host entries; `runtime/lane_sessions/` starts and advances it without a side-door `steerLane`.
-_Avoid_: second authority, plan ledger
 
 ### Kernel State
 
@@ -87,7 +83,7 @@ The worktree-local SQLite database `.imm/state/kernel.sqlite` holding each run's
 _Avoid_: state ledger, shared database, second source of truth
 
 **Run**:
-One enrollment of a TaskIntent: a run identity bound at Enrollment and carried by every later attempt, verdict, batch recovery and terminal tracker publication. A task id can have more than one run over time, and only the run that owns the committed work may close it.
+One enrollment of a TaskIntent: a run identity bound at Enrollment and carried by every later attempt, verdict and terminal tracker publication. A task id can have more than one run over time, and only the run that owns the committed work may close it.
 _Avoid_: attempt counter, session id, task id alias
 
 **Workspace Claim**:
@@ -126,45 +122,13 @@ _Avoid_: testing, generic review, background orchestration
 The atomic terminal transition that writes the final TaskRecord and tombstone, clears active ownership, and leaves the Task `done` or `stopped`.
 _Avoid_: chat completion, archive-only operation
 
-**Batch Authorization**:
-One literal-user Enrollment act covering a confirmed ordered child list instead of a single TaskIntent. It spans the batch without becoming a higher authority: every child is still enrolled, assured, settled, and recorded by the Kernel on its own, and no agent may promote a candidate to authority through it.
-_Avoid_: bulk enrollment authority, planner approval, TaskIntent list status
-
-**Revision Delegation**:
-The opt-in answer in one lane batch's own confirmation that lets the batch coordinator approve a Lane child's breaking Intent revisions inside that child's authorized TaskIntent (ADR 0018). Each such approval is recorded with actor `batch-coordinator` and a confirmation reference naming the batch, and may reseal the batch's Plan Digest at integration. It ends with the batch.
-_Avoid_: standing approval, coordinator authority tier
-
-**Batch Plan**:
-The deterministic read-only projection of one Initiative into ordered enrollable children, dependency closure, intent identities, excluded children, budget, and the `plan_digest`. It observes Tracker and TaskRecord facts and writes nothing.
-_Avoid_: schedule, task queue, execution order preference
-
-**Plan Digest**:
-The hash over the ordered child identities the literal user approved. Every issue, resume, and child enrollment revalidates it, so a plan that changed after confirmation is refused rather than executed.
-_Avoid_: checksum of the Issue body, plan version number
-
-**Batch Branch**:
-The single dedicated branch `imm/<initiative-slug>` that a batch run creates from the confirmed `base_head` and advances one scope-bounded commit per completed child. It is never pushed and never opened as a pull request by the runner.
-_Avoid_: feature branch, worktree, trunk
-
-**Lane**:
-A Git worktree on the coordinator repository's common directory, on a branch `imm-lane/<initiative-slug>/<task-id>` cut from the batch head, that runs one child of a lane-mode batch in isolation. A new Parent-branch batch creates its Lanes but never removes or recreates one without trusted Executor exit evidence, which no Host supplies, so an integrated Lane is retained until the user removes it; legacy records admit offered Lanes and never create, switch or delete them. Lane mode exists only when `max_parallel` is passed.
-_Avoid_: workspace, clone, feature branch
-
-**Lane Steward**:
-The internal role that supplies a Lane when a lane-mode batch reports a provision handoff and, on a release handoff, checks whether the Lane is ready to remove without removing it: agents only create, and the user closes each Lane's session and removes the Lane. It holds no Kernel authority, starts no Host session (the Parent launches and supervises each Lane's allowlisted Executor Host), and reports "cannot supply" instead of improvising; the runner itself records a Lane released only when it observes the path gone.
-_Avoid_: workspace manager, provisioner
-
 **Supervised Session Port**:
-The capability contract for the session a Parent launches a Lane Executor in: eight required capabilities, optional ones with stated degrades, and opaque handles. The Parent calls it through `imm-session`; its states and output are never Kernel progress evidence, and the Kernel and batch runtime never import it.
+The capability contract for the session a Parent launches Authority Review or findings Verification in: eight required capabilities, optional ones with stated degrades, and opaque handles. The Parent calls it through `imm-session`; its states and output are never Kernel progress evidence, and the Kernel never imports it.
 _Avoid_: session framework, host registry, terminal adapter
 
 **Session Provider**:
 One implementation of the Supervised Session Port, such as `herdr`, named explicitly on every call and admitted per role through the role-indexed provider registry (`resolveSessionProvider`, `session_key`, `findSession`, `closeWithProof`). A provider missing a required capability is refused, never substituted by another.
-_Avoid_: Host, Executor Host, backend
-
-**HEAD Lineage**:
-The Kernel-enforced chain where each child enrolls on the commit its predecessor produced on the batch branch (serial batch), or on the batch head a Lane was cut from, with each completed child integrated onto the batch branch by a fast-forward to a candidate whose changed paths and per-path content equal the Lane commit (lane mode). A fast-forward of the batch branch is adopted as the new expected head and never attributed to a child; any other moved HEAD (another branch, a rewrite, a divergence) fails the run closed instead of rebasing or force-continuing.
-_Avoid_: commit ordering convention, best-effort ancestry
+_Avoid_: Host, backend
 
 ### Supporting Concepts
 
@@ -263,12 +227,11 @@ The packaged workflow skills were renamed to bare verbs on 2026-10-28 (#318). Da
 - Kernel authority: `plugins/immune-brain/runtime/kernel/` owns TaskIntent parsing, Enrollment, TaskRecord reduction/storage, claims, projections, and completion.
 - Worktree state: `.imm/state/kernel.sqlite` holds current authority — each run's TaskRecord, workspace ownership, claim state, run identity and terminal proof, written in one transaction per mutation. `.imm/audit/<task-id>/` stores settled terminal evidence (tracked); the database, its WAL/SHM siblings and backups are Git-ignored runtime state, and `.imm/state/tasks/*.json` survives only as retired layout that the explicit migration diagnoses.
 - Host-neutral adapter core: `plugins/immune-brain/runtime/host-core/` holds the adapter machinery the three Hosts share, under `kernel ← assurance ← host-core ← adapter` ([ADR 0038](docs/adr/0038-host-neutral-adapter-core.md)); `runtime/kernel/` and `runtime/assurance/` import nothing from it.
-- Host integration: `plugins/immune-brain/.pi-extension/` owns the Pi adapter, composing Pi task assurance and unattended batch operations on HostRuntime while preserving in-process tool schemas, TUI authorization dialogs, and Task Rail presentation. `plugins/immune-brain/runtime/claude/` owns the Claude Code MCP/Hook adapter; `plugins/immune-brain/runtime/antigravity/` owns the Antigravity MCP/Hook adapter; plugin manifests live under `plugins/immune-brain/.claude-plugin/`, `.mcp.json`, `hooks/`, and `agents/`.
+- Host integration: `plugins/immune-brain/.pi-extension/` owns the Pi adapter, composing Pi task assurance on HostRuntime while preserving in-process tool schemas, TUI authorization dialogs, and Task Rail presentation. `plugins/immune-brain/runtime/claude/` owns the Claude Code MCP/Hook adapter; `plugins/immune-brain/runtime/antigravity/` owns the Antigravity MCP/Hook adapter; plugin manifests live under `plugins/immune-brain/.claude-plugin/`, `.mcp.json`, `hooks/`, and `agents/`.
 - Antigravity package: `plugins/immune-brain-antigravity/` is the sole Antigravity install root. Its manifest (`.antigravity-plugin/plugin.json`), `mcp_config.json`, `hooks.json` and README are maintained there; `agents/`, `skills/`, `bin/`, `runtime/`, `dist/` and `BASELINE.md` are generated by `scripts/build-antigravity-plugin.ts` from `plugins/immune-brain/` (adapter source: `runtime/antigravity/`), and `--check` owns that whole inventory. Roles are native read-only definitions without Claude frontmatter; nothing resolves outside the directory.
-- Response continuation: `runtime/assurance/run_continuation.ts` projects read-only task/Parent facts; `.pi-extension/pi-run-continuation.ts` and `runtime/claude/run_continuation.ts` bind the session and drive Pi settle/Claude Stop boundaries. Kernel and the existing batch driver retain execution ownership.
-- Session supervision: `plugins/immune-brain/runtime/session/` holds the Supervised Session Port, its `fake` provider and the Herdr and herdr-core adapters, routed as `plugins/immune-brain/bin/imm-session`; only the CLI router imports it, and the Kernel and batch runtime never do ([ADR 0038](docs/adr/0038-supervised-session-port.md), [contract](docs/reference/supervised-session-port.md)).
+- Response continuation: `runtime/assurance/run_continuation.ts` projects read-only task facts; `.pi-extension/pi-run-continuation.ts` and `runtime/claude/run_continuation.ts` bind the session and drive Pi settle/Claude Stop boundaries. The Kernel retains execution ownership.
+- Session supervision: `plugins/immune-brain/runtime/session/` holds the Supervised Session Port, its `fake` provider and the Herdr and herdr-core adapters, routed as `plugins/immune-brain/bin/imm-session`; only the CLI router imports it, and the Kernel never does ([ADR 0038](docs/adr/0038-supervised-session-port.md), [contract](docs/reference/supervised-session-port.md)).
 - Loop dispatch: `plugins/immune-brain/runtime/loop_contract.ts`, `role_prompt_bridge.ts`, and `runtime/prompts/` define internal role routing and bounded delegation contracts.
-- Batch execution: `plugins/immune-brain/runtime/unattended/` and `plugins/immune-brain/runtime/kernel/batch_authority.ts` alone own every batch state transition, plan projection, Git branch and per-child commit, and Batch Authorization; the Claude, Antigravity, and Pi host adapters are callers through HostRuntime.
 - CLI surface: `plugins/immune-brain/runtime/v4_runtime.ts` routes the stable wrappers in `plugins/immune-brain/bin/`; `imm-kernel` owns current Kernel commands, while `imm-plan` retains routing-policy and historical Plan validation surfaces.
 - Initiative projection: `plugins/immune-brain/runtime/github_issue_tracker.ts` and `plugins/immune-brain/bin/imm-tracker` own the optional one-way GitHub Issues adapter, complete batch publication, Parent/Child relationship verification, and execution recommendations without reading or writing Kernel authority.
 - Packaging: root `package.json` is the Pi package manifest; `plugins/immune-brain/dist/` is checked-in generated output guarded by `bun scripts/sync-dist-docs.ts --check`. Releases publish to npm `next` via `release.yml`, and `scripts/release-promote.ts` (`.github/workflows/promote.yml`) advances the `stable` branch and npm `latest` after verifying live evidence under `docs/evidence/e2e-live/` produced by the black-box L1/L2 suite in `tests/e2e/`.

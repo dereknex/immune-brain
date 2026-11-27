@@ -86,17 +86,17 @@ function claimWorkspace(cwd: string, taskId: string): void {
 	});
 }
 
-const BATCH_START = "mcp__plugin_immune-brain_immune-brain__start_unattended_batch";
+const ENROLL = "mcp__plugin_immune-brain_immune-brain__enroll";
 
 describe("Claude phase entry Skill gate", () => {
 	test("a retired name, standalone skill, or alias without a marked mention mints no run entry (ADR 0025)", () => {
 		const s = session();
 		for (const prompt of ["/imm-run task-a", "/imm-loop", "/immune-brain:imm-run", "/old", "/prose", "/driver"]) {
 			s.prompt(prompt);
-			expect(denial(s.tool(BATCH_START))).toStartWith("run_entry_required: ");
+			expect(denial(s.tool(ENROLL))).toStartWith("run_entry_required: ");
 		}
 		s.prompt("/drive task-a");
-		expect(s.tool(BATCH_START)).toBeNull();
+		expect(s.tool(ENROLL)).toBeNull();
 	});
 
 	test("a same-named user or project skill blocks the bare entry only; the plugin-prefixed form still mints", () => {
@@ -106,9 +106,9 @@ describe("Claude phase entry Skill gate", () => {
 			mkdirSync(skillDir, { recursive: true });
 			writeFileSync(join(skillDir, "SKILL.md"), "---\nname: drive\n---\nThe user's own skill.\n");
 			s.prompt("/drive task-a");
-			expect(denial(s.tool(BATCH_START))).toStartWith("run_entry_required: ");
+			expect(denial(s.tool(ENROLL))).toStartWith("run_entry_required: ");
 			s.prompt("/immune-brain:drive task-a");
-			expect(s.tool(BATCH_START)).toBeNull();
+			expect(s.tool(ENROLL)).toBeNull();
 		}
 	});
 
@@ -130,9 +130,9 @@ describe("Claude phase entry Skill gate", () => {
 			expect(s.skill(skill)).toBeNull();
 			expect(storeBytes(s.locations.root!)).toEqual(before);
 			// Same turn and after a later plain prompt.
-			expect(s.tool(BATCH_START)).toBeNull();
+			expect(s.tool(ENROLL)).toBeNull();
 			s.prompt("confirm");
-			expect(s.tool(BATCH_START)).toBeNull();
+			expect(s.tool(ENROLL)).toBeNull();
 			expect(s.skill("immune-brain:drive")).toBeNull();
 		}
 	});
@@ -140,15 +140,15 @@ describe("Claude phase entry Skill gate", () => {
 	test("without a run entry a model Planner call admits nothing, and a literal plan entry still revokes", () => {
 		const s = session();
 		expect(s.skill("immune-brain:draw-up")).toBeNull();
-		expect(denial(s.tool(BATCH_START))).toStartWith("run_entry_required: ");
+		expect(denial(s.tool(ENROLL))).toStartWith("run_entry_required: ");
 		s.prompt("/loop task-a");
-		expect(s.tool(BATCH_START)).toBeNull();
+		expect(s.tool(ENROLL)).toBeNull();
 		s.prompt("/planner revise it");
-		expect(denial(s.tool(BATCH_START))).toStartWith("run_entry_required: ");
+		expect(denial(s.tool(ENROLL))).toStartWith("run_entry_required: ");
 		expect(denial(s.skill("immune-brain:drive"))).toStartWith("phase_entry_required: ");
 		// A fresh literal entry recovers the session.
 		s.prompt("/loop task-a");
-		expect(s.tool(BATCH_START)).toBeNull();
+		expect(s.tool(ENROLL)).toBeNull();
 	});
 
 	test("the drive Skill is allowed on a live run entry after later plain prompts (SCN-3)", () => {
@@ -179,7 +179,7 @@ describe("Claude phase entry Skill gate", () => {
 		expect(s.skill("immune-brain:draw-up")).toBeNull();
 		expect(s.skill("immune-brain:clarify")).toBeNull();
 		s.prompt("the scope must grow");
-		expect(s.tool(BATCH_START)).toBeNull();
+		expect(s.tool(ENROLL)).toBeNull();
 		expect(s.skill("immune-brain:drive")).toBeNull();
 	});
 
@@ -192,7 +192,7 @@ describe("Claude phase entry Skill gate", () => {
 			expect(s.skill("immune-brain:clarify")).toBeNull();
 			delete s.locations.append;
 			expect(readPhaseEntryState("skill-gate-session", s.locations.root)).toMatchObject({ run_live: true });
-			expect(s.tool(BATCH_START)).toBeNull();
+			expect(s.tool(ENROLL)).toBeNull();
 		}
 	});
 
@@ -205,7 +205,7 @@ describe("Claude phase entry Skill gate", () => {
 		expect(s.prompt("/planner revise it")).toBe(false);
 		delete s.locations.append;
 		expect(denial(s.skill("immune-brain:drive"))).toStartWith("phase_entry_required: ");
-		expect(denial(s.tool(BATCH_START))).toStartWith("run_entry_required: ");
+		expect(denial(s.tool(ENROLL))).toStartWith("run_entry_required: ");
 		// A fresh literal entry recovers the session.
 		expect(s.prompt("/loop task-a")).toBe(true);
 		expect(s.skill("immune-brain:drive")).toBeNull();
@@ -216,7 +216,7 @@ describe("Claude phase entry Skill gate", () => {
 		expect(s.prompt("/loop task-a")).toBe(true);
 		s.locations.read = () => { throw new Error("EIO"); };
 		expect(denial(s.skill("immune-brain:drive"))).toStartWith("phase_entry_required: ");
-		expect(denial(s.tool(BATCH_START))).toStartWith("run_entry_required: ");
+		expect(denial(s.tool(ENROLL))).toStartWith("run_entry_required: ");
 		expect(s.skill("frontend-design")).toBeNull();
 		delete s.locations.read;
 		expect(s.skill("immune-brain:drive")).toBeNull();
@@ -226,7 +226,7 @@ describe("Claude phase entry Skill gate", () => {
 		const s = session();
 		expect(s.prompt("/loop task-a")).toBe(true);
 		s.locations.append = () => { throw new Error("EIO"); };
-		expect(denial(s.tool(BATCH_START))).toStartWith("run_entry_required: ");
+		expect(denial(s.tool(ENROLL))).toStartWith("run_entry_required: ");
 	});
 
 	test("a symlinked alias is bounded by its target, not by the link", () => {

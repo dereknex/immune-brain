@@ -44,7 +44,6 @@ import {
   createMutationAuthorityRegistry,
   digestOfAction,
 } from "../plugins/immune-brain/runtime/kernel/authority_port";
-import { writeBatchRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
 import { projectAssurance } from "../plugins/immune-brain/runtime/kernel/assurance_projection";
 import {
   auditEvidencePaths,

@@ -1,6 +1,6 @@
-// `bun run e2e:live` (Spec e2e-release-gate D6, S9): the maintainer's L2 run. It runs J1, J2 and J4
-// against the real `claude` and `pi` binaries (with Lane panes run through the harness's spawning
-// fake-herdr and installed `herdr --version` recorded) with one retry per journey, re-records the
+// `bun run e2e:live` (Spec e2e-release-gate D6, S9): the maintainer's L2 run. It runs J1 on `claude`
+// and J4 on every Host against the real binaries (installed `herdr --version` recorded; the batch
+// journey J2 retired with the unattended batch, ADR 0043 Slice 3) with one retry per journey, re-records the
 // journey cassettes through the recorder (E2E_RECORD=1, low-cost model tier E2E_LIVE_MODEL), and
 // writes docs/evidence/e2e-live/<version>.json (contract immune_brain/e2e_release_evidence/v1, mode
 // "live") for scripts/release-promote.ts to check. It needs the maintainer's Host logins, an
@@ -22,7 +22,7 @@ const ATTEMPT_TIMEOUT_MS = 10 * 60_000;
 /** The low-cost tier the recorder sends upstream during a live run (D6). */
 export const LIVE_MODEL_TIER = "claude-haiku-5-5";
 
-export type JourneyId = "J1" | "J2" | "J4";
+export type JourneyId = "J1" | "J4";
 export interface JourneyPlan {
 	id: JourneyId;
 	/** tests/e2e/<file>.e2e.ts */
@@ -31,10 +31,9 @@ export interface JourneyPlan {
 	hosts: Record<string, string>;
 }
 
-/** D6: J1 and J2 on claude and pi; J4 on claude, pi and antigravity (install only). */
+/** D6: J1 (in-place single-task drive) on claude; J4 on claude, pi and antigravity (install only). */
 export const LIVE_PLAN: JourneyPlan[] = [
-	{ id: "J1", file: "single-task", hosts: { claude: "claude Executor", pi: "pi Executor" } },
-	{ id: "J2", file: "batch", hosts: { claude: "claude Executor", pi: "pi Executor" } },
+	{ id: "J1", file: "single-task", hosts: { claude: "claude Parent" } },
 	{ id: "J4", file: "install", hosts: { claude: "Claude Code at the", pi: "Pi installs", antigravity: "Antigravity's packed plugin" } },
 ];
 

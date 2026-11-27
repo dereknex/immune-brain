@@ -7,16 +7,11 @@ import { consumePhaseAdmission, phaseEntryGateHookOutput, recordPhaseEntryPrompt
 import { runContinuationHookOutput } from "../plugins/immune-brain/runtime/claude/run_continuation";
 import { confirmationRef, entryTokenRequestId } from "../plugins/immune-brain/runtime/claude/interaction";
 import { createMcpRuntime, handleJsonRpc } from "../plugins/immune-brain/runtime/claude/mcp_server";
-import { readActiveClaimTaskId } from "../plugins/immune-brain/runtime/unattended/batch_preflight";
+import { readActiveClaimTaskId } from "../plugins/immune-brain/runtime/kernel/backend_claim";
 import { watchBundleIdentity } from "../plugins/immune-brain/runtime/plugin_source_skew";
-import type { GithubInitiativeObservation } from "../plugins/immune-brain/runtime/unattended/types";
-import { memoryLanePort, memoryLanePortEnv } from "./helpers/memory-lane-port";
 
-// A Lane batch opens its Executor session through the port, so the Host needs a
-// Herdr-bearing env and a port factory: no `herdr` process is ever spawned.
-const ENV = { CLAUDE_CODE_VERSION: "2.1.236", CLAUDE_CODE_PERMISSION_MODE: "manual", ...memoryLanePortEnv };
-const BATCH = "mcp__plugin_immune-brain_immune-brain__start_unattended_batch";
-const RETIRE = "mcp__plugin_immune-brain_immune-brain__retire_stale_batch";
+const ENV = { CLAUDE_CODE_VERSION: "2.1.236", CLAUDE_CODE_PERMISSION_MODE: "manual" };
+const ENROLL = "mcp__plugin_immune-brain_immune-brain__enroll";
 const RECOVERY = "ask the user to enter /drive (or /immune-brain:drive on Claude Code) in the current Host";
 const roots: string[] = [];
 
@@ -69,7 +64,7 @@ async function session(taskIds: string[], extra: Parameters<typeof createMcpRunt
 	let consumed = 0;
 	let rpcId = 1;
 	const mcp = createMcpRuntime({
-		cwd, env: ENV, sessionPortFactory: memoryLanePort,
+		cwd, env: ENV,
 		requestConfirmation: async ({ operation }) => { gateCalls++; confirmations.push(operation); return { decision, requestId: `gate-${operation}-${gateCalls}` }; },
 		consumePhaseAdmission: (toolCallId: string, operation: GatedTool) => {
 			const admitted = consumePhaseAdmission(toolCallId, operation, store);
@@ -111,56 +106,42 @@ function expectHookDenial(output: string | null): void {
 	expect(decision.permissionDecisionReason.split("recovery:")).toHaveLength(2);
 }
 
-const SLUG = "gate-init";
-const OBSERVATION: GithubInitiativeObservation = {
-	contract: "immune_brain/github_initiative_observation/v1",
-	initiative_id: SLUG,
-	issue_number: 100,
-	tasks: [{ task_id: `${SLUG}-c1`, slice_id: "S1", issue_number: 101, blocked_by: [] }],
-};
-const START = { initiative_slug: SLUG, final_verification: ["bun test"] };
-function batchOptions() {
-	let reads = 0;
-	return {
-		reads: () => reads,
-		options: {
-			readInitiative: async () => { reads++; return OBSERVATION; },
-			batchKernel: { advanceTask: async () => ({ state: "review_ready" as const, operation_id: "op-1", agent_params: { prompt: "review" } as never }) },
-		},
-	};
-}
-/** A session whose gated operation is the Initiative batch start (Spec drive-always-lanes S7: no in-place enroll). */
-const gateSession = (decision: "accept" | "decline" = "accept", extra: Parameters<typeof createMcpRuntime>[0] = {}) =>
-	session([`${SLUG}-c1`], { ...batchOptions().options, ...extra }, decision);
 
-describe("Claude phase entry gate: start_unattended_batch admission", () => {
-	test("a live run entry and the hook admission let the batch start reach the native gate", async () => {
+const TASK = "gate-a";
+const ARGS = { task_id: TASK };
+const gateSession = (decision: "accept" | "decline" = "accept", extra: Parameters<typeof createMcpRuntime>[0] = {}) =>
+	session([TASK], extra, decision);
+const worktrees = (cwd: string) => execFileSync("git", ["worktree", "list"], { cwd, encoding: "utf8" }).trim().split("\n");
+
+describe("Claude phase entry gate: in-place enroll admission", () => {
+	test("a live run entry opens one native gate and claims the task in this workspace", async () => {
 		const s = await gateSession();
-		expect(s.prompt("/immune-brain:drive gate-init")).toBe(true);
-		expect(s.hook(BATCH, "toolu_1")).toBeNull();
-		const reply = await s.call("start_unattended_batch", START, "toolu_1");
+		expect(s.prompt(`/immune-brain:drive ${TASK}`)).toBe(true);
+		expect(s.hook(ENROLL, "toolu_1")).toBeNull();
+		const reply = await s.call("enroll", ARGS, "toolu_1");
 		expect(reply?.error).toBeUndefined();
-		expect(s.gateCalls()).toBe(1);
-		expect(readActiveClaimTaskId(s.cwd)).toBeNull(); // the child claim lives in its Lane
+		expect(s.confirmations()).toEqual(["enroll"]);
+		expect(readActiveClaimTaskId(s.cwd)).toBe(TASK);
+		expect(worktrees(s.cwd)).toHaveLength(1);
 	});
 
-	test("a live entry token alone never starts work: the batch start still opens the gate, and a decline claims nothing", async () => {
+	test("a live entry token alone never enrolls: the gate still opens, and a decline claims nothing", async () => {
 		// The token sits in a same-uid cache file a model could write by hand
 		// (ADR 0025 Context), so it must not replace the gate on starting work.
 		const s = await gateSession("decline");
-		s.prompt("/drive gate-init");
-		expect(s.hook(BATCH, "toolu_forged")).toBeNull();
-		await s.call("start_unattended_batch", START, "toolu_forged");
-		expect(s.confirmations()).toEqual(["start_unattended_batch"]);
+		s.prompt("/drive");
+		expect(s.hook(ENROLL, "toolu_forged")).toBeNull();
+		expect((await s.call("enroll", ARGS, "toolu_forged"))?.error).toBeDefined();
+		expect(s.confirmations()).toEqual(["enroll"]);
 		expect(readActiveClaimTaskId(s.cwd)).toBeNull();
 	});
 
 	test("a supplied entry_token or native_decision argument refuses with no Kernel mutation", async () => {
 		const s = await gateSession();
-		s.prompt("/drive gate-init");
+		s.prompt("/drive");
 		for (const [field, id] of [["entry_token", "toolu_t"], ["native_decision", "toolu_n"]] as const) {
-			expect(s.hook(BATCH, id)).toBeNull();
-			const reply = await s.call("start_unattended_batch", { ...START, [field]: "accept" }, id);
+			expect(s.hook(ENROLL, id)).toBeNull();
+			const reply = await s.call("enroll", { ...ARGS, [field]: "accept" }, id);
 			expect(reply?.error?.message).toContain(`${field} cannot be supplied`);
 		}
 		expect(readActiveClaimTaskId(s.cwd)).toBeNull();
@@ -170,270 +151,147 @@ describe("Claude phase entry gate: start_unattended_batch admission", () => {
 	test("another session's entry, a SessionEnd, a spent token and another workspace all refuse", async () => {
 		const s = await gateSession();
 		// Minted by one session, called from another.
-		s.prompt("/drive gate-init", { session_id: "other-session" });
-		expectHookDenial(s.hook(BATCH, "toolu_s"));
-		expectRunEntryRequired(await s.call("start_unattended_batch", START, "toolu_s"));
+		s.prompt("/drive", { session_id: "other-session" });
+		expectHookDenial(s.hook(ENROLL, "toolu_s"));
+		expectRunEntryRequired(await s.call("enroll", ARGS, "toolu_s"));
 		// SessionEnd drops the token the hook already admitted.
-		s.prompt("/drive gate-init");
-		expect(s.hook(BATCH, "toolu_e")).toBeNull();
+		s.prompt("/drive");
+		expect(s.hook(ENROLL, "toolu_e")).toBeNull();
 		await s.endSession();
-		expectRunEntryRequired(await s.call("start_unattended_batch", START, "toolu_e"));
-		expectHookDenial(s.hook(BATCH, "toolu_e2"));
+		expectRunEntryRequired(await s.call("enroll", ARGS, "toolu_e"));
+		expectHookDenial(s.hook(ENROLL, "toolu_e2"));
 		// A token minted in another workspace does not authorize this one: the Hook
 		// denies the drifted cwd and the MCP server refuses the same call.
 		const elsewhere = mkdtempSync(join(tmpdir(), "imm-phase-elsewhere-"));
 		roots.push(elsewhere);
-		s.prompt("/drive gate-init", { cwd: elsewhere });
-		expect(s.hook(BATCH, "toolu_w")).toContain("was called from");
-		expect(JSON.parse(s.hook(BATCH, "toolu_w")!).hookSpecificOutput.permissionDecision).toBe("deny");
+		s.prompt("/drive", { cwd: elsewhere });
+		expect(s.hook(ENROLL, "toolu_w")).toContain("was called from");
+		expect(JSON.parse(s.hook(ENROLL, "toolu_w")!).hookSpecificOutput.permissionDecision).toBe("deny");
 		// Admitted at its own workspace, the call still refuses at the MCP server.
-		expect(s.hook(BATCH, "toolu_w", { cwd: elsewhere })).toBeNull();
-		const reply = await s.call("start_unattended_batch", START, "toolu_w");
+		expect(s.hook(ENROLL, "toolu_w", { cwd: elsewhere })).toBeNull();
+		const reply = await s.call("enroll", ARGS, "toolu_w");
 		expect(reply?.error?.data?.reason_code).toBe("run_entry_required");
 		expect(reply?.error?.message).toContain("workspace other than");
 		expect(readActiveClaimTaskId(s.cwd)).toBeNull();
 		expect(s.gateCalls()).toBe(0);
 	});
 
-	test("a revoked entry refuses batch start and retire at tools/call even with admissions recorded before the revocation", async () => {
+	test("a revoked entry refuses at tools/call even with an admission recorded before the revocation", async () => {
 		const s = await gateSession();
-		s.prompt("/drive gate-init");
-		for (const [tool, id] of [[BATCH, "toolu_pb"], [RETIRE, "toolu_pr"]] as const) expect(s.hook(tool, id)).toBeNull();
+		s.prompt("/drive");
+		expect(s.hook(ENROLL, "toolu_p")).toBeNull();
 		// A lost or terminal bound identity spends the entry (workflow-friction D1.1).
 		revokeEntryToken("gate-session", "spent", s.store);
-		expectRunEntryRequired(await s.call("start_unattended_batch", { initiative_slug: "gate-init" }, "toolu_pb"));
-		expectRunEntryRequired(await s.call("retire_stale_batch", { initiative_slug: "gate-init" }, "toolu_pr"));
+		expectRunEntryRequired(await s.call("enroll", ARGS, "toolu_p"));
 		expect(s.gateCalls()).toBe(0);
 		expect(readActiveClaimTaskId(s.cwd)).toBeNull();
 	});
 
-	test("a run suspended by native failures keeps its entry; batch start after a plain reply reaches its native gate", async () => {
+	test("a run suspended by native failures keeps its entry; enroll after a plain reply reaches its native gate", async () => {
 		const s = await gateSession();
-		s.prompt("/drive gate-init");
+		s.prompt("/drive");
 		// The third native-operation failure suspends the run without spending the entry (workflow-friction D1.1).
 		for (let attempt = 1; attempt <= 3; attempt++) {
 			const failure = { tool_name: "mcp__plugin_immune-brain_immune-brain__request_authorization", tool_use_id: `toolu_f${attempt}`,
-				tool_input: { task_id: "gate-a" }, session_id: "gate-session", cwd: s.cwd };
+				tool_input: { task_id: TASK }, session_id: "gate-session", cwd: s.cwd };
 			await runContinuationHookOutput({ hook_event_name: "PreToolUse", ...failure }, s.store);
 			await runContinuationHookOutput({ hook_event_name: "PostToolUseFailure", ...failure, error: "rejected" }, s.store);
 		}
 		s.prompt("go on");
-		expect(s.hook(BATCH, "toolu_resumed")).toBeNull();
-		expect((await s.call("start_unattended_batch", START, "toolu_resumed"))?.error).toBeUndefined();
+		expect(s.hook(ENROLL, "toolu_resumed")).toBeNull();
+		expect((await s.call("enroll", ARGS, "toolu_resumed"))?.error).toBeUndefined();
 		expect(s.gateCalls()).toBe(1);
 	});
 
-	test("the run entry stays live for a later Slice after ordinary prompts", async () => {
+	test("the run entry stays live after ordinary prompts", async () => {
 		const s = await gateSession();
-		s.prompt("/drive gate-init");
-		s.prompt("continue with the next slice");
-		expect(s.hook(BATCH, "toolu_later")).toBeNull();
-		expect((await s.call("start_unattended_batch", START, "toolu_later"))?.error).toBeUndefined();
+		s.prompt("/drive");
+		s.prompt("continue");
+		expect(s.hook(ENROLL, "toolu_later")).toBeNull();
+		expect((await s.call("enroll", ARGS, "toolu_later"))?.error).toBeUndefined();
 		expect(s.gateCalls()).toBe(1);
 	});
 
-	test("with no entry the hook denies and the tool refuses before the native gate", async () => {
+	test("ordinary prose, a session with no prompt and a later plan entry all refuse before the native gate", async () => {
+		const fresh = await gateSession();
+		expectHookDenial(fresh.hook(ENROLL, "toolu_none"));
+		expectRunEntryRequired(await fresh.call("enroll", ARGS, "toolu_none"));
 		const s = await gateSession();
+		s.prompt("please drive this task");
+		expectHookDenial(s.hook(ENROLL, "toolu_prose"));
+		expectRunEntryRequired(await s.call("enroll", ARGS, "toolu_prose"));
+		s.prompt("/drive");
+		s.prompt("/immune-brain:draw-up more work");
 		s.prompt("confirm");
-		expectHookDenial(s.hook(BATCH, "toolu_1"));
-		expectRunEntryRequired(await s.call("start_unattended_batch", START, "toolu_1"));
-		expect(s.gateCalls()).toBe(0);
+		expectHookDenial(s.hook(ENROLL, "toolu_plan"));
+		expectRunEntryRequired(await s.call("enroll", ARGS, "toolu_plan"));
+		expect(fresh.gateCalls() + s.gateCalls()).toBe(0);
 		expect(readActiveClaimTaskId(s.cwd)).toBeNull();
-	});
-
-	test("a session that never submitted a prompt has no store and refuses", async () => {
-		const s = await gateSession();
-		expectHookDenial(s.hook(BATCH, "toolu_1"));
-		expectRunEntryRequired(await s.call("start_unattended_batch", START, "toolu_1"));
-		expect(s.gateCalls()).toBe(0);
-	});
-
-	test("a later literal plan entry revokes the run entry", async () => {
-		const s = await gateSession();
-		s.prompt("/drive gate-init");
-		s.prompt("/draw-up something else");
-		s.prompt("confirm");
-		expectHookDenial(s.hook(BATCH, "toolu_1"));
-		expectRunEntryRequired(await s.call("start_unattended_batch", START, "toolu_1"));
-		expect(s.gateCalls()).toBe(0);
 	});
 
 	test("a drifted shell cwd is denied before the native gate and admitted again after cd back (D4)", async () => {
 		const s = await gateSession();
-	s.prompt("/drive gate-init");
+		s.prompt("/drive");
 		const home = realpathSync(s.cwd);
-		const lane = join(home, ".git", "imm", "worktrees", "drifted-slug", "drifted-task");
-		mkdirSync(lane, { recursive: true });
-		for (const [tool, id] of [[BATCH, "toolu_drift_batch"], [RETIRE, "toolu_drift_retire"]] as const) {
-			const denial = JSON.parse(s.hook(tool, id, { cwd: lane })!) as { hookSpecificOutput: { permissionDecision: string; permissionDecisionReason: string } };
-			expect(denial.hookSpecificOutput.permissionDecision).toBe("deny");
-			expect(denial.hookSpecificOutput.permissionDecisionReason).toContain(lane);
-			expect(denial.hookSpecificOutput.permissionDecisionReason).toContain(home);
-			expect(denial.hookSpecificOutput.permissionDecisionReason).toContain(`cd ${home}`);
-			// No admission was written, so the tool side refuses and the gate never opens.
-			if (tool === BATCH) expectRunEntryRequired(await s.call("start_unattended_batch", START, id));
-			else expectRunEntryRequired(await s.call("retire_stale_batch", { initiative_slug: SLUG }, id));
-		}
+		const drifted = join(home, ".git", "imm", "worktrees", "drifted-slug", "drifted-task");
+		mkdirSync(drifted, { recursive: true });
+		const denial = JSON.parse(s.hook(ENROLL, "toolu_drift", { cwd: drifted })!) as { hookSpecificOutput: { permissionDecision: string; permissionDecisionReason: string } };
+		expect(denial.hookSpecificOutput.permissionDecision).toBe("deny");
+		expect(denial.hookSpecificOutput.permissionDecisionReason).toContain(drifted);
+		expect(denial.hookSpecificOutput.permissionDecisionReason).toContain(home);
+		expect(denial.hookSpecificOutput.permissionDecisionReason).toContain(`cd ${home}`);
+		// No admission was written, so the tool side refuses and the gate never opens.
+		expectRunEntryRequired(await s.call("enroll", ARGS, "toolu_drift"));
 		expect(s.gateCalls()).toBe(0);
 		expect(readActiveClaimTaskId(s.cwd)).toBeNull();
-		// Re-mint the run entry at the coordinator root, then check a symlinked route to it.
-		s.prompt("/drive gate-init");
 		// A symlinked route to the same workspace is the bound workspace, not a drift.
+		s.prompt("/drive");
 		const link = join(mkdtempSync(join(tmpdir(), "imm-phase-link-")), "linked-workspace");
 		roots.push(dirname(link));
 		symlinkSync(home, link);
-		expect(s.hook(BATCH, "toolu_linked", { cwd: link })).toBeNull();
-		expect((await s.call("start_unattended_batch", START, "toolu_linked"))?.error).toBeUndefined();
+		expect(s.hook(ENROLL, "toolu_linked", { cwd: link })).toBeNull();
+		expect((await s.call("enroll", ARGS, "toolu_linked"))?.error).toBeUndefined();
 		expect(s.gateCalls()).toBe(1);
 		// An unresolvable cwd is denied by the same rule.
 		const missing = join(home, ".git", "imm", "worktrees", "drifted-slug", "absent");
-		const unresolvable = JSON.parse(s.hook(BATCH, "toolu_missing", { cwd: missing })!) as { hookSpecificOutput: { permissionDecisionReason: string } };
+		const unresolvable = JSON.parse(s.hook(ENROLL, "toolu_missing", { cwd: missing })!) as { hookSpecificOutput: { permissionDecisionReason: string } };
 		expect(unresolvable.hookSpecificOutput.permissionDecisionReason).toContain("run_entry_required: ");
 		expect(unresolvable.hookSpecificOutput.permissionDecisionReason).toContain("an unresolvable cwd");
 	});
 
 	test("a live entry without the hook admission for this exact call refuses", async () => {
 		const s = await gateSession();
-		s.prompt("/drive gate-init");
+		s.prompt("/drive");
 		// No PreToolUse hook ran for this call at all.
-		expectRunEntryRequired(await s.call("start_unattended_batch", START, "toolu_unseen"));
+		expectRunEntryRequired(await s.call("enroll", ARGS, "toolu_unseen"));
 		// The hook admitted a different call id.
-		expect(s.hook(BATCH, "toolu_other")).toBeNull();
-		expectRunEntryRequired(await s.call("start_unattended_batch", START, "toolu_unseen"));
+		expect(s.hook(ENROLL, "toolu_other")).toBeNull();
+		expectRunEntryRequired(await s.call("enroll", ARGS, "toolu_unseen"));
 		expect(s.gateCalls()).toBe(0);
 		expect(readActiveClaimTaskId(s.cwd)).toBeNull();
 	});
 
-	test("an admission is single-use and bound to its operation", async () => {
-		const b = batchOptions();
-		const s = await session([`${SLUG}-c1`], b.options);
-		s.prompt("/drive gate-init");
-		expect(s.hook(BATCH, "toolu_batch")).toBeNull();
-		expectRunEntryRequired(await s.call("retire_stale_batch", { initiative_slug: SLUG }, "toolu_batch"));
-		// The mismatched read spent it: it no longer admits its own operation either.
-		expectRunEntryRequired(await s.call("start_unattended_batch", START, "toolu_batch"));
-		expect(b.reads()).toBe(0);
-		expect(s.hook(BATCH, "toolu_1")).toBeNull();
-		expect((await s.call("start_unattended_batch", START, "toolu_1"))?.error).toBeUndefined();
-		expectRunEntryRequired(await s.call("start_unattended_batch", START, "toolu_1"));
-		expect(s.gateCalls()).toBe(1);
-	});
-
-	test("a hook that ran twice for one call still admits it exactly once", async () => {
-		const s = await gateSession();
-		s.prompt("/drive gate-init");
+	test("an admission is single-use, even when the hook ran twice for one call", async () => {
+		const s = await gateSession("decline");
+		s.prompt("/drive");
 		// Two enabled copies of the plugin both match the tool name.
-		expect(s.hook(BATCH, "toolu_twice")).toBeNull();
-		expect(s.hook(BATCH, "toolu_twice")).toBeNull();
-		expect((await s.call("start_unattended_batch", START, "toolu_twice"))?.error).toBeUndefined();
-		expectRunEntryRequired(await s.call("start_unattended_batch", START, "toolu_twice"));
+		expect(s.hook(ENROLL, "toolu_twice")).toBeNull();
+		expect(s.hook(ENROLL, "toolu_twice")).toBeNull();
+		await s.call("enroll", ARGS, "toolu_twice");
+		expectRunEntryRequired(await s.call("enroll", ARGS, "toolu_twice"));
 		expect(s.gateCalls()).toBe(1);
 		expect(s.consumed()).toBe(1);
-	});
-
-	test("repeated admissions that disagree on the operation refuse", async () => {
-		const s = await gateSession();
-		s.prompt("/drive gate-init");
-		expect(s.hook(BATCH, "toolu_mixed")).toBeNull();
-		expect(s.hook(RETIRE, "toolu_mixed")).toBeNull();
-		expectRunEntryRequired(await s.call("start_unattended_batch", START, "toolu_mixed"));
-		expect(s.gateCalls()).toBe(0);
-	});
-});
-
-describe("Claude phase entry gate: in-place enroll", () => {
-	const ENROLL = "mcp__plugin_immune-brain_immune-brain__enroll";
-	const TASK = "gate-inplace";
-	const args = { task_id: TASK };
-	const worktrees = (cwd: string) => execFileSync("git", ["worktree", "list"], { cwd, encoding: "utf8" }).trim().split("\n");
-
-	test("a live run entry opens one native gate and claims the task in this workspace", async () => {
-		const s = await session([TASK]);
-		expect(s.prompt(`/immune-brain:drive ${TASK}`)).toBe(true);
-		expect(s.hook(ENROLL, "toolu_1")).toBeNull();
-		const reply = await s.call("enroll", args, "toolu_1");
-		expect(reply?.error).toBeUndefined();
-		expect(s.confirmations()).toEqual(["enroll"]);
-		expect(readActiveClaimTaskId(s.cwd)).toBe(TASK);
-		expect(worktrees(s.cwd)).toHaveLength(1);
-	});
-
-	test("a declined native gate writes no claim", async () => {
-		const s = await session([TASK], {}, "decline");
-		s.prompt("/drive");
-		expect(s.hook(ENROLL, "toolu_1")).toBeNull();
-		expect((await s.call("enroll", args, "toolu_1"))?.error).toBeDefined();
-		expect(s.gateCalls()).toBe(1);
-		expect(readActiveClaimTaskId(s.cwd)).toBeNull();
-	});
-
-	test("ordinary prose, a plan entry and a drifted workspace all refuse", async () => {
-		const s = await session([TASK]);
-		const elsewhere = mkdtempSync(join(tmpdir(), "imm-phase-elsewhere-"));
-		roots.push(elsewhere);
-		const refused = async (id: string) => {
-			expectHookDenial(s.hook(ENROLL, id));
-			expectRunEntryRequired(await s.call("enroll", args, id));
-		};
-		s.prompt("please drive this task");
-		await refused("toolu_prose");
-		s.prompt("/drive");
-		s.prompt("/immune-brain:draw-up more work");
-		await refused("toolu_plan");
-		s.prompt("/drive", { cwd: elsewhere });
-		expect(JSON.parse(s.hook(ENROLL, "toolu_drift")!).hookSpecificOutput.permissionDecision).toBe("deny");
-		expect(s.gateCalls()).toBe(0);
-		expect(readActiveClaimTaskId(s.cwd)).toBeNull();
 	});
 });
 
 describe("Claude entry token confirmation reference", () => {
-	test("a token-backed reference is of kind entry and still binds the plan digest and intent hash", () => {
+	test("a token-backed reference is of kind entry and still binds the intent hash", () => {
 		const ref = (requestId: string, extra: { planDigest?: string; intentContentHash?: string } = {}) =>
-			confirmationRef({ connectionId: "s", toolCallId: "t", requestId, operation: "retire_stale_batch", ...extra });
+			confirmationRef({ connectionId: "s", toolCallId: "t", requestId, operation: "enroll", ...extra });
 		const token = entryTokenRequestId("token-1");
-		expect(ref(token, { planDigest: "p1" })).toStartWith("claude-entry-");
-		expect(ref("elicitation-1", { planDigest: "p1" })).toStartWith("claude-confirm-");
-		expect(ref(token, { planDigest: "p1" })).not.toBe(ref(token, { planDigest: "p2" }));
+		expect(ref(token, { intentContentHash: "h1" })).toStartWith("claude-entry-");
+		expect(ref("elicitation-1", { intentContentHash: "h1" })).toStartWith("claude-confirm-");
 		expect(ref(token, { intentContentHash: "h1" })).not.toBe(ref(token, { intentContentHash: "h2" }));
-	});
-});
-
-describe("Claude phase entry gate: batch start result", () => {
-	const slug = SLUG;
-
-	test("with no entry the hook denies and the tool refuses before reading the plan or opening the gate", async () => {
-		const b = batchOptions();
-		const s = await session([`${slug}-c1`], b.options);
-		s.prompt("start the batch");
-		expectHookDenial(s.hook(BATCH, "toolu_b"));
-		expectRunEntryRequired(await s.call("start_unattended_batch", { initiative_slug: slug }, "toolu_b"));
-		expect(b.reads()).toBe(0);
-		expect(s.gateCalls()).toBe(0);
-		expect(readActiveClaimTaskId(s.cwd)).toBeNull();
-	});
-
-	test("one admitted start opens the gate once, returns the manifest, and the batch enrolls its child without another admission", async () => {
-		const b = batchOptions();
-		const s = await session([`${slug}-c1`], b.options);
-		s.prompt(`/drive ${slug}`);
-		expect(s.hook(BATCH, "toolu_b")).toBeNull();
-		const reply = await s.call("start_unattended_batch", START, "toolu_b");
-		expect(reply?.error).toBeUndefined();
-		expect(s.gateCalls()).toBe(1);
-		const result = JSON.parse((reply?.result as { content: Array<{ text: string }> }).content[0].text);
-		expect(result.manifest).toEqual({
-			children: [{ task_id: `${slug}-c1`, slice_id: "S1", risk: "routine", scope: [...intentFor(`${slug}-c1`).scope_hint].sort(), verification: ["bun test"] }],
-		});
-		// The batch's own child Enrollment is authorized by the batch, not by the
-		// phase entry gate: exactly one admission was consumed for the whole run.
-		expect(s.consumed()).toBe(1);
-		// Spec branch-boundary-r2 D18: the child enrolls inside its runtime-created
-		// Lane, so the claim is held there and the coordinating checkout stays free.
-		const lane = result.report.children[0].lane;
-		expect(lane.branch).toBe(`imm-lane/${slug}/${slug}-c1`);
-		expect(readActiveClaimTaskId(lane.path)).toBe(`${slug}-c1`);
-		expect(readActiveClaimTaskId(s.cwd)).toBeNull();
 	});
 });
 
@@ -448,10 +306,10 @@ describe("Claude phase entry gate behind a stale MCP bundle", () => {
 		writeFileSync(currentPath, "// build 1\n");
 		const stale = await gateSession("accept", { bundleIdentity: watchBundleIdentity(stalePath) });
 		writeFileSync(stalePath, "// build 2\n");
-		const staleReply = await stale.call("start_unattended_batch", START, "toolu_no_admission");
+		const staleReply = await stale.call("enroll", ARGS, "toolu_no_admission");
 		expect(staleReply?.error?.data?.reason_code).toBe("plugin_bundle_stale");
 		const current = await gateSession("accept", { bundleIdentity: watchBundleIdentity(currentPath) });
-		expectRunEntryRequired(await current.call("start_unattended_batch", START, "toolu_no_admission"));
+		expectRunEntryRequired(await current.call("enroll", ARGS, "toolu_no_admission"));
 		expect(readActiveClaimTaskId(stale.cwd)).toBeNull();
 		expect(readActiveClaimTaskId(current.cwd)).toBeNull();
 	});

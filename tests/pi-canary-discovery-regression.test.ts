@@ -2,7 +2,7 @@
 // foreground Tool factories from .pi-extension/ and never auto-discover helper modules.
 //
 // acc-1: the real Pi resource loader discovers exactly imm-canary-work.ts
-//        and imm-unattended-batch.ts from the repo package with zero load errors;
+//        from the repo package with zero load errors;
 //        no discovered path contains a helper module name.
 // acc-2: the explicit entry manifest (plugins/immune-brain/.pi-extension/
 //        package.json) is load-bearing: a scratch copy WITHOUT it makes the
@@ -18,7 +18,6 @@ const ROOT = resolve(__dirname, "..");
 
 const FACTORY_FILES = [
 	"plugins/immune-brain/.pi-extension/imm-canary-work.ts",
-	"plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
 ];
 const RETIRED_PROGRESS_FILES = [
 	"plugins/immune-brain/.pi-extension/index.ts",
@@ -76,12 +75,8 @@ function basenameOf(p: string): string {
 describe("pi extension discovery regression (canary-001)", () => {
 	test("acc-1: foreground Tool factories are discovered from the repo package without helpers", async () => {
 		const { paths, errors } = await loadExtensions(ROOT);
-		expect(paths.length).toBe(2);
-		const names = paths.map(basenameOf).sort();
-		expect(names).toEqual([
-			"imm-canary-work.ts",
-			"imm-unattended-batch.ts",
-		]);
+		expect(paths.length).toBe(1);
+		expect(paths.map(basenameOf)).toEqual(["imm-canary-work.ts"]);
 		for (const helper of HELPER_FILES) {
 			expect(paths.join("\n")).not.toContain(basenameOf(helper));
 		}

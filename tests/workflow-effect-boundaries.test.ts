@@ -5,22 +5,21 @@
 // gate new outbound effects on the existing project channel.
 // Layer 2: the grant arithmetic those contracts describe is decisive — a
 // stage-only recovery authorizes staging and nothing else, an existing exact
-// approval (including a batch capability) needs no new gate, and a public
-// article does not authorize a provider or a data scope.
+// approval needs no new gate, and a public article does not authorize a
+// provider or a data scope.
 //
 // The authorization helper below is a mock-evidence model of the documented
 // rule, not a runtime authorization check: nothing in production calls it. It
-// exists so the contract's grant arithmetic (operation + target + impact, batch
-// child binding, off-host channel/data scope) has a decisive executable control
+// exists so the contract's grant arithmetic (operation + target + impact,
+// off-host channel/data scope) has a decisive executable control
 // rather than a phrase-presence assertion.
 //
 // Layer 1: the canonical BASELINE / Skill contracts separate the grants and
 // gate new outbound effects on the existing project channel.
 // Layer 2: the grant arithmetic those contracts describe is decisive — a
 // stage-only recovery authorizes staging and nothing else, an existing exact
-// approval (including a batch capability bounded to one child) needs no new
-// gate, and a public article does not authorize a provider, target, or data
-// scope.
+// approval needs no new gate, and a public article does not authorize a
+// provider, target, or data scope.
 
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
@@ -54,18 +53,14 @@ interface Grant {
 	impact?: string;
 	/** The data scope the approval covers for an off-host effect. */
 	dataScope?: string;
-	/** The one scope-bounded child a batch capability is issued for. */
-	childScope?: string;
-	/** Existing exact approval or a Kernel-issued batch capability. */
-	source: "explicit_approval" | "batch_capability";
+	/** An existing exact approval. */
+	source: "explicit_approval";
 }
 
 interface RequestedEffect {
 	operation: Effect;
 	target?: string;
 	impact?: string;
-	/** The child this request would act on, for a batch capability. */
-	childScope?: string;
 	/** The project's existing research channel, when the effect leaves the host. */
 	channel?: string;
 	dataScope?: string;
@@ -80,9 +75,7 @@ interface AuthorizationDecision {
  * Grant arithmetic for one effect. Every effect is its own grant: holding one
  * never implies another, so a stage-only instruction stays stage-only. An
  * approval is also exact in its operation, target, and impact, so holding a
- * grant for one target does not authorize another. A batch capability is
- * narrower still: it commits only its own scope-bounded child, and it never
- * authorizes a push, publication, or an off-host effect. An off-host effect
+ * grant for one target does not authorize another. An off-host effect
  * additionally needs the existing channel and data scope.
  */
 function authorizeEffect(
@@ -107,23 +100,6 @@ function authorizeEffect(
 			authorized: false,
 			reason: `the held ${requested.operation} grant does not cover target ${requested.target ?? "(unset)"} with impact ${requested.impact ?? "(unset)"}`,
 		};
-	}
-	// A batch capability is bounded to one child scope.
-	const batchOnly = exact.every((grant) => grant.source === "batch_capability");
-	if (batchOnly) {
-		if (exact.every((grant) => grant.childScope !== requested.childScope)) {
-			return {
-				authorized: false,
-				reason: `the batch capability is bound to child ${exact[0]?.childScope ?? "(unset)"}, not ${requested.childScope ?? "(unset)"}`,
-			};
-		}
-		if (requested.operation !== "commit") {
-			return {
-				authorized: false,
-				reason: `a batch capability authorizes only its own scoped commit, not ${requested.operation}`,
-			};
-		}
-		return { authorized: true, reason: "batch capability commits its own scope-bounded child" };
 	}
 	if (requested.operation === "outbound_call") {
 		const channel = exact.find((grant) => grant.dataScope === requested.dataScope);
@@ -171,11 +147,9 @@ describe("S2 exact effects and outbound research", () => {
 			"Recovering a stage-only instruction restores staging and nothing more",
 			"commit, push, and publication each keep their own existing grant",
 			"An explicit approval already covering the same operation, target, and impact",
-			"including a valid batch capability",
 			"stays usable without another gate",
 			"An existing grant for one of these never inherits another",
-			"a stage-only instruction stays stage-only, a commit is not push or publication authority",
-			"a valid batch capability commits only its own scope-bounded child",
+			"a stage-only instruction stays stage-only, and a commit is not push or publication authority",
 			"Before a new outbound effect, check the project's existing research channel and data scope",
 			"A public article, a mock, a documentation example, or a local read-only database gives no authority to call an arbitrary provider or send new data",
 			"authorize only a genuinely new channel/data/effect delta",
@@ -207,15 +181,14 @@ describe("S2 exact effects and outbound research", () => {
 		const contract = flat(BASELINE);
 		for (const fragment of [
 			"The repository's `Git integration` preference decides whether the runtime writes commits on its own (ADR 0024)",
-			"`manual`, the default, writes none outside batches: a single task's delivery lands staged and uncommitted in the checkout, and migration leaves its diff for the user to commit however they prefer",
+			"`manual`, the default, writes none: a task's delivery lands staged and uncommitted in the checkout, and migration leaves its diff for the user to commit however they prefer",
 			"`auto` commits each task's settled scoped paths when it settles `done`",
 			"Either way the runtime runs Git hooks normally and grants no push, publication, history rewrite, or commit of any other path",
 			"a model never makes these commits itself or asks the user to make one",
 			// Host Confirmation Boundary
-			"A new `drive` entry neither stages nor commits its TaskIntent or Spec in the user's checkout",
-			"The Lane starts at the user's HEAD and does not require a clean checkout",
-			"the runtime copies only the task's TaskIntent and bound Spec into the Lane, never other coordinator edits or the index",
-			"A batch child keeps its Lane's confirmed scope disclosure",
+			"A new `drive` entry enrolls in place in the current worktree and commits neither its TaskIntent nor its Spec",
+			"Enrollment refuses a dirty worktree outside the task's own TaskIntent and bound Spec with `workspace_not_clean` before the native gate opens",
+			"never stash, discard or commit the user's changes to clear it",
 			"an unborn HEAD refuses with `git_head_unreadable` and no empty root commit is created",
 		]) {
 			expect(contract).toContain(fragment);
@@ -223,12 +196,12 @@ describe("S2 exact effects and outbound research", () => {
 		expect(contract).not.toContain("A precondition commit is the one commit the runtime makes without a separate grant");
 		expect(contract).not.toContain("The commit is silent");
 		expect(contract).not.toContain("the Host satisfies the precondition");
-		expect(contract).not.toContain("workspace_not_clean");
-		const enrollmentRule = contract.indexOf("A new `drive` entry neither stages nor commits its TaskIntent or Spec");
+		expect(contract).not.toContain("The Lane starts at the user's HEAD");
+		const enrollmentRule = contract.indexOf("A new `drive` entry enrolls in place in the current worktree");
 		expect(enrollmentRule).toBeGreaterThan(contract.indexOf("### Host Confirmation Boundary"));
 		expect(enrollmentRule).toBeLessThan(contract.indexOf("## Parallel Read-Only Dispatch"));
 		expect(flat(LOOP)).toContain(
-			"Staging grants no commit or push authority. Inside the Lane the runtime stages only the task's TaskIntent and bound Spec; nothing commits them, so never stage or commit those paths by hand and never ask the user to",
+			"Staging grants no commit or push authority. Enrollment stages only the task's TaskIntent and bound Spec; nothing commits them, so never stage or commit those paths by hand and never ask the user to",
 		);
 		expect(flat(LOOP)).not.toContain("under `Git integration: auto`, committing its set");
 
@@ -265,7 +238,7 @@ describe("S2 exact effects and outbound research", () => {
 		for (const fragment of [
 			"Effects are separate grants",
 			"A stage-only recovery restores staging and grants no commit, push, or publication",
-			"an existing exact approval, including a valid batch capability bounded to one child, stays usable without another chat gate",
+			"an existing exact approval stays usable without another chat gate",
 			"Before a new outbound research call, check the project's existing channel and data scope",
 			"a public article, a mock, or a local read-only database authorizes no new provider or data effect",
 			"Text instructions are contracts, not a hard bash sandbox",
@@ -315,7 +288,7 @@ describe("S2 exact effects and outbound research", () => {
 		}
 	});
 
-	test("an existing exact approval and a batch capability stay usable", () => {
+	test("an existing exact approval stays usable", () => {
 		const commitGrant: Grant[] = [
 			{ operation: "commit", target: "child-a", impact: "scoped-change", source: "explicit_approval" },
 		];
@@ -332,38 +305,6 @@ describe("S2 exact effects and outbound research", () => {
 				.authorized,
 		).toBe(false);
 
-		const batch: Grant[] = [
-			{
-				operation: "commit",
-				target: "child-a",
-				impact: "scoped-change",
-				childScope: "child-a",
-				source: "batch_capability",
-			},
-		];
-		const batchDecision = authorizeEffect(
-			batch,
-			{ operation: "commit", target: "child-a", impact: "scoped-change", childScope: "child-a" },
-			undefined,
-		);
-		expect(batchDecision.authorized).toBe(true);
-		expect(batchDecision.reason).toContain("scope-bounded child");
-		// A batch capability is bounded to its own child, so a sibling child is refused.
-		const sibling = authorizeEffect(
-			batch,
-			{ operation: "commit", target: "child-a", impact: "scoped-change", childScope: "child-b" },
-			undefined,
-		);
-		expect(sibling.authorized).toBe(false);
-		expect(sibling.reason).toContain("bound to child child-a");
-		for (const operation of ["push", "publish"] as const) {
-			const decision = authorizeEffect(
-				batch,
-				{ operation, target: "child-a", impact: "scoped-change", childScope: "child-a" },
-				undefined,
-			);
-			expect(decision.authorized).toBe(false);
-		}
 	});
 
 	test("the same operation on another target or impact is not inherited", () => {

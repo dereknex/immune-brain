@@ -13,7 +13,6 @@
 	},
 	"include": [
 		"imm-canary-work.ts",
-		"imm-unattended-batch.ts",
 		"pi-canary-assurance-progression.ts"
 	]
 }

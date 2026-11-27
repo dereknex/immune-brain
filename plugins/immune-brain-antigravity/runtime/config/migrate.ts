@@ -18,7 +18,7 @@ const object = (v: unknown): v is Obj => v !== null && typeof v === "object" && 
 const V1_USER = "immune_brain/user_config/v1";
 const V1_PROJECT = "immune_brain/project_config/v1";
 /** Top-level keys no current contract reads; `--write` deletes them from either file. */
-const RETIRED_KEYS = ["herdr", "loop", "decision_models"] as const;
+const RETIRED_KEYS = ["herdr", "loop", "decision_models", "batch", "session_providers"] as const;
 
 /** The v1 roles each v2 role takes its value from, first bound wins. */
 const ROLE_SOURCES: Record<AgentRole, readonly string[]> = {
@@ -124,9 +124,8 @@ export function migrateConfig(root: string, options: { userConfigPath?: string; 
 			return [name, rest];
 		})) };
 	}
-	// The retired `herdr` switch is never written: a v1 transport that chose Herdr tabs simply migrates
-	// to the `session_providers` default, and `--write` deletes a stored `herdr` key (handled below).
-	if (herdrRequested(v1Profiles, [lanes, ...Object.values(laneProfiles), p.lanes ?? {}])) notes.push("a v1 transport chose herdr: the herdr switch is retired, session_providers defaults to [herdr]");
+	// The retired `herdr` switch is never written, and `--write` deletes a stored `herdr` key (handled below).
+	if (herdrRequested(v1Profiles, [lanes, ...Object.values(laneProfiles), p.lanes ?? {}])) notes.push("a v1 transport chose herdr: the herdr switch and Lane sessions are retired, so it is not migrated");
 	const rolesFor = (active: string | undefined, laneActive: string | undefined, flatLane: Obj): Partial<Record<AgentRole, unknown>> => {
 		if (Object.keys(agents).length) return presetRoles(agents, active ?? "default", notes);
 		const lane = laneActive && object(laneProfiles[laneActive]) ? laneProfiles[laneActive] : flatLane;
@@ -142,14 +141,6 @@ export function migrateConfig(root: string, options: { userConfigPath?: string; 
 		for (const [role, value] of Object.entries(projectRoles)) if (JSON.stringify(value) !== JSON.stringify(userRoles[role as AgentRole])) (projectAfter.agents ??= {})[role] = value;
 	}
 
-	// batch.max_parallel
-	const presetParallel = (name: string | undefined) => name && agents.presets?.[name]?.max_parallel;
-	const userParallel = presetParallel(agents.active ?? "default") ?? (lanes.active ? laneProfiles[lanes.active]?.max_parallel : undefined);
-	if (userParallel !== undefined) (userAfter.batch ??= {}).max_parallel = userParallel;
-	const projectParallel = presetParallel(projectActive) ?? (projectLaneActive ? laneProfiles[projectLaneActive]?.max_parallel : undefined) ?? projectFlat.max_parallel;
-	if (projectParallel !== undefined && projectParallel !== userParallel) (projectAfter.batch ??= {}).max_parallel = projectParallel;
-	if (object(p.batch) && p.batch.final_verification !== undefined) (projectAfter.batch ??= {}).final_verification = p.batch.final_verification;
-
 	// Plain keys keep their layer.
 	for (const k of ["git_integration", "initiative_carrier", "review_verifier"] as const) {
 		if (u[k] !== undefined) userAfter[k] = u[k];
@@ -161,7 +152,8 @@ export function migrateConfig(root: string, options: { userConfigPath?: string; 
 
 	// Retired top-level keys are never carried into the migrated files: `--write` deletes them,
 	// preserving every other key verbatim. `loop` and `decision_models` retired with the
-	// in-repo Loop daemon (ADR 0043), so v1 values for them are not migrated either.
+	// in-repo Loop daemon, and `batch` and `session_providers` with the unattended batch
+	// (ADR 0043), so v1 values for them are not migrated either.
 	for (const [label, after] of [...(userMigrated ? [] : [["user", userAfter] as const]), ["project", projectAfter] as const]) {
 		for (const retired of RETIRED_KEYS) if (Object.hasOwn(after, retired)) {
 			delete after[retired];

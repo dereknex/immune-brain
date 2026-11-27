@@ -15,14 +15,9 @@ import {
 	type EnrollmentConfirmationInput,
 	verifyEnrollmentConfirmation,
 } from "./enrollment_authority";
-import type {
-	BatchAuthorityRegistry,
-	BatchAuthorizationBinding,
-} from "./batch_authority";
 import type { BackendClaim } from "./backend_claim";
-import { assertBatchLineageOrigin } from "./batch_authority";
 import { preparePiCanary, readGitHead } from "./pi_canary_prepare";
-import { dirtyScopePaths, dirtyWorkspacePaths, writeEnrollmentBaseline } from "../workspace_scope";
+import { dirtyWorkspacePaths, writeEnrollmentBaseline } from "../workspace_scope";
 import { enrollmentRequestDigest } from "./run_identity";
 import {
 	commitEnrollmentLocked,
@@ -35,19 +30,6 @@ import {
 } from "./storage";
 import type { TaskIntentV1, TaskRecord, TaskRecordV4, WorkspaceStateLike } from "./types";
 
-/**
- * Present only for a batch-derived enrollment. The child slot is consumed
- * inside the same store lock as the TaskRecord write and released again if that
- * write does not commit, so a consumed slot and a TaskRecord always agree.
- */
-export interface EnrollBatchContext {
-	registry: BatchAuthorityRegistry;
-	capability: object;
-	binding: BatchAuthorizationBinding;
-	/** base_head, then each commit this batch created on its own branch. */
-	expected_head: string;
-}
-
 export interface EnrollCanaryInput {
 	task_id: string;
 	intent_path: string;
@@ -55,13 +37,6 @@ export interface EnrollCanaryInput {
 	preparation_digest: string;
 	capability: object;
 	capability_binding: EnrollmentCapabilityBinding;
-	batch?: EnrollBatchContext;
-	/**
-	 * The in-scope paths the confirmed Enrollment gate listed as already staged,
-	 * modified or untracked. Only these are claimed as task work; absent means
-	 * the gate listed none, so any in-scope dirt refuses the Enrollment.
-	 */
-	disclosed_scope_paths?: readonly string[];
 	/**
 	 * How this Enrollment was confirmed. Absent is the interactive
 	 * `user_session` gate; the unattended sources are decided by the membrane
@@ -69,26 +44,6 @@ export interface EnrollCanaryInput {
 	 */
 	confirmation?: EnrollmentConfirmationInput;
 	now: string;
-}
-
-/**
- * What an Enrollment gate must show about a scope that is already dirty: the
- * paths, and the one line both Hosts print for them. A scope that cannot be
- * inspected discloses nothing, and the Enrollment itself reports why.
- */
-export function enrollmentScopeDisclosure(root: string, taskId: string): { paths: string[]; notice: string | null } {
-	let paths: string[] = [];
-	try {
-		paths = dirtyScopePaths(root, readTaskIntent(root, taskId).intent.scope_hint, taskId);
-	} catch {
-		return { paths: [], notice: null };
-	}
-	return {
-		paths,
-		notice: paths.length === 0
-			? null
-			: `In-scope changes that already exist (${paths.length}) and become task work on confirmation: ${paths.join(", ")}`,
-	};
 }
 
 /**
@@ -122,10 +77,6 @@ export class EnrollmentRehearsalError extends Error {
  */
 export interface EnrollmentEntryRequest {
 	binding: EnrollmentCapabilityBinding;
-	/** Present only for a batch-derived child enrollment. */
-	batch?: EnrollBatchContext;
-	/** The in-scope paths the confirmed gate listed; see `EnrollCanaryInput`. */
-	disclosed_scope_paths?: readonly string[];
 	/** See `EnrollCanaryInput`; absent means the interactive `user_session` gate. */
 	confirmation?: EnrollmentConfirmationInput;
 	now: string;
@@ -272,26 +223,16 @@ function runEnrollmentPreconditionChecks<T>(
 		} catch (error) {
 			fail(`git base: ${error instanceof Error ? error.message : String(error)}`, error);
 		}
-		// Single tasks start clean apart from planning; batch children keep their
-		// confirmed Lane disclosure. Check before spending either capability.
+		// A task starts clean apart from its own planning artifacts. Check before
+		// spending the capability.
 		if (intent && gitBaseHead) {
 			try {
-				if (!input.batch) {
-					const binding = inspectSpecBinding(intent.intent);
-					claimedScopePaths = [input.intent_path, ...(binding.ok && binding.binding ? [binding.binding.active] : [])];
-					const dirty = singleTaskEnrollmentDirt(root, input.intent_path, intent.intent);
-					if (dirty.length > 0) {
-						const message = `workspace_not_clean: ${dirty.join(", ")}`;
-						fail(message, new Error(message));
-					}
-				} else {
-					const disclosed = new Set(input.disclosed_scope_paths ?? []);
-					const dirty = dirtyScopePaths(root, intent.intent.scope_hint, input.task_id);
-					const unlisted = dirty.filter((path) => !disclosed.has(path));
-					if (unlisted.length > 0) {
-						const message = `task scope is already dirty before Enrollment: ${unlisted.join(", ")}; the confirmed Enrollment gate did not list these paths, so enroll again from the Host to review them`;
-						fail(message, new Error(message));
-					} else claimedScopePaths = dirty;
+				const binding = inspectSpecBinding(intent.intent);
+				claimedScopePaths = [input.intent_path, ...(binding.ok && binding.binding ? [binding.binding.active] : [])];
+				const dirty = singleTaskEnrollmentDirt(root, input.intent_path, intent.intent);
+				if (dirty.length > 0) {
+					const message = `workspace_not_clean: ${dirty.join(", ")}`;
+					fail(message, new Error(message));
 				}
 			} catch (error) {
 				fail(`scope: ${error instanceof Error ? error.message : String(error)}`, error);
@@ -436,7 +377,7 @@ export async function enrollTask(
 	registry: EnrollmentAuthorityRegistry,
 	request: EnrollmentEntryRequest,
 ): Promise<EnrollCanaryResult | EnrollmentEntryOutcome> {
-	const { binding, batch, now, checkpoint, disclosed_scope_paths, confirmation } = request;
+	const { binding, now, checkpoint, confirmation } = request;
 	// (1) Issue the capability for the supplied binding.
 	const capability = registry.issue(binding);
 	const input: EnrollCanaryInput = {
@@ -446,8 +387,6 @@ export async function enrollTask(
 		preparation_digest: binding.preparation_digest,
 		capability,
 		capability_binding: binding,
-		...(batch ? { batch } : {}),
-		...(disclosed_scope_paths ? { disclosed_scope_paths } : {}),
 		...(confirmation ? { confirmation } : {}),
 		now,
 	};
@@ -529,13 +468,7 @@ export function enrollCanaryTask(
 		};
 
 	let gitBaseHead: string | null = null;
-	// The batch child slot is consumed with the capability and handed back when
-	// the enrollment call fails. The commit happens at the outer store
-	// transaction, so any throw from this call means nothing was committed and
-	// the release has to wrap the whole call rather than only the record write.
-	let consumed = false;
-	try {
-		return runEnrollmentPreconditionChecks(
+	return runEnrollmentPreconditionChecks(
 			root,
 			input,
 		input.capability,
@@ -570,36 +503,8 @@ export function enrollCanaryTask(
 			if (checks.gitBaseHead !== gitBaseHead)
 				throw new Error("Git HEAD moved after the enrollment confirmation");
 
-			// A batch-derived enrollment must still stand on the lineage the
-			// literal user confirmed: child N's base is the commit child N-1
-			// produced on the batch branch, and child 1's base is base_head or a
-			// fast-forward of it the runner adopted.
-			// expected_head is caller-supplied, so anchor its origin here rather
-			// than trusting the caller's own assertion: before this batch has
-			// consumed any slot it has created no commit, so the only lineage
-			// value it can hold descends from the confirmed base_head.
-			if (input.batch) {
-				const batch = input.batch.registry.inspect(
-					input.batch.capability,
-					input.batch.binding,
-				);
-				if (input.batch.registry.consumedChildren(input.batch.capability).length === 0)
-					assertBatchLineageOrigin(root, batch.base_head, input.batch.expected_head);
-				if (checks.gitBaseHead !== input.batch.expected_head)
-					throw new Error(
-						`batch_head_lineage_broken: expected ${input.batch.expected_head}, found ${checks.gitBaseHead}`,
-					);
-			}
-
 			// consume immediately before the store transaction
 			registry.consume(input.capability, input.capability_binding);
-			consumed = true;
-			if (input.batch)
-				input.batch.registry.consumeChild(
-					input.batch.capability,
-					input.batch.binding,
-					input.task_id,
-				);
 
 			// Set by beforeLock above, which throws when the repository has no
 			// committed HEAD. Re-assert it here: the compiler cannot carry a
@@ -635,7 +540,7 @@ export function enrollCanaryTask(
 				claim as unknown as Record<string, unknown>,
 				digest,
 			);
-			writeEnrollmentBaseline(root, checks.claimedScopePaths, !input.batch);
+			writeEnrollmentBaseline(root, checks.claimedScopePaths, true);
 			return {
 				record: mutation.record,
 				backend_claim: claim,
@@ -643,28 +548,4 @@ export function enrollCanaryTask(
 			};
 			},
 		);
-	} catch (error) {
-		// A child slot is released only when the enrollment provably did not
-		// commit. The envelope can also fail *after* the Kernel transaction
-		// committed — a follow-up transaction that cannot start, for example —
-		// and releasing then would leave the batch view ahead of an owner the
-		// Kernel already recorded. The committed run decides, not the throw.
-		const ownership = (() => {
-			try {
-				return {
-					known: true,
-					owned:
-						reconcileKernelAuthority(root, input.task_id).owner_task_id === input.task_id,
-				};
-			} catch {
-				return { known: false, owned: false };
-			}
-		})();
-		// Unknown is not "not committed". When the store cannot be read the slot
-		// stays consumed, so the batch view never runs ahead of a run that may
-		// exist, and the operator reconciles from the Kernel's own state.
-		if (consumed && input.batch && ownership.known && !ownership.owned)
-			input.batch.registry.releaseChild(input.batch.capability, input.task_id);
-		throw error;
-	}
 }

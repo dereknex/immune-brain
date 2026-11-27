@@ -143,19 +143,18 @@ describe("pi canary package boundary", () => {
 			if (!isSequencerOrPort && (usesRehearsal || usesCommit))
 				sequencers.push(`${name}:${usesRehearsal ? "rehearsal" : ""}${usesCommit ? "commit" : ""}`);
 		}
-		// The Host in-place Enrollment tools are retired (drive-always-lanes D1,
-		// D2). The production callers are the shared Batch child Kernel port and
-		// the default-off external approval CLI seam (ADR 0043 Slice 2).
+		// The production callers are the shared in-place HostRuntime.enroll
+		// (retire-unattended-batch S2) and the default-off external approval CLI
+		// seam (ADR 0043 Slice 2).
 		expect([...entryCalls].sort()).toEqual([
 			"runtime/commands/kernel.ts",
-			"runtime/unattended/batch_kernel_port.ts",
+			"runtime/host-core/runtime.ts",
 		]);
-		// Both Hosts' batch children reach the entry only through that port:
-		// HostRuntime constructs the shared port, and Pi batch delegates through PiRuntime.
+		// Pi reaches the entry only through HostRuntime: PiRuntime wraps it and
+		// imports no entry of its own.
 		const sources = new Map(productionSources());
-		expect(sources.get("runtime/host-core/runtime.ts")).toMatch(/\bcreateBatchKernelPort\s*\(/);
-		expect(sources.get("imm-unattended-batch.ts")).toMatch(/\bPiRuntime\b/);
-		expect(importsEntry(sources.get("imm-unattended-batch.ts") ?? "")).toBe(false);
+		expect(sources.get("pi-host-runtime.ts")).toMatch(/new HostRuntime\(/);
+		expect(importsEntry(sources.get("pi-host-runtime.ts") ?? "")).toBe(false);
 		expect(sequencers).toEqual([]);
 		// Negative controls: a source that calls both primitives outside the entry
 		// is flagged, and a caller that calls the entry is counted.

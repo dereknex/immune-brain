@@ -4,7 +4,6 @@ import { writeTestReviewPacket } from "./helpers/review-packet-fixture";
 import { reviewerTranscripts } from "./helpers/claude-reviewer-transcript";
 import type { VerdictAuthority } from "../plugins/immune-brain/runtime/assurance/verdict_authority";
 import { execFileSync, spawnSync } from "node:child_process";
-import { prepareBatchRunState, prepareBatchLaneRunState, writeBatchRunReport, type BatchRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
 import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { PassThrough } from "node:stream";
@@ -1133,55 +1132,6 @@ describe("hook entry writes only for active work", () => {
 		expectEvents(makeResolveFindingRoot(false), true);
 	});
 
-	for (const batch_state of ["prepared", "running", "needs_human", "completed", "budget_stopped", "failed", "rejected", "superseded"] satisfies BatchRunState[]) {
-		for (const mode of ["serial", "lane"] as const) {
-			test(`${mode} batch ${batch_state} ${["prepared", "running", "needs_human"].includes(batch_state) ? "preserves" : "suppresses"} observation events`, () => {
-				const root = fixture();
-				const input = {
-					batch_id: "hook-batch", initiative_slug: "hook-work",
-					children: [{ task_id: "hook-child", slice_id: "S1", blocked_by: [], status: "enrollable" as const, reason: null, intent_path: null, intent_revision: null, intent_content_hash: null }],
-					plan_digest: "sha256:plan", base_head: "a".repeat(40),
-					confirmation_time: RESOLVE_NOW, now: RESOLVE_NOW,
-					budget: { max_children: 1, qa_failure_limit: 1 },
-				};
-				const record = mode === "serial" ? prepareBatchRunState(input) : prepareBatchLaneRunState({ ...input, max_parallel: 2 });
-				record.batch_state = batch_state;
-				if (batch_state === "completed") {
-					record.children[0]!.state = mode === "serial" ? "committed" : "released";
-					record.children[0]!.commit = "b".repeat(40);
-					record.commits = ["b".repeat(40)];
-					const child = record.children[0]!;
-					if ("lane" in child) child.lane = { path: root, branch: "imm/hook-child", base_head: "a".repeat(40), lane_commit: "b".repeat(40) };
-				}
-				const dir = join(root, ".imm", "state", "batches");
-				mkdirSync(dir, { recursive: true });
-				writeFileSync(join(dir, "hook-batch.json"), `${JSON.stringify(record, null, 2)}\n`);
-				expectEvents(root, ["prepared", "running", "needs_human"].includes(batch_state));
-			});
-		}
-	}
-
-	test("terminal batch reports do not mask a live batch or create idle writes", () => {
-		const root = fixture();
-		const dir = join(root, ".imm", "state", "batches");
-		mkdirSync(dir, { recursive: true });
-		const input = {
-			batch_id: "a-old", initiative_slug: "hook-work",
-			children: [{ task_id: "hook-child", slice_id: "S1", blocked_by: [], status: "enrollable" as const, reason: null, intent_path: null, intent_revision: null, intent_content_hash: null }],
-			plan_digest: "sha256:plan", base_head: "a".repeat(40),
-			confirmation_time: RESOLVE_NOW, now: RESOLVE_NOW,
-			budget: { max_children: 1, qa_failure_limit: 1 },
-		};
-		const old = prepareBatchRunState(input);
-		old.batch_state = "superseded";
-		writeFileSync(join(dir, "a-old.json"), `${JSON.stringify(old, null, 2)}\n`);
-		writeBatchRunReport(root, { contract: "assurance_kernel/batch_run_report/v1", batch_id: "a-old", batch_state: "superseded" });
-		expectEvents(root, false);
-		const live = prepareBatchRunState({ ...input, batch_id: "z-live" });
-		writeFileSync(join(dir, "z-live.json"), `${JSON.stringify(live, null, 2)}\n`);
-		expectEvents(root, true);
-	});
-
 	test("UserPromptSubmit retains the active task notice", () => {
 		const root = makeResolveFindingRoot(false);
 		const store = fixture();
@@ -1204,9 +1154,9 @@ describe("hook entry writes only for active work", () => {
 		expect(result.stderr).toBe("");
 		expect(phaseEntryGateHookOutput({
 			hook_event_name: "PreToolUse", cwd: root, session_id: "hook-work-session",
-			tool_name: "mcp__plugin_immune-brain_immune-brain__start_unattended_batch", tool_use_id: "hook-entry-admission",
+			tool_name: "mcp__plugin_immune-brain_immune-brain__enroll", tool_use_id: "hook-entry-admission",
 		}, { root: store })).toBeNull();
-		expect(consumePhaseAdmission("hook-entry-admission", "start_unattended_batch", store)).toMatchObject({ entry_token: expect.any(String) });
+		expect(consumePhaseAdmission("hook-entry-admission", "enroll", store)).toMatchObject({ entry_token: expect.any(String) });
 	});
 });
 
@@ -1411,9 +1361,9 @@ describe("claude host resolve_finding", () => {
 		expect(recordBytes(root)).toBe(original);
 	});
 
-	test("the pre-existing tools and the privileged set include start_unattended_batch", () => {
-		// resolve_finding and start_unattended_batch are additive, so no existing client sees a
-		// reordered or re-annotated surface for prior tools.
+	test("the tool surface and the privileged set carry no batch operation", () => {
+		// resolve_finding is additive, so no existing client sees a reordered or
+		// re-annotated surface for prior tools; the batch tools are retired (ADR 0043).
 			expect(listMcpTools().map((tool) => tool.name)).toEqual([
 				"status",
 				"advance_assurance",
@@ -1424,8 +1374,6 @@ describe("claude host resolve_finding", () => {
 				"revise_intent",
 				"approve_breaking_intent_revision",
 				"stop",
-				"start_unattended_batch",
-				"retire_stale_batch",
 				"repair_authority_state",
 				"resolve_finding",
 				"refute_finding",
@@ -1437,15 +1385,13 @@ describe("claude host resolve_finding", () => {
 				"request_authorization",
 				"approve_breaking_intent_revision",
 				"stop",
-				"start_unattended_batch",
-				"retire_stale_batch",
 			]);
 			const submitReview = listMcpTools().find((tool) => tool.name === "submit_review");
 			expect(submitReview?.inputSchema.required).toEqual(["task_id"]);
 			const submitVerification = listMcpTools().find((tool) => tool.name === "submit_verification");
 			expect(submitVerification?.inputSchema.required).toEqual(["task_id"]);
 			expect(submitVerification?.inputSchema.properties).toHaveProperty("result");
-			for (const name of ["request_authorization", "approve_breaking_intent_revision", "stop", "start_unattended_batch", "retire_stale_batch"]) {
+			for (const name of ["request_authorization", "approve_breaking_intent_revision", "stop"]) {
 				expect(listMcpTools().find((tool) => tool.name === name)?.annotations).toEqual({ destructiveHint: true });
 			}
 	});

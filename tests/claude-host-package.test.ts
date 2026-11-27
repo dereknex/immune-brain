@@ -124,14 +124,16 @@ describe("claude host package", () => {
       );
     for (const tool of [
       "Skill",
-      "mcp__plugin_immune-brain_immune-brain__start_unattended_batch",
-      "Edit",
+      "mcp__plugin_immune-brain_immune-brain__enroll",
       "Agent",
       "mcp__plugin_immune-brain_immune-brain__status",
       "mcp__plugin_immune-brain_immune-brain__advance_assurance",
     ]) expect({ tool, routed: routed(tool) }).toEqual({ tool, routed: true });
     for (const tool of [
       "mcp__other__enroll",
+      // The Lane edit guard retired with the batch (retire-unattended-batch), so file edits are not routed.
+      "Edit",
+      "Write",
       "Bash",
     ]) expect({ tool, routed: routed(tool) }).toEqual({ tool, routed: false });
     // The entry itself is recorded from every literal prompt.
@@ -266,8 +268,6 @@ describe("claude host package", () => {
       "revise_intent",
       "approve_breaking_intent_revision",
       "stop",
-      "start_unattended_batch",
-      "retire_stale_batch",
       "repair_authority_state",
       "resolve_finding",
       "refute_finding",
@@ -479,9 +479,9 @@ describe("claude host package", () => {
   });
 
   it("does not fork the public Skill contracts", () => {
-    // `drive-batch.md` is the batch, Lane and Herdr half of the drive
-    // contract, loaded by anchor from the drive Skill; it is not a Skill.
-    const companions = ["drive-batch.md"];
+    // The batch, Lane and Herdr companion `drive-batch.md` retired with the
+    // batch (retire-unattended-batch), so every packaged contract is a Skill.
+    const companions: string[] = [];
     // BASELINE.md is the shared guard document every Skill loads; it is not a Skill.
     const dist = readdirSync(resolve(PLUGIN_ROOT, "dist")).filter((name) => name.endsWith(".md") && name !== "BASELINE.md");
     expect(dist.sort()).toEqual([...SKILLS.map((name) => `${name}.md`), ...companions].sort());

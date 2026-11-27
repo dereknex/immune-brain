@@ -20,7 +20,6 @@ import { fileURLToPath } from "node:url";
 import { resolveConfig, type ReviewProfile } from "../config/layered_config";
 import { agentRole, type AgentsSection } from "../config/agent_roles";
 import { runtimeClaudePluginDir } from "../plugin_source_skew";
-import { laneBatchReviewProfile } from "../unattended/batch_state";
 import { allocateResultSlot, isStrictJsonObject, readSlotResult, releaseResultSlot, type ResultSlot } from "../session_result_slot";
 import {
 	ReviewPreparationError,
@@ -163,13 +162,10 @@ function shellQuote(value: string): string {
 }
 
 /**
- * The Review profile this task's round runs on: the Lane batch's recorded host,
- * model and effort (#426 F14), else the resolved `code-review` role (Spec
+ * The Review profile this task's round runs on: the resolved `code-review` role (Spec
  * loop-agent-scheduling D1). The only transport a round runs on is Herdr (D3).
  */
 export function resolveReviewProfile(root: string): ReviewProfile | null {
-	const batch = laneBatchReviewProfile(root);
-	if (batch) return { ...batch, transport: "herdr" };
 	return agentReviewProfile(resolveConfig(root).agents);
 }
 
@@ -413,11 +409,7 @@ export class CliReviewHost implements AssuranceHostPort {
 		if (!request.root) throw new Error("CLI Review requires the task's working directory");
 		const root: string = request.root;
 		const config = resolveConfig(root);
-		// A Lane Review runs on the profile its batch fixed at confirmation, so a
-		// request-selected Lane profile reaches Review (#426 F14).
-		const batch = request.profile ? null : laneBatchReviewProfile(root);
-		const configured = request.profile || batch ? null : agentReviewProfile(config.agents);
-		const profile = request.profile ?? (batch ? { ...batch, transport: "herdr" } : configured);
+		const profile = request.profile ?? agentReviewProfile(config.agents);
 		const agentErrors = config.diagnostics.filter((item) => item.severity === "error" && isAgentKeyPath(item.key_path));
 		if (!profile) {
 			// D1: the user's own `agents` table is why nothing resolved, so name it.

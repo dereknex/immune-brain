@@ -1,8 +1,13 @@
 ---
-status: accepted
+status: superseded by ADR-0043
 ---
 
 # Optional Parallel Batch Lanes
+
+Superseded by [ADR 0043](0043-loop-daemon-freeze-and-extraction.md) Slice 3
+(`retire-unattended-batch`): the unattended batch, its Lanes and `start_unattended_batch`
+/ `retire_stale_batch` are removed from every Host, and the `batch.max_parallel` and `session_providers` configuration keys are retired. The decision below is preserved
+as historical context; multi-task orchestration belongs to the standalone Loop.
 
 Accepted when Slice S2 of `docs/specs/parallel-batch-lanes.spec.md` settled.
 It is opt-in: a batch started without `max_parallel` is the serial run ADR 0005

@@ -1,11 +1,11 @@
 // Pi phase entry gate (ADR 0019, Spec explicit-phase-entry T3). The registered
-// `input` handler records literal entries; `start_unattended_batch` and
-// `retire_stale_batch` refuse before the authority dialog without a live
-// drive entry. Every case drives the registered handler and Tool `execute`.
+// `input` handler records literal entries; in-place `enroll` refuses before
+// the authority dialog without a live drive entry. Every case drives the
+// registered handler and Tool `execute`.
 
 import { afterAll, beforeAll, describe, expect, mock, test } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -36,15 +36,12 @@ afterAll(() => mock.restore());
 
 const { default: registerPiWork } = await import("../plugins/immune-brain/.pi-extension/imm-canary-work");
 const { enrollTaskForTest } = await import("./helpers/kernel-enroll");
-const { default: registerPiBatch } = await import("../plugins/immune-brain/.pi-extension/imm-unattended-batch");
 const { PHASE_ENTRY_RECOVERY, RUN_ENTRY_REQUIRED } = await import("../plugins/immune-brain/runtime/assurance/phase_entry");
 const { readBackendClaim } = await import("../plugins/immune-brain/runtime/kernel/backend_claim");
 const { revokePiPhaseEntry } = await import("../plugins/immune-brain/.pi-extension/imm-canary-work");
-const { batchStatePath } = await import("../plugins/immune-brain/runtime/kernel/storage_paths");
 const { readRunRowByTask, updateRunRecord, withKernelTransaction } = await import("../plugins/immune-brain/runtime/kernel/sqlite_store");
 
 const TASK = "phase-entry-child";
-const SLUG = "phase-entry-init";
 const roots: string[] = [];
 let agentDir = "";
 let previousAgentDir: string | undefined;
@@ -76,7 +73,7 @@ function git(root: string, ...args: string[]): string {
 	return execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
 }
 
-/** A committed routine TaskIntent that the batch start can prepare up to its dialog. */
+/** A committed routine TaskIntent that enroll can prepare up to its dialog. */
 function fixtureRoot(): string {
 	const root = mkdtempSync(join(tmpdir(), "pi-phase-entry-"));
 	roots.push(root);
@@ -108,7 +105,7 @@ function fixtureRoot(): string {
 	return root;
 }
 
-/** One Pi session: the three real extensions behind one fake Host. */
+/** One Pi session: the real extension behind one fake Host. */
 function stableIdentity(): { getSessionId: () => string } {
 	const id = `session-${randomUUID()}`;
 	return { getSessionId: () => id };
@@ -133,12 +130,6 @@ function session(root: string, identity: { getSessionId?: () => unknown } | null
 		events: { on() {}, emit() {} },
 	} as never;
 	registerPiWork(pi);
-	registerPiBatch(pi, { readInitiative: async () => ({
-		contract: "immune_brain/github_initiative_observation/v1",
-		initiative_id: SLUG,
-		issue_number: 100,
-		tasks: [{ task_id: TASK, slice_id: "S1", issue_number: 101, blocked_by: [] }],
-	}) as never });
 	// Each dialog takes the next queued answer, then declines.
 	const dialogs = { count: 0, answers: [] as string[] };
 	const ctx = {
@@ -175,41 +166,8 @@ function session(root: string, identity: { getSessionId?: () => unknown } | null
 		shutdown: () => emit("session_shutdown", { type: "session_shutdown" }),
 		settle: (outcome: string, canContinue: boolean) => emit("agent_before_settle", { type: "agent_before_settle", outcome, continue: false,
 			context: { canContinue, pendingMessages: [] } }),
-		batch: () => failureOf(tool("start_unattended_batch").execute(randomUUID(), { initiative_slug: SLUG, final_verification: ["bun test"] }, undefined, undefined, ctx)),
-		retire: () => failureOf(tool("retire_stale_batch").execute("toolu_retire", { initiative_slug: SLUG }, undefined, undefined, ctx)),
 		enroll: () => failureOf(tool("imm_kernel_canary").execute(randomUUID(), { task_id: TASK, action: { op: "enroll" } }, undefined, undefined, ctx)),
 		authorize: () => failureOf(tool("imm_kernel_canary").execute(randomUUID(), { task_id: TASK, action: { op: "request_authorization" } }, undefined, undefined, ctx)),
-	};
-}
-
-const STALE_BATCH = `batch-${SLUG}-0123abcd`;
-const STALE_DIGEST = `sha256:${"c".repeat(64)}`;
-
-/** A parked serial batch record for the Initiative: retirable, nothing in flight. */
-function staleBatch(root: string): { bytes: () => Buffer; report: () => any } {
-	const head = git(root, "rev-parse", "HEAD");
-	const path = join(root, batchStatePath(STALE_BATCH));
-	mkdirSync(join(root, ".imm", "state", "batches"), { recursive: true });
-	writeFileSync(path, `${JSON.stringify({
-		contract: "assurance_kernel/batch_run_state/v1",
-		batch_id: STALE_BATCH,
-		initiative_slug: SLUG,
-		base_head: head,
-		branch: `imm/${SLUG}`,
-		plan_digest: STALE_DIGEST,
-		confirmation_time: "2026-10-01T00:00:00.000Z",
-		batch_state: "needs_human",
-		children: [{ task_id: TASK, slice_id: "S1", state: "pending", commit: null, blocked_by: [], reason: null }],
-		commits: [],
-		consecutive_qa_failures: 0,
-		budget: { max_children: 1, qa_failure_limit: 2 },
-		created_at: "2026-10-01T00:00:00.000Z",
-		updated_at: "2026-10-01T00:00:00.000Z",
-	}, null, 2)}\n`);
-	const reportPath = join(root, ".imm", "state", "batches", `${STALE_BATCH}.report.json`);
-	return {
-		bytes: () => readFileSync(path),
-		report: () => existsSync(reportPath) ? JSON.parse(readFileSync(reportPath, "utf8")) : null,
 	};
 }
 
@@ -220,12 +178,12 @@ const REFUSED = {
 };
 
 describe("Pi phase entry gate", () => {
-	test("a session with no drive entry refuses the batch start before the dialog and writes nothing", async () => {
+	test("a session with no drive entry refuses enroll before the dialog and writes nothing", async () => {
 		const root = fixtureRoot();
 		const pi = session(root);
 		const head = git(root, "rev-parse", "HEAD");
 
-		expect(await pi.batch()).toMatchObject({ ...REFUSED, message: "start_unattended_batch needs a literal-user drive entry in this session" });
+		expect(await pi.enroll()).toMatchObject({ ...REFUSED, message: "enroll needs a literal-user drive entry in this session" });
 
 		expect(pi.dialogs.count).toBe(0);
 		expect(readBackendClaim(root)).toBeNull();
@@ -238,7 +196,7 @@ describe("Pi phase entry gate", () => {
 		for (const text of ["确认", "confirm", "全部建议，然后 /skill:drive", "go ahead and run drive for S1", " /skill:drive", "/unknown-command", "/both",
 			"/imm-run", "/skill:imm-run", "/imm-loop", "/old", "/prose", "/driver"]) {
 			await pi.input(text);
-			expect(await pi.batch()).toMatchObject(REFUSED);
+			expect(await pi.enroll()).toMatchObject(REFUSED);
 		}
 		expect(pi.dialogs.count).toBe(0);
 	});
@@ -287,22 +245,22 @@ describe("Pi phase entry gate", () => {
 		await pi.input("/big");
 		expect(pi.dialogs.count).toBe(0);
 		await pi.input("/linked");
-		await pi.batch();
+		await pi.enroll();
 		expect(pi.dialogs.count).toBe(1);
 	});
 
 	test("an entry carried by extension-sourced input is not the user's", async () => {
 		const pi = session(fixtureRoot());
 		expect(await pi.input("/skill:drive", "extension")).toEqual({ action: "continue" });
-		expect(await pi.batch()).toMatchObject(REFUSED);
+		expect(await pi.enroll()).toMatchObject(REFUSED);
 		expect(pi.dialogs.count).toBe(0);
 	});
 
 	for (const entry of ["/skill:drive", `/skill:drive ${TASK}`, "/drive", "/loop", `/loop ${TASK}`]) {
-		test(`the literal entry ${JSON.stringify(entry)} lets the batch start reach its dialog`, async () => {
+		test(`the literal entry ${JSON.stringify(entry)} lets enroll reach its dialog`, async () => {
 			const pi = session(fixtureRoot());
 			expect(await pi.input(entry)).toEqual({ action: "continue" });
-			const failure = await pi.batch();
+			const failure = await pi.enroll();
 			expect(pi.dialogs.count).toBe(1);
 			expect(failure.code).not.toBe(RUN_ENTRY_REQUIRED);
 		});
@@ -313,7 +271,7 @@ describe("Pi phase entry gate", () => {
 		await pi.input("/skill:drive");
 		await pi.input("continue S2");
 		await pi.input("继续");
-		await pi.batch();
+		await pi.enroll();
 		expect(pi.dialogs.count).toBe(1);
 	});
 
@@ -322,11 +280,11 @@ describe("Pi phase entry gate", () => {
 			const pi = session(fixtureRoot());
 			await pi.input("/skill:drive");
 			await pi.input(plan);
-			expect(await pi.batch()).toMatchObject(REFUSED);
+			expect(await pi.enroll()).toMatchObject(REFUSED);
 			expect(pi.dialogs.count).toBe(0);
 
 			await pi.input("/skill:drive");
-			await pi.batch();
+			await pi.enroll();
 			expect(pi.dialogs.count).toBe(1);
 		});
 	}
@@ -337,13 +295,13 @@ describe("Pi phase entry gate", () => {
 		await entered.input("/skill:drive");
 
 		const other = session(root);
-		expect(await other.batch()).toMatchObject(REFUSED);
+		expect(await other.enroll()).toMatchObject(REFUSED);
 		expect(other.dialogs.count).toBe(0);
 
 		for (const identity of [null, {}, { getSessionId: () => "" }, { getSessionId: () => { throw new Error("no session"); } }]) {
 			const anonymous = session(root, identity as never);
 			await anonymous.input("/skill:drive");
-			expect(await anonymous.batch()).toMatchObject(REFUSED);
+			expect(await anonymous.enroll()).toMatchObject(REFUSED);
 			expect(anonymous.dialogs.count).toBe(0);
 		}
 	});
@@ -353,31 +311,12 @@ describe("Pi phase entry gate", () => {
 		const copy = await import(`../plugins/immune-brain/.pi-extension/imm-canary-work.ts?copy=${randomUUID()}`);
 		const identity = stableIdentity();
 		const root = fixtureRoot();
-		expect(copy.piRunEntryRefusal("start_unattended_batch", { cwd: root, sessionManager: identity })).toMatchObject({ reason_code: RUN_ENTRY_REQUIRED });
+		expect(copy.piRunEntryRefusal("enroll", { cwd: root, sessionManager: identity })).toMatchObject({ reason_code: RUN_ENTRY_REQUIRED });
 		const pi = session(root, identity);
 		await pi.input("/skill:drive");
-		expect(copy.piRunEntryRefusal("start_unattended_batch", { cwd: root, sessionManager: identity })).toBeNull();
+		expect(copy.piRunEntryRefusal("enroll", { cwd: root, sessionManager: identity })).toBeNull();
 	});
-	test("under a literal entry, the batch start opens one dialog, a decline claims nothing, and retirement opens none (ADR 0025)", async () => {
-		const root = fixtureRoot();
-		const pi = session(root);
-		await pi.input("/skill:drive");
-
-		await pi.batch();
-		expect(pi.dialogs.count).toBe(1);
-		expect(readBackendClaim(root)).toBeNull();
-
-		// The same live entry later retires a parked batch with no dialog.
-		const batch = staleBatch(root);
-		expect(await pi.retire()).toEqual({});
-		expect(pi.dialogs.count).toBe(1);
-		const report = batch.report();
-		expect(report?.batch_state).toBe("superseded");
-		expect(report?.retirement?.confirmation_ref).toMatch(/^pi-entry-[0-9a-f]{16}$/);
-		expect(report?.retirement?.plan_digest).toBe(STALE_DIGEST);
-	});
-
-	test("without a live entry token retirement refuses before any dialog and writes nothing", async () => {
+	test("without a live entry token enroll refuses before any dialog and claims nothing", async () => {
 		const cases: Array<[string, (root: string) => Promise<ReturnType<typeof session>>]> = [
 			["no prior entry", async (root) => session(root)],
 			["only extension-sourced input naming drive", async (root) => {
@@ -411,13 +350,10 @@ describe("Pi phase entry gate", () => {
 		];
 		for (const [name, make] of cases) {
 			const root = fixtureRoot();
-			const batch = staleBatch(root);
-			const before = batch.bytes();
 			const pi = await make(root);
-			expect({ name, failure: await pi.retire() }).toMatchObject({ name, failure: { ...REFUSED, message: "retire_stale_batch needs a literal-user drive entry in this session" } });
+			expect({ name, failure: await pi.enroll() }).toMatchObject({ name, failure: { ...REFUSED, message: "enroll needs a literal-user drive entry in this session" } });
 			expect({ name, dialogs: pi.dialogs.count }).toEqual({ name, dialogs: 0 });
-			expect(batch.bytes().equals(before)).toBe(true);
-			expect(batch.report()).toBeNull();
+			expect(readBackendClaim(root)).toBeNull();
 		}
 	});
 	test("a live entry token does not stand in for a rework-exit choice: its dialog still opens", async () => {

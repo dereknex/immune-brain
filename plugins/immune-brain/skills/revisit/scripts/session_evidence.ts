@@ -59,6 +59,7 @@ export const KERNEL_OPS = new Set([
 	"approve_breaking_intent_revision",
 	"stop",
 	"request_stop",
+	// Retired batch tools: kept so transcripts recorded before ADR 0043 still classify.
 	"start_unattended_batch",
 	"retire_stale_batch",
 	"repair_authority_state",

@@ -5,8 +5,9 @@ import { PACKAGED_CONTRACT_ENTRIES } from "../scripts/dist-sync-manifest.ts";
 
 /**
  * Contract-text conformance for the r647 ceremony trim, Slice S4: Delivery
- * Evidence is rework-only, and the batch, Lane and Herdr sections live in their
- * own packaged contract.
+ * Evidence is rework-only. The batch, Lane and Herdr sections it moved into
+ * their own packaged contract are retired with that contract
+ * (retire-unattended-batch).
  */
 
 const ROOT = resolve(import.meta.dir, "..");
@@ -22,6 +23,7 @@ function flat(rel: string): string {
 
 const LOOP = `${PLUGIN}/dist/drive.md`;
 const BATCH = `${PLUGIN}/dist/drive-batch.md`;
+const BATCH_MIRROR = "plugins/immune-brain-antigravity/dist/drive-batch.md";
 const LOADER = `${PLUGIN}/skills/drive/SKILL.md`;
 const EXECUTOR_SOURCE = `${PLUGIN}/runtime/prompts/executor.md`;
 const EXECUTOR_MIRROR = `${PLUGIN}/dist/role-prompts/executor.md`;
@@ -87,58 +89,43 @@ describe("Delivery Evidence is rework-only (CT-S4-A1)", () => {
 	});
 });
 
-describe("batch, Lane and Herdr sections live in their own contract (CT-S4-A3)", () => {
-	test("each section heading is in the batch contract exactly once and absent from the Loop contract", () => {
-		const batch = read(BATCH);
+describe("batch, Lane and Herdr sections are retired with their contract (retire-unattended-batch D4)", () => {
+	test("the batch contract is neither shipped nor routed from the drive Skill", () => {
+		expect(existsSync(resolve(ROOT, BATCH))).toBe(false);
+		expect(existsSync(resolve(ROOT, BATCH_MIRROR))).toBe(false);
+		expect(PACKAGED_CONTRACT_ENTRIES.find((candidate) => candidate.packaged === "drive-batch.md")).toBeUndefined();
+		expect(read(LOADER)).not.toContain("drive-batch.md");
+		expect(read(LOOP)).not.toContain("drive-batch.md");
+	});
+
+	test("no retired section heading or loader route survives in the Loop contract or loader", () => {
 		const loop = read(LOOP);
-		for (const heading of BATCH_HEADINGS) {
-			const pattern = new RegExp(`^#{2,6} ${heading}$`, "gm");
-			expect({ heading, inBatch: (batch.match(pattern) ?? []).length }).toEqual({ heading, inBatch: 1 });
-			expect({ heading, inLoop: (loop.match(pattern) ?? []).length }).toEqual({ heading, inLoop: 0 });
-		}
-	});
-
-	test("the batch contract is a packaged owned contract routed from the drive Skill", () => {
-		const entry = PACKAGED_CONTRACT_ENTRIES.find((candidate) => candidate.packaged === "drive-batch.md");
-		expect(entry?.kind).toBe("owned");
-		expect(entry?.source).toBeNull();
-		expect(entry?.skill).toBe("drive");
-		expect(read(LOADER)).toContain("../../dist/drive-batch.md#");
-	});
-
-	test("every loader route anchor resolves in the file that now holds it", () => {
 		const loader = read(LOADER);
 		for (const heading of BATCH_HEADINGS) {
-			expect(loader).toContain(`../../dist/drive-batch.md#${anchorOf(heading)}`);
-			expect(loader).not.toContain(`../../dist/drive.md#${anchorOf(heading)}`);
+			const pattern = new RegExp(`^#{2,6} ${heading}$`, "gm");
+			expect({ heading, inLoop: (loop.match(pattern) ?? []).length }).toEqual({ heading, inLoop: 0 });
+			expect({ heading, routed: loader.includes(`#${anchorOf(heading)}`) }).toEqual({ heading, routed: false });
 		}
-		expect(unresolvedLoopAnchors(loader, LOADER)).toEqual([]);
 	});
 
-	test("no Loop, batch or documentation link names an anchor that is not a heading of its target", () => {
+	test("no Loop or documentation link names an anchor that is not a heading of its target", () => {
 		for (const file of [
 			LOOP,
-			BATCH,
 			LOADER,
-			`${PLUGIN}/README.md`,
 			"docs/reference/immune-brain-config.md",
 			`${PLUGIN}/dist/docs/reference/immune-brain-config.md`,
 		]) {
 			expect(unresolvedLoopAnchors(read(file), file)).toEqual([]);
 		}
-		// The two documentation pages name the config anchor by path, not by link.
 		for (const file of ["docs/reference/immune-brain-config.md", `${PLUGIN}/dist/docs/reference/immune-brain-config.md`]) {
-			expect(read(file)).toContain("plugins/immune-brain/dist/drive-batch.md#lane-preferences");
-			expect(read(file)).not.toContain("plugins/immune-brain/dist/drive.md#lane-preferences");
+			expect(read(file)).not.toContain("drive-batch.md#lane-preferences");
 		}
 	});
 
-	test("the anchor check fails for a link into the file a section moved out of", () => {
+	test("the anchor check fails for a link into a retired section or contract", () => {
 		const stale = "see [Lane Preferences](../../dist/drive.md#lane-preferences)";
 		expect(unresolvedLoopAnchors(stale, LOADER)).toEqual([`${LOADER} -> ../../dist/drive.md#lane-preferences`]);
-	});
-
-	test("the Loop contract still states the supervision exception and links it in the batch contract", () => {
-		expect(flat(LOOP)).toContain("[Lane Executor Supervision](drive-batch.md#lane-executor-supervision)");
+		const retired = "see [Unattended Batch Opt-In](../../dist/drive-batch.md#unattended-batch-opt-in)";
+		expect(unresolvedLoopAnchors(retired, LOADER)).toEqual([`${LOADER} -> ../../dist/drive-batch.md#unattended-batch-opt-in`]);
 	});
 });

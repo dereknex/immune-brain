@@ -139,7 +139,7 @@ describe("kernel store import boundary (D6.2)", () => {
 		expect(isKernelInternal(join(pluginRoot, "runtime/kernel/enrollment.ts"))).toBe(true);
 		expect(importsStore(probe)).toBe(true);
 		expect(
-			isKernelInternal(join(pluginRoot, "runtime/unattended/batch_git.ts")) && importsStore(probe),
+			isKernelInternal(join(pluginRoot, "runtime/host-core/runtime.ts")) && importsStore(probe),
 		).toBe(false);
 		// The read surface that callers do use stays importable from the module.
 		expect(typeof readSettledTaskEvidence).toBe("function");

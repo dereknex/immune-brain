@@ -6,7 +6,7 @@
 //
 // Interface: `RunContinuationHost` (cache directory name, host display name,
 // and the Host's ADR 0025 phase-entry ports), `readSessionToolCall`,
-// `selectedParentSession`, `applyRunContinuationEvent`.
+// `applyRunContinuationEvent`.
 // Invariants: every continuation decision re-reads the Kernel; a private file
 // past `MAX_METADATA_BYTES` carries no metadata; a correlation recorded for one
 // workspace never answers another; a settled run or a lost bound identity spends its
@@ -21,14 +21,12 @@ import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { projectTaskStatus } from "../assurance/coordinator";
 import { readTaskRecordRaw } from "../kernel/storage";
-import { readAnyBatchRunState } from "../unattended/batch_state";
-import { bindRun, decideRunContinuation, hasContiguousLaneRebind, observeParentRun, scopedSourceDigest,
+import { bindRun, decideRunContinuation, scopedSourceDigest,
 	type ReviewContinuationState, type RunContinuationState } from "../assurance/run_continuation";
 import { digestOfReviewerBytes } from "../assurance/review_mediation";
 import { appendPrivate, cacheDir, ensurePrivateDir, ownedByUs, readPrivate, sessionHash } from "./private_file";
 
-const NATIVE_OPERATIONS = new Set(["enroll", "start_unattended_batch", "retire_stale_batch", "request_authorization", "approve_breaking_intent_revision", "request_stop", "stop"]);
-const PARENT_IDENTITY_LOST = "no matching persisted batch identity";
+const NATIVE_OPERATIONS = new Set(["enroll", "request_authorization", "approve_breaking_intent_revision", "request_stop", "stop"]);
 const SUSPENDED_REVIEW_OPERATIONS = new Set(["advance_assurance", "submit_review"]);
 const MAX_METADATA_BYTES = 256 * 1024;
 /** Spec D9: the third native-operation failure under one entry pauses; the first two leave the run live for a retry. */
@@ -126,6 +124,8 @@ function readMetadata(host: Pick<RunContinuationHost, "cache_name">, sessionId: 
 		throw new Error("invalid continuation metadata");
 	if (value.state) {
 		const { binding } = value.state;
+		// A retired batch Parent binding carries no authority after unattended batch retirement.
+		if ((binding as { kind?: unknown } | undefined)?.kind === "parent") return { ...value, state: null };
 		if (!binding || binding.session_id !== sessionId || !Number.isInteger(value.state.unchanged_observations) || value.state.unchanged_observations < 0 ||
 			!(value.state.progress_digest === null || typeof value.state.progress_digest === "string") ||
 			!(value.state.boundary_id === null || typeof value.state.boundary_id === "string")) throw new Error("invalid bound run metadata");
@@ -189,14 +189,6 @@ export function readSessionToolCall(host: RunContinuationHost, root: string, too
 		typeof record.session_id !== "string" || !record.session_id || !host.entry_state(record.session_id)?.run_live) return null;
 	return record.session_id;
 }
-export function selectedParentSession(host: RunContinuationHost, root: string, toolId: string, workspace: string, slug: string): boolean {
-	const call = readLast(callPath(host, toolId, root), cacheDir(root, host.cache_name)) as Correlation | null;
-	if (!call || call.workspace !== realpathSync(workspace) || !["advance_assurance", "submit_review"].includes(call.operation) ||
-		!host.entry_state(call.session_id)?.run_live) return false;
-	const state = readMetadata(host, call.session_id, root).state;
-	return state?.binding.kind === "parent" && state.binding.workspace === call.workspace && state.binding.initiative_slug === slug;
-}
-
 /** One typed Host event. Every decision below re-reads the actual Kernel. */
 export async function applyRunContinuationEvent(host: RunContinuationHost, root: string,
 		session: RunContinuationSession, event: RunContinuationEvent): Promise<RunContinuationOutcome> {
@@ -243,28 +235,12 @@ export async function applyRunContinuationEvent(host: RunContinuationHost, root:
 			return { kind: "none" };
 		}
 		const response = event.response;
-		if (event.operation === "start_unattended_batch" && response?.state === "native_parent" && typeof response.plan_digest === "string" && typeof response.initiative_slug === "string") {
-			if (metadata.state?.binding.kind !== "parent") metadata.state = bindRun({ kind: "parent", workspace, session_id: sessionId,
-				batch_id: null, initiative_slug: response.initiative_slug, plan_digest: response.plan_digest,
-				final_verification: response.final_verification_commands as string[] | undefined });
-		}
-		if (event.operation === "start_unattended_batch" && response?.state === "started" && typeof response.batch_id === "string") {
-			const batch = readAnyBatchRunState(workspace, response.batch_id);
-			if (!batch) throw new Error("batch receipt has no persisted identity");
-			const binding = metadata.state?.binding;
-			if (!binding || binding.kind !== "parent") metadata.state = bindRun({ kind: "parent", workspace,
-				session_id: sessionId, batch_id: batch.batch_id, initiative_slug: batch.initiative_slug, plan_digest: batch.plan_digest });
-			// An approved contiguous lane_rebinds chain advances the persisted binding (D3).
-			else if (binding.batch_id === batch.batch_id && binding.initiative_slug === batch.initiative_slug &&
-				hasContiguousLaneRebind(batch, binding.plan_digest))
-				metadata.state = { ...metadata.state!, binding: { ...binding, plan_digest: batch.plan_digest } };
-		}
 		if (!metadata.state && correlated.task_id && (event.operation === "status" || event.operation === "enroll")) {
 			const status = await projectTaskStatus(workspace, correlated.task_id);
 			if (!status.error && status.claim?.task_id === correlated.task_id && status.projection.lifecycle === "active" && status.projection.run_id)
 				metadata.state = bindRun({ kind: "task", workspace, session_id: sessionId, task_id: correlated.task_id, run_id: status.projection.run_id });
 		}
-		if (metadata.state?.binding.kind === "task" && correlated.task_id !== metadata.state.binding.task_id) return { kind: "none" };
+		if (metadata.state && correlated.task_id !== metadata.state.binding.task_id) return { kind: "none" };
 		if (event.operation === "advance_assurance" && response?.state === "review_ready") {
 			const params = response.agent_params as { prompt?: unknown } | undefined;
 			if (typeof params?.prompt === "string" && digestOfReviewerBytes(params.prompt) !== metadata.reviewer_prompt) {
@@ -319,28 +295,13 @@ export async function applyRunContinuationEvent(host: RunContinuationHost, root:
 	const boundary = event.boundary();
 	if (!boundary) return { kind: "none" };
 	metadata.sequence++;
-	const taskId = metadata.state.binding.kind === "task" ? metadata.state.binding.task_id : metadata.state.binding.initiative_slug;
-	let observation: Parameters<typeof decideRunContinuation>[1];
-	if (metadata.state.binding.kind === "parent") {
-		try {
-			observation = await observeParentRun(metadata.state.binding, boundary, metadata.review, metadata.recovery_action ?? undefined);
-		} catch (error) {
-			// A lost persisted batch identity is a lost bound identity: it spends the entry token
-			// in every Host instead of leaving the run live behind a warning (Spec D1.1).
-			if (!(error instanceof Error && error.message.includes(PARENT_IDENTITY_LOST))) throw error;
-			host.revoke_entry(sessionId);
-			drop(host, statePath(host, sessionId, root), root);
-			return { kind: "paused", reason: `${error.message}; enter drive explicitly to rebind the run` };
-		}
-	}
-	else {
-		const status = await projectTaskStatus(workspace, taskId);
-		const record = readTaskRecordRaw(workspace, taskId);
-		observation = { kind: "task", workspace, session_id: sessionId,
-			boundary_id: boundary, status,
-			source_digest: record.record ? scopedSourceDigest(workspace, record.record.intent_snapshot.scope_hint) : "terminal",
-			review: metadata.review, recovery_action: metadata.recovery_action ?? undefined };
-	}
+	const taskId = metadata.state.binding.task_id;
+	const status = await projectTaskStatus(workspace, taskId);
+	const record = readTaskRecordRaw(workspace, taskId);
+	const observation = { kind: "task" as const, workspace, session_id: sessionId,
+		boundary_id: boundary, status,
+		source_digest: record.record ? scopedSourceDigest(workspace, record.record.intent_snapshot.scope_hint) : "terminal",
+		review: metadata.review, recovery_action: metadata.recovery_action ?? undefined };
 	const decision = decideRunContinuation(metadata.state, observation);
 	if (decision.action === "unbound" || decision.action === "settled") {
 		// A terminal bound run spends its entry token; the next run needs a new literal entry.

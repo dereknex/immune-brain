@@ -21,8 +21,6 @@ export const PRIVILEGED_OPERATIONS = [
 	"request_authorization",
 	"approve_breaking_intent_revision",
 	"stop",
-	"start_unattended_batch",
-	"retire_stale_batch",
 ] as const;
 
 export type PrivilegedOperation = (typeof PRIVILEGED_OPERATIONS)[number];
@@ -90,7 +88,6 @@ export function evaluateNativeGate(input: NativeGateInput): NativeGateResult {
 export interface NativeConfirmationInput {
 	operation: PrivilegedOperation;
 	taskId?: string;
-	initiativeSlug?: string;
 	toolCallId: string;
 	/** Step-correlated admission identity, when the Host correlates confirmation via `PreToolUse`. */
 	admissionId?: string;
@@ -101,41 +98,10 @@ export interface NativeConfirmationInput {
 	intentContentHash?: string;
 	bindingDigest?: string;
 	gitBaseNotice?: string;
-	planDigest?: string;
 	/** Present only for a replan boundary: the exits the user chooses between. */
 	reworkExits?: ReworkExitsReadiness;
 	verifierDispute?: { claim: string; trigger: string; caller_chain: string[]; counter_path: string };
 	reviewRetryNotice?: string;
-	batchDetails?: {
-		initiative_slug: string;
-		batch_branch: string;
-		children: Array<{ task_id: string; slice_id: string; risk?: string }>;
-		excluded: Array<{ task_id: string; slice_id: string; reason: string }>;
-		budget?: { max_children: number; qa_failure_limit: number };
-		final_verification?: string[];
-		/** Present only for a native Parent: no batch is started and no commit is made, only the final commands run. */
-		parent_final_verification?: Record<string, never>;
-		/** Present only when the run uses Lanes. */
-		lane_mode?: {
-			max_parallel: number;
-			parallel_groups: string[][];
-			serialized: Array<{ task_id: string; overlaps_with: string[] }>;
-			final_verification?: string[];
-			/** The Review profile the batch fixes at confirmation (#426 F14). */
-			review_profile?: import("../config/layered_config").ReviewProfile;
-		};
-		re_confirmation_required?: string[];
-		recovery?: string;
-	};
-	/** Present only for a batch disposition: the record the user is asked to retire. */
-	batchDisposition?: {
-		batch_id: string;
-		batch_state: string;
-		batch_branch: string;
-		plan_digest: string;
-		recorded_commits: number;
-		children: Array<{ task_id: string; slice_id: string; state: string; commit: string | null; lane_branch: string | null; kernel_lifecycle: "done" | "stopped" | null }>;
-	};
 	signal?: AbortSignal;
 }
 

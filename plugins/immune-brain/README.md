@@ -44,7 +44,7 @@ language; `drive` starts only from a literal-user entry.
 - `clarify` frames ambiguity and `draw-up` plans clear work, each on the user's request.
 - `drive` consumes validated plans and active task recovery; Planner artifacts remain candidates for later literal-user Enrollment in the current Host's native gate.
 - Fast-Track compresses Managed Path without bypassing TaskIntent scope, Enrollment, QA, Review, authorization, or completion.
-- An opted-in serial batch hands each enrolled child to foreground Parent implementation before QA; the Parent dispatches required Review, then resumes the same valid batch for Kernel settlement reconciliation and one scope-bound commit. Optional `max_parallel` selects lane mode instead of the serial default. See [Unattended Batch Opt-In](dist/drive-batch.md#unattended-batch-opt-in) and [Parallel Batch Opt-In](dist/drive-batch.md#parallel-batch-opt-in).
+- A single-task `drive` enrolls in place in the current worktree through the Host's native confirmation; the unattended batch and its Lanes are retired (ADR 0043 Slice 3), so a multi-task Initiative runs one Child `drive` at a time. See [Execution Loop](dist/drive.md#execution-loop).
 
 ```mermaid
 flowchart LR

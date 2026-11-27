@@ -75,19 +75,6 @@ export interface AntigravityServeStdioOptions extends ServeStdioOptions {
 	confirmationStoreRoot?: string;
 }
 
-function antigravityMcpProfile(confirmationStoreRoot?: string): McpHostProfile {
-	if (!confirmationStoreRoot) return ANTIGRAVITY_MCP_PROFILE;
-	return {
-		...ANTIGRAVITY_MCP_PROFILE,
-		createRuntime: (options) =>
-			new AntigravityRuntime({
-				parentHost: "antigravity",
-				...options,
-				confirmationStoreRoot,
-			}).runtime,
-	};
-}
-
 function withConfirmationStore<T extends McpRuntimeOptions>(options: T & { confirmationStoreRoot?: string }): T {
 	const { confirmationStoreRoot, ...rest } = options;
 	if (!confirmationStoreRoot) return rest as T;
@@ -102,14 +89,14 @@ function withConfirmationStore<T extends McpRuntimeOptions>(options: T & { confi
 }
 
 export const createAntigravityMcpRuntime = (options: AntigravityMcpRuntimeOptions = {}): McpRuntime =>
-	createHostMcpRuntime(antigravityMcpProfile(options.confirmationStoreRoot), withConfirmationStore(options));
+	createHostMcpRuntime(ANTIGRAVITY_MCP_PROFILE, withConfirmationStore(options));
 
 /**
  * The shared bidirectional transport can serve `roots/list`; `ANTIGRAVITY_MCP_PROFILE`
  * keeps its Hook-backed `requestConfirmation` port instead of `elicitation/create`.
  */
 export const serveStdio = (options: AntigravityServeStdioOptions = {}): Promise<void> =>
-	serveHostStdio(antigravityMcpProfile(options.confirmationStoreRoot), withConfirmationStore(options));
+	serveHostStdio(ANTIGRAVITY_MCP_PROFILE, withConfirmationStore(options));
 
 /**
  * The step index Antigravity appends to a call's `progressToken` (E4): the final

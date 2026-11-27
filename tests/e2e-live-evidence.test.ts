@@ -59,39 +59,39 @@ describe("bun run e2e:live evidence", () => {
 		const written = read(result.path);
 		expect(written).toMatchObject({ contract: "immune_brain/e2e_release_evidence/v1", version: "9.2.0", commit: COMMIT, mode: "live", hosts: HOSTS, checklist: [] });
 		expect(liveEvidenceFindings(written)).toEqual({ invalid: [], missing: [], failed: [] });
-		expect(written.journeys.map((journey: { id: string; host: string }) => `${journey.id}/${journey.host}`)).toEqual(["J1/claude", "J1/pi", "J2/claude", "J2/pi", "J4/claude", "J4/pi", "J4/antigravity"]);
+		expect(written.journeys.map((journey: { id: string; host: string }) => `${journey.id}/${journey.host}`)).toEqual(["J1/claude", "J4/claude", "J4/pi", "J4/antigravity"]);
 		for (const journey of written.journeys) {
 			expect(journey.result).toBe("pass");
 			expect(journey.attempts).toHaveLength(1);
 			expect(journey.attempts[0]).toMatchObject({ result: "pass", duration_ms: expect.any(Number) });
 			expect(journey.attempts[0].log_sha256).toMatch(/^[0-9a-f]{64}$/);
 		}
-		expect(calls).toHaveLength(7);
+		expect(calls).toHaveLength(4);
 	});
 
 	test("a journey that fails twice is recorded as failed with both attempts, and the file is still written", async () => {
 		const outDir = tempDir();
-		const { run, calls } = mockModelRunner((id, host) => !(id === "J1" && host === "pi"));
+		const { run, calls } = mockModelRunner((id, host) => !(id === "J4" && host === "pi"));
 		const result = await runLive({ version: "9.2.0", commit: COMMIT, hosts: HOSTS, outDir, run });
 
 		expect(result.passed).toBe(false);
 		const written = read(join(outDir, "9.2.0.json"));
-		const failed = written.journeys.find((journey: { id: string; host: string }) => journey.id === "J1" && journey.host === "pi");
+		const failed = written.journeys.find((journey: { id: string; host: string }) => journey.id === "J4" && journey.host === "pi");
 		expect(failed.result).toBe("fail");
 		expect(failed.attempts.map((entry: { result: string }) => entry.result)).toEqual(["fail", "fail"]);
-		expect(calls.filter((entry) => entry === "J1/pi")).toHaveLength(2);
+		expect(calls.filter((entry) => entry === "J4/pi")).toHaveLength(2);
 		// A third attempt never happens, and the other journeys are unaffected.
-		expect(written.journeys.filter((journey: { result: string }) => journey.result === "pass")).toHaveLength(6);
-		expect(liveEvidenceFindings(written)).toEqual({ invalid: [], missing: [], failed: ["J1/pi"] });
+		expect(written.journeys.filter((journey: { result: string }) => journey.result === "pass")).toHaveLength(3);
+		expect(liveEvidenceFindings(written)).toEqual({ invalid: [], missing: [], failed: ["J4/pi"] });
 	});
 
 	test("a journey that fails once and passes on the retry is recorded as passed with both attempts", async () => {
 		const outDir = tempDir();
-		const { run } = mockModelRunner((id, host, call) => !(id === "J2" && host === "claude" && call === 0));
+		const { run } = mockModelRunner((id, host, call) => !(id === "J1" && host === "claude" && call === 0));
 		const result = await runLive({ version: "9.2.0", commit: COMMIT, hosts: HOSTS, outDir, run });
 
 		expect(result.passed).toBe(true);
-		const journey = read(result.path).journeys.find((entry: { id: string; host: string }) => entry.id === "J2" && entry.host === "claude");
+		const journey = read(result.path).journeys.find((entry: { id: string; host: string }) => entry.id === "J1" && entry.host === "claude");
 		expect(journey.result).toBe("pass");
 		expect(journey.attempts.map((entry: { result: string }) => entry.result)).toEqual(["fail", "pass"]);
 		expect(journey.attempts[0].log_sha256).not.toBe(journey.attempts[1].log_sha256);

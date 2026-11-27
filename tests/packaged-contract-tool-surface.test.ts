@@ -140,8 +140,10 @@ describe("packaged contract tool surface", () => {
 		expect(CLAUDE_TOOLS.has("enroll")).toBe(true);
 		expect(piOperationNames().has("enroll")).toBe(true);
 		expect(PI_TOOLS.has("imm_canary_enrollment")).toBe(false);
-		expect(CLAUDE_TOOLS.has("start_unattended_batch")).toBe(true);
-		expect(PI_TOOLS.has("start_unattended_batch")).toBe(true);
+		for (const retired of ["start_unattended_batch", "retire_stale_batch"]) {
+			expect(CLAUDE_TOOLS.has(retired), retired).toBe(false);
+			expect(PI_TOOLS.has(retired), retired).toBe(false);
+		}
 	});
 
 	test("no Host surface lists or serves a retired Loop tool (ADR 0043)", async () => {
@@ -240,15 +242,12 @@ describe("packaged contract tool surface", () => {
 		).toEqual([]);
 	});
 
-	test("a shared Kernel operation and an every-Host tool name stay accepted", () => {
+	test("a shared Kernel operation stays accepted and a retired batch Tool is flagged", () => {
 		expect(hostSpecificToolSpellings("Call `advance_assurance` in the foreground. Read `status` first.")).toEqual([]);
-		expect(hostSpecificToolSpellings("The only unattended batch entry is `start_unattended_batch`.")).toEqual([]);
 		expect(
-			contractViolationsIn(
-				"contract.md",
-				"Invoke `request_authorization` directly. Call the `start_unattended_batch` Tool.\n" +
-					"The `advance_assurance`\nOperation runs QA. The `start_unattended_batch`\nTool starts the batch.",
-			),
+			contractViolationsIn("contract.md", "Invoke `request_authorization` directly.\nThe `advance_assurance`\nOperation runs QA."),
 		).toEqual([]);
+		// No Host registers the retired batch entry any more, so naming it as a call target is a violation.
+		expect(hostSpecificToolSpellings("Call the `start_unattended_batch` Tool.")).toEqual(["start_unattended_batch"]);
 	});
 });

@@ -75,7 +75,6 @@ export const ROLE_PROMPT_FILES = [
 	"arch-explorer.md",
 	"advisory-reviewer.md",
 	"compounder.md",
-	"lane-steward.md",
 ] as const;
 
 export const MIRROR_ENTRIES = DIST_DOC_ENTRIES.filter(
@@ -217,14 +216,6 @@ export const PACKAGED_CONTRACT_ENTRIES: PackagedContractEntry[] = [
 	},
 	// owned skill contracts — self-sourced, loader references them
 	...SKILL_OWNED_ENTRIES,
-	{
-		packaged: "drive-batch.md",
-		source: null,
-		kind: "owned",
-		reason:
-			"Batch, Lane and Herdr sections split out of drive.md; plugins/immune-brain/skills/drive/SKILL.md routes to them by anchor. Its own authoring source, no byte identity.",
-		skill: "drive",
-	},
 	{
 		packaged: "claude/mcp-server.mjs",
 		source: "plugins/immune-brain/runtime/claude/mcp_server.ts",

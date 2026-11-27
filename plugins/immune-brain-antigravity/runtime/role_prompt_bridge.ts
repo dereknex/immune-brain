@@ -16,8 +16,7 @@ export type InternalRole =
 	| "pr-fix"
 	| "arch-explorer"
 	| "advisory-reviewer"
-	| "compounder"
-	| "lane-steward";
+	| "compounder";
 export type StableReviewGate = "imm-code-review" | "imm-ui-review";
 export type RoleAuthority =
 	| "qa"
@@ -25,8 +24,7 @@ export type RoleAuthority =
 	| "executor"
 	| "test-repair"
 	| "pr-repair"
-	| "compounder"
-	| "lane-provision";
+	| "compounder";
 export type RoleToolPolicy =
 	| "no tools"
 	| "workspace tools"
@@ -90,18 +88,7 @@ export const INTERNAL_ROLE_PROMPTS: Record<InternalRole, RolePromptSpec> = {
 		authority: "compounder",
 		tool_policy: "learning tools",
 	},
-	"lane-steward": {
-		file: "lane-steward.md",
-		authority: "lane-provision",
-		tool_policy: "workspace tools",
-	},
 };
-
-/**
- * Hosts that may run a Lane's Executor. A provision handoff offers only these,
- * and the `lane-steward` role may launch only these.
- */
-export const LANE_EXECUTOR_HOSTS = ["claude-code", "pi", "antigravity"] as const;
 
 export interface RoleDelegationContext {
 	task_id: string;

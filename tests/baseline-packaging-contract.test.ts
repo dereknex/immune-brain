@@ -45,7 +45,7 @@ describe("immune-brain BASELINE packaging contract", () => {
   // Spec run-entry-decision-hosting D9, D10; ADR 0025.
   it("states the run-entry retry rules, the kept native gates and the remaining user stops", () => {
     const baseline = read(BASELINE_ROOT).replace(/\s+/g, " ")
-    expect(baseline).toContain("a literal-user `drive` entry needs no chat confirmation, while Enrollment and unattended batch start each keep one native gate")
+    expect(baseline).toContain("a literal-user `drive` entry needs no chat confirmation, while Enrollment keeps one native gate")
     expect(baseline).toContain("only a side-effect-free rejection is retried, at most twice, and preflight is rerun before each retry")
     expect(baseline).toContain("`plan_changed`, `head_moved` and a claim conflict are never retried")
     expect(baseline).toContain("commit the fixed files alone in one commit even under `Git integration: manual`, list that commit in the manifest")

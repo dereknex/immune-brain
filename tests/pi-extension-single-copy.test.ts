@@ -54,13 +54,11 @@ describe("single Immune-Brain copy per process", () => {
 		expect(copySource(new URL("../plugins/immune-brain/.pi-extension/imm-canary-work.ts", import.meta.url).href)).toEndWith("plugins/immune-brain");
 	});
 
-	it("registers no tool from either factory, in any loader, when another live copy owns the process, and notices once", async () => {
+	it("registers no tool from the factory, in any loader, when another live copy owns the process, and notices once", async () => {
 		claimProcess("/", () => true);
 		const work = (await import("../plugins/immune-brain/.pi-extension/imm-canary-work")).default;
-		const batch = (await import("../plugins/immune-brain/.pi-extension/imm-unattended-batch")).default;
 		const first = fakePi();
 		work(first.pi as never);
-		batch(first.pi as never);
 		expect(first.calls).toEqual(["on"]);
 		const notices: string[] = [];
 		const ctx = { ui: { notify: (message: string) => notices.push(message) } };
@@ -69,15 +67,15 @@ describe("single Immune-Brain copy per process", () => {
 		expect(notices).toHaveLength(1);
 		expect(notices[0]).toContain("already loaded from /;");
 		const otherLoader = fakePi();
-		batch(otherLoader.pi as never);
-		expect(otherLoader.calls).toEqual([]);
+		work(otherLoader.pi as never);
+		expect(otherLoader.calls).toEqual(["on"]);
 	});
 
 	it("registers its tools as before in every loader once it owns the process", async () => {
-		const batch = (await import("../plugins/immune-brain/.pi-extension/imm-unattended-batch")).default;
+		const work = (await import("../plugins/immune-brain/.pi-extension/imm-canary-work")).default;
 		for (const _loader of [1, 2]) {
 			const { pi, calls } = fakePi();
-			batch(pi as never);
+			work(pi as never);
 			expect(calls).toContain("registerTool");
 		}
 	});

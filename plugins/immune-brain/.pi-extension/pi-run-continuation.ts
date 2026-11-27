@@ -2,7 +2,7 @@
 // machine (Spec docs/specs/tri-host-capability-alignment.spec.md D6).
 //
 // Interface: `PI_CACHE_DIR`, `piContinuationHost`, `readRunToolSession`,
-// `selectedPiParent`, `registerPiRunContinuation`.
+// `registerPiRunContinuation`.
 // Invariants: every continuation decision re-reads the Kernel; the entry token
 // ends with its session, a settlement or a lost bound identity; an interrupted turn
 // or 7 consecutive settle boundaries only suspend the run until the user replies; tool correlation is one-use and workspace-scoped.
@@ -20,7 +20,6 @@ import {
 	PAUSED_GATE_GUIDANCE,
 	readSessionMetadata,
 	readSessionToolCall,
-	selectedParentSession,
 	suspendRun,
 	type RunContinuationHost,
 } from "../runtime/host-core/run_continuation_session";
@@ -85,15 +84,6 @@ export function readRunToolSession(
 	return readSessionToolCall(piContinuationHost(root), root, toolId, operation, workspace);
 }
 
-export function selectedPiParent(
-	toolId: string,
-	workspace: string,
-	slug: string,
-	root = tmpdir(),
-): boolean {
-	return selectedParentSession(piContinuationHost(root), root, toolId, workspace, slug);
-}
-
 /** Continuation is session memory, never a capability or durable task owner. */
 export function registerPiRunContinuation(
 	pi: ExtensionAPI,
@@ -106,7 +96,7 @@ export function registerPiRunContinuation(
 	options?: {
 		storeRoot?: string;
 	},
-): { selectedParent(toolId: string, workspace: string, slug: string): boolean } {
+): void {
 	const storeRoot = options?.storeRoot ?? tmpdir();
 	const host = piContinuationHost(storeRoot, {
 		entry_state: ports.entryState ?? ((id) => getPiPhaseEntries().get(id) ?? null),
@@ -232,13 +222,11 @@ export function registerPiRunContinuation(
 			return;
 		}
 
-		if (!["imm_kernel_canary", "start_unattended_batch", "retire_stale_batch"].includes(event.toolName)) return;
+		if (event.toolName !== "imm_kernel_canary") return;
 
-		const input = (event.input ?? {}) as { task_id?: unknown; initiative_slug?: unknown; action?: { op?: unknown } };
-		const operation = event.toolName === "imm_kernel_canary"
-			? (typeof input.action?.op === "string" ? input.action.op : "")
-			: event.toolName;
-		const taskId = typeof input.task_id === "string" ? input.task_id : (typeof input.initiative_slug === "string" ? input.initiative_slug : null);
+		const input = (event.input ?? {}) as { task_id?: unknown; action?: { op?: unknown } };
+		const operation = typeof input.action?.op === "string" ? input.action.op : "";
+		const taskId = typeof input.task_id === "string" ? input.task_id : null;
 
 		pendingCalls.set(event.toolCallId, { operation, taskId });
 
@@ -330,10 +318,7 @@ export function registerPiRunContinuation(
 			});
 
 			if (outcome.kind === "continue") {
-				const metadata = readSessionMetadata(host, storeRoot, sessionId);
-				const content = metadata.state?.binding.kind === "parent"
-					? `Parent remains incomplete. ${outcome.next_action}. Continue the authorized Loop and batch; individual Slice settlement does not complete the Parent.`
-					: `Explicit drive remains bound to task ${outcome.label}. Kernel settlement is incomplete. ${outcome.next_action}. Continue the authorized Loop; report completion only after authoritative settlement.`;
+				const content = `Explicit drive remains bound to task ${outcome.label}. Kernel settlement is incomplete. ${outcome.next_action}. Continue the authorized Loop; report completion only after authoritative settlement.`;
 				return {
 					continue: true,
 					entries: [{
@@ -372,9 +357,4 @@ export function registerPiRunContinuation(
 		}
 	});
 
-	return {
-		selectedParent: (toolId: string, workspace: string, slug: string) => {
-			return selectedPiParent(toolId, workspace, slug, storeRoot);
-		},
-	};
 }

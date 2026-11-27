@@ -1,13 +1,8 @@
-// Claude Code hook decisions that are not Review observation. PreToolUse guard for batch Lanes: an Edit, Write, MultiEdit or
-// NotebookEdit whose target resolves outside the Lane is denied before it
-// runs, the same rule the Pi extension applies to `edit`/`write`. Bash is not
-// intercepted. Outside a Lane the hook answers nothing and the tool runs as
-// configured.
+// Claude Code hook decisions that are not Review observation.
 //
 // Phase entry gate: UserPromptSubmit records which literal prompt entered
 // planning or execution, and a run entry mints the session's entry token (ADR
-// 0025); PreToolUse denies `enroll`, `start_unattended_batch`,
-// `retire_stale_batch` and the `drive` Skill without a live run entry, and
+// 0025); PreToolUse denies `enroll` and the `drive` Skill without a live run entry, and
 // otherwise leaves an admission carrying that token, which the tool handler
 // consumes by tool-use id. A model Skill call for
 // `draw-up` or `clarify` is never denied and changes no entry state.
@@ -15,7 +10,6 @@ import { lstatSync, realpathSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { laneWriteRefusal } from "../unattended/lane_workspace";
 import { activeTaskNotice } from "../assurance/active_task_notice";
 import { releasesRunBinding } from "../assurance/run_continuation";
 import { localSkillExists, readAliasFile } from "../assurance/alias_file";
@@ -38,10 +32,9 @@ import {
 import { appendPrivate, cacheDir, dropPrivate, ensurePrivateDir, readPrivate, sessionHash } from "../host-core/private_file";
 import { CLAUDE_CACHE_DIR } from "./review_host";
 
-const FILE_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
-const GATED_MCP_TOOL = /^mcp__.*immune-brain.*__(enroll|start_unattended_batch|retire_stale_batch)$/;
+const GATED_MCP_TOOL = /^mcp__.*immune-brain.*__(enroll)$/;
 
-export type GatedTool = "enroll" | "start_unattended_batch" | "retire_stale_batch";
+export type GatedTool = "enroll";
 
 /**
  * A consumed admission. `entry_token` is the live token the hook saw for this
@@ -70,16 +63,6 @@ function denyPreToolUse(reason: string): string {
 	return JSON.stringify({
 		hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: reason },
 	});
-}
-
-/** The hook's stdout for one PreToolUse payload, or null to stay silent. */
-export function laneGuardHookOutput(payload: Record<string, unknown>): string | null {
-	if (payload.hook_event_name !== "PreToolUse" || !FILE_TOOLS.has(String(payload.tool_name))) return null;
-	const input = (payload.tool_input ?? {}) as { file_path?: unknown; notebook_path?: unknown };
-	const cwd = typeof payload.cwd === "string" && payload.cwd ? payload.cwd : process.cwd();
-	const refusal = laneWriteRefusal(cwd, input.file_path ?? input.notebook_path);
-	if (!refusal) return null;
-	return denyPreToolUse(refusal);
 }
 
 /**

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { bindRun, decideRunContinuation, releasesRunBinding, type TaskContinuationObservation, type ParentContinuationObservation } from "../plugins/immune-brain/runtime/assurance/run_continuation";
+import { bindRun, decideRunContinuation, releasesRunBinding, type TaskContinuationObservation } from "../plugins/immune-brain/runtime/assurance/run_continuation";
 import type { StatusProjectionResult } from "../plugins/immune-brain/runtime/assurance/coordinator";
 
 const session = { workspace: "/test/project", session_id: "session-a" };
@@ -98,16 +98,4 @@ describe("goal-driven continuation", () => {
 		expect(decideRunContinuation(bindRun(binding), o).action).toBe("pause");
 	});
 
-	test("Parent completes only with all required integrations and final verification", () => {
-		const state = bindRun({ ...session, kind: "parent", initiative_slug: "initiative-a", batch_id: "batch-a", plan_digest: "plan-a" });
-		const o: ParentContinuationObservation = { ...session, kind: "parent", boundary_id: "parent-1", initiative_slug: "initiative-a",
-			batch_id: "batch-a", plan_digest: "plan-a", progress_digest: "progress-a", all_required_integrated: false,
-			final_passed: false, pending_repair: false, runnable: true, executors_running: false, next_action: "Dispatch the next ready child" };
-		expect(decideRunContinuation(state, o).action).toBe("continue");
-		expect(decideRunContinuation(state, { ...o, runnable: false, executors_running: true }).action).toBe("wait");
-		expect(decideRunContinuation(state, { ...o, runnable: false, all_required_integrated: true }).action).toBe("pause");
-		expect(decideRunContinuation(state, { ...o, all_required_integrated: true, final_passed: true, pending_repair: true }).action).toBe("continue");
-		expect(decideRunContinuation(state, { ...o, all_required_integrated: true, final_passed: true }).action).toBe("settled");
-		expect(decideRunContinuation(state, { ...o, plan_digest: "another-plan" }).action).toBe("pause");
-	});
 });

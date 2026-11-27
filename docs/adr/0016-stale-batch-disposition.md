@@ -1,8 +1,13 @@
 ---
-status: accepted
+status: superseded by ADR-0043
 ---
 
 # Stale Batch Disposition
+
+Superseded by [ADR 0043](0043-loop-daemon-freeze-and-extraction.md) Slice 3
+(`retire-unattended-batch`): the unattended batch, its Lanes and `start_unattended_batch`
+/ `retire_stale_batch` are removed from every Host. The decision below is preserved
+as historical context; multi-task orchestration belongs to the standalone Loop.
 
 Accepted when the recovery for the stale `parallel-batch-lanes` batch landed.
 It adds one authority-backed operation, `retire_stale_batch`, beside

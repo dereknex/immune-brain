@@ -397,16 +397,17 @@ describe("Antigravity hook dispatch and observation", () => {
 		const confirm = hook({
 			conversationId,
 			stepIdx: 2,
-			lastUserInput: "start lane",
+			lastUserInput: "enroll",
 			workspacePaths: [repo],
 			toolCall: {
 				name: "call_mcp_tool",
-				args: { ServerName: "immune-brain_immune-brain", ToolName: "start_unattended_batch", Arguments: { task_id: "pkg-task" } },
+				args: { ServerName: "immune-brain_immune-brain", ToolName: "enroll", Arguments: { task_id: "pkg-task" } },
 			},
 		});
 		expect(confirm.decision).toBe("force_ask");
-		expect(String(confirm.reason)).toContain("Authorize this unattended batch run for pkg-task?");
-		expect(String(confirm.reason)).toContain("Preparation digest:");
+		expect(String(confirm.reason)).toContain("Authorize this exact Immune-Brain operation?");
+		expect(String(confirm.reason)).toContain("Operation: enroll");
+		expect(String(confirm.reason)).toContain("Task: pkg-task");
 	});
 });
 
@@ -466,8 +467,8 @@ describe("Antigravity relocatable closure (AC3)", () => {
 
 	it("fails closure when a referenced contract, runtime dependency or role prompt is removed", () => {
 		const contract = relocate();
-		rmSync(join(contract, "dist/drive-batch.md"));
-		expect(artifactClosureErrors(contract).some((error) => error.includes("broken link") && error.includes("drive-batch.md"))).toBe(true);
+		rmSync(join(contract, "dist/drive.md"));
+		expect(artifactClosureErrors(contract).some((error) => error.includes("broken link") && error.includes("drive.md"))).toBe(true);
 
 		const dependency = relocate();
 		rmSync(join(dependency, "runtime/kernel/storage.ts"));

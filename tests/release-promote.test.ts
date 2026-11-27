@@ -60,7 +60,7 @@ function latest(): string {
 }
 
 const attempt = (result: "pass" | "fail") => ({ result, duration_ms: 1200, log_sha256: "a".repeat(64) });
-const LIVE_PAIRS: [string, string][] = [["J1", "claude"], ["J1", "pi"], ["J2", "claude"], ["J2", "pi"], ["J4", "claude"], ["J4", "pi"], ["J4", "antigravity"]];
+const LIVE_PAIRS: [string, string][] = [["J1", "claude"], ["J4", "claude"], ["J4", "pi"], ["J4", "antigravity"]];
 
 /** Live-mode journeys: every required pair passing on its first attempt, unless `change` rewrites one. */
 function liveJourneys(change: (id: string, host: string) => unknown | undefined = () => undefined): unknown[] {
@@ -202,12 +202,7 @@ describe("release-promote promote mode", () => {
     {
       name: "live evidence has a failing J1 result",
       code: "live_journey_failed",
-      arrange: () => (writeEvidence("9.1.0", { journeys: liveJourneys((id, host) => (id === "J1" && host === "pi" ? { id, host, result: "fail", attempts: [attempt("fail"), attempt("fail")] } : undefined)) }), "9.1.0"),
-    },
-    {
-      name: "live evidence has a failing J2 result",
-      code: "live_journey_failed",
-      arrange: () => (writeEvidence("9.1.0", { journeys: liveJourneys((id, host) => (id === "J2" && host === "claude" ? { id, host, result: "fail", attempts: [attempt("fail"), attempt("fail")] } : undefined)) }), "9.1.0"),
+      arrange: () => (writeEvidence("9.1.0", { journeys: liveJourneys((id, host) => (id === "J1" && host === "claude" ? { id, host, result: "fail", attempts: [attempt("fail"), attempt("fail")] } : undefined)) }), "9.1.0"),
     },
     {
       name: "live evidence has a failing J4 result",
@@ -220,7 +215,7 @@ describe("release-promote promote mode", () => {
       arrange: () => (writeEvidence("9.1.0", { journeys: liveJourneys((id, host) => (id === "J1" && host === "claude" ? null : undefined)) }), "9.1.0"),
     },
     {
-      name: "live evidence has no J2 or J4 records at all",
+      name: "live evidence has no J4 records at all",
       code: "live_journey_missing",
       arrange: () => (writeEvidence("9.1.0", { journeys: liveJourneys((id) => (id === "J1" ? undefined : null)) }), "9.1.0"),
     },

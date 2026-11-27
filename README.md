@@ -14,7 +14,7 @@ Immune-Brain brings a structured engineering workflow to AI coding assistants (*
 - **Explicit trigger when rigor matters** — When you want engineering discipline, invoke `clarify`, `draw-up`, or `drive`.
 - **Plans become trackable tasks** (`TaskIntent` + `TaskRecord`) — Progress lives on disk (Git + `.imm/`), surviving restarts and context wipes.
 - **Quality is enforced by code, not promises** — Automated QA and isolated review subagents must pass before a task can complete.
-- **Ready Initiatives can run as a batch through Lanes** — One confirmed batch authorization lets the batch advance published children without manual handoffs per task; capacity 1 runs one Lane at a time, while larger capacities allow scope-disjoint children to run concurrently in isolated Git worktrees with integration verification guards. Every child is still enrolled, QA'd, reviewed, and settled on its own.
+- **Initiatives run one Child at a time, in place** — each Child enrolls in the current worktree through its own native confirmation and is QA'd, reviewed, and settled on its own; unattended batch runs are retired.
 
 Pi, Claude Code, and Antigravity (`plugins/immune-brain-antigravity/`) are the supported hosts. Undeclared adapters remain unsupported. Minimum Claude Code is `2.1.236` for interactive server-initiated MCP elicitation (`2.1.295` for `herdr-core` OSC 7501 status; L1 CI e2e pins are in [`tests/e2e/hosts.json`](tests/e2e/hosts.json)). Current real-Host evidence is recorded in [Claude native elicitation conformance](docs/verification/claude-native-elicitation-authority-conformance.md); historical reports remain under [docs/verification/archive/](docs/verification/archive/). For Antigravity Review limitations and native gate behavior, see [the Antigravity plugin README](plugins/immune-brain-antigravity/README.md). Either host can use the model provider you configure — Immune-Brain works on top of Kernel authority, not a vendor chat.
 
@@ -30,7 +30,7 @@ Pi, Claude Code, and Antigravity (`plugins/immune-brain-antigravity/`) are the s
 - [Core Philosophy: Turn "Judgment" into "Table Lookup"](#core-philosophy-turn-judgment-into-table-lookup-harnessing-multi-model-tiers-with-determinism)
 - [The 9 Skills](#the-9-skills)
 - [Lifecycle](#lifecycle)
-- [Unattended Batch Runs](#unattended-batch-runs)
+- [Initiatives](#initiatives)
 - [Configuration](#configuration)
 - [Project Layout](#project-layout)
 - [FAQ](#faq)
@@ -152,7 +152,7 @@ Immune-Brain provides two clean modes: **Host-native** for daily coding, and **M
 | Clear goal, want formal plan & specs | `/draw-up` "Plan the webhook feature" | → `draw-up` writes `TaskIntent` + Specs with testable acceptance checks |
 | Plan confirmed, ready to build & verify | `/drive` | → Executor builds within scope → deterministic QA verifies → isolated Review checks → task settles |
 | Session interrupted or resuming a task | `/drive` | → Resumes existing task seamlessly from on-disk state (`.imm/`) |
-| Ready Initiative to run unattended through Lanes | "Run initiative `<slug>` unattended" (optionally with `--max-parallel 4` or a Lane profile from `~/.config/immune-brain/config.json`) | → Host's `start_unattended_batch`: one native confirmation binds the plan digest. Capacity 1 runs one Lane at a time; larger `max_parallel` values allow scope-disjoint children to run concurrently in isolated Git worktrees |
+| Multi-task Initiative ready to build | `/drive <Child Issue>`, one Child at a time | → Each Child enrolls in place after its predecessors settle; there is no unattended batch |
 | Cross-host workflow (Claude plan + Pi code) | Run `/draw-up` in Claude Code, switch to Pi and run `/drive` | → Staged Spec & TaskIntent are shared on disk; Pi confirms via native TUI and executes loop |
 | PR has review comments or failing CI | `/fix-pr` on that PR | → Standalone repair: minimal scoped fix in place, no managed task created |
 | Project docs out of date | `/prune-docs` | → Read-only audit; deletes only user-approved stale docs from manifest |
@@ -583,7 +583,6 @@ flowchart TD
    - **Risk-Tiered Gates with Enforcement Floors**: `routine` tasks complete upon QA pass; `material` and `critical` tasks require an isolated Review subagent. Touching kernel or authority paths is forced to at least `material`.
    - **Live Refutation**: Subjective Review findings can be refuted by fresh, passing QA evidence; any new edits invalidate counterevidence and re-block the finding.
    - **Immutable Audit Trail**: Terminal task completion atomically writes signed `TaskRecord`s, Git blob `ReviewBundle`s, and QA Attestations to `.imm/audit/<task-id>/`, fully tracked in Git.
-   - **Unattended Batch & Parallel Lanes**: Progresses via GitHub Issues bound by `plan_digest`. Every batch uses runtime-created Lanes: capacity 1 runs one Lane at a time, and larger capacities allow scope-disjoint children to run concurrently in isolated Git worktrees. Integration Guard reruns deterministic descriptors on candidate commits before fast-forwarding the Parent ref.
 
 Key invariants:
 
@@ -591,71 +590,15 @@ Key invariants:
 - **Scope (`scope_hint`) is frozen at enrollment** — out-of-scope files are physically denied and intercepted.
 - **Evidence before closure** — QA is the only authority that can close a step.
 - **Findings carry evidence** — a refuted Review finding suppresses work only while the QA evidence bound to it stays fresh for the current revision, intent hash, and diff; when that evidence goes stale the finding blocks again, and nothing stored is rewritten by the invalidation.
-- **Batches are opt-in and bounded** — an unattended batch exists only after you confirm the Host's `start_unattended_batch`; each child keeps its own enrollment, QA, review, and settlement.
 - **Advisory never implements**, execution never self-approves.
 
 ---
 
-## Unattended Batch Runs
+## Initiatives
 
-Enter `drive <Parent Issue>` to execute its complete approved plan through the Host's `start_unattended_batch` tool and native authorization. Enter `drive <Slice/Child Issue>` to execute only that Slice after prerequisite delivery checks; it starts no siblings or predecessors.
+Unattended batch runs and their Lanes are retired ([ADR 0043](docs/adr/0043-loop-daemon-freeze-and-extraction.md) Slice 3). Every new single-task `drive` enrolls in place in the current worktree through the Host's native confirmation. A multi-task Initiative runs one Child at a time: enter `drive <Child Issue>` (or the Child's TaskIntent) after its predecessors are settled and integrated; it starts no siblings or predecessors. A Parent Issue is not an execution entry.
 
-Every new batch uses **runtime-created Lanes**. Omitted `max_parallel` and explicit `max_parallel: 1` both run one Lane at a time; larger values allow scope-disjoint children to run concurrently. The Parent chooses capacity before confirmation using dependencies, scope conflicts and supervised Host capability. Without a supervised Executor it reports a blocker, not a coordinator-execution fallback. Status questions preserve the binding; explicit cancellation releases continuation.
-
-### 1. Batch Execution Overview
-
-- **Activation:** call `start_unattended_batch(slug)` for capacity 1, or pass `max_parallel` / set `max_parallel` in a Lane profile of the user config file.
-- **Workspace topology:** the runtime creates each child's worktree under the Git common directory at `imm/worktrees/<slug>/<task_id>` and keeps Parent progress on `refs/heads/imm/<slug>` without changing the coordinator checkout.
-- **Authority:** each Lane has its own Authority Store, Enrollment, QA, Review and settlement.
-- **Integration:** the runtime commits scoped delivery, reruns Integration Guard descriptors and fast-forwards the Parent ref before admitting dependent work.
-- **Retired records:** query status with the Parent slug as `task_id` to read the persisted batch identity, state and child progress in `batch.record`, including v1 serial records. This is read-only evidence; a missing Parent TaskRecord does not hide it or grant execution authority. `retire_stale_batch` explicitly retires active records. Resuming one refuses with `batch_record_shape_retired`; the serial runner and plan reconfirmation path are removed.
-
-### 2. Batch Authority & Invariants
-
-- **Explicit Entry & Single Authorization:** Parent selection invokes `start_unattended_batch` directly; a standalone Task or Child uses single-task Enrollment. Critical-only and delivered-only Parents use native task gates and final observations without an empty batch grant. The native gate (Pi TUI dialog or Claude MCP elicitation) displays the ordered child list and global `plan_digest`; this single user confirmation constitutes complete Batch Authorization.
-- **Child Authority Invariance:** A batch merely bundles authorization scope without weakening engineering rigor. Every child is still individually enrolled, scope-frozen, QA-verified via authentic child processes, reviewed in isolation, and settled with its own `TaskRecord`. A batch is a scope of authorization, not a new authority layer.
-- **Deterministic Boundaries:** Ordinary children use batch authorization; ready `critical` children use separate native Enrollment. Ordinary failures receive bounded repair. A blocker parks its dependent branch while independent work continues. Parent success and closure require every necessary delivery integrated and final verification passing on the final HEAD; later code defects receive a validated repair candidate and fresh native Enrollment. Runners never push, open PRs, or make arbitrary decisions.
-
-### 3. Parallel Batch Lanes Lifecycle & Architecture
-
-The Coordinator (Parent Host), runtime and Lane Executor Hosts coordinate isolated execution at every capacity:
-
-```mermaid
-sequenceDiagram
-    participant P as Coordinator (Parent Host)
-    participant B as Batch Runtime
-    participant S as lane-steward Role
-    participant L as Lane Executor Host (Pi / Claude)
-    participant K as Lane Kernel (Isolated Store)
-
-    Note over P,B: 1. Scheduling & Scope-Disjoint Analysis
-    P->>B: start_unattended_batch(slug, max_parallel)
-    Note over P,B: 2. Runtime Worktree Provisioning
-    B->>B: Create dependency-ready Lane worktrees at Parent tip
-
-    Note over P,L: 3. Supervised Lane Execution
-    B-->>P: handoffs: Executor paths (up to confirmed capacity)
-    P->>L: Launch background session for drive (configurable Host/model)
-    L->>K: Run loop: Scope freeze -> Deterministic QA -> Review -> Settle
-
-    Note over P,B: 4. Integration Guard & Fast-Forward
-    L-->>P: Lane finish notification
-    P->>B: Coordinator reconcile tick
-    B->>K: Read Lane evidence & commit
-    B->>B: Build candidate commit + rerun Integration Guard descriptors
-    B->>B: Fast-forward batch branch (1 child 1 commit)
-    B->>B: Remove clean idle Lane A; create next ready Lane
-    B-->>P: integration report and next Executor handoffs
-```
-
-#### Core Mechanisms:
-
-1. **Scope-Disjoint Scheduling:** The Coordinator dynamically computes dependency layers and path overlap. A child is scheduled only when its prerequisites are integrated and its `scope_hint` is provably disjoint from all in-flight Lanes. Overlapping children wait until conflicting Lanes integrate.
-2. **Supervised Host Sessions:** The Parent Host launches an independent Executor Host process for each Lane (configurable across Hosts, models, and effort tiers, such as Pi or Claude Code). The Parent is reactively notified on session completion, polling nothing. When running inside Herdr, it opens one tab per Lane and never answers trust/login dialogs on behalf of the user.
-3. **Integration Guard:** To eliminate silent semantic conflicts, settled deliveries are not blindly merged. The Coordinator constructs candidate commits via Git plumbing and reruns deterministic descriptors for both the candidate child and all sibling tasks integrated since the lane's base. Fast-forward proceeds only if all tests pass.
-4. **Fault Isolation:** If a Lane encounters a QA failure, review rejection, or integration conflict, the batch branch stays untouched (zero-write). The failing child is parked as `needs_human`, its dependents are marked `skipped_blocked`, while independent sibling Lanes proceed unaffected.
-5. **Runtime-Owned Lifecycle:** The runtime creates Lanes and removes clean, unoccupied Lane worktrees and branches after integration. Dirty Lanes are retained and reported. Agents never kill unrelated sessions or delete user work; legacy external-Lane records retain their existing release handoffs until drained.
-
+Each Child keeps its own Enrollment, scope freeze, QA, Review and settlement, and nothing pushes, opens PRs or settles user decisions for you.
 
 ---
 
@@ -675,26 +618,23 @@ Every key resolves **request > project file > user file > default**, except `git
     "profiles": { "deepseek": { "host": "pi", "model": "auto/deepseek-v4.1-flash", "effort": "high" } },
     "executor": "deepseek",
     "reviewer": "claude-code:<model id>@medium"
-  },
-  "batch": { "max_parallel": 3 }
+  }
 }
 ```
 
 ```json
-{ "contract": "immune_brain/project_config/v2", "agents": { "executor": "claude-code:<model id>" }, "git_integration": "manual", "initiative_carrier": "github" }
+{ "contract": "immune_brain/project_config/v2", "agents": { "reviewer": "claude-code:<model id>" }, "git_integration": "manual", "initiative_carrier": "github" }
 ```
 
 | Preference | Where | Default | Notes |
 |---|---|---|---|
 | Reply language | agent instruction file (`AGENTS.md` / `CLAUDE.md`) | repo `AGENTS.md` | Machine contracts / paths stay literal |
-| Agents (`executor`, `reviewer`) | either file; profiles in the user file | executor: the Parent's Host; reviewer: none | A profile name, shorthand `host[:model][@effort]` or `{ host, model?, effort? }` |
-| Lane capacity | `batch.max_parallel` in either file | 1 | A request's `max_parallel` wins |
-| Herdr tabs | top-level `herdr` | `false` | `true` runs Lane Executors in Herdr tabs when the Parent runs in Herdr |
+| Agents (`reviewer`) | either file; profiles in the user file | none | A profile name, shorthand `host[:model][@effort]` or `{ host, model?, effort? }`; `executor`, `planner` and `triage` are accepted but unread |
 | Initiative carrier | either file | none — Planner asks | Only matters when a proposal splits across multiple TaskIntents |
 | Git integration | either file | `manual` | `auto` commits settled deliveries; `manual` wins wherever it is set |
 | Advisory subagents | agent instruction file | allowed | Respects Pi host policy + explicit user instruction |
 
-A batch freezes the Executor and Review profiles it resolved; `start_unattended_batch` takes a request's choice as `agents: { executor?, reviewer? }`. `imm-kernel config --json` prints every effective value with its source, and both Hosts' status Tool carries it as `config`. An invalid value counts as unset and is reported as an error; a batch is refused while `agents`, `batch` or `herdr` has one. A `v1` file is reported as `config_invalid`: run `imm-kernel config migrate` to preview its v2 form and `--write` to apply it.
+`imm-kernel config --json` prints every effective value with its source, and both Hosts' status Tool carries it as `config`. An invalid value counts as unset and is reported as an error. The retired `batch` and `session_providers` keys report `config_invalid`; `herdr` only warns. A `v1` file is reported as `config_invalid`: run `imm-kernel config migrate` to preview its v2 form and `--write` to apply it.
 
 See [`docs/reference/immune-brain-config.md`](docs/reference/immune-brain-config.md) for details.
 
@@ -734,7 +674,7 @@ docs/specs/                           # Living specs (updated in place)
 
 **A review finding stopped blocking — why?** It was refuted: fresh deterministic QA evidence shows the acceptance it names passes. The refutation is bound to that exact evidence, so the finding blocks again the moment the evidence goes stale for the current revision, intent hash, or diff.
 
-**Can it run a whole Initiative without me?** Only as far as you authorize. Confirm `start_unattended_batch` with the Initiative slug and the runner works through the published, non-`critical` children in runtime-created Lanes, one Lane at a time at capacity 1, fast-forwarding the Parent ref after verified integration — parking as soon as a child needs a human decision or the run hits a budget, authorization, or commit failure. A parked run waits for you indefinitely: neither the confirmation dialog nor the authorization it grants times out. It never pushes, opens PRs, or settles user decisions for you.
+**Can it run a whole Initiative without me?** No. Unattended batch runs are retired; you `drive` each Child in turn, each with its own native confirmation. It never pushes, opens PRs, or settles user decisions for you.
 
 **Can I switch between hosts (e.g. plan in Claude Code, code in Pi)?** Yes. Immune-Brain's contracts and state live entirely on disk in the repository, decoupled from conversation sessions. You can leverage Claude Code for deep architectural thinking and Spec planning, then switch to Pi to run `drive` for code execution and deterministic QA. Interrupted tasks can be resumed in either host at any time.
 
@@ -742,7 +682,7 @@ docs/specs/                           # Living specs (updated in place)
 
 **Where is the terminal Audit Trail stored and how is it verified?** Settled records are saved to `.imm/audit/<task-id>/` and tracked in Git. Each directory contains the immutable `TaskRecord`, the bound `diff_hash`, raw QA process exit-code attestations, and the Reviewer's signed verdict bundle.
 
-**Why two config files instead of AGENTS.md / CLAUDE.md directives?** Configuration belongs to the plugin, not to one Host's instruction file. Personal choices (Lane and agent profiles) live in `~/.config/immune-brain/config.json` and follow you across clones and Hosts; repository policy (`git_integration`, carrier) lives in the tracked `.imm/config.json`, version-controlled and shared with collaborators. Communication instructions stay in the agent instruction files.
+**Why two config files instead of AGENTS.md / CLAUDE.md directives?** Configuration belongs to the plugin, not to one Host's instruction file. Personal choices (agent profiles) live in `~/.config/immune-brain/config.json` and follow you across clones and Hosts; repository policy (`git_integration`, carrier) lives in the tracked `.imm/config.json`, version-controlled and shared with collaborators. Communication instructions stay in the agent instruction files.
 
 **Why do you recommend `grill-me` instead of `clarify` for complex tasks?** `clarify` is a lightweight, built-in tool designed for quick problem framing without external dependencies. However, `grill-me` (from `mattpocock/skills`) provides an active, relentless Socratic interview that explores every branch of your design tree with opinionated recommendations. For non-trivial features, architectural refactors, or security boundaries, grilling the design with `grill-me` before passing the settled decisions to `draw-up` produces significantly tighter specifications and prevents downstream rework.
 
@@ -762,7 +702,7 @@ This repo uses [Changesets](https://github.com/changesets/changesets) with a two
 | Bump version | `bun run changeset:version` — updates `package.json` + `CHANGELOG.md`, rebuilds Claude & Antigravity plugins, and validates manifests |
 | Verify release artifacts | `bun run verify:release` — validates versions, plugin builds, dist-doc sync, typecheck, `bun test`, and `npm pack --dry-run` |
 | Publish to `next` | `bun run changeset:publish` — runs `verify:release` and publishes to npm under `--tag next` |
-| Run L2 live smoke | `bun run e2e:live` — runs J1/J2/J4 against real `claude`/`pi` + API (`ANTHROPIC_API_KEY`) on tag `immune-brain-v<version>` and writes `docs/evidence/e2e-live/<version>.json` |
+| Run L2 live smoke | `bun run e2e:live` — runs J1 (claude) and J4 (claude/pi/antigravity) against real Hosts + API (`ANTHROPIC_API_KEY`) on tag `immune-brain-v<version>` and writes `docs/evidence/e2e-live/<version>.json` |
 | Promote / roll back | `bun run release:promote <version>` / `bun run release:promote -- --rollback` — validates live evidence, fast-forwards `stable`, tags `immune-brain-v<version>-stable`, and sets npm `latest` |
 
 **Two-stage automated flow:**

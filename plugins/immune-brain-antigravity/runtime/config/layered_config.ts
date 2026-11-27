@@ -27,16 +27,12 @@ const leaf = (value: unknown, source: string): ResolvedLeaf => ({ value, source 
 
 export const USER_CONFIG_CONTRACT = "immune_brain/user_config/v2";
 export const PROJECT_CONFIG_CONTRACT = "immune_brain/project_config/v2";
-export const BATCH_MAX_PARALLEL = { min: 1, max: 8, default: 1 } as const;
 
 /** The top-level keys either file may set; `profiles` under agents stays user-only.
- * `herdr` is retired (warning only, never resolved); `session_providers` selects the Lane session provider.
- * `loop` and `decision_models` are retired with the in-repo Loop daemon (ADR 0043): either one is an
- * unknown key, `config_invalid`, until `imm-kernel config migrate --write` strips it. */
-const FILE_KEYS = ["contract", "agents", "herdr", "session_providers", "git_integration", "external_approval", "initiative_carrier", "batch", "review_verifier"];
-
-/** Provider names a user may configure in `session_providers` (test-only `fake`/`process` excluded). */
-const REGISTERED_SESSION_PROVIDERS = ["herdr", "herdr-core"] as const;
+ * `herdr` is retired (warning only, never resolved). `loop` and `decision_models` retired with the
+ * in-repo Loop daemon, and `batch` and `session_providers` with the unattended batch (ADR 0043): each
+ * is an unknown key, `config_invalid`, until `imm-kernel config migrate --write` strips it. */
+const FILE_KEYS = ["contract", "agents", "herdr", "git_integration", "external_approval", "initiative_carrier", "review_verifier"];
 
 export function defaultUserConfigPath(): string {
 	return join(process.env.XDG_CONFIG_HOME && isAbsolute(process.env.XDG_CONFIG_HOME) ? process.env.XDG_CONFIG_HOME : join(homedir(), ".config"), "immune-brain/config.json");
@@ -84,17 +80,6 @@ export function resolveConfig(root: string, options: { userConfigPath?: string; 
 	const user = read(userPath, USER_CONFIG_CONTRACT);
 	const project = read(projectPath, PROJECT_CONFIG_CONTRACT);
 	const layers = [["project", project, projectPath], ["user", user, userPath]] as const;
-	/** A nested object of one layer, or {} with an error when it is not one. */
-	const part = (o: Obj | null, file: string, path: string): Obj => {
-		let value: unknown = o;
-		for (const key of path.split(".")) { if (!object(value)) return {}; value = value[key]; }
-		if (value === undefined) return {};
-		if (!object(value)) { invalid(file, path, "expected object"); return {}; }
-		return value;
-	};
-	const knownKeys = (o: Obj, keys: readonly string[], file: string, path: string) => {
-		for (const key of Object.keys(o)) if (!keys.includes(key)) invalid(file, `${path}.${key}`, "unknown key");
-	};
 	/** The first layer whose value passes `ok`; an invalid value counts as unset and records an error. */
 	const pick = (get: (o: Obj) => unknown, key: string, ok: (v: unknown) => boolean, message: string, fallback: unknown = null): ResolvedLeaf => {
 		for (const [layer, o, file] of layers) {
@@ -116,8 +101,6 @@ export function resolveConfig(root: string, options: { userConfigPath?: string; 
 		}
 		return out;
 	};
-	const errorsUnder = (prefix: string) => diagnostics.some((d) => d.severity === "error" && (d.key_path === prefix || d.key_path.startsWith(`${prefix}.`)));
-	const integerWithin = (v: unknown, min: number, max = Number.MAX_SAFE_INTEGER) => Number.isSafeInteger(v) && (v as number) >= min && (v as number) <= max;
 	const oneOf = (values: readonly unknown[]) => (v: unknown) => values.includes(v);
 
 	// agents
@@ -127,22 +110,6 @@ export function resolveConfig(root: string, options: { userConfigPath?: string; 
 	// Retired top-level `herdr` switch: ignored, warned once per layer that sets it, never resolved.
 	for (const [, o, file] of layers) if (o && Object.hasOwn(o, "herdr"))
 		diag("retired_key", "warning", file, "herdr", "herdr is retired and ignored; remove it (imm-kernel config migrate --write deletes it)");
-	// Ordered session-provider list: project replaces user. The default names
-	// only `herdr` (Spec D9), so a refusal outside Herdr lists one reason and
-	// recovery; resolution still admits `herdr` only when HERDR_ENV is 1, so no
-	// session opens outside Herdr.
-	const sessionProviders = pick((o) => o.session_providers, "session_providers",
-		(v) => Array.isArray(v) && v.length > 0 && v.every((name) => (REGISTERED_SESSION_PROVIDERS as readonly string[]).includes(name)) && new Set(v).size === v.length,
-		`expected a non-empty list of distinct registered providers (${REGISTERED_SESSION_PROVIDERS.join(", ")})`, ["herdr"]);
-
-	// batch
-	for (const [, o, file] of layers) knownKeys(part(o, file, "batch"), ["max_parallel", "final_verification", "single_task_final_verification"], file, "batch");
-	const maxParallel = pick((o) => o.batch?.max_parallel, "batch.max_parallel", (v) => integerWithin(v, BATCH_MAX_PARALLEL.min, BATCH_MAX_PARALLEL.max), `expected an integer between ${BATCH_MAX_PARALLEL.min} and ${BATCH_MAX_PARALLEL.max}`, BATCH_MAX_PARALLEL.default);
-	const commandList = (v: unknown) => Array.isArray(v) && v.length <= 8 && v.every((c) => typeof c === "string" && c.length > 0);
-	const finalVerification = pick((o) => o.batch?.final_verification, "batch.final_verification", commandList, "expected at most eight command strings");
-	// Non-critical single tasks use this list instead of batch.final_verification (workflow-friction D3.1).
-	const singleTaskFinalVerification = pick((o) => o.batch?.single_task_final_verification, "batch.single_task_final_verification", commandList, "expected at most eight command strings");
-
 	// plain keys
 	const reviewVerifier = pick((o) => o.review_verifier, "review_verifier", oneOf(["off", "on"]), "expected off or on", "off");
 	const carrier = pick((o) => o.initiative_carrier, "initiative_carrier", oneOf(["github", "local"]), "expected github or local");
@@ -162,8 +129,6 @@ export function resolveConfig(root: string, options: { userConfigPath?: string; 
 		contract: "immune_brain/effective_config/v2",
 		files: { user: userPath, project: projectPath },
 		agents,
-		session_providers: sessionProviders,
-		batch: { valid: !errorsUnder("batch"), max_parallel: maxParallel, final_verification: finalVerification, single_task_final_verification: singleTaskFinalVerification },
 		git_integration: leaf(gitIntegration.value, gitIntegration.source),
 		external_approval: { value: externalApproval.value === true, source: externalApproval.source },
 		initiative_carrier: carrier,
@@ -174,11 +139,3 @@ export function resolveConfig(root: string, options: { userConfigPath?: string; 
 
 export type EffectiveConfig = ReturnType<typeof resolveConfig>;
 
-/**
- * A batch may start only while `agents`, `batch` and `session_providers` resolve without an error
- * and neither file sets an unknown top-level key, such as the retired `loop` or `decision_models`.
- */
-export function batchConfigErrors(config: EffectiveConfig): ConfigDiagnostic[] {
-	return config.diagnostics.filter((d) => d.severity === "error" && (
-		/^(agents|batch|session_providers)(\.|$)/.test(d.key_path) || d.key_path === "$" || d.key_path === "contract" || !FILE_KEYS.includes(d.key_path.split(".")[0]!)));
-}

@@ -6,7 +6,7 @@ import { join } from "node:path";
 
 import { captureReviewFacts } from "../plugins/immune-brain/runtime/assurance/review_evidence";
 import { readBackendClaim } from "../plugins/immune-brain/runtime/kernel/backend_claim";
-import { enrollCanaryTask, enrollmentScopeDisclosure, runEnrollmentRehearsal } from "../plugins/immune-brain/runtime/kernel/enrollment";
+import { enrollCanaryTask, runEnrollmentRehearsal } from "../plugins/immune-brain/runtime/kernel/enrollment";
 import {
 	createEnrollmentAuthorityRegistry,
 	type EnrollmentCapabilityBinding,
@@ -111,9 +111,9 @@ function dirtyScope(root: string, kind: "staged" | "modified" | "untracked" | "d
 	return "src/task.ts";
 }
 
-// Spec host-owned-environment D8: the gate lists in-scope dirt and the listed
-// paths become task work. Dirt the confirmed gate did not list still refuses.
-describe("Enrollment refuses in-scope dirt the gate did not list", () => {
+// Spec branch-boundary-r2 D23: a task starts clean apart from its own planning
+// artifacts, so any in-scope dirt refuses Enrollment before authority is spent.
+describe("Enrollment refuses in-scope dirt", () => {
 	for (const kind of ["staged", "modified", "untracked", "deleted", "renamed-out"] as const) {
 		test(`a ${kind} in-scope path blocks Enrollment before any authority is spent`, () => {
 			const root = repo();
@@ -143,7 +143,7 @@ describe("Enrollment refuses in-scope dirt the gate did not list", () => {
 
 });
 
-// D23 retires claiming dirty source files, even when the gate listed them.
+// D23: dirt outside the planning artifacts refuses, in scope or not.
 describe("single-task clean workspace guard", () => {
 	for (const path of ["outside.ts", "scratch.txt", ".imm/audit/other-task/terminal-proof.json"]) {
 		test(`rejects dirt outside the estimate: ${path}`, () => {
@@ -155,17 +155,6 @@ describe("single-task clean workspace guard", () => {
 				expect(() => enrollCanaryTask(root, input, registry)).toThrow("workspace_not_clean");
 				expect(registry.isConsumed(capability)).toBe(false);
 				expect(readBackendClaim(root)).toBeNull();
-			} finally { rmSync(root, { recursive: true, force: true }); }
-		});
-	}
-	for (const kind of ["staged", "modified", "untracked", "deleted"] as const) {
-		test(`refuses listed ${kind} source changes`, () => {
-			const root = repo();
-			try {
-				const path = dirtyScope(root, kind);
-				const { registry, capability, input } = enroll(root);
-				expect(() => enrollCanaryTask(root, { ...input, disclosed_scope_paths: [path] }, registry)).toThrow("workspace_not_clean");
-				expect(registry.isConsumed(capability)).toBe(false);
 			} finally { rmSync(root, { recursive: true, force: true }); }
 		});
 	}

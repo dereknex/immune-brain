@@ -1,0 +1,417 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "retire-unattended-batch",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "retire-unattended-batch",
+    "goal": "Physically delete runtime/unattended, runtime/lane_sessions, batch_authority, batch Host tools/hooks, imm-session --batch, and batch/session_providers v2 config keys while preserving imm-session Herdr Authority Review and imm-kernel intent overlap, and sync ADRs, active docs, and plugin bundles.",
+    "acceptance": [
+      {
+        "id": "A1",
+        "assertion": "start_unattended_batch, retire_stale_batch, runtime/unattended/, runtime/lane_sessions/, batch_authority.ts, imm-unattended-batch.ts, dist/drive-batch.md, and imm-session --batch are physically removed while imm-session Herdr Authority Review and Host packages remain intact.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/packaged-contract-tool-surface.test.ts\",\n      \"tests/v4-runtime-launchers.test.ts\",\n      \"tests/cli-review-dispatch.test.ts\",\n      \"tests/supervised-session-herdr.test.ts\",\n      \"tests/claude-host-package.test.ts\",\n      \"tests/antigravity-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "A2",
+        "assertion": "batch and session_providers in v2 config report config_invalid (exit 1), imm-kernel config migrate --write strips both keys while preserving other keys, and agents.executor stays accepted-but-unused.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/layered-config.test.ts\",\n      \"tests/agent-roles-config.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "A3",
+        "assertion": "In-place single-task enrollment, singleTaskEnrollmentDirt, historical TaskRecord v3/v4 read-tolerance, imm-kernel intent overlap, and runtime layering boundaries pass with zero imports to retired batch/lane modules.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/dual-host-assurance-conformance.test.ts\",\n      \"tests/antigravity-assurance-conformance.test.ts\",\n      \"tests/enrollment-dirty-scope.test.ts\",\n      \"tests/kernel-record-v3.test.ts\",\n      \"tests/kernel-record-v4.test.ts\",\n      \"tests/runtime-layering-boundary.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "A4",
+        "assertion": "Active docs, ADRs (0005, 0041, 0043 amended; 0008, 0013, 0016, 0018, 0027 superseded), dist mirrors, and dead-reference contracts pass.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/dist-docs-sync-contract.test.ts\",\n      \"tests/skill-dist-consistency.test.ts\",\n      \"tests/active-runtime-docs-contract.test.ts\",\n      \"tests/vocabulary-dead-reference-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "A5",
+        "assertion": "TypeScript typecheck passes cleanly after S2 deletions and doc/config updates.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"run\",\n      \"typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "A6",
+        "assertion": "Built Claude plugin bundle passes check after S2 retirement.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"scripts/build-claude-plugin.ts\",\n      \"--check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "A7",
+        "assertion": "Built Antigravity plugin bundle passes check after S2 retirement.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"scripts/build-antigravity-plugin.ts\",\n      \"--check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "A8",
+        "assertion": "Dist docs sync check passes after S2 documentation updates.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"scripts/sync-dist-docs.ts\",\n      \"--check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "CONTEXT.md",
+      "docs/adr/0005-unattended-initiative-batch-run.md",
+      "docs/adr/0008-batch-capability-rehydration.md",
+      "docs/adr/0013-optional-parallel-batch-lanes.md",
+      "docs/adr/0016-stale-batch-disposition.md",
+      "docs/adr/0018-delegated-in-lane-intent-revision.md",
+      "docs/adr/0027-parent-branch-merge-queue.md",
+      "docs/adr/0041-simplified-configuration.md",
+      "docs/adr/0043-loop-daemon-freeze-and-extraction.md",
+      "docs/agents/derived-files.json",
+      "docs/reference/immune-brain-config.md",
+      "docs/specs/retire-unattended-batch.spec.md",
+      "package.json",
+      "plugins/immune-brain-antigravity/**",
+      "plugins/immune-brain/.pi-extension/**",
+      "plugins/immune-brain/BASELINE.md",
+      "plugins/immune-brain/dist/**",
+      "plugins/immune-brain/hooks/hooks.json",
+      "plugins/immune-brain/runtime/antigravity/**",
+      "plugins/immune-brain/runtime/assurance/**",
+      "plugins/immune-brain/runtime/claude/**",
+      "plugins/immune-brain/runtime/config/layered_config.ts",
+      "plugins/immune-brain/runtime/config/migrate.ts",
+      "plugins/immune-brain/runtime/host-core/**",
+      "plugins/immune-brain/runtime/kernel/batch_authority.ts",
+      "plugins/immune-brain/runtime/kernel/enrollment.ts",
+      "plugins/immune-brain/runtime/kernel/runtime_contracts.json",
+      "plugins/immune-brain/runtime/lane_sessions/**",
+      "plugins/immune-brain/runtime/prompts/lane-steward.md",
+      "plugins/immune-brain/runtime/unattended/**",
+      "plugins/immune-brain/runtime/v4_runtime.ts",
+      "plugins/immune-brain/skills/BASELINE.md",
+      "plugins/immune-brain/skills/drive/SKILL.md",
+      "scripts/dist-sync-manifest.ts",
+      "tests/**"
+    ],
+    "scope_size_reason": "Deletion-only retirement slice physically removing runtime/unattended (26 files), runtime/lane_sessions (2 files), batch_authority.ts, batch tools/hooks/config keys across Claude/Antigravity/Pi, coupled batch/lane tests, and syncing amended/superseded ADRs, active docs, and derived bundles.",
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/retire-unattended-batch.intent.json",
+    "content_hash": "sha256:3b8c4d71cdfddcce2b4f44db62b8d0b7816b0a524c6f490319a598bc7eb1de7d"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:3b8c4d71cdfddcce2b4f44db62b8d0b7816b0a524c6f490319a598bc7eb1de7d",
+  "git_base_head": "ea0ae87908d47e1ee368c2ed86ad9e32d92ecc90",
+  "attestations": [
+    {
+      "id": "approval-qa-b50a43bc",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:3b8c4d71cdfddcce2b4f44db62b8d0b7816b0a524c6f490319a598bc7eb1de7d",
+      "diff_hash": "sha256:03ac0aa430cfe75482b90c5b692ee8d9334cbb36afc96e1992581cc7eb022635",
+      "actor_id": "deterministic-qa",
+      "summary": "all 9 project verification check(s) passed; execution=sha256:5b6d6eefd21e602ad715d38b8951880807e41eb2762fa123f5fe400d576a49d8",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:5b6d6eefd21e602ad715d38b8951880807e41eb2762fa123f5fe400d576a49d8"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:5b6d6eefd21e602ad715d38b8951880807e41eb2762fa123f5fe400d576a49d8"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:5b6d6eefd21e602ad715d38b8951880807e41eb2762fa123f5fe400d576a49d8"
+        },
+        {
+          "acceptance_id": "A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:5b6d6eefd21e602ad715d38b8951880807e41eb2762fa123f5fe400d576a49d8"
+        },
+        {
+          "acceptance_id": "A5",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:5b6d6eefd21e602ad715d38b8951880807e41eb2762fa123f5fe400d576a49d8"
+        },
+        {
+          "acceptance_id": "A6",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:5b6d6eefd21e602ad715d38b8951880807e41eb2762fa123f5fe400d576a49d8"
+        },
+        {
+          "acceptance_id": "A7",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:5b6d6eefd21e602ad715d38b8951880807e41eb2762fa123f5fe400d576a49d8"
+        },
+        {
+          "acceptance_id": "A8",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:5b6d6eefd21e602ad715d38b8951880807e41eb2762fa123f5fe400d576a49d8"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-ef65556b",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:3b8c4d71cdfddcce2b4f44db62b8d0b7816b0a524c6f490319a598bc7eb1de7d",
+      "diff_hash": "sha256:ba74db87e957e459cd1e80d890fa2b55d1421091d5ee743e70337580eb27153e",
+      "actor_id": "deterministic-qa",
+      "summary": "all 9 project verification check(s) passed; execution=sha256:ca689457d5f4eefb8c19eb98f424cb6274e36bf421e6ccfd1d3fd92b711a2807",
+      "acceptance_results": [
+        {
+          "acceptance_id": "A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:ca689457d5f4eefb8c19eb98f424cb6274e36bf421e6ccfd1d3fd92b711a2807"
+        },
+        {
+          "acceptance_id": "A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:ca689457d5f4eefb8c19eb98f424cb6274e36bf421e6ccfd1d3fd92b711a2807"
+        },
+        {
+          "acceptance_id": "A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:ca689457d5f4eefb8c19eb98f424cb6274e36bf421e6ccfd1d3fd92b711a2807"
+        },
+        {
+          "acceptance_id": "A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:ca689457d5f4eefb8c19eb98f424cb6274e36bf421e6ccfd1d3fd92b711a2807"
+        },
+        {
+          "acceptance_id": "A5",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:ca689457d5f4eefb8c19eb98f424cb6274e36bf421e6ccfd1d3fd92b711a2807"
+        },
+        {
+          "acceptance_id": "A6",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:ca689457d5f4eefb8c19eb98f424cb6274e36bf421e6ccfd1d3fd92b711a2807"
+        },
+        {
+          "acceptance_id": "A7",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:ca689457d5f4eefb8c19eb98f424cb6274e36bf421e6ccfd1d3fd92b711a2807"
+        },
+        {
+          "acceptance_id": "A8",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:ca689457d5f4eefb8c19eb98f424cb6274e36bf421e6ccfd1d3fd92b711a2807"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-0aa4a63e",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:3b8c4d71cdfddcce2b4f44db62b8d0b7816b0a524c6f490319a598bc7eb1de7d",
+      "diff_hash": "sha256:ba74db87e957e459cd1e80d890fa2b55d1421091d5ee743e70337580eb27153e",
+      "actor_id": "cli:pi:ac681d5c-eac6-4407-a363-11652f0a747a",
+      "summary": "Blast radius tier medium (Kernel batch authority, Host tool surfaces, v2 config key set, derived bundles); every one of the 263 changed paths was covered — 149 modified/added paths by their full diffs (mirrored immune-brain-antigravity and dist copies share identical before/after blob OIDs with the copies read, e.g. 9a68f3edb12..380cb416420 for all eight BASELINE.md paths), 112 deletions by whole-file deletion proof (raw diff status D with zero new OID and 100644 mode, zero of 112 present in git ls-tree -r at the review commit, removal authorized by A1 and Spec D4/scope_hint tests/** and by goal for the batch acceptance doc and verify-batch-completion.ts, no floor path without an acceptance naming it, and a retired-identifier grep leaving only historical .imm/audit, CHANGELOG, plans/ADRs and the tests that assert absence), and both compiled *.mjs bundles by declared derived-bundle proof (claude-mcp-bundle check = A6, antigravity-plugin-artifact check = A7, grep for start_unattended_batch|retire_stale_batch|batch_authority|unattended/|lane_sessions|drive-batch|lane-steward returns zero matches in either bundle); zero dangling imports of the retired modules remain in any .ts/.mjs, and A2's config_invalid/migrate behaviour is pinned by strengthened tests (tests/layered-config.test.ts:80-100). One advisory note: README.zh-CN.md and IMMUNE.md still document the retired batch entry, and the release live gate now requires J1 only on claude.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "ea0ae87908d47e1ee368c2ed86ad9e32d92ecc90",
+        "review_commit": "c45dbe47ead0dac3b4f0e4386a3c19073be641be"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-64295830ab55-1-review-1",
+          "acceptance_id": "A4",
+          "summary": "README.zh-CN.md (lines 154/603/609/613/707/747) and IMMUNE.md:44 still present the retired unattended batch as the current entry, so the active-doc sync A4 asserts reached README.md but not its maintained Chinese mirror or the system-constitution file; tests/pi-only-current-contracts.test.ts:128-141 still requires README.zh-CN.md to contain the Lane-batch tokens imm/worktrees/<slug>/<task_id> and refs/heads/imm/<slug>.",
+          "anchor": "sha256:ce9a062effca3c2001a19cb3dbabfa0a72a38c212fcb17689d74b8ac0db55537",
+          "evidence": {
+            "trigger": "A user or agent reads README.zh-CN.md:603 (\"通过 Host 的 start_unattended_batch 执行\") or IMMUNE.md:44 (start_unattended_batch as the sole unattended entry, pointing at dist/imm-run-batch.md#parallel-batch-opt-in) and calls that tool -> TOOLS in runtime/host-core/mcp_runtime.ts:139-150 no longer registers start_unattended_batch or retire_stale_batch, so the documented entry fails as an unknown tool and the documented max_parallel/agents config gate no longer exists; the stale tokens are also pinned by a surviving test, so a later doc cleanup breaks a passing suite.",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/host-core/mcp_runtime.ts",
+              "README.zh-CN.md",
+              "IMMUNE.md",
+              "tests/pi-only-current-contracts.test.ts"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "A4"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:b04e0e54aa1ff8bc57cb5b53c541c29187c1ac4bd984c25e252eec294241004c"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-533226f1bc41-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "The black-box e2e release gate still asserts and calls the retired start_unattended_batch/retire_stale_batch tools, so `bun run e2e` fails after this retirement.",
+      "anchor": "sha256:092683aa9ed506b5b303da736246ba59957ea5c9cb2cdd4dfd7e9b3e6644f00a",
+      "evidence": {
+        "trigger": "Run the repository's maintained e2e gate after this revision: `bun run e2e install` compares the live MCP/Pi tool listing against tests/e2e/install.e2e.ts MCP_TOOLS/PI_TOOLS, which still require start_unattended_batch and retire_stale_batch, so it fails with `listing_incomplete: MCP tool start_unattended_batch, ...`; `bun run e2e review` calls parent.call(\"start_unattended_batch\", {task_id}) and expects state \"started\" plus started.report.children[0].lane.path from a server that no longer registers the tool; `bun run e2e skew` reads run.tools.start_unattended_batch and run.tools.status.batch, both removed from the runtime surface by this diff. Before the revision these assertions matched the served surface; the same diff's unit contract (tests/packaged-contract-tool-surface.test.ts) now asserts the opposite of tests/e2e/install.e2e.ts, so the gate cannot pass.",
+        "caller_chain": [
+          "tests/e2e/install.e2e.ts#MCP_TOOLS/PI_TOOLS",
+          "tests/e2e/review.e2e.ts#parent.call(start_unattended_batch)",
+          "tests/e2e/skew.e2e.ts#run.tools.start_unattended_batch",
+          "tests/e2e/cassettes/batch/claude.jsonl",
+          "plugins/immune-brain/runtime/host-core/mcp_runtime.ts#TOOLS",
+          "plugins/immune-brain/runtime/host-core/runtime.ts#HostRuntime.startUnattendedBatch"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-533226f1bc41-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "A4",
+      "source": "review",
+      "review_round": 1,
+      "summary": "Active reference docs still link to the deleted dist/drive-batch.md and name the retired lane-steward role and batch runtime as live consumers, so the doc/bundle sync is incomplete.",
+      "anchor": "sha256:a1a368414b9b27341d4ad464c62fae46ee25d9085443b89095f4407cf5b23f1c",
+      "evidence": {
+        "trigger": "Read plugins/immune-brain/README.md or docs/reference/supervised-session-port.md (and its dist mirrors) in this revision: README.md line 47 documents the unattended serial/lane batch and links twice to `dist/drive-batch.md#unattended-batch-opt-in` / `#parallel-batch-opt-in`, a file this revision deletes; docs/reference/supervised-session-port.md line 3 names `dist/drive-batch.md`, `the batch runtime` and the `lane-steward` as the contract's consumers, line 50 attributes `manageWorktree` provisioning to `lane-steward`, and line 149 states the `lane-steward` imports nothing from runtime/session — all three actors/paths are retired by this diff, so the documented consumers no longer exist and the link target is absent. These surviving references also block the whole-file deletion proof for dist/drive-batch.md and dist/role-prompts/lane-steward.md, which require no live reference to remain.",
+        "caller_chain": [
+          "plugins/immune-brain/dist/docs/reference/supervised-session-port.md#3",
+          "docs/reference/supervised-session-port.md#3",
+          "plugins/immune-brain/README.md#47",
+          "plugins/immune-brain/dist/drive-batch.md",
+          "plugins/immune-brain/runtime/prompts/lane-steward.md"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "A4"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:retire-unattended-batch:2026-11-27T07:06:53.073Z",
+      "at": "2026-11-27T07:06:53.073Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/retire-unattended-batch.intent.json"
+    },
+    {
+      "id": "record_approval:retire-unattended-batch:2026-11-27T07:11:07.190Z",
+      "at": "2026-11-27T07:11:07.190Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-b50a43bc\naction_v2_sha256:ef07705eacc8c0b0675b637cd3ee1ecadfef6cf9104bea806490226f9568cdf7",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-11-27T07:11:07.190Z"
+      }
+    },
+    {
+      "id": "request_rework:retire-unattended-batch:2026-11-27T07:44:06.554Z",
+      "at": "2026-11-27T07:44:06.554Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:19b3d2eb4e5b5957bddd1288729cbab724c77778949dc1fa7ce59d103ac5a4b4",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:pi:7a3c4e34-7715-4a25-a2e7-53bd9de5117c",
+        "confirmation_ref": "claude:cli:pi:7a3c4e34-7715-4a25-a2e7-53bd9de5117c",
+        "issued_at": "2026-11-27T07:44:06.554Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v2",
+        "base_head": "ea0ae87908d47e1ee368c2ed86ad9e32d92ecc90",
+        "review_commit": "084403c8cd14a53617417be5bbc03f68f8a123c4"
+      },
+      "review_started_at": "2026-11-27T07:24:24.343Z",
+      "review_submitted_at": "2026-11-27T07:43:46.773Z",
+      "reviewer_model": "auto/deepseek-v4.1-flash"
+    },
+    {
+      "id": "resolve_finding:retire-unattended-batch:2026-11-27T08:30:00.852Z",
+      "at": "2026-11-27T08:30:00.852Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-533226f1bc41-1-review-1\naction_v2_sha256:0c92dd03c5aaf0d92c762b816d251b89565d692eded4e43c711ce16d14762ffe"
+    },
+    {
+      "id": "resolve_finding:retire-unattended-batch:2026-11-27T08:30:25.862Z",
+      "at": "2026-11-27T08:30:25.862Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-533226f1bc41-2-review-2\naction_v2_sha256:a1418c31c86c02561444c0b76e298c94024ac1ade2876645aa2eaea8a6678f5b"
+    },
+    {
+      "id": "freeze_artifacts:retire-unattended-batch:2026-11-27T08:31:10.963Z",
+      "at": "2026-11-27T08:31:10.963Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/retire-unattended-batch.intent.json"
+    },
+    {
+      "id": "record_approval:retire-unattended-batch:2026-11-27T08:35:37.551Z",
+      "at": "2026-11-27T08:35:37.551Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-ef65556b\naction_v2_sha256:ee0f0c7704f4ae104cc8d9bdf6960ed03dd1489a9a7728d25a35f24c16c231c6",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-11-27T08:35:37.552Z"
+      }
+    },
+    {
+      "id": "record_review_incomplete:retire-unattended-batch:2026-11-27T09:20:39.559Z",
+      "at": "2026-11-27T09:20:39.559Z",
+      "type": "record_review_incomplete",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "{\"intent_content_hash\":\"sha256:3b8c4d71cdfddcce2b4f44db62b8d0b7816b0a524c6f490319a598bc7eb1de7d\",\"diff_hash\":\"sha256:ba74db87e957e459cd1e80d890fa2b55d1421091d5ee743e70337580eb27153e\",\"turn_budget\":48,\"inspected_paths\":[\"CONTEXT.md\",\"README.md\",\"docs/adr/0005-unattended-initiative-batch-run.md\",\"docs/adr/0008-batch-capability-rehydration.md\",\"docs/adr/0013-optional-parallel-batch-lanes.md\",\"docs/adr/0016-stale-batch-disposition.md\",\"docs/adr/0018-delegated-in-lane-intent-revision.md\",\"docs/adr/0027-parent-branch-merge-queue.md\",\"docs/adr/0041-simplified-configuration.md\",\"docs/adr/0043-loop-daemon-freeze-and-extraction.md\",\"docs/agents/derived-files.json\",\"docs/evidence/e2e-live/README.md\",\"docs/plans/retire-unattended-batch.intent.json\",\"docs/reference/immune-brain-config.md\",\"docs/reference/supervised-session-port.md\",\"docs/reference/workflow-and-subagents.md\",\"package.json\",\"plugins/immune-brain/.pi-extension/imm-canary-work.ts\",\"plugins/immune-brain/.pi-extension/package.json\",\"plugins/immune-brain/.pi-extension/pi-canary-tool-failure.ts\",\"plugins/immune-brain/.pi-extension/pi-host-runtime.ts\",\"plugins/immune-brain/.pi-extension/pi-run-continuation.ts\",\"plugins/immune-brain/.pi-extension/tsconfig.json\",\"plugins/immune-brain/BASELINE.md\",\"plugins/immune-brain/README.md\",\"plugins/immune-brain/dist/BASELINE.md\",\"plugins/immune-brain/dist/docs/reference/immune-brain-config.md\",\"plugins/immune-brain/dist/docs/reference/supervised-session-port.md\",\"plugins/immune-brain/dist/drive.md\",\"plugins/immune-brain/hooks/hooks.json\",\"plugins/immune-brain/runtime/antigravity/kernel_ports.ts\",\"plugins/immune-brain/runtime/antigravity/lane_guard.ts\",\"plugins/immune-brain/runtime/antigravity/mcp_server.ts\",\"plugins/immune-brain/runtime/antigravity/run_continuation.ts\",\"plugins/immune-brain/runtime/assurance/cli_review.ts\",\"plugins/immune-brain/runtime/assurance/coordinator.ts\",\"plugins/immune-brain/runtime/assurance/phase_entry.ts\",\"plugins/immune-brain/runtime/assurance/run_continuation.ts\",\"plugins/immune-brain/runtime/assurance/workflow_autocommit.ts\",\"plugins/immune-brain/runtime/claude/kernel_ports.ts\",\"plugins/immune-brain/runtime/claude/lane_guard.ts\",\"plugins/immune-brain/runtime/claude/mcp_server.ts\",\"plugins/immune-brain/runtime/claude/run_continuation.ts\",\"plugins/immune-brain/runtime/commands/kernel.ts\",\"plugins/immune-brain/runtime/config/layered_config.ts\",\"plugins/immune-brain/runtime/config/migrate.ts\",\"plugins/immune-brain/runtime/host-core/interaction.ts\",\"plugins/immune-brain/runtime/host-core/mcp_runtime.ts\",\"plugins/immune-brain/runtime/host-core/run_continuation_session.ts\",\"plugins/immune-brain/runtime/host-core/runtime.ts\",\"plugins/immune-brain/runtime/kernel/enrollment.ts\",\"plugins/immune-brain/runtime/loop_contract.ts\",\"plugins/immune-brain/runtime/role_prompt_bridge.ts\",\"plugins/immune-brain/runtime/v4_runtime.ts\",\"plugins/immune-brain/skills/revisit/scripts/session_evidence.ts\",\"scripts/dist-sync-manifest.ts\",\"scripts/release-promote.ts\",\"tests/agent-roles-config.test.ts\",\"tests/antigravity-host-package.test.ts\",\"tests/antigravity-preview-diagnostics.test.ts\",\"tests/baseline-packaging-contract.test.ts\",\"tests/canary-command-retirement-contract.test.ts\",\"tests/carrier-enrollment-gate-contract.test.ts\",\"tests/ceremony-trim-contract.test.ts\",\"tests/claude-bundle-staleness.test.ts\",\"tests/claude-host-authority.test.ts\",\"tests/claude-host-package.test.ts\",\"tests/claude-phase-entry-skill-gate.test.ts\",\"tests/cli-review-dispatch.test.ts\",\"tests/e2e/single-task.e2e.ts\",\"tests/kernel-r2c2-boundary.test.ts\",\"tests/layered-config.test.ts\",\"tests/local-initiative.test.ts\",\"tests/loop-execution-routing.test.ts\",\"tests/no-touch-paths.test.ts\",\"tests/packaged-contract-tool-surface.test.ts\",\"tests/pi-canary-assurance-progression.test.ts\",\"tests/pi-canary-discovery-regression.test.ts\",\"tests/pi-canary-lifecycle-package.test.ts\",\"tests/pi-canary-package-boundary.test.ts\",\"tests/pi-canary-packed-consumer.test.ts\",\"tests/pi-canary-packed-loader.test.ts\",\"tests/release-promote.test.ts\",\"tests/runtime-layering-boundary.test.ts\"],\"reason\":\"Turn budget exhausted before the remaining changed test diffs (antigravity-assurance-conformance, dual-host-assurance-conformance, claude-run-continuation, claude-phase-entry-gate, derived-files, kernel-enrollment-transaction, workflow-effect-boundaries, role-prompt-bridge, post-freeze-intent-resolution, pi-phase-entry-gate, e2e skew/review/live/install and cassettes) could be read in full.\",\"review_contract_hash\":\"sha256:2b7482dcc82769933ff925bdc5cf33829a8f309a1a1f68d88874da89d1f3e1ef\"}\naction_v2_sha256:a1dbcf5a42d1d0f8d670bcc5b7d90c08af4c38c9489170618ac26a7c50b051e5",
+      "review_started_at": "2026-11-27T08:36:39.183Z",
+      "review_submitted_at": "2026-11-27T09:20:39.550Z",
+      "reviewer_model": "auto/deepseek-v4.1-flash"
+    },
+    {
+      "id": "record_approval:retire-unattended-batch:2026-11-27T09:34:15.799Z",
+      "at": "2026-11-27T09:34:15.799Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-0aa4a63e\naction_v2_sha256:93941ae5959d7707dd2904d73287c6d8fa3ac47527737e1b3f764b43e77d90bc",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:pi:ac681d5c-eac6-4407-a363-11652f0a747a",
+        "confirmation_ref": "claude:cli:pi:ac681d5c-eac6-4407-a363-11652f0a747a",
+        "issued_at": "2026-11-27T09:34:15.799Z"
+      },
+      "review_started_at": "2026-11-27T09:22:05.999Z",
+      "review_submitted_at": "2026-11-27T09:34:02.908Z",
+      "reviewer_model": "auto/deepseek-v4.1-flash"
+    },
+    {
+      "id": "complete:retire-unattended-batch:2026-11-27T09:34:56.184Z",
+      "at": "2026-11-27T09:34:56.184Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:b855dd9772254150e2efccc171a50392b119fd6fbec3f418ba74588c2241d417"
+    }
+  ]
+}

@@ -3,7 +3,7 @@
 // 1. The port lives in runtime/session/ and depends on nothing but itself and
 //    Node builtins: no Kernel, no batch runtime, no Host adapter.
 // 2. Nothing in the runtime imports runtime/session/ except the CLI router,
-//    so the Kernel and the batch runtime stay unaware that a provider exists.
+//    so the Kernel stays unaware that a provider exists.
 // 3. Only the Herdr adapter spawns `herdr`; the packaged Loop contract drives
 //    sessions through `imm-session` alone, and only the port reference
 //    documents the Herdr command mapping.
@@ -64,7 +64,7 @@ describe("Supervised Session Port boundary", () => {
 			.filter(file => !file.path.startsWith(`${SESSION}/`))
 			.filter(file => targets(file.path, file.source).some(target => target === SESSION || target.startsWith(`${SESSION}/`)))
 			.map(file => file.path).sort();
-		expect(importers).toEqual(["plugins/immune-brain/runtime/lane_sessions/index.ts", "plugins/immune-brain/runtime/lane_sessions/session_port_adapter.ts", ROUTER].sort());
+		expect(importers).toEqual([ROUTER]);
 	});
 
 	test("session imports stay inside allowed callers", () => {
@@ -72,7 +72,7 @@ describe("Supervised Session Port boundary", () => {
 			.filter(file => !file.path.startsWith(`${SESSION}/`))
 			.filter(file => targets(file.path, file.source).some(target => target === SESSION || target.startsWith(`${SESSION}/`)))
 			.map(file => file.path).sort();
-		expect(importers).toEqual(["plugins/immune-brain/runtime/lane_sessions/index.ts", "plugins/immune-brain/runtime/lane_sessions/session_port_adapter.ts", ROUTER].sort());
+		expect(importers).toEqual([ROUTER]);
 	});
 
 	test("no runtime file outside runtime/session compares a provider name literal", () => {

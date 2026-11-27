@@ -4,11 +4,18 @@ status: accepted
 
 # Unattended Initiative Batch Run
 
-**Status update:** the unattended confirmation sources that
-[ADR 0039](0039-loop-daemon.md) added (`tracker_approval`, `policy_auto`) are
-superseded by [ADR 0043](0043-loop-daemon-freeze-and-extraction.md). Enrollment confirmation accepts only `user_session`, and
-a Batch Agreement only `native_gate`. The interactive batch architecture below
-stays until that ADR's Slice 3.
+**Status update:** amended by [ADR 0043](0043-loop-daemon-freeze-and-extraction.md).
+Slice 1 removed the unattended confirmation sources that
+[ADR 0039](0039-loop-daemon.md) added (`tracker_approval`, `policy_auto`).
+Slice 3 (`retire-unattended-batch`) retired the batch run itself:
+`runtime/unattended/`, `runtime/lane_sessions/`, `runtime/kernel/batch_authority.ts`,
+Batch Authorization and `start_unattended_batch` / `retire_stale_batch` are removed
+from every Host, and interactive single-task `drive` enrolls in place in the current
+worktree. Decision 2 still holds for every task: each one is enrolled, assured,
+settled and recorded under its own TaskRecord v4. Enrollment confirmation accepts
+`user_session` and, when opted in, `external_approval` (ADR 0043 Decision 4).
+Decisions 1 and 3–6 are preserved below as historical context; multi-task
+orchestration belongs to the standalone Loop (ADR 0043 Decision 3).
 
 ## Context
 

@@ -43,12 +43,9 @@ import { MIN_ANTIGRAVITY_VERSION } from "../plugins/immune-brain/runtime/antigra
 import { createAntigravityMcpRuntime } from "../plugins/immune-brain/runtime/antigravity/mcp_server";
 import { createMcpRuntime as createMcpRuntimeUngated, handleJsonRpc, serveStdio } from "../plugins/immune-brain/runtime/claude/mcp_server";
 import { PHASE_ENTRY_RECOVERY, RUN_ENTRY_REQUIRED } from "../plugins/immune-brain/runtime/assurance/phase_entry";
-import { consumePhaseAdmission, laneGuardHookOutput, phaseEntryGateHookOutput, recordPhaseEntryPrompt, type GatedTool } from "../plugins/immune-brain/runtime/claude/lane_guard";
+import { consumePhaseAdmission, phaseEntryGateHookOutput, recordPhaseEntryPrompt, type GatedTool } from "../plugins/immune-brain/runtime/claude/lane_guard";
 import type { ReviewFacts } from "../plugins/immune-brain/runtime/assurance/review_evidence";
 import type { AssuranceHostPort, HostReviewReservation } from "../plugins/immune-brain/runtime/assurance/host_port";
-import { BATCH_REASONS, batchReason } from "../plugins/immune-brain/runtime/unattended/batch_reasons";
-import { batchTopologyDigest, prepareBatchRunState, writeBatchRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
-import { computeBatchPlanDigest } from "../plugins/immune-brain/runtime/kernel/batch_authority";
 import {
 	captureStagedIntent,
 	restoreStagedIntent,
@@ -56,7 +53,6 @@ import {
 import { deriveAuthorizationOperation } from "../plugins/immune-brain/runtime/authorization_operation";
 import { projectTerminalTrackerState } from "../plugins/immune-brain/runtime/assurance/coordinator";
 import { LITERAL_USER_ACTOR_ID, canonicalActorId, isLiteralUserActor } from "../plugins/immune-brain/runtime/kernel/actor_identity";
-import type { GithubInitiativeObservation } from "../plugins/immune-brain/runtime/github_issue_tracker";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { enrollCanaryTask } from "../plugins/immune-brain/runtime/kernel/enrollment";
 import {
@@ -69,7 +65,6 @@ import { withKernelTransaction } from "../plugins/immune-brain/runtime/kernel/sq
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
 import { writeEnrollmentBaseline } from "../plugins/immune-brain/runtime/workspace_scope";
-import { memoryLanePort, memoryLanePortEnv } from "./helpers/memory-lane-port";
 
 // The phase entry gate (ADR 0019) sits in front of
 // `start_unattended_batch`. These tests exercise what lies behind it, so the
@@ -92,16 +87,8 @@ function withRunEntry(workspace?: string): { consumePhaseAdmission: (toolCallId:
 		},
 	};
 }
-const runPiBatch = (options: Parameters<typeof executePiUnattendedBatch>[0]) =>
-	executePiUnattendedBatch({ env: { ...memoryLanePortEnv }, sessionPortFactory: memoryLanePort, ...options });
-
 function createMcpRuntime(options: Parameters<typeof createMcpRuntimeUngated>[0] = {}) {
-	const runtime = createMcpRuntimeUngated({ ...withRunEntry(options.cwd), ...options,
-		env: { ...(options.env ?? {}), ...memoryLanePortEnv }, sessionPortFactory: options.sessionPortFactory ?? memoryLanePort });
-	const callTool = runtime.callTool.bind(runtime);
-	runtime.callTool = (name, args, meta) => callTool(name, name === "start_unattended_batch"
-		? { final_verification: ["bun --version"], ...args } : args, meta);
-	return runtime;
+	return createMcpRuntimeUngated({ ...withRunEntry(options.cwd), ...options });
 }
 
 // The Kernel QA delivery workspace is a dependency-free checkout of the frozen
@@ -140,8 +127,6 @@ if (!(await hostPackagesAvailable())) {
 
 const { PiRuntime } = await import("../plugins/immune-brain/.pi-extension/pi-host-runtime");
 const { createPiRuntimeDriver } = await import("./helpers/pi-canary-assurance-harness");
-const { default: registerPiBatch, executePiUnattendedBatch: executePiBatch } = await import("../plugins/immune-brain/.pi-extension/imm-unattended-batch");
-const executePiUnattendedBatch = (options: Parameters<typeof executePiBatch>[0]) => executePiBatch({ final_verification: ["bun --version"], ...options });
 const { createPiAssuranceProgressionPorts } = await import("../plugins/immune-brain/.pi-extension/imm-canary-work");
 
 // Registered seams are process-global; drop them when this file finishes so a
@@ -348,31 +333,6 @@ test("layered config is identical on Claude and Pi status and errors appear as w
 		expect(claude.warnings?.some(w => w.code === "config_invalid")).toBe(true);
 		expect(piStatus.warnings.some((w: { code: string }) => w.code === "config_invalid")).toBe(true);
 		expect(JSON.stringify([claude, piStatus])).not.toContain("sk-live-123");
-	} finally { rmSync(root, { recursive: true, force: true }); }
-});
-
-test.each([false, true])("status exposes v1 batch evidence on both Hosts (Parent TaskRecord: %s)", async hasParentRecord => {
-	const taskId = "legacy-status-child", root = enrolledHostFixture(taskId);
-	try {
-		const slug = hasParentRecord ? taskId : "legacy-status-parent";
-		const intent = readTaskIntent(root, taskId);
-		const children = [{ task_id: taskId, slice_id: "S1", blocked_by: [], intent_path: intent.path,
-			intent_revision: intent.intent.revision, intent_content_hash: intent.content_hash }];
-		const record = prepareBatchRunState({ batch_id: "legacy-status-batch", initiative_slug: slug,
-			plan_digest: computeBatchPlanDigest(children), base_head: execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim(),
-			branch: "imm/legacy-status", budget: { max_children: 1, qa_failure_limit: 3 }, actor_id: "user",
-			confirmation_ref: "legacy", confirmation_time: FIXTURE_NOW, children, now: FIXTURE_NOW });
-		record.batch_state = "running"; writeBatchRunState(root, record);
-		const path = join(root, ".imm/state/batches/legacy-status-batch.json"), before = readFileSync(path);
-		const expected = { corrupt: false, record: { contract: record.contract, batch_id: record.batch_id,
-			initiative_slug: slug, batch_state: "running", children: record.children, branch: record.branch } };
-		const runtime = new ClaudeRuntime({ cwd: root, env: HOST_ENV });
-		expect((await runtime.status(slug)).batch).toMatchObject(expected);
-		const pi = await piCanaryTool({}).execute("legacy-status", { task_id: slug, action: { op: "status" } },
-			undefined, undefined, piCanaryCtx(root)) as { content: Array<{ text: string }>; details: Record<string, unknown> };
-		expect(pi.details.state).toBe("status"); expect(pi.details.batch).toMatchObject(expected);
-		expect(JSON.parse(pi.content[0]!.text).batch).toMatchObject(expected);
-		expect(readFileSync(path)).toEqual(before);
 	} finally { rmSync(root, { recursive: true, force: true }); }
 });
 
@@ -1162,1052 +1122,6 @@ describe("dual-host assurance conformance", () => {
 		expect(output.read()?.toString()).toContain("ok");
 	});
 
-	test(
-		"acc-dual-host-batch-parity: shared batch confirmation conformance across Claude and Pi",
-		// Exceeds bun's default 5s per-test timeout under the Kernel QA minimal
-		// environment, which is slower than an interactive session.
-		async () => {
-
-		function createConformanceFixture(
-			slug: string,
-			inScopeExtra: string[] = ["src/impl.ts"],
-			withSecondChild = false,
-		): { root: string; head: string; observation: GithubInitiativeObservation } {
-			const root = mkdtempSync(join(tmpdir(), "dual-batch-conformance-"));
-			execFileSync("git", ["init", "-q", "-b", "main"], { cwd: root });
-			execFileSync("git", ["config", "user.name", "Test"], { cwd: root });
-			execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: root });
-			mkdirSync(join(root, ".imm", "state"), { recursive: true });
-			writeFileSync(join(root, ".gitignore"), ".imm/state/\n");
-			execFileSync("git", ["add", "-A"], { cwd: root });
-			execFileSync("git", ["commit", "-q", "-m", "init"], { cwd: root });
-
-			mkdirSync(join(root, "src"), { recursive: true });
-			writeFileSync(join(root, "src", "impl.ts"), "export const impl = 1;\n");
-			writeFileSync(join(root, "src", "other.ts"), "export const other = 1;\n");
-			writeFileSync(join(root, "out.ts"), "export const out = 1;\n");
-			execFileSync("git", ["add", "-A"], { cwd: root });
-			execFileSync("git", ["commit", "-q", "-m", "init"], { cwd: root });
-
-			mkdirSync(join(root, "docs", "plans"), { recursive: true });
-			const intent1 = {
-				contract: "assurance_kernel/task_intent/v1",
-				task_id: `${slug}-c1`,
-				owner: "user",
-				goal: "c1",
-				acceptance: [{ id: "acc-1", assertion: "c1", verification: "bun test" }],
-				scope_hint: [`docs/plans/${slug}-c1.intent.json`, `docs/specs/${slug}-c1.spec.md`, `docs/specs/archive/${slug}-c1.spec.md`, ...inScopeExtra],
-				risk: "routine",
-				revision: 1,
-			};
-			writeFileSync(join(root, "docs", "plans", `${slug}-c1.intent.json`), `${JSON.stringify(intent1, null, 2)}\n`);
-			if (withSecondChild) {
-				const intent2 = {
-					contract: "assurance_kernel/task_intent/v1",
-					task_id: `${slug}-c2`,
-					owner: "user",
-					goal: "c2",
-					acceptance: [{ id: "acc-2", assertion: "c2", verification: "bun test" }],
-					scope_hint: [`docs/plans/${slug}-c2.intent.json`, `docs/specs/${slug}-c2.spec.md`, `docs/specs/archive/${slug}-c2.spec.md`, ...inScopeExtra],
-					risk: "routine",
-					revision: 1,
-				};
-				writeFileSync(join(root, "docs", "plans", `${slug}-c2.intent.json`), `${JSON.stringify(intent2, null, 2)}\n`);
-			}
-			execFileSync("git", ["add", "docs/plans/"], { cwd: root });
-			execFileSync("git", ["commit", "-q", "-m", "add children"], { cwd: root });
-			const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
-
-			const observation: GithubInitiativeObservation = {
-				contract: "immune_brain/github_initiative_observation/v1",
-				initiative_id: slug,
-				issue_number: 200,
-				tasks: [
-					{ task_id: `${slug}-c1`, slice_id: "S1", issue_number: 201, blocked_by: [] },
-					...(withSecondChild
-						? [{ task_id: `${slug}-c2`, slice_id: "S2", issue_number: 202, blocked_by: [`${slug}-c1`] }]
-						: []),
-				],
-			};
-			return { root, head, observation };
-		}
-
-		const ENV = { CLAUDE_CODE_VERSION: "2.1.236", CLAUDE_CODE_PERMISSION_MODE: "manual" };
-
-		function assertZeroWrites(cf: { root: string; head: string }, pf: { root: string; head: string }, checkNoBranches = true) {
-			for (const f of [cf, pf]) {
-				expect(existsSync(join(f.root, ".imm", "state", "batch"))).toBe(false);
-				expect(existsSync(join(f.root, ".imm", "state", "batches"))).toBe(false);
-				expect(existsSync(join(f.root, ".imm", "state", "tasks"))).toBe(false);
-				if (checkNoBranches) {
-					const branches = execFileSync("git", ["branch", "--list", "imm/*"], { cwd: f.root, encoding: "utf8" }).trim();
-					expect(branches).toBe("");
-				}
-				const currentHead = execFileSync("git", ["rev-parse", "HEAD"], { cwd: f.root, encoding: "utf8" }).trim();
-				expect(currentHead).toBe(f.head);
-			}
-		}
-
-		// 1. Parity scenario: ACCEPT
-		{
-			const sharedSlug = "conf-accept";
-			const claudeFixture = createConformanceFixture(sharedSlug);
-			const piFixture = createConformanceFixture(sharedSlug);
-
-			let claudeBinding: any = null;
-			const claudeRuntime = createMcpRuntime({
-				cwd: claudeFixture.root,
-				env: ENV,
-				interactive: true,
-				readInitiative: async () => claudeFixture.observation,
-				batchKernel: {
-				validateBatchAuthorization: (input) => {
-						const validated = input.registry.inspect(input.capability, input.binding as never);
-						claudeBinding = validated;
-						return validated;
-					},
-			},
-				requestConfirmation: async () => ({ decision: "accept", requestId: "req-c-acc" }),
-			});
-			claudeRuntime.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
-
-			const claudeResult = await claudeRuntime.callTool(
-				"start_unattended_batch",
-				{ initiative_slug: sharedSlug },
-				{ toolCallId: "toolu-c-acc" },
-			);
-
-			let piBinding: any = null;
-			const piResult = await runPiBatch({
-				root: piFixture.root,
-				initiativeSlug: sharedSlug,
-				interactive: true,
-				readInitiative: async () => piFixture.observation,
-				batchKernel: {
-				validateBatchAuthorization: (input) => {
-						const validated = input.registry.inspect(input.capability, input.binding as never);
-						piBinding = validated;
-						return validated;
-					},
-			},
-				confirmBatch: async () => "accept",
-			});
-
-			expect(claudeResult.state).toBe("started");
-			expect(piResult.state).toBe("started");
-			expect(claudeResult.report.batch_state).toBe(piResult.report.batch_state);
-			expect(claudeResult.report.children.length).toBe(piResult.report.children.length);
-
-			// Assert identical Batch Authorization bindings across both Hosts
-			expect(claudeBinding).not.toBeNull();
-			expect(piBinding).not.toBeNull();
-			expect(claudeBinding.initiative_slug).toBe(sharedSlug);
-			expect(piBinding.initiative_slug).toBe(sharedSlug);
-			expect(claudeBinding.branch).toBe(piBinding.branch);
-			expect(claudeBinding.plan_digest).toBe(piBinding.plan_digest);
-			expect(claudeBinding.budget.max_children).toBe(piBinding.budget.max_children);
-			expect(claudeBinding.budget.qa_failure_limit).toBe(piBinding.budget.qa_failure_limit);
-			expect(claudeBinding.budget).toEqual(piBinding.budget);
-			expect(Object.keys(claudeBinding.budget).sort()).toEqual(["max_children", "qa_failure_limit"]);
-			expect(claudeBinding).not.toHaveProperty("expires_at");
-			expect(piBinding).not.toHaveProperty("expires_at");
-			expect(claudeBinding.base_head).toBe(claudeFixture.head);
-			expect(piBinding.base_head).toBe(piFixture.head);
-			expect(claudeBinding.base_head).toMatch(/^[a-f0-9]{40}$/);
-			expect(piBinding.base_head).toMatch(/^[a-f0-9]{40}$/);
-			// The recorded actor identity converges: both Hosts mint the canonical
-			// literal-user spelling for the same authorization, so this identity
-			// cannot drift again (S12 ACT-3).
-			expect(claudeBinding.actor_id).toBe(LITERAL_USER_ACTOR_ID);
-			expect(piBinding.actor_id).toBe(LITERAL_USER_ACTOR_ID);
-			expect(claudeBinding.actor_id).toBe(piBinding.actor_id);
-		}
-
-		// 2. Parity scenario: DECLINE with identical zero writes and stable reasons
-		{
-			const cf = createConformanceFixture("conf-dec-c");
-			const pf = createConformanceFixture("conf-dec-p");
-
-			const cr = createMcpRuntime({
-				cwd: cf.root,
-				env: ENV,
-				interactive: true,
-				readInitiative: async () => cf.observation,
-				requestConfirmation: async () => ({ decision: "decline", requestId: "req-dec" }),
-			});
-			cr.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
-			const cRes = await cr.callTool("start_unattended_batch", { initiative_slug: "conf-dec-c" }, { toolCallId: "toolu-dec" });
-
-			const pRes = await runPiBatch({
-				root: pf.root,
-				initiativeSlug: "conf-dec-p",
-				interactive: true,
-				readInitiative: async () => pf.observation,
-				confirmBatch: async () => "decline",
-			});
-
-			expect(cRes.state).toBe("rejected");
-			expect(pRes.state).toBe("rejected");
-			assertZeroWrites(cf, pf);
-		}
-
-		// 3. Parity scenario: CANCEL with identical zero writes
-		{
-			const cf = createConformanceFixture("conf-can-c");
-			const pf = createConformanceFixture("conf-can-p");
-
-			const cr = createMcpRuntime({
-				cwd: cf.root,
-				env: ENV,
-				interactive: true,
-				readInitiative: async () => cf.observation,
-				requestConfirmation: async () => ({ decision: "cancel", requestId: "req-can" }),
-			});
-			cr.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
-			const cRes = await cr.callTool("start_unattended_batch", { initiative_slug: "conf-can-c" }, { toolCallId: "toolu-can" });
-
-			const pRes = await runPiBatch({
-				root: pf.root,
-				initiativeSlug: "conf-can-p",
-				interactive: true,
-				readInitiative: async () => pf.observation,
-				confirmBatch: async () => "cancel",
-			});
-
-			expect(cRes.state).toBe("cancelled");
-			expect(pRes.state).toBe("cancelled");
-			assertZeroWrites(cf, pf);
-		}
-
-		// 4. Parity scenario: ACTIVE CLAIM BLOCKED
-		{
-			const cf = createConformanceFixture("conf-claim-c");
-			const pf = createConformanceFixture("conf-claim-p");
-			for (const root of [cf.root, pf.root]) seedInFlightOwner(root, "existing-task");
-
-			const cr = createMcpRuntime({
-				cwd: cf.root,
-				env: ENV,
-				interactive: true,
-				readInitiative: async () => cf.observation,
-				requestConfirmation: async () => ({ decision: "accept", requestId: "r" }),
-			});
-			cr.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
-			const cRes = await cr.callTool("start_unattended_batch", { initiative_slug: "conf-claim-c" }, { toolCallId: "toolu-cl" });
-
-			const pRes = await runPiBatch({
-				root: pf.root,
-				initiativeSlug: "conf-claim-p",
-				interactive: true,
-				readInitiative: async () => pf.observation,
-				confirmBatch: async () => "accept",
-			});
-
-			expect(cRes.state).toBe("blocked");
-			expect(pRes.state).toBe("blocked");
-			expect(cRes.reason).toContain("existing-task");
-			expect(pRes.reason).toContain("existing-task");
-			expect(cRes.recovery_action).toBe(pRes.recovery_action);
-			assertZeroWrites(cf, pf);
-		}
-
-		// 5. Parity scenario: NON-INTERACTIVE REJECTED
-		{
-			const cf = createConformanceFixture("conf-noninter-c");
-			const pf = createConformanceFixture("conf-noninter-p");
-
-			const cr = createMcpRuntime({
-				cwd: cf.root,
-				env: ENV,
-				interactive: false,
-				readInitiative: async () => cf.observation,
-			});
-			cr.bindClientHandshake({ version: "2.1.236", interactive: false, protocolVersion: "2025-06-18" });
-			await expect(cr.callTool("start_unattended_batch", { initiative_slug: "conf-noninter-c" })).rejects.toThrow("unsupported_host");
-
-			const pRes = await runPiBatch({
-				root: pf.root,
-				initiativeSlug: "conf-noninter-p",
-				interactive: false,
-				readInitiative: async () => pf.observation,
-			});
-			expect(pRes.state).toBe("rejected");
-			expect(pRes.reason).toContain("interactive TUI elicitation is unavailable");
-			assertZeroWrites(cf, pf);
-		}
-
-		// 6. Parity scenario: PARENT BRANCH PREFLIGHT FAILED
-		{
-			const cf = createConformanceFixture("conf-branchfail-c");
-			const pf = createConformanceFixture("conf-branchfail-p");
-			for (const fixture of [cf, pf]) {
-				execFileSync("git", ["branch", fixture === cf ? "imm/conf-branchfail-c" : "imm/conf-branchfail-p"], { cwd: fixture.root });
-				execFileSync("git", ["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-qm", "Parent base moved"], { cwd: fixture.root });
-				fixture.head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fixture.root, encoding: "utf8" }).trim();
-			}
-
-			const cr = createMcpRuntime({
-				cwd: cf.root,
-				env: ENV,
-				interactive: true,
-				readInitiative: async () => cf.observation,
-				requestConfirmation: async () => ({ decision: "accept", requestId: "r" }),
-			});
-			cr.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
-			const cRes = await cr.callTool("start_unattended_batch", { initiative_slug: "conf-branchfail-c" }, { toolCallId: "toolu-bf" });
-
-			const pRes = await runPiBatch({
-				root: pf.root,
-				initiativeSlug: "conf-branchfail-p",
-				interactive: true,
-				readInitiative: async () => pf.observation,
-				confirmBatch: async () => "accept",
-			});
-
-			expect(cRes.state).toBe("rejected");
-			expect(pRes.state).toBe("rejected");
-			expect(cRes.reason).toContain("batch_parent_branch_exists");
-			expect(pRes.reason).toContain("batch_parent_branch_exists");
-			expect(cRes.recovery_action).toBe(pRes.recovery_action);
-			assertZeroWrites(cf, pf, false);
-		}
-
-		// Parity scenario: RETIRED CONFIG KEY (ADR 0043) refuses `drive` on both Hosts
-		{
-			const cf = createConformanceFixture("conf-retired-key-c");
-			const pf = createConformanceFixture("conf-retired-key-p");
-			for (const f of [cf, pf]) writeFileSync(join(f.root, ".imm", "config.json"),
-				JSON.stringify({ contract: "immune_brain/project_config/v2", loop: { mode: "off" } }));
-			let gates = 0;
-
-			const cr = createMcpRuntime({
-				cwd: cf.root,
-				env: ENV,
-				interactive: true,
-				readInitiative: async () => cf.observation,
-				requestConfirmation: async () => { gates++; return { decision: "accept", requestId: "r" }; },
-			});
-			cr.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
-			const cRes = await cr.callTool("start_unattended_batch", { initiative_slug: "conf-retired-key-c" }, { toolCallId: "toolu-retired" });
-
-			const pRes = await runPiBatch({
-				root: pf.root,
-				initiativeSlug: "conf-retired-key-p",
-				interactive: true,
-				readInitiative: async () => pf.observation,
-				confirmBatch: async () => { gates++; return "accept"; },
-			});
-
-			for (const result of [cRes, pRes]) {
-				expect(result.state).toBe("rejected");
-				expect(result.reason).toContain("lane_config_invalid");
-			}
-			expect(gates).toBe(0);
-			assertZeroWrites(cf, pf);
-		}
-
-		// 7. Parity scenario: EMPTY ENROLLABLE CHILD SET
-		{
-			const cf = createConformanceFixture("conf-empty-c");
-			const pf = createConformanceFixture("conf-empty-p");
-			const emptyObs: GithubInitiativeObservation = {
-				contract: "immune_brain/github_initiative_observation/v1",
-				initiative_id: "conf-empty",
-				issue_number: 300,
-				tasks: [],
-			};
-
-			const cr = createMcpRuntime({
-				cwd: cf.root,
-				env: ENV,
-				interactive: true,
-				readInitiative: async () => emptyObs,
-				requestConfirmation: async () => ({ decision: "accept", requestId: "r" }),
-			});
-			cr.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
-			const cRes = await cr.callTool("start_unattended_batch", { initiative_slug: "conf-empty" }, { toolCallId: "toolu-emp" });
-
-			const pRes = await runPiBatch({
-				root: pf.root,
-				initiativeSlug: "conf-empty",
-				interactive: true,
-				readInitiative: async () => emptyObs,
-				confirmBatch: async () => "accept",
-			});
-
-			expect(cRes.state).toBe("rejected");
-			expect(pRes.state).toBe("rejected");
-			expect(cRes.reason).toContain("empty enrollable child set");
-			expect(pRes.reason).toContain("empty enrollable child set");
-			expect(cRes.recovery_action).toBe(pRes.recovery_action);
-			assertZeroWrites(cf, pf);
-		}
-
-		// Child scope checks belong to the Lane, never the coordinator checkout.
-		// Preserve staged/unstaged, archive, glob and rename handling on real children.
-		for (const variant of ["staged", "outside", "unstaged", "archived", "directory", "glob", "rename"]) {
-			for (const host of ["claude", "pi"] as const) {
-				const slug = `conf-lane-${variant}-${host}`;
-				const f = createConformanceFixture(slug, [variant === "directory" ? "src" : variant === "glob" ? "src/**" : "src/impl.ts"]);
-				let gates = 0;
-				const cr = createMcpRuntime({ cwd: f.root, env: ENV, interactive: true, readInitiative: async () => f.observation,
-					requestConfirmation: async () => { gates++; return { decision: "accept", requestId: "lane-gate" }; } });
-				cr.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
-				const piOptions = { root: f.root, initiativeSlug: slug, interactive: true, readInitiative: async () => f.observation,
-					confirmBatch: async () => { gates++; return "accept" as const; } };
-				const tick = () => host === "claude" ? cr.callTool("start_unattended_batch", { initiative_slug: slug }, { toolCallId: "lane-tick" }) : runPiBatch(piOptions);
-				const first = await tick();
-				expect(first.state).toBe("started");
-				// The runtime opens each Lane's session itself, so the Lane path comes from
-				// the child record rather than an executor handoff (Spec D14).
-				const lane = first.report.children[0].lane.path;
-				const task = `${slug}-c1`;
-				const laneRuntime = createMcpRuntime({ cwd: lane, env: ENV, interactive: true });
-				const ports = host === "claude" ? laneRuntime.runtime.kernelPorts() : createPiAssuranceProgressionPorts();
-
-				if (variant === "archived") {
-					mkdirSync(join(lane, "docs/plans/archive"), { recursive: true });
-					renameSync(join(lane, `docs/plans/${task}.intent.json`), join(lane, `docs/plans/archive/${task}.intent.json`));
-				}
-				if (variant === "rename") renameSync(join(lane, "src/other.ts"), join(lane, "src/impl.ts"));
-				else writeFileSync(join(lane, variant === "outside" ? "src/other.ts" : "src/impl.ts"), "export const changed = true;\n");
-				if (variant !== "unstaged") execFileSync("git", ["add", "-A"], { cwd: lane });
-				const projection = await ports.projectTask(lane, task);
-				// Spec branch-boundary-r2 D20: scope_hint is an estimate, so a staged path
-				// outside it (including a rename source) is disclosed in Review evidence
-				// as beyond_estimate rather than refused; unstaged drift still refuses.
-				if (variant === "unstaged") expect(projection.error).toMatch(/unstaged or untracked/);
-				else expect(projection.error).toBeNull();
-
-				writeFileSync(join(f.root, "out.ts"), "export const user = true;\n");
-				execFileSync("git", ["add", "out.ts"], { cwd: f.root });
-				writeFileSync(join(f.root, "src/impl.ts"), "export const userUnstaged = true;\n");
-				const snapshot = () => ({ index: readFileSync(join(f.root, ".git/index")),
-					diff: execFileSync("git", ["diff", "HEAD"], { cwd: f.root, encoding: "utf8" }),
-					head: execFileSync("git", ["rev-parse", "HEAD"], { cwd: f.root, encoding: "utf8" }) });
-				const before = snapshot();
-				const batchPath = join(f.root, `.imm/state/batches/${first.batch_id}.json`);
-				const batchBefore = readFileSync(batchPath);
-				const second = await tick();
-				expect(second.state).toBe("started");
-				expect(second.batch_id).toBe(first.batch_id);
-				if (variant === "unstaged") {
-					expect(second.report.children[0]).toMatchObject({ state: "needs_human", reason: expect.stringContaining("batch_lane_unreadable") });
-					expect(second.report.handoffs).toEqual([]);
-				} else {
-					expect(second.report.handoffs).toEqual(first.report.handoffs);
-					expect(readFileSync(batchPath)).toEqual(batchBefore);
-				}
-				expect(second.report.commits).toEqual([]);
-				expect(gates).toBe(1);
-				expect(snapshot()).toEqual(before);
-			}
-		}
-
-		// 12. Parity scenario: CLAIM SWAPPED DURING CONFIRMATION STAYS BLOCKED
-		{
-			const sharedSwapSlug = "conf-swap";
-			const cf = createConformanceFixture(`${sharedSwapSlug}-c`);
-			const pf = createConformanceFixture(`${sharedSwapSlug}-p`);
-
-			let cStep = 0;
-			const cr = createMcpRuntime({
-				cwd: cf.root,
-				env: ENV,
-				interactive: true,
-				readInitiative: async () => cf.observation,
-				batchKernel: {
-				advanceTask: async () => {
-						cStep++;
-						if (cStep === 1) return { state: "review_ready", operation_id: "c-op", agent_params: { prompt: "review" } as never };
-						return { state: "completed" };
-					},
-			},
-				requestConfirmation: async () => ({ decision: "accept", requestId: "r-sw-c1" }),
-			});
-			cr.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
-			const cRes1 = await cr.callTool("start_unattended_batch", { initiative_slug: `${sharedSwapSlug}-c` }, { toolCallId: "toolu-sw1" });
-
-			let pStep = 0;
-			const pRes1 = await runPiBatch({
-				root: pf.root,
-				initiativeSlug: `${sharedSwapSlug}-p`,
-				interactive: true,
-				readInitiative: async () => pf.observation,
-				batchKernel: {
-				advanceTask: async () => {
-						pStep++;
-						if (pStep === 1) return { state: "review_ready", operation_id: "p-op", agent_params: { prompt: "review" } as never };
-						return { state: "completed" };
-					},
-			},
-				confirmBatch: async () => "accept",
-			});
-
-			expect(cRes1.state).toBe("started");
-			expect(pRes1.state).toBe("started");
-
-			// An intact, still-binding authorization is reused without a second gate, so
-			// park the persisted batch for a human to keep this resume re-confirming: this
-			// scenario exists to prove a mid-confirmation claim swap is caught on both Hosts.
-			for (const [stateRoot, batchId] of [
-				[cf.root, cRes1.batch_id],
-				[pf.root, pRes1.batch_id],
-			] as const) {
-				const statePath = join(stateRoot, ".imm", "state", "batches", `${batchId}.json`);
-				const persisted = JSON.parse(readFileSync(statePath, "utf8"));
-				persisted.batch_state = "needs_human";
-				writeFileSync(statePath, `${JSON.stringify(persisted, null, 2)}\n`);
-			}
-
-			const cBatchPath = join(cf.root, ".imm", "state", "batches", `${cRes1.batch_id}.json`);
-			const pBatchPath = join(pf.root, ".imm", "state", "batches", `${pRes1.batch_id}.json`);
-			const cBatchBefore = readFileSync(cBatchPath, "utf8");
-			const pBatchBefore = readFileSync(pBatchPath, "utf8");
-			const cHeadBefore = execFileSync("git", ["rev-parse", "HEAD"], { cwd: cf.root, encoding: "utf8" }).trim();
-			const pHeadBefore = execFileSync("git", ["rev-parse", "HEAD"], { cwd: pf.root, encoding: "utf8" }).trim();
-
-			const forgeForeignClaim = (root: string, taskId: string, batchStatePath: string): void => {
-				const updatedAt = JSON.parse(readFileSync(batchStatePath, "utf8")).updated_at;
-				const foreignCreatedAt = new Date(Date.parse(updatedAt) + 1000).toISOString();
-				// Kernel-looking event-id derivation, but created after the batch's
-				// last durable write: an independent enrollment during the pause.
-				// The store allows exactly one active run, so the competing claim
-				// replaces the current owner.
-				releaseWorkspaceForTest(root);
-				seedInFlightOwner(root, taskId, {
-					enrollment_event_id: `enroll-${taskId}-${foreignCreatedAt}`,
-					created_at: foreignCreatedAt,
-					updated_at: foreignCreatedAt,
-				});
-			};
-
-			// Round 2 confirmation callbacks swap the same child's claim mid-confirmation.
-			const cr2 = createMcpRuntime({
-				cwd: cf.root,
-				env: ENV,
-				interactive: true,
-				readInitiative: async () => cf.observation,
-				requestConfirmation: async () => {
-					forgeForeignClaim(cf.root, `${sharedSwapSlug}-c-c1`, cBatchPath);
-					return { decision: "accept", requestId: "r-sw2" };
-				},
-			});
-			cr2.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
-			const cRes2 = await cr2.callTool("start_unattended_batch", { initiative_slug: `${sharedSwapSlug}-c` }, { toolCallId: "toolu-sw2" });
-
-			const pRes2 = await runPiBatch({
-				root: pf.root,
-				initiativeSlug: `${sharedSwapSlug}-p`,
-				interactive: true,
-				readInitiative: async () => pf.observation,
-				confirmBatch: async () => {
-					forgeForeignClaim(pf.root, `${sharedSwapSlug}-p-c1`, pBatchPath);
-					return "accept";
-				},
-			});
-
-			expect(cRes2.state).toBe("blocked");
-			expect(pRes2.state).toBe("blocked");
-			expect(cRes2.reason).toContain("an active workspace claim appeared during confirmation");
-			expect(cRes2.recovery_action).toBe(pRes2.recovery_action);
-			expect(readFileSync(cBatchPath, "utf8")).toBe(cBatchBefore);
-			expect(readFileSync(pBatchPath, "utf8")).toBe(pBatchBefore);
-			expect(execFileSync("git", ["rev-parse", "HEAD"], { cwd: cf.root, encoding: "utf8" }).trim()).toBe(cHeadBefore);
-			expect(execFileSync("git", ["rev-parse", "HEAD"], { cwd: pf.root, encoding: "utf8" }).trim()).toBe(pHeadBefore);
-		}
-
-		// 15. A completed batch is not resumed through the Initiative entry.
-		// With no new child, both Hosts refuse without changing terminal evidence.
-		{
-			const sharedReplaySlug = "conf-replay";
-			const cf = createConformanceFixture(`${sharedReplaySlug}-c`);
-			const pf = createConformanceFixture(`${sharedReplaySlug}-p`);
-			for (const [fixture, suffix] of [[cf, "c"], [pf, "p"]] as const) {
-				const intentPath = `docs/plans/${sharedReplaySlug}-${suffix}-c1.intent.json`;
-				const intent = JSON.parse(readFileSync(join(fixture.root, intentPath), "utf8"));
-				intent.acceptance[0].verification = JSON.stringify({ contract: "assurance_kernel/verification_descriptor/v2",
-					command: { executable: "bun", argv: ["--version"], cwd: ".", timeout_ms: 10000, max_output_bytes: 8192 } });
-				writeFileSync(join(fixture.root, intentPath), JSON.stringify(intent, null, 2) + "\n");
-				execFileSync("git", ["add", intentPath], { cwd: fixture.root });
-				execFileSync("git", ["commit", "-qm", "structured replay verification"], { cwd: fixture.root });
-			}
-
-			let cReplayReader: (() => typeof cf.observation) | undefined;
-			const cr = createMcpRuntime({
-				cwd: cf.root,
-				env: ENV,
-				interactive: true,
-				readInitiative: async () => cReplayReader ? cReplayReader() : cf.observation,
-				batchKernel: {
-			},
-				batchTracker: { markTerminal: async () => ({ status: "synced", message: "fixture" }) },
-				requestConfirmation: async () => ({ decision: "accept", requestId: "r-rp1" }),
-			});
-			cr.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
-			let cRes1 = await cr.callTool("start_unattended_batch", { initiative_slug: `${sharedReplaySlug}-c`, final_verification: ["bun --version"] }, { toolCallId: "toolu-rp1" });
-			// The runtime opened the Lane and its session: the path is on the child record.
-			const cLane = cRes1.report.children[0].lane.path;
-			const laneRuntime = createMcpRuntime({ cwd: cLane, env: ENV, interactive: true });
-			mkdirSync(join(cLane, "docs/specs"), { recursive: true });
-			writeFileSync(join(cLane, `docs/specs/${sharedReplaySlug}-c-c1.spec.md`), "# Replay fixture Spec\n");
-			execFileSync("git", ["add", `docs/specs/${sharedReplaySlug}-c-c1.spec.md`], { cwd: cLane });
-			await laneRuntime.runtime.kernelPorts().applyOrdinaryOperation({ cwd: cLane }, {
-				taskId: `${sharedReplaySlug}-c-c1`, operation: { op: "freeze_artifacts", actor_id: "executor" },
-			});
-			expect((await laneRuntime.runtime.advance(`${sharedReplaySlug}-c-c1`)).state).toBe("completed");
-			execFileSync("git", ["add", `.imm/audit/${sharedReplaySlug}-c-c1`], { cwd: cLane });
-			cRes1 = await cr.callTool("start_unattended_batch", { initiative_slug: `${sharedReplaySlug}-c` }, { toolCallId: "toolu-rp-ready" });
-
-						const replayOptions: Parameters<typeof executePiUnattendedBatch>[0] = {
-				root: pf.root,
-				initiativeSlug: `${sharedReplaySlug}-p`,
-				interactive: true,
-				readInitiative: async () => pf.observation,
-				final_verification: ["bun --version"],
-				batchTracker: { markTerminal: async () => ({ status: "synced", message: "fixture" }) },
-				batchKernel: {
-			},
-				confirmBatch: async () => "accept",
-			};
-			let pRes1 = await runPiBatch(replayOptions);
-			const pLane = pRes1.report.children[0].lane.path;
-			mkdirSync(join(pLane, "docs/specs"), { recursive: true });
-			writeFileSync(join(pLane, `docs/specs/${sharedReplaySlug}-p-c1.spec.md`), "# Replay fixture Spec\n");
-			execFileSync("git", ["add", `docs/specs/${sharedReplaySlug}-p-c1.spec.md`], { cwd: pLane });
-			const piLaneRuntime = createPiRuntimeDriver(createPiAssuranceProgressionPorts(), pLane).piRuntime;
-			await piLaneRuntime.freeze(`${sharedReplaySlug}-p-c1`, { cwd: pLane });
-			expect((await piLaneRuntime.advance(`${sharedReplaySlug}-p-c1`)).state).toBe("completed");
-			await piLaneRuntime.shutdown();
-			execFileSync("git", ["add", `.imm/audit/${sharedReplaySlug}-p-c1`], { cwd: pLane });
-			pRes1 = await runPiBatch(replayOptions);
-
-			expect(cRes1.state).toBe("started");
-			expect(pRes1.state).toBe("started");
-			expect(cRes1.report.batch_state).toBe("completed");
-			expect(pRes1.report.batch_state).toBe("completed");
-
-			const cBatchPath = join(cf.root, ".imm", "state", "batches", `${cRes1.batch_id}.json`);
-			const pBatchPath = join(pf.root, ".imm", "state", "batches", `${pRes1.batch_id}.json`);
-			const cBatchBefore = readFileSync(cBatchPath, "utf8");
-			const pBatchBefore = readFileSync(pBatchPath, "utf8");
-			const cHeadBefore = execFileSync("git", ["rev-parse", "HEAD"], { cwd: cf.root, encoding: "utf8" }).trim();
-			const pHeadBefore = execFileSync("git", ["rev-parse", "HEAD"], { cwd: pf.root, encoding: "utf8" }).trim();
-
-			// A parked authorization must reject graph drift before historical completion replay.
-			const { completedParentReport } = await import("../plugins/immune-brain/runtime/unattended/batch_lanes");
-			for (const [f, history] of [[cf, cBatchBefore], [pf, pBatchBefore]] as const) {
-				expect(await completedParentReport(f.root, f.observation.initiative_id, async () => f.observation,
-					{ markTerminal: async () => ({ status: "synced", message: "fixture" }) })).not.toBeNull();
-				const parked = { ...JSON.parse(history), batch_id: "parked", batch_state: "needs_human",
-					topology_digest: batchTopologyDigest([...f.observation.tasks,
-						{ task_id: "removed-task", slice_id: "S2", blocked_by: [] }]) };
-				delete parked.final_verification_result;
-				writeFileSync(join(f.root, ".imm/state/batches/parked.json"), JSON.stringify(parked));
-			}
-			const parkedBefore = [cf, pf].map(f => readFileSync(join(f.root, ".imm/state/batches/parked.json")));
-			const cParked = await cr.callTool("start_unattended_batch", { initiative_slug: `${sharedReplaySlug}-c` }, { toolCallId: "parked" });
-			const pParked = await runPiBatch(replayOptions);
-			expect(cParked).toMatchObject({ state: "rejected", reason: expect.stringContaining("batch plan changed") });
-			expect(pParked).toMatchObject({ state: "rejected", reason: expect.stringContaining("batch plan changed") });
-			for (const [i, f] of [cf, pf].entries()) {
-				const path = join(f.root, ".imm/state/batches/parked.json");
-				expect(readFileSync(path)).toEqual(parkedBefore[i]); rmSync(path);
-			}
-
-			// Completion must consume the same confirmed graph, not a later carrier read.
-			for (const [f, history] of [[cf, cBatchBefore], [pf, pBatchBefore]] as const) {
-				const path = join(f.root, ".imm/state/batches/parked.json");
-				const parked = { ...JSON.parse(history), batch_id: "parked", batch_state: "needs_human" };
-				delete parked.final_verification_result;
-				writeFileSync(path, JSON.stringify(parked));
-				const before = readFileSync(path);
-				let reads = 0;
-				const reader = () => ++reads === 1 ? structuredClone(f.observation) : {
-					...f.observation, tasks: [...f.observation.tasks,
-						{ task_id: "new-undelivered-task", slice_id: "S2", blocked_by: [] }],
-				};
-				cReplayReader = reader;
-				const replay = f === cf
-					? await cr.callTool("start_unattended_batch", { initiative_slug: f.observation.initiative_id }, { toolCallId: "snapshot-replay" })
-					: await runPiBatch({ ...replayOptions, readInitiative: async () => reader() });
-				expect(replay).toMatchObject({ state: "started", report: { batch_state: "completed" } });
-				expect(replay.report.children.map((child: { task_id: string }) => child.task_id))
-					.toEqual(f.observation.tasks.map(child => child.task_id));
-				expect(readFileSync(path)).toEqual(before);
-				rmSync(path);
-			}
-			cReplayReader = undefined;
-
-			// An empty revised plan cannot replay or overwrite the completed Parent ref.
-			cf.observation.tasks = [];
-			pf.observation.tasks = [];
-			const cRes2 = await cr.callTool("start_unattended_batch", { initiative_slug: `${sharedReplaySlug}-c` }, { toolCallId: "toolu-rp2" });
-			const pRes2 = await runPiBatch({
-				root: pf.root,
-				initiativeSlug: `${sharedReplaySlug}-p`,
-				interactive: true,
-				readInitiative: async () => pf.observation,
-				batchKernel: {
-			},
-				confirmBatch: async () => "accept",
-			});
-
-			expect(cRes2.state).toBe("rejected");
-			expect(pRes2.state).toBe("rejected");
-			expect(cRes2.reason).toContain("batch_parent_branch_exists");
-			expect(pRes2.reason).toContain("batch_parent_branch_exists");
-			expect(pRes2.recovery_action).toBe(cRes2.recovery_action);
-			expect(readFileSync(cBatchPath, "utf8")).toBe(cBatchBefore);
-			expect(readFileSync(pBatchPath, "utf8")).toBe(pBatchBefore);
-			expect(execFileSync("git", ["rev-parse", "HEAD"], { cwd: cf.root, encoding: "utf8" }).trim()).toBe(cHeadBefore);
-			expect(execFileSync("git", ["rev-parse", "HEAD"], { cwd: pf.root, encoding: "utf8" }).trim()).toBe(pHeadBefore);
-		}
-
-		// 17. Converged divergence: an unanswered native confirmation has no window
-		// of its own on either Host. It stays pending until it is answered.
-		{
-			const cf = createConformanceFixture("conf-pending-c");
-			const pf = createConformanceFixture("conf-pending-p");
-			const answers: Array<(decision: "cancel") => void> = [];
-			const unanswered = (): Promise<"cancel"> => new Promise((resolve) => answers.push(resolve));
-			const cr = createMcpRuntime({
-				cwd: cf.root,
-				env: ENV,
-				interactive: true,
-				readInitiative: async () => cf.observation,
-				requestConfirmation: async () => ({ decision: await unanswered(), requestId: "req-pending" }),
-			});
-			cr.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
-			let settled = 0;
-			const cPending = cr
-				.callTool("start_unattended_batch", { initiative_slug: "conf-pending-c" }, { toolCallId: "toolu-pending" })
-				.finally(() => { settled += 1; });
-			const pPending = runPiBatch({
-				root: pf.root,
-				initiativeSlug: "conf-pending-p",
-				interactive: true,
-				readInitiative: async () => pf.observation,
-				confirmBatch: unanswered,
-			}).finally(() => { settled += 1; });
-
-			await new Promise((resolve) => setTimeout(resolve, 200));
-			expect(answers).toHaveLength(2);
-			expect(settled).toBe(0);
-			for (const answer of answers) answer("cancel");
-
-			// Ending the wait is the user's or the caller's decision, reported as such.
-			const cancelled = batchReason("confirmation_cancelled");
-			expect(await cPending).toMatchObject(cancelled);
-			expect(await pPending).toMatchObject(cancelled);
-			assertZeroWrites(cf, pf);
-		}
-		// 16. Parity scenario: FOREIGN CLAIM APPEARING DURING THE POST-CONFIRMATION
-		// PLAN REVALIDATION READ
-		// (a claim that lands while the second Initiative read is in flight must
-		// still block both hosts before any branch or batch state is created)
-		{
-			const sharedLateSlug = "conf-lateclaim";
-			const cf = createConformanceFixture(`${sharedLateSlug}-c`);
-			const pf = createConformanceFixture(`${sharedLateSlug}-p`);
-
-			const injectClaim = (root: string, taskId: string): void => {
-				const createdAt = new Date().toISOString();
-				// A competing enrollment replaces the current owner: the store keeps
-				// exactly one active run.
-				releaseWorkspaceForTest(root);
-				seedInFlightOwner(root, taskId, { created_at: createdAt, updated_at: createdAt });
-			};
-
-			let cReads = 0;
-			const cr = createMcpRuntime({
-				cwd: cf.root,
-				env: ENV,
-				interactive: true,
-				readInitiative: async () => {
-					cReads++;
-					if (cReads === 2) injectClaim(cf.root, "some-other-task");
-					return cf.observation;
-				},
-				requestConfirmation: async () => ({ decision: "accept", requestId: "r-late-c" }),
-			});
-			cr.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
-			const cRes = await cr.callTool("start_unattended_batch", { initiative_slug: `${sharedLateSlug}-c` }, { toolCallId: "toolu-late" });
-
-			let pReads = 0;
-			const pRes = await runPiBatch({
-				root: pf.root,
-				initiativeSlug: `${sharedLateSlug}-p`,
-				interactive: true,
-				readInitiative: async () => {
-					pReads++;
-					if (pReads === 2) injectClaim(pf.root, "some-other-task");
-					return pf.observation;
-				},
-				confirmBatch: async () => "accept",
-			});
-
-			expect(cRes.state).toBe("blocked");
-			expect(pRes.state).toBe("blocked");
-			expect(cRes.reason).toBe(pRes.reason);
-			expect(cRes.reason).toContain("an active workspace claim appeared during confirmation");
-			expect(cRes.recovery_action).toBe(pRes.recovery_action);
-			assertZeroWrites(cf, pf);
-			expect(existsSync(join(cf.root, ".imm", "state", "batches"))).toBe(false);
-			expect(existsSync(join(pf.root, ".imm", "state", "batches"))).toBe(false);
-		}
-
-		// 17. Parity scenario: PENDING KERNEL TRANSACTION STAYS UNTOUCHED
-		// (a pre-confirmation refusal must not run Kernel transaction recovery,
-		// which the locking TaskRecord read would have done as a side effect)
-		{
-			const sharedPendingSlug = "conf-pendingtxn";
-			const cf = createConformanceFixture(`${sharedPendingSlug}-c`);
-			const pf = createConformanceFixture(`${sharedPendingSlug}-p`);
-
-			/**
-			 * Every durable byte under .imm/state. SQLite's SHM read marks are not
-			 * authority, and a read-only open of a WAL database creates an empty `-wal`
-			 * on some SQLite builds (bun 1.4.4) while others leave it absent or keep the
-			 * prior one (bun 1.4.2). An empty `-wal` holds no data, so only a non-empty one counts.
-			 */
-			const snapshotState = (root: string): string => {
-				const base = join(root, ".imm", "state");
-				const out: string[] = [];
-				const walk = (dir: string): void => {
-					if (!existsSync(dir)) return;
-					for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
-						const full = join(dir, entry.name);
-						if (entry.isDirectory()) walk(full);
-						else if (entry.name !== "kernel.sqlite-shm") {
-							const bytes = readFileSync(full);
-							if (entry.name === "kernel.sqlite-wal" && bytes.length === 0) continue;
-							out.push(`${full.slice(base.length)}:${bytes.toString("base64")}`);
-						}
-					}
-				};
-				walk(base);
-				return out.join("\n");
-			};
-
-			let cStep = 0;
-			const cr = createMcpRuntime({
-				cwd: cf.root,
-				env: ENV,
-				interactive: true,
-				readInitiative: async () => cf.observation,
-				batchKernel: {
-				advanceTask: async () => {
-						cStep++;
-						if (cStep === 1) return { state: "review_ready", operation_id: "c-pending", agent_params: { prompt: "review" } as never };
-						return { state: "completed" };
-					},
-			},
-				requestConfirmation: async () => ({ decision: "accept", requestId: "r-pending-1" }),
-			});
-			cr.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
-			const cFirst = await cr.callTool("start_unattended_batch", { initiative_slug: `${sharedPendingSlug}-c` }, { toolCallId: "toolu-pending1" });
-
-			let pStep = 0;
-			const pBatchKernel = {
-				advanceTask: async () => {
-					pStep++;
-					if (pStep === 1) return { state: "review_ready", operation_id: "p-pending", agent_params: { prompt: "review" } as never };
-					return { state: "completed" };
-				},
-			};
-			const pFirst = await runPiBatch({
-				root: pf.root,
-				initiativeSlug: `${sharedPendingSlug}-p`,
-				interactive: true,
-				readInitiative: async () => pf.observation,
-				batchKernel: pBatchKernel,
-				confirmBatch: async () => "accept",
-			});
-
-			expect(cFirst.state).toBe("started");
-			expect(pFirst.state).toBe("started");
-
-			// A retired file-store transaction marker is never interpreted by the
-			// SQLite store: both Hosts must stop on it with the marker untouched
-			// and no authority written.
-			for (const [root, taskId] of [[cf.root, `${sharedPendingSlug}-c-c1`], [pf.root, `${sharedPendingSlug}-p-c1`]] as const) {
-				// A competing coordinator claim forces the preflight's read-only
-				// authority probe; the actual batch child's store is in its Lane.
-				seedInFlightOwner(root, taskId);
-				mkdirSync(join(root, ".imm", "state", "transactions"), { recursive: true });
-				writeFileSync(
-					join(root, ".imm", "state", "transactions", "workspace-transaction-v2.json"),
-					`${JSON.stringify({
-						contract: "assurance_kernel/workspace_transaction/v2",
-						task_id: taskId,
-						expected_record_hash: "rev:1",
-						next_record_content: "{}",
-						expected_workspace_hash: "rev:1",
-						next_workspace_content: "{}",
-					}, null, 2)}\n`,
-				);
-			}
-
-			const cBefore = snapshotState(cf.root);
-			const pBefore = snapshotState(pf.root);
-
-			const cr2 = createMcpRuntime({
-				cwd: cf.root,
-				env: ENV,
-				interactive: true,
-				readInitiative: async () => cf.observation,
-				requestConfirmation: async () => ({ decision: "accept", requestId: "r-pending-2" }),
-			});
-			cr2.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
-			const cRes = await cr2.callTool("start_unattended_batch", { initiative_slug: `${sharedPendingSlug}-c` }, { toolCallId: "toolu-pending2" });
-
-			const pRes = await runPiBatch({
-				root: pf.root,
-				initiativeSlug: `${sharedPendingSlug}-p`,
-				interactive: true,
-				readInitiative: async () => pf.observation,
-				confirmBatch: async () => "accept",
-			});
-
-			// Same outcome on both Hosts: blocked, with the marker still present.
-			expect(cRes.state).toBe("rejected");
-			expect(pRes.state).toBe("rejected");
-			for (const [result, label] of [[cRes, "claude"], [pRes, "pi"]] as const) {
-				expect(JSON.stringify(result)).toMatch(/retired file-store transaction marker/);
-				expect(label).toBeTruthy();
-			}
-			// Byte-for-byte: the retired marker is untouched and nothing was written.
-			expect(snapshotState(cf.root)).toBe(cBefore);
-			expect(snapshotState(pf.root)).toBe(pBefore);
-		}
-
-		// 18. Parity scenario: RUNNING BATCH RESUMES AFTER ITS AUTHORIZATION EXPIRED
-		// Two children: renewal while waiting on Executor must preserve the first
-		// handoff without starting QA. Real two-child settlement/commit coverage
-		// lives in claude-batch-authority's foreground Executor integration.
-		{
-			const sharedRenewSlug = "conf-renew";
-			const cf = createConformanceFixture(`${sharedRenewSlug}-c`, ["src/impl.ts"], true);
-			const pf = createConformanceFixture(`${sharedRenewSlug}-p`, ["src/impl.ts"], true);
-
-			let cStep = 0;
-			const cr = createMcpRuntime({
-				cwd: cf.root,
-				env: ENV,
-				interactive: true,
-				readInitiative: async () => cf.observation,
-				batchKernel: {
-				advanceTask: async () => {
-						cStep++;
-						if (cStep === 1) return { state: "review_ready", operation_id: "c-renew", agent_params: { prompt: "review" } as never };
-						releaseWorkspaceForTest(cf.root);
-						const claimPath = join(cf.root, ".imm", "state", "active-claim.json");
-						if (existsSync(claimPath)) rmSync(claimPath, { force: true });
-						return { state: "completed" };
-					},
-			},
-				requestConfirmation: async () => ({ decision: "accept", requestId: "r-renew-1" }),
-			});
-			cr.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
-			const cRes1 = await cr.callTool("start_unattended_batch", { initiative_slug: `${sharedRenewSlug}-c` }, { toolCallId: "toolu-renew1" });
-
-			let pStep = 0;
-			const pBatchKernel = {
-				advanceTask: async () => {
-					pStep++;
-					if (pStep === 1) return { state: "review_ready", operation_id: "p-renew", agent_params: { prompt: "review" } as never };
-					releaseWorkspaceForTest(pf.root);
-					const claimPath = join(pf.root, ".imm", "state", "active-claim.json");
-					if (existsSync(claimPath)) rmSync(claimPath, { force: true });
-					return { state: "completed" };
-				},
-			};
-			const pRes1 = await runPiBatch({
-				root: pf.root,
-				initiativeSlug: `${sharedRenewSlug}-p`,
-				interactive: true,
-				readInitiative: async () => pf.observation,
-				batchKernel: pBatchKernel,
-				confirmBatch: async () => "accept",
-			});
-
-			expect(cRes1.state).toBe("started");
-			expect(pRes1.state).toBe("started");
-			expect(cRes1.report.batch_state).toBe("running");
-			expect(pRes1.report.batch_state).toBe("running");
-
-			// The record carries the retired expiry field, long past, while the batch
-			// waits on implementation; it resumes all the same.
-			for (const [root, batchId] of [[cf.root, cRes1.batch_id], [pf.root, pRes1.batch_id]] as const) {
-				const batchPath = join(root, ".imm", "state", "batches", `${batchId}.json`);
-				const record = JSON.parse(readFileSync(batchPath, "utf8"));
-				record.authorization_expires_at = "2020-01-01T00:00:00.000Z";
-				writeFileSync(batchPath, `${JSON.stringify(record, null, 2)}\n`);
-			}
-
-			const cRes2 = await cr.callTool("start_unattended_batch", { initiative_slug: `${sharedRenewSlug}-c` }, { toolCallId: "toolu-renew2" });
-			const pRes2 = await runPiBatch({
-				root: pf.root,
-				initiativeSlug: `${sharedRenewSlug}-p`,
-				interactive: true,
-				readInitiative: async () => pf.observation,
-				batchKernel: pBatchKernel,
-				confirmBatch: async () => "accept",
-			});
-
-			expect(cRes2.state).toBe("started");
-			expect(pRes2.state).toBe("started");
-			expect(cRes2.report.batch_state).toBe("running");
-			expect(pRes2.report.batch_state).toBe("running");
-			expect(cRes2.report.children.map((child: { task_id: string }) => child.task_id)).toContain(`${sharedRenewSlug}-c-c1`);
-			expect(pRes2.report.children.map((child: { task_id: string }) => child.task_id)).toContain(`${sharedRenewSlug}-p-c1`);
-			for (const result of [cRes2, pRes2]) {
-				expect(result.report.children.map((child: { state: string }) => child.state)).toEqual(["enrolled", "pending"]);
-				expect(result.report.commits).toEqual([]);
-			}
-			expect(cStep).toBe(0);
-			expect(pStep).toBe(0);
-		}
-	},
-		120_000,
-	);
-
-	// Restated property (RSN-2): the adapter-parity comparisons above were retired
-	// because two adapters reading one table agree for the wrong reason. What must
-	// still hold — and can still fail — is that the shared table is the ONLY
-	// producer of batch-gate reason and recovery prose: no adapter may carry a
-	// copy of it again.
-	test("the shared batch reason table is the only producer of gate prose", () => {
-		const adapterSources = [
-			readFileSync(resolve("plugins/immune-brain/.pi-extension/imm-unattended-batch.ts"), "utf8"),
-			readFileSync(resolve("plugins/immune-brain/runtime/host-core/runtime.ts"), "utf8"),
-		];
-		const keys = Object.keys(BATCH_REASONS) as Array<keyof typeof BATCH_REASONS>;
-		expect(keys.length).toBeGreaterThan(20);
-		for (const key of keys) {
-			const resolved = batchReason(key, "<detail>");
-			expect(resolved.reason.length).toBeGreaterThan(0);
-			expect(resolved.recovery_action.length).toBeGreaterThan(0);
-			for (const source of adapterSources) {
-				// The recovery text is static for every entry, so its absence from both
-				// adapters is exactly the "no second producer" property.
-				expect({ key, present: source.includes(resolved.recovery_action) }).toEqual({ key, present: false });
-			}
-		}
-		// A static or templated reason must not be restated in an adapter either.
-		for (const key of keys) {
-			const spec = BATCH_REASONS[key];
-			if (typeof spec.reason === "function") continue;
-			// A reason equal to its key is a bare machine code with no prose to restate, and
-			// the adapter names that key to call batchReason, so this check cannot see it.
-			if (spec.reason === key) continue;
-			for (const source of adapterSources) {
-				expect({ key, present: source.includes(spec.reason) }).toEqual({ key, present: false });
-			}
-		}
-	});
-
 	// Converged divergences (S11). Each of these fails if either Host regresses to
 	// its previous branch: Pi restored without verifying, and Claude re-derived the
 	// authorization operation inline.
@@ -2283,7 +1197,6 @@ describe("dual-host assurance conformance", () => {
 				// Every Claude PreToolUse decision that sees a file-edit tool answers "no denial".
 				for (const tool_name of ["Edit", "Write", "MultiEdit"]) {
 					const payload = { hook_event_name: "PreToolUse", tool_name, tool_input: { file_path: "src/mod/a.ts" }, ...base };
-					expect(laneGuardHookOutput(payload)).toBeNull();
 					expect(phaseEntryGateHookOutput(payload, locations)).toBeNull();
 				}
 
@@ -2387,7 +1300,7 @@ describe("dual-host assurance conformance", () => {
 
 	// ADR 0019: the phase entry gate has one refusal contract. Each Host is driven
 	// at its real tool boundary in a session that never entered drive.
-	test("both Hosts refuse Enrollment and batch start without a run entry with one code and one recovery action", async () => {
+	test("both Hosts refuse Enrollment without a run entry with one code and one recovery action", async () => {
 		const root = mkdtempSync(join(tmpdir(), "imm-phase-entry-conformance-"));
 		try {
 			let claudeGates = 0;
@@ -2409,35 +1322,24 @@ describe("dual-host assurance conformance", () => {
 				return reply?.error?.data as { reason_code: string; recovery_action: string };
 			};
 
-			const tools = new Map<string, { execute: (...args: any[]) => Promise<unknown> }>();
-			const pi = {
-				registerTool: (tool: { name: string; execute: (...args: any[]) => Promise<unknown> }) => tools.set(tool.name, tool),
-				registerCommand() {}, on() {}, events: { on() {}, emit() {} },
-			} as never;
-			registerPiBatch(pi);
 			let piDialogs = 0;
-			const ctx = {
-				cwd: root, mode: "tui", hasUI: true, isIdle: () => true,
-				sessionManager: { getSessionId: () => "conformance-session-without-entry" },
-				ui: { setWidget() {}, setStatus() {}, notify() {}, custom: async () => { piDialogs++; return "decline"; } },
-			};
-			const piRefusal = async (name: string, params: Record<string, unknown>) => {
+			const ctx = { ...piCanaryCtx(root), sessionManager: { getSessionId: () => "conformance-session-without-entry" },
+				ui: { setWidget() {}, setStatus() {}, notify() {}, custom: async () => { piDialogs++; return "decline"; } } };
+			const piRefusal = async (taskId: string) => {
 				try {
-					await tools.get(name)!.execute("call-1", params, undefined, undefined, ctx);
+					await piCanaryTool({}).execute("call-1", { task_id: taskId, action: { op: "enroll" } }, undefined, undefined, ctx);
 				} catch (error) {
 					const failure = JSON.parse((error as Error).message) as { state: string; code: string; next_action: string };
 					expect(failure.state).toBe("blocked");
 					return { reason_code: failure.code, recovery_action: failure.next_action };
 				}
-				throw new Error(`${name} was not refused`);
+				throw new Error("enroll was not refused");
 			};
 
 			const expected = { reason_code: RUN_ENTRY_REQUIRED, recovery_action: PHASE_ENTRY_RECOVERY[RUN_ENTRY_REQUIRED] };
 			const refusals = [
-				await claude("retire_stale_batch", { initiative_slug: "conformance-initiative" }),
-				await claude("start_unattended_batch", { initiative_slug: "conformance-initiative" }),
-				await piRefusal("retire_stale_batch", { initiative_slug: "conformance-initiative" }),
-				await piRefusal("start_unattended_batch", { initiative_slug: "conformance-initiative" }),
+				await claude("enroll", { task_id: "conformance-task" }),
+				await piRefusal("conformance-task"),
 			];
 			for (const refusal of refusals) expect(refusal).toEqual(expected);
 			expect(claudeGates).toBe(0);
@@ -2459,27 +1361,22 @@ describe("dual-host assurance conformance", () => {
 			expect({ actor, canonical: canonicalActorId(actor) }).toEqual({ actor, canonical: actor });
 			expect({ actor, literalUser: isLiteralUserActor(actor) }).toEqual({ actor, literalUser: false });
 		}
-		// Both adapters mint the canonical spelling rather than a second one: after the
-		// shared authorization flow, the batch binding mints it once in the shared
-		// owner both adapters call through HostRuntime, and neither adapter spells it itself.
-		const sharedOwner = readFileSync(
-			resolve("plugins/immune-brain/runtime/unattended/batch_preflight.ts"),
-			"utf8",
-		);
-		expect(sharedOwner.includes("LITERAL_USER_ACTOR_ID")).toBe(true);
+		// Both adapters mint the canonical spelling rather than a second one: the
+		// Enrollment binding mints it once in the shared HostRuntime both adapters
+		// call through, and neither adapter spells it itself.
 		const sharedRuntime = readFileSync(
 			resolve("plugins/immune-brain/runtime/host-core/runtime.ts"),
 			"utf8",
 		);
-		expect(sharedRuntime.includes("authorizeBatch")).toBe(true);
-		for (const [path, sharedCall] of [
-			["plugins/immune-brain/.pi-extension/imm-unattended-batch.ts", "startUnattendedBatch"],
-			["plugins/immune-brain/.pi-extension/pi-host-runtime.ts", "this.runtime.startUnattendedBatch"],
-			["plugins/immune-brain/runtime/claude/kernel_ports.ts", "this.runtime.startUnattendedBatch"],
-			["plugins/immune-brain/runtime/host-core/runtime.ts", "authorizeBatch"],
-		] as const) {
+		expect(sharedRuntime.includes("actor_id: LITERAL_USER_ACTOR_ID")).toBe(true);
+		for (const path of [
+			"plugins/immune-brain/.pi-extension/pi-host-runtime.ts",
+			"plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+			"plugins/immune-brain/runtime/claude/kernel_ports.ts",
+			"plugins/immune-brain/runtime/antigravity/kernel_ports.ts",
+			"plugins/immune-brain/runtime/host-core/runtime.ts",
+		]) {
 			const source = readFileSync(resolve(path), "utf8");
-			expect({ path, shared: source.includes(sharedCall) }).toEqual({ path, shared: true });
 			expect({ path, hardcoded: /actor_id:\s*"user"/.test(source) }).toEqual({ path, hardcoded: false });
 		}
 	});
@@ -3474,13 +2371,13 @@ describe("runtime composition", () => {
 	});
 
 	test("a native refusal from either runtime is the shared NativeAuthorityError", async () => {
-		const root = mkdtempSync(join(tmpdir(), "imm-runtime-refusal-"));
+		const root = enrolledHostFixture("probe-task");
 		const claude = new ClaudeRuntime({ cwd: root, env: { CLAUDE_CODE_VERSION: "2.1.236" }, interactive: true });
 		const antigravity = new AntigravityRuntime({ cwd: root, env: { ANTIGRAVITY_VERSION: "0.2.0" }, interactive: true });
 		try {
-			const meta = (toolCallId: string): ToolMeta => ({ taskId: "probe-initiative", sessionId: "s", toolCallId, interactive: true });
+			const meta = (toolCallId: string): ToolMeta => ({ taskId: "probe-task", sessionId: "s", toolCallId, interactive: true });
 			for (const [host, runtime] of [["claude-code", claude], ["antigravity", antigravity]] as const) {
-				const refusal = await runtime.retireStaleBatch("probe-initiative", meta("probe-call")).catch((error: unknown) => error);
+				const refusal = await runtime.authorize("probe-task", "stop", meta("probe-call")).catch((error: unknown) => error);
 				expect({ host, shared: refusal instanceof NativeAuthorityError, code: (refusal as NativeAuthorityError).reasonCode })
 					.toEqual({ host, shared: true, code: "interaction_not_opened" });
 			}
@@ -3573,7 +2470,7 @@ describe("MCP host profile", () => {
 			jsonrpc: "2.0",
 			id: "gated",
 			method: "tools/call",
-			params: { name: "start_unattended_batch", arguments: { initiative_slug: "profile-initiative" } },
+			params: { name: "enroll", arguments: { task_id: "profile-task" } },
 		}, claude);
 		expect(reply?.error?.data).toEqual({ reason_code: "correlation_missing", recovery_action: "retry through a fresh native gate in the current Host" });
 	});

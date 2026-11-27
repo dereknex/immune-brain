@@ -3,8 +3,7 @@
 // docs/specs/host-neutral-adapter-core.spec.md D9); this adapter parses Host
 // payloads into typed events and renders the outcome back into Hook output.
 //
-// Interface: `runContinuationHookOutput`, `readRunToolSession`,
-// `selectedClaudeParent`.
+// Interface: `runContinuationHookOutput`, `readRunToolSession`.
 // Invariants: every continuation decision re-reads the actual Kernel; the
 // transport connection ID is never a Hook session; the entry token ends with its
 // session, a settlement or a lost bound identity, never with a suspending pause.
@@ -17,7 +16,7 @@ import { digestOfReviewerBytes } from "../assurance/review_mediation";
 import { recognizePhaseEntry } from "../assurance/phase_entry";
 import { releasesRunBinding, USER_WAIT_GUIDANCE } from "../assurance/run_continuation";
 import { claudeLocalNames, dropPhaseEntryLog, readPhaseEntryState, revokeEntryToken } from "./lane_guard";
-import { applyRunContinuationEvent, PAUSED_GATE_GUIDANCE, readSessionToolCall, selectedParentSession,
+import { applyRunContinuationEvent, PAUSED_GATE_GUIDANCE, readSessionToolCall,
 	type RunContinuationEvent, type RunContinuationHost } from "../host-core/run_continuation_session";
 import { CLAUDE_CACHE_DIR } from "./review_host";
 
@@ -33,9 +32,6 @@ const claudeContinuationHost = (root: string): RunContinuationHost => ({
 /** Exact PreToolUse correlation; the transport connection ID is never a Hook session. */
 export function readRunToolSession(toolId: string, operation: string, workspace: string, root = tmpdir()): string | null {
 	return readSessionToolCall(claudeContinuationHost(root), root, toolId, operation, workspace);
-}
-export function selectedClaudeParent(toolId: string, workspace: string, slug: string, root = tmpdir()): boolean {
-	return selectedParentSession(claudeContinuationHost(root), root, toolId, workspace, slug);
 }
 
 /** A transcript assistant UUID identifies a Host turn; local callback counters do not. */

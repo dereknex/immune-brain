@@ -29,13 +29,6 @@ import {
 	type NativeConfirmationPort,
 } from "./interaction";
 import { HostRuntime, type HostRuntimeOptions, type HostRuntimeProfile, type ToolMeta } from "./runtime";
-import { batchReason } from "../unattended/batch_reasons";
-import { parseLaneInstruction, parseLaneOffers, parseLaneSessionClose, parseMaxParallel, resolveLaneParallel } from "../unattended/batch_lanes";import { parseFinalVerification } from "../unattended/batch_final_verification";
-import { parseRequestedAgents } from "../unattended/agent_profiles";
-import type { ExecutorHost } from "../unattended/agent_profiles";
-import type { InitiativeObservationReader } from "../unattended/types";
-import type { BatchRunnerKernelPort, BatchTrackerPort } from "../unattended/batch_kernel_port";
-import type { BatchRunnerGitPort } from "../unattended/batch_git";
 import type { AssuranceHostPort } from "../assurance/host_port";
 import { deliveryOf, type AssuranceCoordinatorPorts } from "../assurance/coordinator";
 import type { VerdictAuthority } from "../assurance/verdict_authority";
@@ -48,7 +41,7 @@ import { parseReworkChoice, reworkExitLines, type ReworkChoice } from "../kernel
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
 
 /** The MCP tools whose PreToolUse admission decides the call. */
-export type GatedTool = "enroll" | "start_unattended_batch" | "retire_stale_batch";
+export type GatedTool = "enroll";
 
 /** A consumed admission, with the entry token the hook saw and the workspace it was minted for. */
 export interface PhaseAdmissionGrant {
@@ -146,8 +139,6 @@ export const TOOLS = [
 	{ name: "revise_intent", description: "Apply a compatible TaskIntent revision.", privileged: false },
 	{ name: "approve_breaking_intent_revision", description: "Approve a breaking TaskIntent revision.", privileged: true },
 	{ name: "stop", description: "Stop the active task with literal-user authority.", privileged: true },
-	{ name: "start_unattended_batch", description: "Start an unattended Lane batch for an Initiative or a single TaskIntent under the literal-user drive entry.", privileged: true },
-	{ name: "retire_stale_batch", description: "Retire an Initiative's parked or drifted batch record to the terminal superseded state under the literal-user drive entry.", privileged: true },
 	{ name: "repair_authority_state", description: "Repair a proven recoverable stale backend claim.", privileged: false },
 	{ name: "resolve_finding", description: "Resolve one open blocking or advisory finding whose cause is fixed and verified.", privileged: false },
 	{ name: "refute_finding", description: "Refute one open finding by binding the fresh passing QA attestation that contradicts it.", privileged: false },
@@ -162,74 +153,26 @@ export function listMcpTools() {
 		inputSchema: {
 			type: "object",
 			properties: {
-				...(tool.name === "start_unattended_batch" || tool.name === "retire_stale_batch"
+				...(tool.name === "submit_session_result" ? {} : { task_id: { type: "string" } }),
+				...(tool.name === "submit_session_result" ? { slot_id: { type: "string" }, result: { type: "string" } } : {}),
+				...(tool.name === "approve_breaking_intent_revision" || tool.name === "revise_intent" ? { next_intent: { type: "object" } } : {}),
+				...(tool.name === "stop" || tool.name === "request_authorization" ? { reason: { type: "string" } } : {}),
+				...(tool.name === "request_authorization"
 					? {
-						initiative_slug: { type: "string" },
-						...(tool.name === "start_unattended_batch"
-							? {
-									task_id: { type: "string" },
-									stop: { type: "boolean" },
-									agents: {
-										type: "object",
-										description: "Whole profile per role for this batch: a user profile name, host:model@effort, or { host, model?, effort? }.",
-										properties: { executor: { oneOf: [{ type: "string", minLength: 1 }, { type: "object", properties: { host: { type: "string", enum: ["pi", "claude-code", "antigravity"] }, model: { type: "string", minLength: 1 }, effort: { type: "string", minLength: 1 } }, required: ["host"], additionalProperties: false }] }, reviewer: { oneOf: [{ type: "string", minLength: 1 }, { type: "object", properties: { host: { type: "string", enum: ["pi", "claude-code", "antigravity"] }, model: { type: "string", minLength: 1 }, effort: { type: "string", minLength: 1 } }, required: ["host"], additionalProperties: false }] } },
-										additionalProperties: false,
-									},
-									max_parallel: { type: "integer", minimum: 1 },
-									lane_offers: {
-										type: "array",
-										items: {
-											type: "object",
-											properties: { task_id: { type: "string" }, path: { type: "string" } },
-											required: ["task_id", "path"],
-											additionalProperties: false,
-										},
-									},
-									final_verification: { type: "array", items: { type: "string" }, maxItems: 8 },
-									lane_instruction: {
-										type: "object",
-										properties: {
-											task_id: { type: "string" },
-											kind: { type: "string", enum: ["instruction", "correction"] },
-											text: { type: "string" },
-											session_state: { type: "string", enum: ["idle", "working", "blocked", "done"] },
-										},
-										required: ["task_id", "text", "session_state"],
-										additionalProperties: false,
-									},
-									lane_session_close: {
-										type: "object",
-										properties: { task_id: { type: "string" } },
-										required: ["task_id"],
-										additionalProperties: false,
-									},
-								}
-							: {}),
+							choice: { type: "string", enum: ["accept_verifier_dispute", "dismiss_verifier_dispute"] },
+							exit: { type: "string", enum: ["grant_rounds", "accept_residual_risk", "replan"] },
+							rounds: { type: "integer", minimum: 1 },
 						}
-					: {
-						...(tool.name === "submit_session_result" ? {} : { task_id: { type: "string" } }),
-						...(tool.name === "submit_session_result" ? { slot_id: { type: "string" }, result: { type: "string" } } : {}),
-						...(tool.name === "approve_breaking_intent_revision" || tool.name === "revise_intent" ? { next_intent: { type: "object" } } : {}),
-						...(tool.name === "stop" || tool.name === "request_authorization" ? { reason: { type: "string" } } : {}),
-						...(tool.name === "request_authorization"
-							? {
-									choice: { type: "string", enum: ["accept_verifier_dispute", "dismiss_verifier_dispute"] },
-									exit: { type: "string", enum: ["grant_rounds", "accept_residual_risk", "replan"] },
-									rounds: { type: "integer", minimum: 1 },
-								}
-							: {}),
-						// Spec drive-always-lanes D11: the record revision read in `lane_decision_required`; a Lane that moved since is refused as stale.
-						...(tool.name === "request_authorization" || tool.name === "approve_breaking_intent_revision" || tool.name === "stop" ? { record_revision: { type: "string" } } : {}),
-						...(tool.name === "submit_review" ? { verdict: { type: "object" } } : {}),
-						...(tool.name === "submit_verification" ? { result: { type: "string" } } : {}),
-						...(tool.name === "resolve_finding" ? { finding_id: { type: "string" } } : {}),
-						...(tool.name === "refute_finding" ? { finding_id: { type: "string" }, attestation_id: { type: "string" } } : {}),
-					}),
+					: {}),
+				// An optional TaskRecord revision; a record that moved since is refused as stale.
+				...(tool.name === "request_authorization" || tool.name === "approve_breaking_intent_revision" || tool.name === "stop" ? { record_revision: { type: "string" } } : {}),
+				...(tool.name === "submit_review" ? { verdict: { type: "object" } } : {}),
+				...(tool.name === "submit_verification" ? { result: { type: "string" } } : {}),
+				...(tool.name === "resolve_finding" ? { finding_id: { type: "string" } } : {}),
+				...(tool.name === "refute_finding" ? { finding_id: { type: "string" }, attestation_id: { type: "string" } } : {}),
 			},
-			required: tool.name === "start_unattended_batch" ? [] : tool.name === "retire_stale_batch"
-				? ["initiative_slug"]
-				: tool.name === "submit_session_result"
-					? ["slot_id", "result"]
+			required: tool.name === "submit_session_result"
+				? ["slot_id", "result"]
 				: tool.name === "resolve_finding"
 					? ["task_id", "finding_id"]
 					: tool.name === "refute_finding"
@@ -249,7 +192,7 @@ export function supportsElicitationProtocol(value: unknown): boolean {
 export interface McpRuntimeOptions {
 	cwd?: string;
 	env?: Record<string, string | undefined>;
-	parentHost?: ExecutorHost;
+	parentHost?: HostRuntimeOptions["parentHost"];
 	/** The Host probe this adapter's composition root chose; defaults to the profile's. */
 	probeHost?: McpHostProfile["probeHost"];
 	ports?: AssuranceCoordinatorPorts;
@@ -257,14 +200,9 @@ export interface McpRuntimeOptions {
 	host?: AssuranceHostPort & { observe(event: any): void };
 	interactive?: boolean;
 	requestConfirmation?: NativeConfirmationPort;
-	batchKernel?: Partial<BatchRunnerKernelPort>;
-	batchGit?: BatchRunnerGitPort;
-	batchTracker?: BatchTrackerPort;
-	readInitiative?: InitiativeObservationReader;
-	sessionPortFactory?: (provider: string, env: Record<string, string | undefined>) => unknown;
 	/**
 	 * Takes the admission the PreToolUse hook wrote for one
-	 * `enroll`, `start_unattended_batch` or `retire_stale_batch` call. Defaults to the
+	 * `enroll` call. Defaults to the
 	 * profile's private file store.
 	 */
 	consumePhaseAdmission?: (toolCallId: string, operation: GatedTool) => PhaseAdmissionGrant | false | null;
@@ -314,11 +252,6 @@ export function createMcpRuntime(profile: McpHostProfile, options: McpRuntimeOpt
 		authorityOverrides: options.authorityOverrides,
 		interactive: options.interactive,
 		requestConfirmation: options.requestConfirmation ?? profile.requestConfirmation,
-		batchKernel: options.batchKernel,
-		batchGit: options.batchGit,
-		...(options.batchTracker ? { batchTracker: options.batchTracker } : {}),
-		readInitiative: options.readInitiative,
-		...(options.sessionPortFactory ? { sessionPortFactory: options.sessionPortFactory } : {}),
 	});
 	// Trusted Host evidence negotiated on this JSON-RPC connection. Absent
 	// handshake evidence means unversioned and non-interactive: fail closed.
@@ -394,8 +327,8 @@ export function createMcpRuntime(profile: McpHostProfile, options: McpRuntimeOpt
 			throw new NativeAuthorityError("run_entry_required", `${operation} runs in a workspace other than the one drive was entered in`);
 		return grant.entry_token;
 	};
-	/** The shared gate of `enroll`, `start_unattended_batch` and `retire_stale_batch`: Host evidence, then the run entry. */
-	const gatedToolMeta = (name: GatedTool, initiativeSlug: string, workspace: string, meta: Partial<ToolMeta>): ToolMeta => {
+	/** The gate of `enroll`: Host evidence, then the run entry. */
+	const gatedToolMeta = (name: GatedTool, taskId: string, workspace: string, meta: Partial<ToolMeta>): ToolMeta => {
 		requireTrustedHost(true);
 		const toolCallId = meta.toolCallId ?? `call-${name}`;
 		const entryToken = requireRunEntry(name, workspace, meta.admissionId ?? toolCallId);
@@ -404,8 +337,7 @@ export function createMcpRuntime(profile: McpHostProfile, options: McpRuntimeOpt
 			toolCallId,
 			...(meta.admissionId ? { admissionId: meta.admissionId } : {}),
 			workspace,
-			taskId: initiativeSlug,
-			initiativeSlug,
+			taskId,
 			...(entryToken ? { entryToken } : {}),
 			interactive: meta.interactive ?? options.interactive ?? negotiatedInteractive,
 			signal: meta.signal,
@@ -448,41 +380,6 @@ export function createMcpRuntime(profile: McpHostProfile, options: McpRuntimeOpt
 			const readToolSession = options.readRunToolSession ?? profile.readRunToolSession;
 			const observedSession = readToolSession(meta.toolCallId ?? `call-${name}`, name, workspace);
 			if (observedSession) hookSessionId = observedSession;
-			if (name === "start_unattended_batch") {
-				if (Object.hasOwn(args, "lane_revision")) throw new Error("unknown parameter: lane_revision");
-				const initiative = typeof args.initiative_slug === "string" ? args.initiative_slug : "";
-				const task = typeof args.task_id === "string" ? args.task_id : "";
-				if (args.stop !== undefined && typeof args.stop !== "boolean") throw new Error("stop must be a boolean");
-				for (const key of ["executor_host", "executor_effort", "host", "model", "effort", "review_host", "review_model", "review_effort"]) if (Object.hasOwn(args, key)) throw new Error(`unknown parameter: ${key} (use agents)`);
-				const requested = parseRequestedAgents(workspace, args.agents);
-				if (!!initiative === !!task) return batchReason("batch_entry_ambiguous");
-				const initiativeSlug = task || initiative;
-				refuseSuppliedAuthority(args);
-				const toolMeta = gatedToolMeta(name, initiativeSlug, workspace, meta);
-				const laneOffers = parseLaneOffers(args.lane_offers);
-				// A lane_offers-only call resumes the recorded lane batch; refused before any gate otherwise.
-				const laneInstruction = parseLaneInstruction(args.lane_instruction);
-				const laneSessionClose = parseLaneSessionClose(args.lane_session_close);
-				const maxParallel = task ? 1 : resolveLaneParallel(workspace, initiativeSlug, parseMaxParallel(args.max_parallel), laneOffers, laneInstruction);
-				const finalVerification = Array.isArray(args.final_verification) && args.final_verification.length === 0 ? undefined : parseFinalVerification(args.final_verification);
-				return runtime.startUnattendedBatch(initiativeSlug, toolMeta, {
-					...(task ? { plan_source: "single_task" as const } : {}),
-					...(args.stop === true ? { stop: true } : {}),
-					...(requested.executor ? { executor: requested.executor } : {}),
-					...(maxParallel !== undefined ? { max_parallel: maxParallel } : {}),
-					...(laneOffers !== undefined ? { lane_offers: laneOffers } : {}),
-					...(finalVerification !== undefined ? { final_verification: finalVerification } : {}),
-					...(requested.reviewer ? { review_profile: requested.reviewer } : {}),
-					...(laneInstruction !== undefined ? { lane_instruction: laneInstruction } : {}),
-					...(laneSessionClose !== undefined ? { lane_session_close: laneSessionClose } : {}),
-				});
-			}
-			if (name === "retire_stale_batch") {
-				const initiativeSlug = String(args.initiative_slug ?? "");
-				if (!initiativeSlug) throw new Error("initiative_slug is required");
-				refuseSuppliedAuthority(args);
-				return runtime.retireStaleBatch(initiativeSlug, gatedToolMeta(name, initiativeSlug, workspace, meta));
-			}
 			// Spec review-receipt-mcp-submission D4: the reviewer's receipt. Workspace
 			// scoped, never privileged (a native gate would be denied under `dontAsk`),
 			// so it names no task and dispatches before the trusted-host check.
@@ -768,73 +665,6 @@ async function writeReply(output: Writable, reply: JsonRpc): Promise<void> {
 }
 
 export function elicitationParams(input: NativeConfirmationInput) {
-	if (input.operation === "retire_stale_batch") {
-		const d = input.batchDisposition;
-		const details = [
-			`Operation: retire_stale_batch`,
-			`Initiative: ${input.initiativeSlug}`,
-			d ? `Batch: ${d.batch_id}` : null,
-			d ? `Batch state: ${d.batch_state}` : null,
-			d ? `Batch branch: ${d.batch_branch}` : null,
-			d ? `Plan digest: ${d.plan_digest}` : null,
-			d ? `Recorded child commits: ${d.recorded_commits}` : null,
-			d
-				? `Children (${d.children.length}):\n${d.children
-						.map(
-							(child) =>
-								`  - ${child.task_id} (${child.slice_id}) [state: ${child.state}]${child.commit ? ` [commit: ${child.commit}]` : " [no commit]"}${child.lane_branch ? ` [lane: ${child.lane_branch}]` : ""}${child.kernel_lifecycle ? ` [Kernel run: ${child.kernel_lifecycle}]` : ""}`,
-						)
-						.join("\n")}`
-				: null,
-			"Retiring writes this record to the terminal superseded state. Child states, recorded commits and the batch branch are preserved as evidence; nothing is deleted and no batch trailer or approval is manufactured.",
-			"A child without a commit was never executed by this batch: it carries no delivery evidence, and the retired authorization is never reused for a revised plan.",
-			"After retiring, run each remaining child with drive under its own authorization, or start a new batch for this Initiative.",
-		].filter(Boolean);
-		return {
-			mode: "form",
-			message: `Retire this stale batch record for ${input.initiativeSlug}?\n\n${details.join("\n")}`,
-			requestedSchema: { type: "object", properties: {} },
-		};
-	}
-	if (input.operation === "start_unattended_batch") {
-		const b = input.batchDetails;
-		if (b?.parent_final_verification) {
-			const lines = [
-				`Operation: start_unattended_batch (native Parent final verification; no batch run is started)`,
-				`Initiative: ${input.initiativeSlug ?? b.initiative_slug}`,
-				input.planDigest ? `Plan digest: ${input.planDigest}` : null,
-				`Parent Tasks (${b.children.length}):\n${b.children.map((c) => `  - ${c.task_id} (${c.slice_id})`).join("\n")}`,
-				`Final verification commands run in this workspace outside Host permission:\n${(b.final_verification ?? []).map((command) => `  - ${command}`).join("\n")}`,
-			].filter(Boolean);
-			return {
-				mode: "form",
-				message: `Authorize this Parent final verification for ${input.initiativeSlug}?\n\n${lines.join("\n")}`,
-				requestedSchema: { type: "object", properties: {} },
-			};
-		}
-		const details = [
-			`Operation: start_unattended_batch`,
-			`Initiative: ${input.initiativeSlug ?? b?.initiative_slug}`,
-			b?.batch_branch ? `Batch branch: ${b.batch_branch}` : null,
-			input.planDigest ? `Plan digest: ${input.planDigest}` : null,
-			input.intentRevision !== undefined ? `TaskIntent revision: ${input.intentRevision}` : null,
-			input.intentContentHash ? `TaskIntent content hash: ${input.intentContentHash}` : null,
-			input.bindingDigest ? `Preparation digest: ${input.bindingDigest}` : null,
-			b?.children ? `Ordered children (${b.children.length}):\n${b.children.map((c) => `  - ${c.task_id} (${c.slice_id}) [risk: ${c.risk ?? "unknown"}]`).join("\n")}` : null,
-			b?.excluded && b.excluded.length > 0 ? `Excluded children (${b.excluded.length}):\n${b.excluded.map((e) => `  - ${e.task_id} (${e.slice_id}): ${e.reason}`).join("\n")}` : null,
-			b?.budget ? `Budget: max_children=${b.budget.max_children}, qa_failure_limit=${b.budget.qa_failure_limit}` : null,
-			b?.lane_mode ? `Lane mode: max_parallel=${b.lane_mode.max_parallel}` : null,
-			b?.lane_mode?.review_profile ? `Review: ${[b.lane_mode.review_profile.host, b.lane_mode.review_profile.model, b.lane_mode.review_profile.effort].filter(Boolean).join(" / ")}` : null,
-			b?.lane_mode ? `Parallel groups (${b.lane_mode.parallel_groups.length}):\n${b.lane_mode.parallel_groups.map((group) => `  - ${group.join(", ")}`).join("\n")}` : null,
-			b?.lane_mode && b.lane_mode.serialized.length > 0 ? `Serialized by overlapping scope (${b.lane_mode.serialized.length}):\n${b.lane_mode.serialized.map((c) => `  - ${c.task_id} after ${c.overlaps_with.join(", ")}`).join("\n")}` : null,
-			b?.final_verification ? `Final verification: ${b.final_verification.join("; ")}` : null,
-		].filter(Boolean);
-		return {
-			mode: "form",
-			message: `Authorize this unattended batch run for ${input.initiativeSlug}?\n\n${details.join("\n")}`,
-			requestedSchema: { type: "object", properties: {} },
-		};
-	}
 	if (input.verifierDispute) {
 		const dispute = input.verifierDispute;
 		return { mode: "form", message: `Resolve this Review verifier dispute for ${input.taskId}.\n\nClaim: ${dispute.claim}\nTrigger: ${dispute.trigger}\nCaller chain: ${dispute.caller_chain.join(" → ")}\nCounter-path: ${dispute.counter_path}`,

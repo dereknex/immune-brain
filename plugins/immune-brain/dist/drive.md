@@ -21,9 +21,10 @@ modifying files inside that scope, read `status` and tell the user the task is
 active and what it waits for. The notice resumes nothing. Read the current
 Host's `status` projection first and verify the exact active backend claim,
 TaskIntent, and TaskRecord. Invalid or contradictory projections fail closed. A
-candidate TaskIntent is not Enrollment authority. For a Parent Issue, route to
-[Unattended Batch Opt-In](drive-batch.md#unattended-batch-opt-in) after this authority
-read. A Child entry verifies prerequisite settlement and integration before its
+candidate TaskIntent is not Enrollment authority. A Parent Issue is not a
+`drive` target: no batch runs inside Immune-Brain (ADR 0043 Slice 3), so name
+its first unblocked Child instead and drive each Child in dependency order. A
+Child entry verifies prerequisite settlement and integration before its
 single-task native gate; it starts no other Slice.
 
 Every new single-task `drive` entry runs in place in the current worktree
@@ -39,19 +40,15 @@ TaskIntent and bound Spec, any tracked or untracked non-ignored dirty path
 refuses with `workspace_not_clean: <paths>` before the gate opens, and nothing
 is written. Never stash, discard or commit the user's changes to clear it. The
 task's diff, attribution and changed paths are taken from its Enrollment HEAD.
-Files beyond `scope_hint` are disclosed in Review evidence, not refused. A
-batch child keeps its Lane's confirmed scope disclosure. Then
+Files beyond `scope_hint` are disclosed in Review evidence, not refused. Then
 continue with the [Execution Loop](#execution-loop) below. Planner and
 Brainstorm never open that gate; a confirmation given to either is not this
 entry. A gate failure preserves the candidate and reports its stable reason plus
 exactly one same-Host recovery action; never recommend another Host, worktree,
 Direct Path, unmanaged implementation, or automatic retry.
 
-An active claim resumes from its Kernel facts and is never enrolled again. A
-single-task Lane batch record opened before this change stays resumable until
-terminal (drain-only, owner: runtime): re-enter it through
-[Single-Task Lane](drive-batch.md#single-task-lane). A new entry never starts
-one.
+An active claim resumes from its Kernel facts in its own worktree and is never
+enrolled again.
 
 `status` is a read, not a freeze. It stays readable while the scope holds
 unstaged or untracked paths and returns them as a `warnings` entry beside the
@@ -95,8 +92,6 @@ read-only boundary remains prompt text; the Pi dispatch rules are unchanged.
 
 Before a child dispatch, read the [Subagent Dispatch Protocol](docs/reference/subagent-dispatch-protocol.md#authorization-authority).
 Never load an internal role as a public Skill or spawn another loop process;
-the only exception is a Lane's Executor Host under
-[Lane Executor Supervision](drive-batch.md#lane-executor-supervision).
 The standalone `fix-pr`, `prune-docs`, `slim`, and `prune-tests`
 are host-native maintenance entries, never dispatched as the Loop role. Internal
 `test-fixer` and `pr-fix` repairs remain bounded by the enrolled TaskIntent.
@@ -110,17 +105,13 @@ identity. Submit a returned verdict before editing; use projected recovery after
 a rejected submission. Only changed task/delivery facts or scoped source bytes
 reset substantive progress. Unchanged observations stop with one recovery
 action; status, formatting and repeated failed commands do not reset the count.
-A single Slice ends at its own terminal proof; a Parent uses whole-plan completion
-from the [batch contract](drive-batch.md#unattended-batch-opt-in).
+A Slice ends at its own terminal proof.
 
-1. For an active single-task record (a Lane batch's record runs this step
-   inside its Lane's Executor instead), implement the enrolled acceptance in the current
+1. For an active task, implement the enrolled acceptance in the current
    conversation, applying `docs/reference/layering-rules.md` when the repository
    declares layers. On a fresh enrollment, `submit_assurance` means implement first,
    not call `advance_assurance` immediately: implement, run focused checks, stage,
-   then advance. `implementation_pending` names this no-changed-path case. Lane
-   plugin skew (`loaded_plugin_differs_from_workspace`) is expected and
-   non-blocking in a Lane; continue with the loaded build without a reload.
+   then advance. `implementation_pending` names this no-changed-path case.
    `scope_hint` is an estimate; disclose changed files beyond it
    as `beyond_estimate` in Review evidence instead of revising scope. Preserve
    frozen acceptance and the bound Spec, and respect hard no-touch paths. Run focused
@@ -129,8 +120,8 @@ from the [batch contract](drive-batch.md#unattended-batch-opt-in).
    to the user. If a file mixes pre-existing user changes with task changes and
    the task-owned hunks cannot be isolated reliably, stop with that ownership
    conflict instead of staging the whole file. Staging grants no commit or push
-   authority. Inside the Lane the runtime stages only the task's TaskIntent and
-   bound Spec; nothing commits them, so never stage or commit those paths by hand
+   authority. Enrollment stages only the task's TaskIntent and bound Spec;
+   nothing commits them, so never stage or commit those paths by hand
    and never ask the user to. Complete the [Executor Delivery Evidence](role-prompts/executor.md#delivery-evidence)
    table for rework only; a first delivery needs no table.
    Executor checks are diagnostic evidence, not a QA or Review approval.
@@ -245,8 +236,8 @@ is recorded as a separate follow-up rather than resolved here.
   design, or decomposition, and returns any other proposal to the executing
   session. No Host refuses a file edit because of the session's entry.
 - Run entry decision hosting (ADR 0025). The literal-user `drive` entry needs
-  no chat confirmation; single-task `enroll` and unattended batch start each keep one native
-  gate, and the entry token spares only retirement and same-Host recovery.
+  no chat confirmation; `enroll` keeps one native gate, and the entry token
+  spares only same-Host recovery.
   Within one entry, only a side-effect-free rejection is retried, at most twice,
   and preflight is rerun before each retry; judge retryability from the
   rejection text and `recovery_action`. `plan_changed`, `head_moved` and a claim
@@ -260,24 +251,20 @@ is recorded as a separate follow-up rather than resolved here.
   PR, credentials, breaking intent revision and rework exits still stop for the
   user.
 - Effects are separate grants. A stage-only recovery restores staging and grants
-  no commit, push, or publication; an existing exact approval, including a valid
-  batch capability bounded to one child, stays usable without another chat gate.
+  no commit, push, or publication; an existing exact approval stays usable
+  without another chat gate.
   Before a new outbound research call, check the project's existing channel and
   data scope; a public article, a mock, or a local read-only database authorizes
   no new provider or data effect.
 - Text instructions are contracts, not a hard bash sandbox. They guide and are
   reviewed; the Kernel authority gates remain the real boundary.
-- Frozen acceptance remains the authority subject (ADR 0026). In a Lane,
-  acceptance changes pause the child for the literal user's native gate;
-  the coordinator cannot approve them or reseal the batch. Existing records
-  with delegation fields remain readable and retireable (ADR 0028).
+- Frozen acceptance remains the authority subject (ADR 0026). Acceptance
+  changes wait for the literal user's native gate. Existing records with
+  delegation fields remain readable (ADR 0028).
 - Invoke `approve_breaking_intent_revision` with the complete next intent
   directly; the native Host gate is the single user decision. Do not overwrite
-  enrolled intent sidecars or ask for chat pre-confirmation. In a headless Lane
-  Executor session the call opens no gate and returns
-  `lane_decision_requested`: the request is left for the Parent, so end the
-  session without retrying. A later generation that finds the revision already
-  committed (`status` `projection.intent_revision` above the claim's enrolled
+  enrolled intent sidecars or ask for chat pre-confirmation. A later session that
+  finds the revision already committed (`status` `projection.intent_revision` above the claim's enrolled
   revision) continues the Execution Loop; resubmitting it returns
   `intent_revision_committed` with the user's confirmation. A breaking revision
   is used when the authority subject changes, including acceptance or a bound
@@ -310,16 +297,8 @@ is recorded as a separate follow-up rather than resolved here.
   failing `check` stage returns no output text at all. A `protected_input_or_output_drift`
   failure adds `prepare_observation.drift_paths`, the in-scope paths that
   differ from the frozen snapshot, to the direct Tool result only; restore or
-  stage those paths before a fresh attempt. The Lane batch integration recheck
-  is the one run that still uses an isolated copy with no worktree
-  `node_modules`, because its merge candidate is never checked out. The copy is
-  created beside the Lanes, so it resolves the same ancestor dependencies, such
-  as the repository's installed `node_modules` and its `.bin`, that the Lane
-  resolved; a reproduction in the live worktree is still not equivalent to that
-  run. A redo that recreates a Lane first pins its unintegrated commit at
-  `refs/imm/retained/<slug>/<task_id>/<commit>`.
-  A frozen child with `run_qa` pending returns to Parent; batch re-entry does not
-  blindly retry an unchanged failure. Fix the environment before a fresh attempt.
+  stage those paths before a fresh attempt. Re-entry does not blindly retry an
+  unchanged failure. Fix the environment before a fresh attempt.
   Scope/authority exceptions still use their existing native gates. A committed
   QA result is honored; an interrupted precommit QA run produces no approval.
   Do not rerun fresh QA simply because Review was interrupted.

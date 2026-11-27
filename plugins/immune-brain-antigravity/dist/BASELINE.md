@@ -13,14 +13,13 @@
   model/data calls are distinct operations. Recovering a stage-only instruction
   restores staging and nothing more; commit, push, and publication each keep
   their own existing grant. An explicit approval already covering the same
-  operation, target, and impact — including a valid batch capability — stays
-  usable without another gate.
+  operation, target, and impact stays usable without another gate.
 - The repository's `Git integration` preference decides whether the runtime
   writes commits on its own (ADR 0024). Set `git_integration` at the top level
   of `~/.config/immune-brain/config.json` or in tracked `.imm/config.json`
   (`user → project → legacy → default`); the legacy instruction-file directive
   is deprecated.
-  `manual`, the default, writes none outside batches: a single task's delivery lands staged and uncommitted in the checkout, and migration
+  `manual`, the default, writes none: a task's delivery lands staged and uncommitted in the checkout, and migration
   leaves its diff for the user to commit however they prefer. `auto` commits each task's settled scoped paths when it
   settles `done`. Either way the runtime runs Git hooks normally and grants no
   push, publication, history rewrite, or commit of any other path, and a model
@@ -123,22 +122,21 @@ Privileged effects include:
 - external writes whose target or impact cannot be safely reversed locally.
 
 An existing grant for one of these never inherits another: a stage-only
-instruction stays stage-only, a commit is not push or publication authority,
-and a valid batch capability commits only its own scope-bounded child.
+instruction stays stage-only, and a commit is not push or publication authority.
 
 `imm-kernel approve` is the user's own external approval seam (ADR 0043
-Decision 4), enabled only by `external_approval: true`. A Managed, Lane,
+Decision 4), enabled only by `external_approval: true`. A Managed,
 Parent, or Agent session never invokes `imm-kernel approve`, in any mode, and
 never sets `external_approval` to reach it; its gates use the current Host's
 native interaction. Read-only `imm-kernel inspect --json` stays available.
 
 Routine Managed enrollment is the first step of an explicit `drive` entry and uses one current-Host native confirmation bound to the TaskIntent content hash after Planner validation. Planner and Brainstorm stop with candidate artifacts and never invoke Enrollment, whether or not the request also asks for execution; explicit Plan-only requests stop the same way. `drive` opens the native gate directly without chat pre-confirmation. Enrollment validates intent, Git ownership, scope, workspace claim, and final authority preconditions without executing acceptance descriptors; deterministic QA executes them after implementation. Once the user has entered `drive`, the routine task proceeds from that single confirmation through enrollment, execution, and QA with no further confirmation. Do not request confirmation for local in-scope edits, local verification, ordinary Direct rework, scoped diff review, or completion reporting. Managed evidence, QA, Review, and completion authority remain governed by their Managed contracts; R2 does not weaken them. Managed native-authority failures fail closed with one stable reason and exactly one same-Host recovery action; never offer a Pi, Direct Path, cross-Host/worktree, or unmanaged fallback.
 
-Run entry decision hosting (ADR 0025): a literal-user `drive` entry needs no chat confirmation, while Enrollment and unattended batch start each keep one native gate. Within that entry, only a side-effect-free rejection is retried, at most twice, and preflight is rerun before each retry; `plan_changed`, `head_moved` and a claim conflict are never retried. When preflight names a deterministic fix, apply it, commit the fixed files alone in one commit even under `Git integration: manual`, list that commit in the manifest, then retry. Push, PR, credentials, breaking intent revision and rework exits still stop for the user.
+Run entry decision hosting (ADR 0025): a literal-user `drive` entry needs no chat confirmation, while Enrollment keeps one native gate. Within that entry, only a side-effect-free rejection is retried, at most twice, and preflight is rerun before each retry; `plan_changed`, `head_moved` and a claim conflict are never retried. When preflight names a deterministic fix, apply it, commit the fixed files alone in one commit even under `Git integration: manual`, list that commit in the manifest, then retry. Push, PR, credentials, breaking intent revision and rework exits still stop for the user.
 
-A new `drive` entry needs a committed Git HEAD, because its Lane starts there: an unborn HEAD refuses with `git_head_unreadable` and no empty root commit is created. Make the first commit, then enter `drive` again. Invalid Git refs are errors, not initialization candidates.
+A new `drive` entry needs a committed Git HEAD, because its task starts there: an unborn HEAD refuses with `git_head_unreadable` and no empty root commit is created. Make the first commit, then enter `drive` again. Invalid Git refs are errors, not initialization candidates.
 
-A new `drive` entry neither stages nor commits its TaskIntent or Spec in the user's checkout. The Lane starts at the user's HEAD and does not require a clean checkout; the runtime copies only the task's TaskIntent and bound Spec into the Lane, never other coordinator edits or the index. A batch child keeps its Lane's confirmed scope disclosure.
+A new `drive` entry enrolls in place in the current worktree and commits neither its TaskIntent nor its Spec. Enrollment refuses a dirty worktree outside the task's own TaskIntent and bound Spec with `workspace_not_clean` before the native gate opens; never stash, discard or commit the user's changes to clear it.
 
 ## Parallel Read-Only Dispatch
 

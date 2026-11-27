@@ -5,7 +5,6 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { agentRole, AGENT_ROLES, parseAgentShorthand } from "../plugins/immune-brain/runtime/config/agent_roles.ts";
 import { resolveConfig } from "../plugins/immune-brain/runtime/config/layered_config.ts";
-import { frozenExecutorPreferences, frozenReviewProfile, laneExecutorChoice } from "../plugins/immune-brain/runtime/unattended/agent_profiles.ts";
 
 // ADR 0041: four agent roles (executor, reviewer, planner, triage), each one
 // whole profile from one layer: project role over user role over unset.
@@ -134,42 +133,6 @@ test("an invalid user profile is dropped and the role naming it is unset", () =>
 	expect(c.diagnostics).toContainEqual(expect.objectContaining({ code: "config_invalid", key_path: "agents.profiles.bad" }));
 	expect(c.diagnostics).toContainEqual(expect.objectContaining({ code: "unknown_profile", key_path: "agents.executor" }));
 	expect(c.agents.roles.executor).toBeNull();
-});
-
-test("without agents every role is null and the Lane executor falls back to the Parent Host", () => {
-	const f = fixture();
-	const c = f.read();
-	expect(Object.keys(c.agents.roles).sort()).toEqual([...AGENT_ROLES].sort());
-	for (const role of AGENT_ROLES) expect(agentRole(c.agents, role)).toBeNull();
-	expect(laneExecutorChoice(f.root, undefined, "antigravity")).toMatchObject({ host: "antigravity" });
-	expect(frozenExecutorPreferences(f.root, undefined, "antigravity")).toEqual({ host: "antigravity" });
-	expect(frozenReviewProfile(f.root, undefined)).toBeUndefined();
-});
-
-test("the Lane executor and the frozen batch profiles read the resolved roles", () => {
-	const f = fixture();
-	f.user({ agents: { profiles: PROFILES, executor: "deepseek", reviewer: "opus" } });
-	expect(laneExecutorChoice(f.root, undefined, "claude-code")).toMatchObject({ host: "pi", model: "auto/deepseek-v4.1-flash", effort: "high" });
-	expect(frozenExecutorPreferences(f.root, undefined, "claude-code")).toEqual({ host: "pi", model: "auto/deepseek-v4.1-flash", effort: "high" });
-	expect(frozenReviewProfile(f.root, undefined)).toEqual({ host: "claude-code", model: "claude-opus-5-5", effort: "medium" });
-	f.project({ agents: { executor: "antigravity:p-model" } });
-	expect(laneExecutorChoice(f.root, undefined, "claude-code")).toMatchObject({ host: "antigravity", model: "p-model" });
-	// A frozen or requested profile replaces the configured role whole.
-	expect(laneExecutorChoice(f.root, { host: "claude-code" }, "pi")).toMatchObject({ host: "claude-code" });
-	expect(frozenReviewProfile(f.root, { host: "pi" })).toEqual({ host: "pi" });
-});
-
-test("an agents, batch or session_providers error stops the configured Lane executor", () => {
-	const f = fixture();
-	// ADR 0043: the retired top-level `loop` and `decision_models` keys are config_invalid and block it too.
-	for (const data of [{ agents: { executor: "codex" } }, { batch: { max_parallel: 0 } }, { session_providers: [] }, { loop: { mode: "always" } }, { decision_models: {} }]) {
-		f.user({ ...data });
-		expect(laneExecutorChoice(f.root, undefined, "claude-code")).toBeNull();
-		expect(frozenExecutorPreferences(f.root, undefined, "claude-code")).toBeUndefined();
-	}
-	// A retired herdr key warns but never blocks the Lane executor.
-	f.user({ herdr: true });
-	expect(laneExecutorChoice(f.root, undefined, "claude-code")).toMatchObject({ host: "claude-code" });
 });
 
 test("imm-kernel config --json lists each resolved role with its source", () => {

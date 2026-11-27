@@ -8,20 +8,17 @@ const read = (path: string) => readFileSync(join(plugin, path), "utf8");
 const flat = (path: string) => read(path).replace(/\s+/g, " ");
 
 describe("published goal-driven run contract", () => {
- it("routes Parent and Child separately while retaining native authority boundaries", () => {
+ it("routes only Child entries and enrolls them in place while retaining native authority boundaries", () => {
   const loader = flat("skills/drive/SKILL.md");
-  const batch = flat("dist/drive-batch.md");
+  const loop = flat("dist/drive.md");
   expect(loader).toContain("`status` first");
-  expect(loader).toContain("A Parent Issue selects its whole planned batch");
+  // retire-unattended-batch D2: a Parent Issue no longer selects a batch.
+  expect(loader).toContain("A Parent Issue is not a `drive` target");
   expect(loader).toContain("A Child Issue selects only its TaskIntent");
-  expect(batch).toContain("Parent selection is the batch opt-in; it needs no separate chat question");
-  // branch-boundary-r2 D18: every batch runs Lanes, so there is no serial mode to share commands with.
-  expect(batch).toContain("Every new batch uses runtime-created Lanes");
-  // branch-boundary-r2-followups D1: a new batch must supply final verification.
-  expect(batch).toContain("new batch must supply a non-empty `final_verification` list");
-  expect(batch).toContain("The confirmed batch records these commands");
-  expect(batch).toContain("whole-plan proof");
-  expect(batch).toContain("then enroll it in place through `enroll` with its own `task_id` and native gate");
+  expect(loader).toContain("enrolls in the current worktree through `enroll` with `task_id`, one native gate");
+  expect(loader).not.toContain("start_unattended_batch");
+  expect(loop).toContain("no batch runs inside Immune-Brain (ADR 0043 Slice 3)");
+  expect(existsSync(join(plugin, "dist/drive-batch.md"))).toBe(false);
  });
  it("keeps every Skill contract pointer reachable", () => {
   const source = join(plugin, "skills/drive/SKILL.md");

@@ -58,11 +58,6 @@ import {
 	reconcileKernelAuthority,
 	revisionForContent,
 } from "../plugins/immune-brain/runtime/kernel/storage";
-import {
-	computeBatchPlanDigest,
-	createBatchAuthorityRegistry,
-	deriveChildEnrollment,
-} from "../plugins/immune-brain/runtime/kernel/batch_authority";
 
 function makeRoot(): string {
 	const root = mkdtempSync(join(tmpdir(), "p2b0-enroll-"));
@@ -729,122 +724,6 @@ describe("enrollment Spec binding precondition", () => {
 		expect(readTaskRecordRaw(root, taskId).record).toBeNull();
 	});
 });
-
-describe("batch-derived enrollment atomicity", () => {
-	function batchChild(root: string, taskId: string) {
-		const prep = preparePiCanary(root, { task_id: taskId, now: "2026-08-12T00:00:00.000Z" });
-		if (!prep.intent) throw new Error("fixture intent missing");
-		return {
-			task_id: taskId,
-			intent_path: prep.intent.path,
-			intent_revision: prep.intent.revision,
-			intent_content_hash: prep.intent.content_hash,
-			blocked_by: [] as string[],
-		};
-	}
-
-	function batchBinding(root: string, children: ReturnType<typeof batchChild>[]) {
-		return {
-			batch_id: "batch-tx-001",
-			initiative_slug: "unattended-initiative-batch-run",
-			plan_digest: computeBatchPlanDigest(children),
-			branch: "imm/unattended-initiative-batch-run",
-			base_head: readGitHead(root),
-			budget: {
-				max_children: children.length,
-				qa_failure_limit: 2,
-			},
-			actor_id: "user",
-			confirmation_ref: "batch-confirm-001",
-			nonce: "batch-tx-nonce",
-		};
-	}
-
-	test("the child slot and the TaskRecord are committed together", () => {
-		const root = makeRoot();
-		writeIntent(root, "task-b01");
-		const children = [batchChild(root, "task-b01")];
-		const binding = batchBinding(root, children);
-		const batchRegistry = createBatchAuthorityRegistry();
-		const capability = batchRegistry.issue(binding, children, "2026-08-12T00:00:00.000Z");
-		const enrollmentRegistry = createEnrollmentAuthorityRegistry();
-		const head = readGitHead(root);
-		const derived = deriveChildEnrollment(root, batchRegistry, {
-			capability,
-			binding,
-			task_id: "task-b01",
-			expected_head: head,
-			now: "2026-08-12T00:00:00.000Z",
-		});
-		const childCapability = enrollmentRegistry.issue(derived.binding, "2026-08-12T00:00:00.000Z");
-
-		const result = enrollCanaryTask(
-			root,
-			{
-				task_id: "task-b01",
-				intent_path: derived.binding.intent_path,
-				intent_revision: derived.binding.intent_revision,
-				preparation_digest: derived.binding.preparation_digest,
-				capability: childCapability,
-				capability_binding: derived.binding,
-				batch: { registry: batchRegistry, capability, binding, expected_head: head },
-				now: "2026-08-12T00:00:00.000Z",
-			},
-			enrollmentRegistry,
-		);
-		expect(result.record.task_id).toBe("task-b01");
-		expect(batchRegistry.consumedChildren(capability)).toEqual(["task-b01"]);
-		expect(readTaskRecordRaw(root, "task-b01").record).not.toBeNull();
-	});
-
-	test("a blocked batch enrollment consumes no slot and writes no record", () => {
-		const root = makeRoot();
-		writeIntent(root, "task-b02");
-		const children = [batchChild(root, "task-b02")];
-		const binding = batchBinding(root, children);
-		const batchRegistry = createBatchAuthorityRegistry();
-		const capability = batchRegistry.issue(binding, children, "2026-08-12T00:00:00.000Z");
-		const enrollmentRegistry = createEnrollmentAuthorityRegistry();
-		const head = readGitHead(root);
-		const derived = deriveChildEnrollment(root, batchRegistry, {
-			capability,
-			binding,
-			task_id: "task-b02",
-			expected_head: head,
-			now: "2026-08-12T00:00:00.000Z",
-		});
-		const childCapability = enrollmentRegistry.issue(derived.binding, "2026-08-12T00:00:00.000Z");
-		// A worktree that already owns another task blocks the enrollment under
-		// the same lock that would have consumed the slot.
-		seedEnrolledRun(root, "other-task");
-
-		expect(() =>
-			enrollCanaryTask(
-				root,
-				{
-					task_id: "task-b02",
-					intent_path: derived.binding.intent_path,
-					intent_revision: derived.binding.intent_revision,
-					preparation_digest: preparePiCanary(root, {
-						task_id: "task-b02",
-						now: "2026-08-12T00:00:00.000Z",
-					}).digest,
-					capability: childCapability,
-					capability_binding: derived.binding,
-					batch: { registry: batchRegistry, capability, binding, expected_head: head },
-					now: "2026-08-12T00:00:00.000Z",
-				},
-				enrollmentRegistry,
-			),
-		).toThrow(/belongs to task other-task/);
-		expect(batchRegistry.consumedChildren(capability)).toEqual([]);
-		expect(readTaskRecordRaw(root, "task-b02").record).toBeNull();
-		// The pre-existing owner still holds the workspace claim unchanged.
-		expect(readBackendClaim(root)).toMatchObject({ task_id: "other-task", lifecycle_status: "active" });
-		expect(withKernelRead(root, (db) => readRunRowByTask(db, "task-b02"))).toBeNull();
-	});
-});
-
 
 describe("SQLite enrollment authority (A2)", () => {
 	const registry = createEnrollmentAuthorityRegistry();

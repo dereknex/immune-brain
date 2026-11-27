@@ -11,7 +11,7 @@ ADR 0043):
 - the **project file**, `.imm/config.json` at the root of the main checkout,
   for your choices in one repository. It is a local file: keep it out of version
   control so that each developer's choices stay their own. It is read whether or
-  not Git tracks it, and a Lane worktree reads the main checkout's file.
+  not Git tracks it, and a linked worktree reads the main checkout's file.
 
 Either file may be absent. Immune-Brain reads no Immune-Brain-specific
 environment override, no agent-local TOML file, and no preference line in
@@ -32,13 +32,10 @@ file:
       "opus": { "host": "claude-code", "model": "<model id>", "effort": "medium" },
       "cheap": { "host": "pi", "model": "<provider>/<model id>", "effort": "low" }
     },
-    "executor": "cheap",
     "reviewer": "opus",
     "planner": "opus",
     "triage": "claude-code:<model id>@low"
   },
-  "session_providers": ["herdr"],
-  "batch": { "max_parallel": 3 },
   "git_integration": "manual",
   "external_approval": false,
   "initiative_carrier": "github"
@@ -48,44 +45,28 @@ file:
 ```json
 {
   "contract": "immune_brain/project_config/v2",
-  "agents": { "executor": "opus" },
-  "batch": { "max_parallel": 2, "final_verification": ["bun run typecheck", "bun test"], "single_task_final_verification": ["bun run typecheck"] },
+  "agents": { "reviewer": "opus" },
   "initiative_carrier": "local"
 }
 ```
 
-- The top-level keys are `contract`, `agents`, `session_providers`, `batch`,
-  `git_integration`, `external_approval`, `initiative_carrier` and
+- The top-level keys are `contract`, `agents`, `git_integration`, `external_approval`, `initiative_carrier` and
   `review_verifier`. Every key is
   optional except `contract`. An unknown key at any level is invalid. The
   retired `herdr` key is still accepted so existing files warn instead of
   failing, but it is never resolved (see below).
-- The `loop` and `decision_models` keys are retired (ADR 0043). Each is an
-  unknown key: it reports `config_invalid` at that key path and blocks every
-  batch until `imm-kernel config migrate --write` removes it.
+- The `loop`, `decision_models`, `batch` and `session_providers` keys are
+  retired (ADR 0043). Each is an unknown key: it reports `config_invalid` at
+  that key path, and `imm-kernel config --json` exits 1, until
+  `imm-kernel config migrate --write` removes it. That command removes a stored
+  `herdr`, `loop`, `decision_models`, `batch` or `session_providers` key
+  and preserves every other key.
 - `agents.profiles` exists only in the user file. The project file refers to a
   user profile by name.
-- `session_providers` is a non-empty ordered list of distinct registered
-  provider names (`herdr`, `herdr-core`; default `["herdr"]`, so a refusal
-  outside Herdr names only the `herdr` recovery). The project
-  file replaces the user file. An empty list, an unknown or test-only name
-  (`fake`, `process`), a duplicate entry, or a non-array is a blocking
-  `config_invalid` error. `imm-kernel config migrate --write` removes a stored
-  `herdr`, `loop` or `decision_models` key and preserves every other key.
 - `herdr` is retired: setting it in either file produces one non-blocking
   `retired_key` warning diagnostic at key path `herdr`, is ignored by the
-  resolver, and is omitted from the effective configuration. A Lane Executor
-  started inside Herdr (`HERDR_ENV=1`) runs in an interactive Herdr tab.
-  Authority Review and its findings verification
-  always run in a Herdr session.
-- `batch.max_parallel` is an integer in 1..8 (default 1).
-  `batch.final_verification` and `batch.single_task_final_verification` each
-  hold at most 8 plain command strings. A new single-task `drive` that names no
-  commands uses `batch.final_verification` only for a `critical` task; any other
-  task uses `batch.single_task_final_verification`, and with neither set its
-  final verification is optional. Declared derived-file checks
-  (`docs/agents/derived-files.json`) still run and gate checkout delivery when
-  no commands are set. Initiative batches always need `batch.final_verification`.
+  resolver, and is omitted from the effective configuration. Authority Review
+  and its findings verification always run in a Herdr session.
 - `.imm/risk-floor.json` and `.imm/routine-classes.json` stay separate, tracked
   files (see [Risk Floor](#risk-floor)).
 
@@ -97,8 +78,8 @@ repository's entry becomes its project file; other entries are listed for you to
 move), `agents.presets` and `active`, `lanes`, `.imm/lanes.local.json`, and the
 `- Git integration:` and `- Initiative carrier default:` lines in `AGENTS.md` or
 `CLAUDE.md`. It deletes none of those sources; remove them once the result is
-right. It writes no `loop` or `decision_models` value and removes those keys
-from both files.
+right. It writes no `loop`, `decision_models`, `batch` or
+`session_providers` value and removes those keys from both files.
 
 ## Agents
 
@@ -106,8 +87,8 @@ from both files.
 
 | Role | Runs |
 |---|---|
-| `executor` | every Lane Executor |
 | `reviewer` | Authority Review, its findings verification, and advisory reviewers |
+| `executor` | accepted so existing files stay valid; nothing reads it (ADR 0043) |
 | `planner` | accepted so existing files stay valid; nothing reads it (ADR 0043) |
 | `triage` | accepted so existing files stay valid; nothing reads it (ADR 0043) |
 
@@ -127,26 +108,23 @@ come from one value, so a role never mixes a host from one layer with a model
 from another.
 
 Each role resolves on its own: request → project file → user file → built-in.
-Without a value, the Lane Executor runs on the Parent's own Host type with its
-default model, and Review reports `review_profile_required`. An invalid role value counts as unset and is
+Without a value, Review reports `review_profile_required`. An invalid role value counts as unset and is
 reported as `config_invalid` (or `unknown_profile` for an unknown name).
 
 ## Precedence
 
 Every key resolves request → project file → user file → default, the first set
-value winning. **Request** values come from the literal current request (see
-[Lane Preferences](#lane-preferences)).
+value winning. **Request** values come from the literal current request.
 
 | Key | Merge |
 |---|---|
 | `agents.<role>` | per role; a whole profile from one layer |
-| `session_providers`, `batch.max_parallel`, `batch.final_verification`, `batch.single_task_final_verification`, `initiative_carrier`, `review_verifier` | first set value |
+| `initiative_carrier`, `review_verifier` | first set value |
 | `git_integration` | stricter wins: `manual` if either file sets it |
 | `external_approval` | stricter wins: `false` if either file sets it |
 
 Permission keys take the stricter value so that a local file cannot widen what
-your user file allows. `batch.final_verification` falls back to the test and
-type-check commands the repository instruction file names in prose, else none.
+your user file allows.
 
 ## Inspecting the Effective Configuration
 
@@ -166,10 +144,9 @@ Each diagnostic is `{ code, severity, file, key_path, message }` with code
 non-blocking warning). An invalid value counts as unset, so the next layer or the
 default applies, and its diagnostic stays an error:
 
-- any error under `agents`, `batch` or `session_providers`, an unknown
-  top-level key such as the retired `loop` or `decision_models`, or a file that
-  is not JSON or has the wrong `contract`: no batch starts
-  (`lane_config_invalid`);
+- an unknown top-level key such as the retired `loop`, `decision_models`,
+  `batch` or `session_providers`, or a file that is not JSON or has the wrong
+  `contract`: `config_invalid`, and `imm-kernel config --json` exits 1;
 - an `agents` error that leaves Review without a profile: Review reports
   `review_config_invalid` naming the file and key path;
 - `git_integration` invalid: `manual`;
@@ -198,24 +175,6 @@ Projection failure is reported with a batch retry action and does not invalidate
 the authored planning files, but it blocks Enrollment and execution handoff for
 that Initiative until the same complete batch succeeds. It never silently
 switches carrier.
-
-## Lane Preferences
-
-The runtime resolves every Lane choice itself; the Parent passes the literal
-request through and never resolves configuration for a batch.
-
-- A new batch freezes the resolved `executor` and `reviewer` profiles and
-  `batch.max_parallel`. Every Executor generation and every CLI Review of that
-  batch runs on them, and a resume keeps them even when the files change.
-- `start_unattended_batch` takes `agents: { executor?, reviewer? }` for one
-  batch, each a profile name, shorthand or object as in [Agents](#agents). A
-  request value replaces that role whole, for that batch alone.
-- Every Lane runs the resolved `executor` host with no fallback to another Host.
-- Any configuration error under `agents`, `batch` or `session_providers`, or an
-  unknown top-level key, starts no batch.
-
-Lane-mode agents only create: they close no tab, stop no session and remove no
-Lane. The full contract is `plugins/immune-brain/dist/drive-batch.md#lane-preferences`.
 
 ## Risk Floor
 
@@ -288,8 +247,7 @@ no allowlist, an untrusted file makes every task `critical`, and
 
 `imm-kernel inspect --json` reports the declared class ids as
 `risk.routine_classes` and the paths that raised a `routine` task as
-`risk.outside_routine_allowlist`; the Review brief and each child of a batch
-final report list the same paths as `outside_routine_allowlist` next to
+`risk.outside_routine_allowlist`; the Review brief lists the same paths as `outside_routine_allowlist` next to
 `beyond_estimate` when there are any. ADR 0038 records the decision.
 
 ## Git Integration
@@ -304,9 +262,8 @@ branch on its own:
 - `manual` is the default, and it wins whenever either file sets it: a project
   file cannot turn `auto` on against a user file that says `manual`. An invalid
   value or an invalid file behaves as `manual` and is reported as a diagnostic.
-- With `manual` the runtime writes no commit outside batches.
-  Enrollment stages its TaskIntent and Spec inside the Lane instead of
-  committing them; storage-layout migration leaves its diff in the working tree
+- With `manual` the runtime writes no commit. Enrollment stages its
+  TaskIntent and Spec in the current worktree instead of committing them; storage-layout migration leaves its diff in the working tree
   and lists the paths. A settled task is delivered without any commit: commit
   however you prefer.
 - `auto` commits exactly a task's settled scoped paths when it settles `done`,
@@ -314,9 +271,9 @@ branch on its own:
   mode: the repository HEAD stays the task's Git base.
 - The status Tool reports the resolved preference as `git_integration` with its
   source.
-- An unborn HEAD refuses `drive` until the first commit exists: the Lane starts
-  at the user's HEAD, so nothing creates an empty root commit or stages in the
-  user's stead.
+- An unborn HEAD refuses `drive` until the first commit exists: the task
+  starts at the user's HEAD, so nothing creates an empty root commit or stages
+  in the user's stead.
 
 ADR 0024 records the decision; ADR 0036 retires the Enrollment commits it
 described, and ADR 0041 sets the precedence above.

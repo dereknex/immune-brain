@@ -61,7 +61,7 @@ import { randomUUID } from "node:crypto";
 import { dirname } from "node:path";
 import { resolveConfig } from "../config/layered_config";
 import { canonicalActorId, LITERAL_USER_ACTOR_ID } from "../kernel/actor_identity";
-import { enrollmentScopeDisclosure, enrollTask } from "../kernel/enrollment";
+import { enrollTask } from "../kernel/enrollment";
 import { createEnrollmentAuthorityRegistry } from "../kernel/enrollment_authority";
 import { preparePiCanary } from "../kernel/pi_canary_prepare";
 import { createMutationAuthorityRegistry, digestOfAction, type CapabilityBindingV2 } from "../kernel/authority_port";
@@ -1705,7 +1705,6 @@ async function approveEnroll(root: string, input: ApproveArgs, actorId: string, 
 	try {
 		const preparation = preparePiCanary(root, { task_id: taskId, now });
 		if (!preparation.intent) return errorResult("enrollment_rejected", "enrollment requires a readable TaskIntent", 1);
-		const disclosure = enrollmentScopeDisclosure(root, taskId);
 		const result = await enrollTask(root, createEnrollmentAuthorityRegistry(), {
 			binding: {
 				task_id: taskId,
@@ -1718,7 +1717,6 @@ async function approveEnroll(root: string, input: ApproveArgs, actorId: string, 
 				nonce: randomUUID(),
 			},
 			now,
-			disclosed_scope_paths: disclosure.paths,
 			confirmation: { source: "external_approval", external_approval_enabled: true },
 		});
 		return jsonResult({

@@ -10,13 +10,10 @@
 // Side Effects: Hook stdout and the Claude private event log.
 // Verification: `bun test tests/claude-host-authority.test.ts`.
 
-import { existsSync, readdirSync } from "node:fs";
 import { createInterface } from "node:readline";
-import { join } from "node:path";
 import { stdin } from "node:process";
 import { fileURLToPath } from "node:url";
 import { readActiveClaimTaskId } from "../kernel/backend_claim";
-import { BatchRuntimeTooOldError, isTerminalBatchState, readAnyBatchRunState } from "../unattended/batch_state";
 import {
 	createMcpRuntime as createHostMcpRuntime,
 	handleJsonRpc as handleHostJsonRpc,
@@ -30,7 +27,7 @@ import {
 } from "../host-core/mcp_runtime";
 import { CORE_CONTRACT, HOST_ID, MIN_CLAUDE_CODE_VERSION, probeHost } from "./capability";
 import { ClaudeReviewHost, claudeHookEventLog, parseHookStdin } from "./review_host";
-import { activeTaskHookOutput, consumePhaseAdmission, laneGuardHookOutput, phaseEntryGateHookOutput, recordPhaseEntryPrompt } from "./lane_guard";
+import { activeTaskHookOutput, consumePhaseAdmission, phaseEntryGateHookOutput, recordPhaseEntryPrompt } from "./lane_guard";
 import { readRunToolSession, runContinuationHookOutput } from "./run_continuation";
 import { ClaudeRuntime } from "./kernel_ports";
 
@@ -80,7 +77,7 @@ async function runHook(): Promise<void> {
 	let payload: Record<string, unknown> | null = null;
 	try { payload = JSON.parse(raw) as Record<string, unknown>; } catch { payload = null; }
 	if (payload?.hook_event_name === "PreToolUse") {
-		const decision = laneGuardHookOutput(payload) ?? phaseEntryGateHookOutput(payload) ?? await runContinuationHookOutput(payload);
+		const decision = phaseEntryGateHookOutput(payload) ?? await runContinuationHookOutput(payload);
 		if (decision) process.stdout.write(`${decision}\n`);
 		return;
 	}
@@ -98,20 +95,7 @@ async function runHook(): Promise<void> {
 	const event = parseHookStdin(raw);
 	if (!event) return;
 	const cwd = typeof payload?.cwd === "string" && payload.cwd ? payload.cwd : process.cwd();
-	if (!readActiveClaimTaskId(cwd)) {
-		const batchesDir = join(cwd, ".imm", "state", "batches");
-		const activeBatch = existsSync(batchesDir) && readdirSync(batchesDir).some((file) => {
-			if (!file.endsWith(".json") || file.endsWith(".report.json")) return false;
-			try {
-				const batch = readAnyBatchRunState(cwd, file.slice(0, -5));
-				return batch !== null && !isTerminalBatchState(batch.batch_state);
-			} catch (error) {
-				if (error instanceof BatchRuntimeTooOldError) return true;
-				throw error;
-			}
-		});
-		if (!activeBatch) return;
-	}
+	if (!readActiveClaimTaskId(cwd)) return;
 	claudeHookEventLog().append(event);
 }
 

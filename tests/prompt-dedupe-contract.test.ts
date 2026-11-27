@@ -7,10 +7,10 @@ const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 
 // Spec remove-redundant-checks S5. Both halves are asserted: a sentence that
 // restates a rule a named code site enforces is gone, and every prompt-only
-// rule it sat beside is still there.
+// rule it sat beside is still there. The batch contract's restating sentences
+// retired with `dist/drive-batch.md` itself (retire-unattended-batch).
 const SOURCES = {
   drive: "plugins/immune-brain/dist/drive.md",
-  batch: "plugins/immune-brain/dist/drive-batch.md",
   skill: "plugins/immune-brain/skills/authority-review/SKILL.md",
   executor: "plugins/immune-brain/runtime/prompts/executor.md",
 } as const
@@ -46,19 +46,6 @@ const DELETED: Anchor[] = [
   { source: "drive", id: "I28", phrase: "Malformed or stale reviewer output is not a verdict" },
   { source: "drive", id: "I31", phrase: "which never blocks the Loop" },
   { source: "drive", id: "I31", phrase: "never use it as evidence, a Loop blocker" },
-  { source: "batch", id: "H2", phrase: "A fresh literal-user Batch Authorization resumes recoverable parked owned runs" },
-  { source: "batch", id: "H2", phrase: "A repeated tick or a newer caller timestamp without a fresh confirmation grants no recovery authority" },
-  { source: "batch", id: "H3", phrase: "`runtime_reload_required`" },
-  { source: "batch", id: "H4", phrase: "cannot approve revisions or reseal `plan_digest`" },
-  { source: "batch", id: "H4", phrase: "There is no `lane_revision` input or delegation checkbox" },
-  { source: "batch", id: "H5", phrase: "refuses as `plan_changed`" },
-  { source: "batch", id: "H6", phrase: "`batch_runtime_contract_mismatch`" },
-  { source: "batch", id: "H7", phrase: "whose resolved target lies outside the Lane" },
-  { source: "batch", id: "H9", phrase: "`batch_parallel_mismatch`" },
-  { source: "batch", id: "H10", phrase: "A model or effort without `review_host` is refused" },
-  { source: "batch", id: "H11", phrase: "a `blocked` or `working` session is refused" },
-  { source: "batch", id: "H12", phrase: "At most two corrections are spent per child" },
-  { source: "batch", id: "H13", phrase: "`lane_session_close`" },
   { source: "skill", id: "H1", phrase: "verify `base_head`, `review_commit`, its single parent" },
   { source: "skill", id: "H5", phrase: "without approval or findings" },
   { source: "executor", id: "PR1", phrase: "stopped or excluded work never counts as Parent success" },

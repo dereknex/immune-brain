@@ -6,7 +6,7 @@
 // adapter carried that defect from the day the Host was added; no test covered
 // the boundary because every settled task in this repository had run on Pi.
 
-import { afterAll, describe, expect, mock, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -298,60 +298,7 @@ function liveRecord(taskId: string, intentPath: string) {
 	};
 }
 
-describe("S6: the Pi settled reader answers the current Run's evidence", () => {
-	// The Pi extension module imports host packages; register the seam only
-	// when the real packages are unavailable, and restore it after this suite
-	// so no mock leaks into process-neighbor tests.
-	async function loadPiSettledReader(): Promise<
-		(typeof import("../plugins/immune-brain/.pi-extension/imm-unattended-batch"))["readSettledTaskRecord"]
-	> {
-		// The QA tree has no node_modules: mock only what the extension really
-		// imports, and only when the real package is unavailable, so a
-		// deliverable-tree run registers the same seams Pi Host tests use and
-		// this repository run keeps the real packages.
-		const seams: Record<string, () => unknown> = {
-			typebox: () => {
-				const optional = Symbol("optional");
-				return { Type: {
-					String: (options = {}) => ({ type: "string", ...options }),
-					Number: () => ({ type: "number" }),
-					Boolean: () => ({ type: "boolean" }),
-					Null: () => ({ type: "null" }),
-					Unknown: () => ({}),
-					Literal: (value: unknown) => ({ const: value }),
-					Array: (items: object) => ({ type: "array", items }),
-					Union: (anyOf: object[]) => ({ anyOf }),
-					Optional: (schema: object) => ({ ...schema, [optional]: true }),
-					Record: (_key: object, value: object) => ({ type: "object", additionalProperties: value }),
-					Object: (properties: Record<string, unknown>, options = {}) => ({
-						type: "object", properties,
-						required: Object.entries(properties).filter(([, value]) => !(value as Record<symbol, unknown>)[optional]).map(([key]) => key),
-						...options,
-					}),
-				} };
-			},
-			"@earendil-works/pi-coding-agent": () => ({ DynamicBorder: class {} }),
-			"@earendil-works/pi-tui": () => ({ Text: class {}, Container: class {}, SelectList: class {},
-				sliceByColumn: (value: string, start: number, width?: number) =>
-					value.slice(start, width === undefined ? undefined : start + width),
-				truncateToWidth: (value: string, width: number) => value.slice(0, width),
-				visibleWidth: (value: string) => value.length }),
-		};
-		for (const [spec, factory] of Object.entries(seams)) {
-			try {
-				await import(spec);
-			} catch {
-				mock.module(spec, factory);
-			}
-		}
-		const module = await import("../plugins/immune-brain/.pi-extension/imm-unattended-batch");
-		return module.readSettledTaskRecord;
-	}
-
-	afterAll(() => {
-		mock.restore();
-	});
-
+describe("S6: the settled reader answers the current Run's evidence", () => {
 	test("a migrated historical v3 run is settled evidence, not a parse failure", async () => {
 		const root = makeRepo({ [ACTIVE_PATH]: intentJson });
 		try {
@@ -402,9 +349,6 @@ describe("S6: the Pi settled reader answers the current Run's evidence", () => {
 			expect(evidence!.record.intent_ref?.path).toBe(ARCHIVED_PATH);
 			expect(evidence!.record.intent_snapshot.scope_hint).toEqual(INTENT.scope_hint);
 			expect(evidence!.proof.terminal_event_id).toBe(`migrated:${TASK_ID}`);
-			const readPiSettledRecord = await loadPiSettledReader();
-			const read = await readPiSettledRecord(root, TASK_ID);
-			expect(read).toEqual({ scope_hint: INTENT.scope_hint, intent_path: ARCHIVED_PATH });
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
@@ -426,8 +370,7 @@ describe("S6: the Pi settled reader answers the current Run's evidence", () => {
 		}
 	});
 
-	test("a settled Run's evidence is read from the store, never a stale flat pair", async () => {
-		const readSettledTaskRecord = await loadPiSettledReader();
+	test("a settled Run's evidence is read from the store, never a stale flat pair", () => {
 		const root = makeRepo({ [ACTIVE_PATH]: intentJson });
 		try {
 			const seeded = seedSettledRun(root, INTENT, ACTIVE_PATH);
@@ -440,13 +383,13 @@ describe("S6: the Pi settled reader answers the current Run's evidence", () => {
 				join(flatDir, "task-record.json"),
 				`${JSON.stringify(staleFlatRecord(TASK_ID), null, 2)}\n`,
 			);
-			const read = await readSettledTaskRecord(root, TASK_ID);
+			const read = readSettledTaskEvidence(root, TASK_ID);
 			expect(read).not.toBeNull();
-			expect(read!.scope_hint).toEqual(INTENT.scope_hint);
-			expect(read!.intent_path).toBe(seeded.record.intent_ref.path);
+			expect(read!.record.intent_snapshot.scope_hint).toEqual(INTENT.scope_hint);
+			expect(read!.record.intent_ref?.path).toBe(seeded.record.intent_ref.path);
 			// The foreign flat pair never becomes the settled answer.
-			expect(read!.intent_path).not.toBe("docs/plans/foreign.json");
-			expect(readSettledTaskEvidence(root, TASK_ID)?.runId).toBe(seeded.run_id);
+			expect(read!.record.intent_ref?.path).not.toBe("docs/plans/foreign.json");
+			expect(read!.runId).toBe(seeded.run_id);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}

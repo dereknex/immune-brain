@@ -30,7 +30,7 @@ before promoting. Check out the `immune-brain-v<version>` tag (the run refuses
 bun run e2e:live [--version 9.2.0] [--out-dir docs/evidence/e2e-live]
 ```
 
-It runs J1 and J2 on `claude` and `pi` and J4 on `claude`, `pi` and `antigravity` (install only), one retry
+It runs J1 (in-place single-task `drive`) on `claude` and J4 on `claude`, `pi` and `antigravity` (install only), one retry
 per journey, within a 30-minute budget. The journeys record their cassettes through the recorder
 (`E2E_RECORD=1`) against the low-cost model tier `claude-haiku-5-5` (override with `E2E_LIVE_MODEL`).
 A pattern that selects no test counts as a failed attempt, so a Host the journey file does not cover
@@ -58,8 +58,8 @@ A journey with two failed attempts has `result: "fail"` and both attempts. `resu
 ## What promote accepts
 
 Promote accepts only `mode: "live"` evidence with `hosts.claude`, `hosts.pi` and `hosts.herdr`, and a
-passing result for every required pair: `J1`/`J2` on `claude` and `pi`, `J4` on `claude`, `pi` and
-`antigravity`. Checklist-mode evidence is refused, however complete. Promote refuses, before any
+passing result for every required pair: `J1` on `claude`, `J4` on `claude`, `pi` and `antigravity`
+(the batch journey `J2` retired with the unattended batch, ADR 0043 Slice 3). Checklist-mode evidence is refused, however complete. Promote refuses, before any
 write, with a named code: `invalid_version`, `evidence_missing`, `evidence_invalid` (also malformed
 journeys or missing Host versions), `evidence_commit_mismatch`, `evidence_version_mismatch`,
 `evidence_mode_unsupported` (checklist or unknown mode), `live_journey_missing`, `live_journey_failed`,

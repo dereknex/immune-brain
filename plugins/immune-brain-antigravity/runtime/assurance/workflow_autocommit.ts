@@ -11,7 +11,6 @@ import { tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import { readGitIntegrationPreference } from "../git_integration_preference";
 import { readSettledTaskEvidence } from "../kernel/storage";
-import { findResumableBatchSlugForTask } from "../unattended/batch_preflight";
 import { taskStatusIdentity, type TaskDeliveryRecord } from "../workspace_scope";
 
 export type WorkflowCommitResult =
@@ -241,9 +240,8 @@ export function settleCommitSubject(taskId: string): string {
  * else (D8, SCN-4). Returns null under `manual` (the
  * default), which commits nothing. The paths are committed only while the
  * current scoped identity still equals the one the last attestation settled,
- * so an in-scope edit after settlement is never swept into the commit. A batch
- * child is left to its batch, and content the user already committed yields
- * no commit. Never throws: a refused commit is reported as the reason, and the
+ * so an in-scope edit after settlement is never swept into the commit. Content
+ * the user already committed yields no commit. Never throws: a refused commit is reported as the reason, and the
  * settlement itself is unaffected.
  */
 export function commitSettledDelivery(projectRoot: string, taskId: string, signal?: AbortSignal): SettleCommitResult | null {
@@ -256,7 +254,6 @@ export function commitSettledDelivery(projectRoot: string, taskId: string, signa
 	}
 	const skipped = (reason: string): SettleCommitResult => ({ mode: "auto", committed: false, reason });
 	try {
-		if (findResumableBatchSlugForTask(root, taskId)) return skipped("a batch child's delivery is committed by its batch");
 		const evidence = readSettledTaskEvidence(root, taskId);
 		const record = evidence?.record as (TaskDeliveryRecord & { lifecycle?: unknown; attestations?: Array<{ diff_hash?: unknown }> }) | undefined;
 		if (!evidence || !record || record.lifecycle !== "done") return skipped("the task has no settled done evidence");

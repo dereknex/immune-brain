@@ -20,7 +20,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
-import { advanceNativeParent, commitBatchChild } from "../plugins/immune-brain/runtime/unattended/batch_git";
+import { observeSettledParentCompletion } from "../plugins/immune-brain/runtime/assurance/parent_completion";
 import { tmpdir } from "node:os";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -495,8 +495,8 @@ function initializeTrackerHead(root: string) {
 	}
 }
 
-/** Scripted terminal audit fixtures; actual Git integration and final verification remain exercised. */
-async function seedTrackerParentDelivery(root: string, initiative: string, taskIds: string[]) {
+/** Scripted terminal audit fixtures committed on the Parent branch, as an in-place delivery leaves them. */
+async function seedTrackerParentDelivery(root: string, _initiative: string, taskIds: string[]) {
 	const intents = taskIds.map(taskId => {
 		const path = `docs/plans/${taskId}.intent.json`;
 		if (!existsSync(join(root, path))) writeTrackedIntent(root, taskId, `Deliver ${taskId}`);
@@ -514,12 +514,12 @@ async function seedTrackerParentDelivery(root: string, initiative: string, taskI
 		writeFileSync(join(directory, "terminal-proof.json"), JSON.stringify({ contract: "assurance_kernel/task_tombstone/v2",
 			task_id: intent.task_id, lifecycle_status: "terminal", terminal_lifecycle: "done", terminal_event_id: `evt-term-${intent.task_id}`,
 			final_record_hash: `sha256:${new Bun.CryptoHasher("sha256").update(bytes).digest("hex")}`, terminalized_at: new Date().toISOString() }) + "\n");
-		await commitBatchChild({ root, taskId: intent.task_id, batchId: null,
-			expectedHead: spawnSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).stdout.trim() });
+		for (const args of [["add", "-A"], ["commit", "-qm", `imm(${intent.task_id}): deliver`]]) {
+			const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });
+			if (result.status !== 0) throw new Error(`fixture git ${args[0]} failed: ${result.stderr}`);
+		}
 	}
-	const report = await advanceNativeParent(root, initiative, ["bun --version"], async () => ({ initiative_slug: initiative, carrier: "local",
-		tasks: taskIds.map((task_id, i) => ({ task_id, slice_id: `S${i + 1}`, blocked_by: [] })) }), undefined, async () => null);
-	expect(report).toMatchObject({ action: "complete", proof: { complete: true } });
+	expect(observeSettledParentCompletion(root, taskIds)).toMatchObject({ complete: true });
 }
 
 function publicAcceptance(taskId: string, count = 1, summary = "Deliver the bounded acceptance result") {

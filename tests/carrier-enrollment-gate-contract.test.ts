@@ -132,10 +132,14 @@ describe("Initiative carrier Enrollment gate", () => {
 	it("performs no GitHub projection at Enrollment and only projects a settled task", () => {
 		// Enrollment is authority; the tracker is transport. The projection step is
 		// reachable only from a settlement path, never from enrollment.
-		// Since Spec drive-always-lanes S7 the Lane Enrollment is the only Enrollment;
-		// its Kernel port is the whole enrollment extension.
-		const path = "plugins/immune-brain/runtime/unattended/batch_kernel_port.ts";
-		const body = readFileSync(resolve(path), "utf8");
+		// Since Spec retire-unattended-batch S2 the in-place HostRuntime.enroll is the
+		// only Host Enrollment; its method body is the whole enrollment extension.
+		const path = "plugins/immune-brain/runtime/host-core/runtime.ts";
+		const source = readFileSync(resolve(path), "utf8");
+		const start = source.indexOf("\tasync enroll(");
+		const body = source.slice(start, source.indexOf("\tasync advance(", start));
+		expect(start).toBeGreaterThan(-1);
+		expect(body).toContain("enrollTask(");
 		expect({ path, projectsAtEnroll: /projectTerminalTrackerState|mark-terminal/.test(body) }).toEqual({
 			path,
 			projectsAtEnroll: false,

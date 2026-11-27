@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "retire-unattended-batch",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:retire-unattended-batch:2026-11-27T09:34:56.184Z",
+  "final_record_hash": "sha256:b90d508786a1fc0b86e65101d4a99badc6a6fc52b0b4a11e01b9c273e171c857",
+  "terminalized_at": "2026-11-27T09:34:56.184Z"
+}

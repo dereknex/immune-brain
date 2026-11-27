@@ -34,9 +34,6 @@ import { createReviewPacketWriter } from "./review_evidence";
 import { ReviewPreparationError } from "./host_port";
 import type { ReviewProfile } from "../config/layered_config";
 import type { GithubTrackerResult as GithubTrackerProjectionResult } from "../github_issue_tracker";
-import { isLaneWorkspaceForTask } from "../unattended/lane_workspace";
-import { findExistingActiveBatch, findSettledBatchRecord, type BatchRecordLookup } from "../unattended/batch_preflight";
-import { readAnyBatchRunState } from "../unattended/batch_state";
 
 
 export type AssuranceRole = "qa" | "review";
@@ -107,10 +104,6 @@ export function deriveGithubTerminalProjectionInput(
  * null otherwise), a tracker failure is reported as a retryable failure rather
  * than evidence or a blocker, and a failure never repeats the settling Kernel
  * mutation.
- *
- * A completed settlement inside a batch Lane writes nothing to the tracker: the
- * Lane's delivery is not on the batch branch yet, so the coordinator closes the
- * Child only after it integrates that child's commit.
  */
 export async function projectTerminalTrackerState(input: {
 	root: string;
@@ -118,14 +111,10 @@ export async function projectTerminalTrackerState(input: {
 	projection: AssuranceProjectionResult;
 	tombstone: TaskTombstone | null;
 	markTerminal: (root: string, projection: GithubTerminalProjectionInput) => Promise<GithubTrackerProjectionResult>;
-	isLaneWorkspace?: (root: string, taskId: string) => boolean;
 }): Promise<GithubTrackerProjectionResult | undefined> {
 	if (input.projection.error) return undefined;
 	const terminal = deriveGithubTerminalProjectionInput(input.task_id, input.projection, input.tombstone);
 	if (!terminal) return undefined;
-	// Only a completed delivery waits for integration; an explicit stop inside a
-	// Lane is never integrated and still projects `not planned` here.
-	if (terminal.phase === "done" && (input.isLaneWorkspace ?? isLaneWorkspaceForTask)(input.root, input.task_id)) return undefined;
 	try {
 		return await input.markTerminal(input.root, terminal);
 	} catch {
@@ -394,8 +383,6 @@ export interface StatusProjectionWarning {
 	message: string;
 }
 export type StatusProjectionResult = AssuranceProjectionResult & {
-	/** Parent-slug batch evidence, independent of the TaskRecord projection; never execution authority. */
-	batch?: NonNullable<BatchRecordLookup>;
 	/** The resolved `Git integration` preference (ADR 0024); set by the status read only. */
 	git_integration?: { mode: GitIntegrationMode; source: GitIntegrationPreference["source"] };
 	config?: ReturnType<typeof resolveConfig>;
@@ -444,17 +431,9 @@ export async function projectTaskStatus(root: string, taskId: string, loadedFrom
 	const preference = readGitIntegrationPreference(root);
 	if (preference.diagnostic) warnings.push({ code: "invalid_git_integration", paths: preference.source ? [preference.source] : [], message: preference.diagnostic });
 	const git_integration = { mode: preference.mode, source: preference.source };
-	let batch = findExistingActiveBatch(root, taskId);
-	if (batch === null) {
-		const settled = findSettledBatchRecord(root, taskId);
-		if (settled) {
-			const record = readAnyBatchRunState(root, settled.batch_id);
-			if (record) batch = { corrupt: false, record };
-		}
-	}
 	const config = resolveConfig(root);
 	for (const diagnostic of config.diagnostics) if (diagnostic.severity === "error") warnings.push({ code: "config_invalid", paths: [diagnostic.file], message: diagnostic.message });
-	const status = { ...result, git_integration, config, ...(batch ? { batch } : {}) };
+	const status = { ...result, git_integration, config };
 	return warnings.length === 0 ? status : { ...status, warnings };
 }
 
@@ -484,7 +463,7 @@ export function deriveAssuranceRecovery(taskId: string, fresh: AssuranceProjecti
 			? p.authorization.blocked ? "inspect authority state" : p.next_obligation === "revise_intent" ? "route Planner for the required Intent revision and native gate" : "request_authorization"
 			: unstaged ? "Stage only the scoped implementation changes, then call advance_assurance."
 			: category === "repair" ? "Route foreground Executor to repair and verify the identified findings; dispose each by resolve_finding or evidence-bound refute_finding, then run fresh advance_assurance."
-			: reviewPreparation ? "Repair the Review evidence environment, then call advance_assurance to resume run_review; retain fresh QA and do not re-confirm the batch."
+			: reviewPreparation ? "Repair the Review evidence environment, then call advance_assurance to resume run_review; retain fresh QA."
 			: "Repair the identified verification environment, then call advance_assurance; a local check is non-attesting.",
 	};
 }

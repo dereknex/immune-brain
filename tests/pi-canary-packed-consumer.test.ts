@@ -112,12 +112,12 @@ describe("packed consumer surface", () => {
 				path?: string;
 			}>;
 			const paths = extensions.map((e) => e.path ?? "");
-			// Exactly the two canary Tool extensions are discovered; no other
+			// Exactly the one canary Tool extension is discovered; no other
 			// extension (and no issuer or in-place Enrollment surface) is registered by the host.
 			expect(paths.filter((p) => p.endsWith("imm-canary-enroll.ts"))).toHaveLength(0);
 			expect(paths.filter((p) => p.endsWith("imm-canary-work.ts"))).toHaveLength(1);
-			expect(paths.filter((p) => p.endsWith("imm-unattended-batch.ts"))).toHaveLength(1);
-			expect(extensions.length).toBe(2);
+			expect(paths.filter((p) => p.endsWith("imm-unattended-batch.ts"))).toHaveLength(0);
+			expect(extensions.length).toBe(1);
 			// The exact registered Tool surface is proven by the factory tests;
 			// host discovery here proves no third extension or issuer-named
 			// surface exists in shipped bytes.

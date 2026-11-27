@@ -14,7 +14,6 @@ import { HostRuntime, type HostRuntimeOptions, type HostRuntimeProfile } from ".
 import { hostConfirmationRef } from "../host-core/interaction";
 import { AntigravityReviewHost, antigravityHookEventLog, type AntigravityHookEvent } from "./review_host";
 import { probeHost } from "./capability";
-import { selectedAntigravityParent } from "./run_continuation";
 
 export type { ToolMeta } from "../host-core/runtime";
 export type AntigravityRuntimeOptions = HostRuntimeOptions;
@@ -26,22 +25,13 @@ const ANTIGRAVITY_PROFILE: HostRuntimeProfile = {
 	observe: (host, event) => host.observe(event as AntigravityHookEvent),
 	probeHost,
 	confirmationRef: (input) => hostConfirmationRef("antigravity", input),
-	laneRuntime: (options) => new HostRuntime(ANTIGRAVITY_PROFILE, options),
-	selectedParent: selectedAntigravityParent,
 };
 
 export class AntigravityRuntime {
 	readonly runtime: HostRuntime;
 
-	constructor(options: AntigravityRuntimeOptions & { confirmationStoreRoot?: string }) {
-		const profile: HostRuntimeProfile = options.confirmationStoreRoot
-			? {
-					...ANTIGRAVITY_PROFILE,
-					selectedParent: (toolId, workspace, slug) =>
-						selectedAntigravityParent(toolId, workspace, slug, options.confirmationStoreRoot),
-				}
-			: ANTIGRAVITY_PROFILE;
-		this.runtime = new HostRuntime(profile, options);
+	constructor(options: AntigravityRuntimeOptions) {
+		this.runtime = new HostRuntime(ANTIGRAVITY_PROFILE, options);
 	}
 
 	get host(): HostRuntime["host"] {
@@ -118,21 +108,5 @@ export class AntigravityRuntime {
 
 	previewEnrollment(...args: Parameters<HostRuntime["previewEnrollment"]>): ReturnType<HostRuntime["previewEnrollment"]> {
 		return this.runtime.previewEnrollment(...args);
-	}
-
-	previewBatchConfirmation(...args: Parameters<HostRuntime["previewBatchConfirmation"]>): ReturnType<HostRuntime["previewBatchConfirmation"]> {
-		return this.runtime.previewBatchConfirmation(...args);
-	}
-
-	previewBatchRetirement(...args: Parameters<HostRuntime["previewBatchRetirement"]>): ReturnType<HostRuntime["previewBatchRetirement"]> {
-		return this.runtime.previewBatchRetirement(...args);
-	}
-
-	startUnattendedBatch(...args: Parameters<HostRuntime["startUnattendedBatch"]>): ReturnType<HostRuntime["startUnattendedBatch"]> {
-		return this.runtime.startUnattendedBatch(...args);
-	}
-
-	retireStaleBatch(...args: Parameters<HostRuntime["retireStaleBatch"]>): ReturnType<HostRuntime["retireStaleBatch"]> {
-		return this.runtime.retireStaleBatch(...args);
 	}
 }

@@ -1,22 +1,19 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { consumePhaseAdmission, phaseEntryGateHookOutput, recordPhaseEntryPrompt, type GatedTool } from "../plugins/immune-brain/runtime/claude/lane_guard";
 import { createMcpRuntime, handleJsonRpc } from "../plugins/immune-brain/runtime/claude/mcp_server";
 import { watchBundleIdentity } from "../plugins/immune-brain/runtime/plugin_source_skew";
-import { hookEventPath } from "../plugins/immune-brain/runtime/claude/review_host";
-import { FileHookEventLog } from "../plugins/immune-brain/runtime/host-core/hook_event_log";
-import type { ClaudeHookEvent } from "../plugins/immune-brain/runtime/claude/review_host";
-import { readActiveClaimTaskId } from "../plugins/immune-brain/runtime/unattended/batch_preflight";
+import { readActiveClaimTaskId } from "../plugins/immune-brain/runtime/kernel/backend_claim";
 
 // Spec branch-boundary D3: the long-lived MCP server refuses authority calls
 // once its own bundle changed on disk, ahead of the phase entry gate.
 const ENV = { CLAUDE_CODE_VERSION: "2.1.236", CLAUDE_CODE_PERMISSION_MODE: "manual" };
 const TOOL = (name: string) => `mcp__plugin_immune-brain_immune-brain__${name}`;
-const GATED: GatedTool[] = ["start_unattended_batch", "retire_stale_batch"];
+const GATED: GatedTool[] = ["enroll"];
 const AUTHORITY = [...GATED, "advance_assurance", "submit_review"] as const;
 const roots: string[] = [];
 
@@ -89,7 +86,7 @@ async function session(bytes: string | null = "// build 1\n") {
 	};
 }
 
-const argsFor = (name: string) => name === "start_unattended_batch" || name === "retire_stale_batch" ? { initiative_slug: "stale-init" } : { task_id: "stale-a" };
+const argsFor = (_name: string) => ({ task_id: "stale-a" });
 
 function expectStale(reply: Awaited<ReturnType<typeof handleJsonRpc>>): void {
 	expect(reply?.result).toBeUndefined();
@@ -98,20 +95,6 @@ function expectStale(reply: Awaited<ReturnType<typeof handleJsonRpc>>): void {
 }
 
 describe("Claude MCP server bundle staleness", () => {
-	test("the hook retains observations when a newer batch record might be active", () => {
-		const cwd = workspace("hook-newer");
-		const dir = join(cwd, ".imm/state/batches"); mkdirSync(dir, { recursive: true });
-		const path = join(dir, "newer.json");
-		const bytes = JSON.stringify({ contract: "assurance_kernel/batch_run_state/v4", initiative_slug: "future" }); writeFileSync(path, bytes);
-		const sessionId = `newer-${randomUUID()}`;
-		try {
-			execFileSync("bun", [join(process.cwd(), "plugins/immune-brain/runtime/claude/mcp_server.ts"), "--hook"], {
-				cwd, input: JSON.stringify({ hook_event_name: "SubagentStart", session_id: sessionId, agent_id: "review", cwd }), encoding: "utf8",
-			});
-			expect(new FileHookEventLog<ClaudeHookEvent>("immune-brain-claude").list(sessionId)).toHaveLength(1);
-			expect(readFileSync(path, "utf8")).toBe(bytes);
-		} finally { rmSync(hookEventPath(sessionId), { force: true }); }
-	});
 	test("status reports the startup bundle path and sha256 prefix, including unreadable startup", async () => {
 		for (const bytes of ["// first build", "// second build", null]) {
 			const s = await session(bytes);
@@ -148,11 +131,11 @@ describe("Claude MCP server bundle staleness", () => {
 		const later = new Date(Date.now() + 60_000);
 		utimesSync(s.bundlePath, later, later);
 		s.prompt("/drive stale-a");
-		expect(s.hook("retire_stale_batch", "toolu_retire")).toBeNull();
-		const retired = await s.call("retire_stale_batch", { initiative_slug: "stale-init" }, "toolu_retire");
-		// An unchanged bundle reaches the operation itself (here it finds no batch), never the staleness refusal.
-		expect(retired?.error?.data?.reason_code).not.toBe("plugin_bundle_stale");
-		expect(retired?.error?.data?.reason_code).not.toBe("run_entry_required");
+		expect(s.hook("enroll", "toolu_enroll")).toBeNull();
+		const enrolled = await s.call("enroll", { task_id: "stale-a" }, "toolu_enroll");
+		// An unchanged bundle reaches the operation itself, never the staleness refusal.
+		expect(enrolled?.error).toBeUndefined();
+		expect(readActiveClaimTaskId(s.cwd)).toBe("stale-a");
 		expect(s.consumed()).toBe(1);
 		for (const name of ["advance_assurance", "submit_review"]) {
 			const reply = await s.call(name, { task_id: "stale-a" }, `toolu_${name}`);
@@ -174,8 +157,8 @@ describe("Claude MCP server bundle staleness", () => {
 		const s = await session();
 		rmSync(s.bundlePath);
 		s.prompt("/drive stale-a");
-		expect(s.hook("retire_stale_batch", "toolu_gone")).toBeNull();
-		expectStale(await s.call("retire_stale_batch", { initiative_slug: "stale-init" }, "toolu_gone"));
+		expect(s.hook("enroll", "toolu_gone")).toBeNull();
+		expectStale(await s.call("enroll", { task_id: "stale-a" }, "toolu_gone"));
 		expect(s.consumed()).toBe(0);
 	});
 });

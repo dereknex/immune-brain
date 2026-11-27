@@ -5,7 +5,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { GithubInitiativeObservation } from "../plugins/immune-brain/runtime/github_issue_tracker";
 import { hasLocalInitiative, observeLocalInitiative } from "../plugins/immune-brain/runtime/local_initiative";
-import { observeInitiative, projectBatchPlan } from "../plugins/immune-brain/runtime/unattended/batch_plan";
 
 const SLUG = "local-batch";
 const CONFIRMATION_TIME = "2099-01-01T00:00:00.000Z";
@@ -115,84 +114,6 @@ describe("Local Initiative carrier", () => {
 			symlinkSync(join(root, "elsewhere.md"), join(root, `docs/initiatives/${SLUG}.md`));
 			expect(() => hasLocalInitiative(root, SLUG)).toThrow("must be a regular file");
 		});
-	});
-});
-
-describe("batch plan from a Local Initiative", () => {
-	it("projects the plan through the default reader with no tracker call", async () => {
-		const root = fixtureRoot();
-		try {
-			// No reader is injected: the default one must pick the Local carrier.
-			const plan = await projectBatchPlan(root, SLUG, { confirmation_time: CONFIRMATION_TIME });
-			expect(plan.tracker_observation.contract).toBe("immune_brain/local_initiative_observation/v1");
-			expect(plan.children.map((child) => [child.task_id, child.slice_id, child.status, child.blocked_by])).toEqual([
-				["local-alpha", "S1", "enrollable", []],
-				["local-beta", "S2", "enrollable", []],
-				["local-gamma", "S3", "enrollable", ["local-alpha"]],
-			]);
-			expect(plan.parallel_groups).toEqual([["local-alpha", "local-beta"], ["local-gamma"]]);
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
-	});
-
-	it("yields the same plan digest as a GitHub Initiative with the same Tasks and dependencies", async () => {
-		const root = fixtureRoot();
-		try {
-			const github: GithubInitiativeObservation = {
-				contract: "immune_brain/github_initiative_observation/v1",
-				initiative_id: SLUG,
-				issue_number: 1,
-				tasks: [
-					{ task_id: "local-alpha", slice_id: "S1", issue_number: 2, blocked_by: [] },
-					{ task_id: "local-beta", slice_id: "S2", issue_number: 3, blocked_by: [] },
-					{ task_id: "local-gamma", slice_id: "S3", issue_number: 4, blocked_by: ["local-alpha"] },
-				],
-			};
-			const local = await projectBatchPlan(root, SLUG, { confirmation_time: CONFIRMATION_TIME });
-			const remote = await projectBatchPlan(root, SLUG, { confirmation_time: CONFIRMATION_TIME }, async () => github);
-			expect(local.plan_digest).toBe(remote.plan_digest);
-			expect(local.children).toEqual(remote.children);
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
-	});
-
-	it("changes the plan digest when a dependency is edited in the carrier file", async () => {
-		const root = fixtureRoot();
-		try {
-			const before = await projectBatchPlan(root, SLUG, { confirmation_time: CONFIRMATION_TIME });
-			writeFileSync(join(root, `docs/initiatives/${SLUG}.md`), CARRIER.replace("Blocked by: local-alpha", "Blocked by: local-beta"));
-			const after = await projectBatchPlan(root, SLUG, { confirmation_time: CONFIRMATION_TIME });
-			expect(after.plan_digest).not.toBe(before.plan_digest);
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
-	});
-
-	it("refuses a dependency on a Task outside the Initiative and a dependency cycle", async () => {
-		for (const [edit, message] of [
-			["Blocked by: elsewhere", "depends on unknown Task elsewhere"],
-			["Blocked by: local-gamma", "invalid blocked_by dependencies"],
-		] as const) {
-			const root = fixtureRoot(CARRIER.replace("Blocked by: local-alpha", edit));
-			try {
-				await expect(projectBatchPlan(root, SLUG, { confirmation_time: CONFIRMATION_TIME })).rejects.toThrow(message);
-			} finally {
-				rmSync(root, { recursive: true, force: true });
-			}
-		}
-	});
-
-	it("leaves a slug with no Local carrier to the GitHub reader", async () => {
-		const root = fixtureRoot(null);
-		try {
-			// With no carrier file the default reader goes to GitHub, which this bare repository cannot answer.
-			await expect(observeInitiative(root, SLUG)).rejects.toThrow();
-			expect(hasLocalInitiative(root, SLUG)).toBe(false);
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
 	});
 });
 

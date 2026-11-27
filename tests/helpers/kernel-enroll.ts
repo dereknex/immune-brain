@@ -3,10 +3,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { LITERAL_USER_ACTOR_ID } from "../../plugins/immune-brain/runtime/kernel/actor_identity";
-import {
-	enrollmentScopeDisclosure,
-	enrollTask,
-} from "../../plugins/immune-brain/runtime/kernel/enrollment";
+import { enrollTask } from "../../plugins/immune-brain/runtime/kernel/enrollment";
 import { readTaskIntent } from "../../plugins/immune-brain/runtime/kernel/intent";
 import {
 	createEnrollmentAuthorityRegistry,
@@ -18,10 +15,9 @@ import { inspectSpecBinding } from "../../plugins/immune-brain/runtime/kernel/sp
 
 /**
  * Test setup: enroll one TaskIntent at the Kernel, with no Host tool and no
- * native gate. Production enrolls only inside a Lane (drive-always-lanes D1,
- * D2, D10); this reproduces the Lane's staging of planning inputs
- * (`copyLanePlanningInput`) and the Kernel Enrollment, so tests that need an
- * active TaskRecord can reach one without a Host adapter. Nothing is committed:
+ * native gate. Production enrolls in place behind the Host's native gate; this
+ * stages the planning inputs the gate claims and runs the Kernel Enrollment,
+ * so tests that need an active TaskRecord can reach one without a Host adapter. Nothing is committed:
  * Enrollment records the user's HEAD as the task's Git base (ADR 0036).
  */
 export async function enrollTaskForTest(
@@ -37,7 +33,6 @@ export async function enrollTaskForTest(
 		.filter((path) => existsSync(join(cwd, path)));
 	execFileSync("git", ["add", "--", ...paths], { cwd, stdio: ["ignore", "pipe", "pipe"] });
 	const preparation = preparePiCanary(cwd, { task_id: taskId, now });
-	const disclosure = enrollmentScopeDisclosure(cwd, taskId);
 	if (!preparation.intent) throw new Error("enrollment requires a readable TaskIntent");
 	const binding: EnrollmentCapabilityBinding = {
 		task_id: taskId,
@@ -52,7 +47,6 @@ export async function enrollTaskForTest(
 	return enrollTask(cwd, createEnrollmentAuthorityRegistry(), {
 		binding,
 		now,
-		disclosed_scope_paths: disclosure.paths,
 		...(options.confirmation ? { confirmation: options.confirmation } : {}),
 	});
 }

@@ -465,15 +465,12 @@ test("projects GitHub terminal state only from an exact claimless tombstone", ()
 test("host hooks never project active state and publish terminal projection only from fresh claimless evidence", () => {
 	const root = resolve(import.meta.dir, "..");
 	const work = readFileSync(resolve(root, "plugins/immune-brain/.pi-extension/imm-canary-work.ts"), "utf8");
-	const batch = readFileSync(resolve(root, "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts"), "utf8");
 	const runtime = readFileSync(resolve(root, "plugins/immune-brain/runtime/host-core/runtime.ts"), "utf8");
 	// Durable absence guards: the retired mark-active projection is fully deleted
-	// from every Pi adapter source that owns tracker or batch glue.
+	// from every Pi adapter source that owns tracker glue.
 	expect(existsSync(resolve(root, "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts"))).toBe(false);
 	expect(work).not.toContain("markGithubTaskActive");
 	expect(work).not.toContain("mark-active");
-	expect(batch).not.toContain("markGithubTaskActive");
-	expect(batch).not.toContain("mark-active");
 	// Terminal projection stays gated behind fresh Assurance plus exact tombstone
 	// reads. The projection step itself is shared across all Hosts in HostRuntime.
 	const sharedProjection = runtime.indexOf("projectTerminalTrackerState({");

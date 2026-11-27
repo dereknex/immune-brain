@@ -27,7 +27,6 @@ const ROLES: InternalRole[] = [
 	"arch-explorer",
 	"advisory-reviewer",
 	"compounder",
-	"lane-steward",
 ];
 
 function read(path: string): string {
@@ -285,130 +284,8 @@ describe("internal role-prompt bridge", () => {
 		}
 		expect(existsSync(resolve(ROOT, "plugins/immune-brain/skills/fix-pr/SKILL.md"))).toBe(true);
 	});
-	it("keeps Executor Host launch with the runtime, not the Parent or the lane-steward", () => {
-		const prompt = read("plugins/immune-brain/runtime/prompts/lane-steward.md").replace(/\s+/g, " ");
-		expect(prompt).toContain("Start no Host session, in the Lane or anywhere else");
-		expect(prompt).toContain("report every one the prepared Lane can run, not only the Host you are running in");
-		expect(prompt).not.toContain("Start exactly one Executor Host");
-
-		const loop = read("plugins/immune-brain/dist/drive-batch.md").replace(/\s+/g, " ");
-		for (const fragment of [
-			"The runtime owns every Lane session through `runtime/lane_sessions/`; the Parent never launches, polls, closes, or re-attaches a session itself",
-			"The runtime opens each Lane session itself through `runtime/lane_sessions/`; the Parent never creates a session.",
-			"A subagent that runs inside the Parent's process shares the Parent's root and is never a Lane Executor",
-			"The Parent Host and the Executor Host are chosen independently",
-			"the Parent substitutes nothing: no detached job, no in-process subagent, no serial in-place work",
-			"never from the session's output or exit status",
-			"Handles are not authority",
-			"its Host session never re-enters the batch",
-		]) {
-			expect(loop).toContain(fragment);
-		}
-		// The standing rule the supervision section narrows stays in the main Loop contract.
-		expect(read("plugins/immune-brain/dist/drive.md").replace(/\s+/g, " ")).toContain("Do not poll or create detached jobs");
-		// Each supported Parent Host names its own waiting mechanism, plus the fallback Host.
-		for (const row of ["(Claude Code) runs it as a Host background command, so its return re-invokes the Parent",
-			"A Parent Host without that (Pi, whose bash tool is not woken when a background process ends, and any Host not known to re-invoke) runs it in the foreground with `--timeout-ms 600000`"]) expect(loop).toContain(row);
-		expect(read("plugins/immune-brain/skills/drive/SKILL.md")).toContain("../../dist/drive-batch.md#lane-executor-supervision");
-	});
 	// Spec batch-resource-safety-s2 AC4: without trusted Executor exit evidence no contract
 	// promises automatic Lane deletion or recreation, and the restoration gate stays recorded.
-	it("aligns Lane lifecycle contracts with conservative retention", () => {
-		const loop = read("plugins/immune-brain/dist/drive-batch.md").replace(/\s+/g, " ");
-		for (const fragment of [
-			"only a proven `exited` exit proof bound to `(handle, key)` plus clean-Lane Git checks removes that child's worktree",
-			"Any failed proof or Git condition retains the Lane and reports `batch_lane_retained` naming it; parked, stopped and redo Lanes are never removed.",
-			"its Lane is neither deleted nor recreated, and no redo grant is spent",
-			"the child parks `needs_human` with `batch_lane_redo_retained`",
-			// Delivery and cleanup stay apart: a kept Lane is the user's to read and close.
-			"Every other tab (a parked, failed, stopped or not yet integrated child's, and any tab the Parent did not create) stays open for the user to read and close.",
-		]) expect(loop).toContain(fragment);
-		expect(loop).not.toContain("the runtime removes a clean, unoccupied Lane");
-		expect(loop).not.toContain("spending one of the child's two redo grants");
-		const steward = read("plugins/immune-brain/runtime/prompts/lane-steward.md").replace(/\s+/g, " ");
-		expect(steward).toContain("keep them after integration until the user removes them");
-		expect(steward).not.toContain("create and remove their own worktrees");
-		const adr = read("docs/adr/0027-parent-branch-merge-queue.md").replace(/\s+/g, " ");
-		expect(adr).toContain("## Amendment: retained Lanes (batch-resource-safety S2)");
-		expect(adr).toContain("There is no time-based relaxation");
-		expect(adr).not.toContain("resets it for a redo, and removes it with its branch");
-		const context = read("CONTEXT.md").replace(/\s+/g, " ");
-		expect(context).toContain("never removes or recreates one without trusted Executor exit evidence");
-		// Legacy external-Lane ownership is unchanged.
-		expect(context).toContain("legacy records admit offered Lanes and never create, switch or delete them");
-		expect(loop).toContain("the Parent removes no Lane and dispatches no one to remove it");
-	});
-	it("drives Lane Executors through the session port, and never answers their dialogs", () => {
-		const loop = read("plugins/immune-brain/dist/drive-batch.md").replace(/\s+/g, " ");
-		for (const fragment of [
-			// The D20 wake table is the Parent's whole re-entry vocabulary.
-			"| Wake | `next_action` | Parent action |",
-			"| settlement or idle/done/exited progress | `advance` |",
-			"| startup or mid-run dialog (`entry_submitted: false`, `blocked`) | `relay_dialog` |",
-			"| `interactive_host` child stalled idle | `ask_user` |",
-			"| timeout with nothing pending | `wait` |",
-			"| batch terminal | `complete` |",
-			"The Parent waits read-only with `imm-session await --batch <batch_id>`",
-			"Resolve `../bin/imm-session` from this packaged contract",
-			"names it `/immune-brain:drive`",
-			"Keep `task_id → handle` from the result; the handle is opaque and is not authority.",
-			"The Parent may send one text instruction to a Lane session, and only while it is `idle` or `done` (a finished turn not yet seen) and its child is still running in the Lane",
-			"only when accepted does the Parent submit it",
-			"The Parent sends that tab no keys and no prompt, and never answers such a dialog for the user.",
-			"a relaunch submits the entry again in the same tab instead of creating another",
-			// Closing is the runtime's, with proof; the Parent only reports and reads.
-			"The runtime closes each integrated child session with proof via `closeWithProof(handle, key)`; the Parent never closes a session",
-			"Every other tab (a parked, failed, stopped or not yet integrated child's, and any tab the Parent did not create) stays open for the user to read and close.",
-			"Closing a session removes no Lane and no branch beyond the proven per-child cleanup.",
-			"The Parent stops no session",
-			"the Parent removes no Lane and dispatches no one to remove it",
-			"It splits no pane and creates no workspace",
-			"The Parent never invokes `herdr` itself, and outside Herdr it never invokes `imm-session`",
-			"A `timeout` return is no transition",
-			"A wait that returns `exited` means the Host process is gone, never that the child finished.",
-			// The tab path changes how a session is obtained, not what counts as progress.
-			"never from the session's output or exit status",
-		]) {
-			expect(loop).toContain(fragment);
-		}
-		expect(read("plugins/immune-brain/skills/drive/SKILL.md")).toContain("../../dist/drive-batch.md#herdr-lane-tabs");
-		// The steward still knows no workspace tool.
-		expect(/herdr/i.test(read("plugins/immune-brain/runtime/prompts/lane-steward.md"))).toBe(false);
-	});
-	it("leaves Lane Preferences to the runtime and launches the frozen Executor profile from the handoff", () => {
-		const loop = read("plugins/immune-brain/dist/drive-batch.md").replace(/\s+/g, " ");
-		// ADR 0041 / #564: the Parent passes the literal request; the runtime resolves and freezes it.
-		for (const fragment of [
-			"#### Lane Preferences",
-			"the Parent passes it verbatim as `agents: { executor?, reviewer? }` to the first `start_unattended_batch` call",
-			"It never passes its own Host or a value it read from the configuration.",
-			"It passes `max_parallel` only when the request states one.",
-			"a resume keeps them and passes nothing again",
-			"Every `executor` handoff carries the frozen Executor profile as `executor: { host, model?, effort? }`",
-			"is refused as `lane_config_invalid` and starts no batch",
-			"the Parent does not fall back to another one",
-			"`claude-code`, `pi` or `antigravity`",
-			"from the handoff's `executor.model` and `executor.effort` when present; the Parent never reads them from the configuration itself",
-		]) {
-			expect(loop).toContain(fragment);
-		}
-		for (const retired of ["`executor_host`", "imm-kernel config --json", "`not_applied`", "`lanes.active`", "Lane max parallel:", "Lane Executor Host:"])
-			expect({ retired, present: loop.includes(retired) }).toEqual({ retired, present: false });
-		expect(read("plugins/immune-brain/skills/drive/SKILL.md")).toContain("../../dist/drive-batch.md#lane-preferences");
-	});
-	it("resolves batch final verification from the request, project, repository prose, then none", () => {
-		const loop = read("plugins/immune-brain/dist/drive-batch.md").replace(/\s+/g, " ");
-		for (const fragment of [
-			"take plain commands without shell syntax or quoting, at most 8, whatever their source",
-			"1. commands the current request states literally; else",
-			"2. project `batch.final_verification`; else",
-			"3. the full test suite and type-check commands the repository instruction file names in prose",
-			"4. none, and the completion report says nothing was run.",
-			"The Parent never invents a command the repository does not name unless the request or project config supplies it.",
-		])
-			expect(loop).toContain(fragment);
-		expect(loop).not.toContain("Batch final verification");
-	});
 	it("keeps lane preferences out of tracked instruction files and ignores the preset", () => {
 		expect(read(".gitignore").split("\n")).toContain(".imm/lanes.local.json");
 		for (const file of ["AGENTS.md", "IMMUNE.md", "README.md", "README.zh-CN.md"]) {

@@ -101,7 +101,7 @@ describe("current Pi-only contracts", () => {
     for (const legacy of ["`projects.<key>`", "`lanes`", "`.imm/lanes.local.json`", "`- Git integration:`", "`- Initiative carrier default:`"])
       expect({ legacy, named: migrationNote.includes(legacy) }).toEqual({ legacy, named: true });
     // ADR 0043: the retired decision-model sources are no longer migrated; the retired keys are removed.
-    expect(migrationNote).toContain("It writes no `loop` or `decision_models` value and removes those keys");
+    expect(migrationNote).toContain("It writes no `loop`, `decision_models`, `batch` or `session_providers` value and removes those keys");
     expect(migrationNote).toContain("It deletes none of those sources");
     expect(preferencesDoc).not.toContain("## Legacy Sources");
     expect(preferencesDoc).not.toContain("does not load an\nagent-local TOML file");

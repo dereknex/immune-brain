@@ -146,10 +146,7 @@ describe("packed artifact loader", () => {
 				const names = paths
 					.map((p: string) => p.split("/").pop() ?? p)
 					.sort();
-				expect(names).toEqual([
-					"imm-canary-work.ts",
-					"imm-unattended-batch.ts",
-				]);
+				expect(names).toEqual(["imm-canary-work.ts"]);
 				const skillsResult = loader.getSkills();
 				const baselineDiagnostics = skillsResult.diagnostics.filter(
 					(diagnostic: { path?: string }) =>

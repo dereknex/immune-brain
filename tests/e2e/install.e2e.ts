@@ -21,11 +21,11 @@ const SKILLS = ["authority-review", "clarify", "design-review", "draw-up", "driv
 /** The Kernel MCP tools Claude Code and Antigravity must list (their names are Host-neutral). */
 const MCP_TOOLS = [
 	"advance_assurance", "approve_breaking_intent_revision", "refute_finding", "repair_authority_state",
-	"request_authorization", "resolve_finding", "retire_stale_batch", "revise_intent", "start_unattended_batch", "status",
+	"enroll", "request_authorization", "resolve_finding", "revise_intent", "status",
 	"stop", "submit_review", "submit_session_result", "submit_verification",
 ];
 /** The Pi extension's registered tools and command (Pi has no MCP server; it loads .pi-extension). */
-const PI_TOOLS = ["imm_kernel_canary", "start_unattended_batch", "retire_stale_batch"];
+const PI_TOOLS = ["imm_kernel_canary", "imm_loop_action"];
 const PI_COMMANDS = ["imm-tasks"];
 
 let install: InstallRoot;

@@ -1,7 +1,7 @@
 import { afterAll, afterEach, describe, expect, it, spyOn } from "bun:test";
 import { createHash } from "node:crypto";
 import { execFile, execFileSync, spawn, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { promisify } from "node:util";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -34,12 +34,9 @@ import * as runContinuationModule from "../plugins/immune-brain/runtime/assuranc
 import {
 	antigravityContinuationHost,
 	antigravityRunContinuationHook,
-	antigravityRunContinuationPostToolUse,
 	antigravityRunContinuationPreToolUse,
-	isSessionPaused,
 	parseImmuneBrainTool,
 	readRunToolSession,
-	selectedAntigravityParent,
 	stopBoundary,
 } from "../plugins/immune-brain/runtime/antigravity/run_continuation";
 import { applyRunContinuationEvent } from "../plugins/immune-brain/runtime/host-core/run_continuation_session";
@@ -57,14 +54,11 @@ import { parseSemver, probeHost } from "../plugins/immune-brain/runtime/antigrav
 import { enrollTaskForTest } from "./helpers/kernel-enroll";
 import type { AssuranceHostPort, HostReviewReservation, VerificationRequest } from "../plugins/immune-brain/runtime/assurance/host_port";
 import { writeTestReviewPacket } from "./helpers/review-packet-fixture";
-import * as batchPreflight from "../plugins/immune-brain/runtime/unattended/batch_preflight";
-import { prepareBatchLaneRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
 import * as coordinator from "../plugins/immune-brain/runtime/assurance/coordinator";
 import type { StatusProjectionResult } from "../plugins/immune-brain/runtime/assurance/coordinator";
 import { digestOfReviewerBytes } from "../plugins/immune-brain/runtime/assurance/review_mediation";
 import type { AssuranceObligation } from "../plugins/immune-brain/runtime/kernel/types";
 import type { AssuranceProjection } from "../plugins/immune-brain/runtime/kernel/assurance_projection";
-import { memoryLanePort, memoryLanePortEnv } from "./helpers/memory-lane-port";
 
 describe("Antigravity Harness Conformance", () => {
 	it("probes host capability and enforces fail-closed version checking", () => {
@@ -173,11 +167,9 @@ describe("Antigravity Harness Conformance", () => {
 		});
 	});
 
-	describe("Lane Guard & Native Gate", () => {
+	describe("Native Gate", () => {
 		it("recognizes privileged operations", () => {
 			expect(isPrivilegedOperation("enroll")).toBe(true);
-			expect(isPrivilegedOperation("start_unattended_batch")).toBe(true);
-			expect(isPrivilegedOperation("retire_stale_batch")).toBe(true);
 			expect(isPrivilegedOperation("advance_assurance")).toBe(false);
 			expect(isPrivilegedOperation("status")).toBe(false);
 		});
@@ -186,7 +178,7 @@ describe("Antigravity Harness Conformance", () => {
 			const result = antigravityPreToolUseHook({
 				conversationId: "conv-gate-1",
 				toolCall: {
-					name: "mcp__immune-brain__start_unattended_batch",
+					name: "mcp__immune-brain__enroll",
 					args: { taskId: "task-123" },
 				},
 			});
@@ -226,7 +218,7 @@ describe("Antigravity Harness Conformance", () => {
 					conversationId: "conv-drive-1",
 					stepIdx: 42,
 					toolCall: {
-						name: "mcp__immune-brain__start_unattended_batch",
+						name: "mcp__immune-brain__enroll",
 						args: { taskId: "task-999" },
 					},
 				}, { root });
@@ -236,7 +228,7 @@ describe("Antigravity Harness Conformance", () => {
 				const missingStep = antigravityPreToolUseHook({
 					conversationId: "conv-drive-1",
 					toolCall: {
-						name: "mcp__immune-brain__start_unattended_batch",
+						name: "mcp__immune-brain__enroll",
 						args: { taskId: "task-999" },
 					},
 				}, { root });
@@ -336,46 +328,6 @@ describe("Antigravity Harness Conformance", () => {
 			}
 		});
 
-		it("enforces lane boundary on file edits", () => {
-			const tempDir = mkdtempSync(join(tmpdir(), "lane-guard-"));
-			const laneDir = join(tempDir, "lane-1");
-			mkdirSync(laneDir, { recursive: true });
-
-			// Initialize git on imm-lane branch
-			execFileSync("git", ["init", "-q", "-b", "imm-lane/b-1/t-1"], { cwd: laneDir });
-			execFileSync("git", ["config", "user.name", "Test"], { cwd: laneDir });
-			execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: laneDir });
-			writeFileSync(join(laneDir, "foo.ts"), "export const foo = 1;");
-			execFileSync("git", ["add", "."], { cwd: laneDir });
-			execFileSync("git", ["commit", "-q", "-m", "init"], { cwd: laneDir });
-
-			try {
-				// Edit inside lane is allowed
-				const insideResult = antigravityPreToolUseHook({
-					conversationId: "conv-lane-1",
-					workspacePaths: [laneDir],
-					toolCall: {
-						name: "edit_file",
-						args: { Path: join(laneDir, "foo.ts") },
-					},
-				});
-				expect(insideResult.decision).toBe("allow");
-
-				// Edit outside lane is denied
-				const outsideResult = antigravityPreToolUseHook({
-					conversationId: "conv-lane-1",
-					workspacePaths: [laneDir],
-					toolCall: {
-						name: "edit_file",
-						args: { Path: join(tempDir, "outside.ts") },
-					},
-				});
-				expect(outsideResult.decision).toBe("deny");
-				expect(outsideResult.reason).toContain("Lane write refused");
-			} finally {
-				rmSync(tempDir, { recursive: true, force: true });
-			}
-		});
 	});
 
 	describe("Run Continuation Hook", () => {
@@ -682,96 +634,6 @@ describe("Antigravity Harness Conformance", () => {
 			}
 		});
 
-		it("AC2 (D7; BR-REQ-3): binds parent from start_unattended_batch and automated continuation matches shared machine", async () => {
-			const h = antigravityContinuationFixture();
-			const parentSpy = spyOn(runContinuationModule, "observeParentRun");
-			try {
-				h.prompt("/drive batch-init");
-				const batchId = "batch-test-parent";
-				const planDigest = `sha256:${"b".repeat(64)}`;
-				mkdirSync(join(h.root, ".imm/state/batches"), { recursive: true });
-				writeFileSync(
-					join(h.root, ".imm/state/batches", `${batchId}.json`),
-					JSON.stringify({
-						contract: "assurance_kernel/batch_run_state/v1",
-						batch_id: batchId,
-						initiative_slug: "batch-init",
-						base_head: "0123456789abcdef",
-						branch: "imm/batch-init",
-						plan_digest: planDigest,
-						confirmation_time: "2026-01-01T00:00:00.000Z",
-						batch_state: "running",
-						children: [
-							{
-								task_id: "child-1",
-								slice_id: "S1",
-								state: "enrolled",
-								risk: "low",
-								intent_path: "docs/plans/child-1.intent.json",
-								intent_revision: 1,
-								intent_content_hash: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-								scope_hint: ["child-1.txt"],
-								blocked_by: [],
-								reason: null,
-								commit: null,
-							},
-						],
-						commits: [],
-						consecutive_qa_failures: 0,
-						budget: { max_children: 1, qa_failure_limit: 2 },
-						created_at: "2026-01-01T00:00:00.000Z",
-						updated_at: "2026-01-01T00:00:00.000Z",
-					}),
-				);
-
-				await h.preTool("call_mcp_tool", {
-					ServerName: "immune-brain",
-					ToolName: "start_unattended_batch",
-					Arguments: { initiative_slug: "batch-init" },
-				}, 1);
-				await h.postTool(
-					"call_mcp_tool",
-					{ ServerName: "immune-brain", ToolName: "start_unattended_batch", Arguments: { initiative_slug: "batch-init" } },
-					{ result: JSON.stringify({ state: "started", batch_id: batchId, plan_digest: planDigest, initiative_slug: "batch-init" }) },
-					1,
-				);
-
-				parentSpy.mockResolvedValue({
-					kind: "parent",
-					workspace: h.root,
-					session_id: h.conversationId,
-					boundary_id: "boundary-1",
-					initiative_slug: "batch-init",
-					batch_id: batchId,
-					plan_digest: planDigest,
-					progress_digest: "progress-1",
-					all_required_integrated: false,
-					final_passed: false,
-					pending_repair: false,
-					runnable: true,
-					executors_running: false,
-					next_action: "Call start_unattended_batch for batch-init",
-				});
-
-				// Bound parent continues
-				const res = await h.stop();
-				expect(res.decision).toBe("continue");
-				expect(res.reason).toContain("Explicit drive is bound to batch-init");
-
-				// selectedAntigravityParent verifies correlation on child assurance call
-				await h.preTool(
-					"call_mcp_tool",
-					{ ServerName: "immune-brain", ToolName: "advance_assurance", Arguments: { task_id: "child-1" } },
-					2,
-				);
-				expect(selectedAntigravityParent(`${h.conversationId}:2`, h.root, "batch-init", h.store)).toBe(true);
-				expect(selectedAntigravityParent(`${h.conversationId}:2`, h.root, "other-init", h.store)).toBe(false);
-			} finally {
-				parentSpy.mockRestore();
-				h.dispose();
-			}
-		});
-
 		it("AC2 (D7; BR-REQ-3): stall yields the turn without pausing or spending stall budget", async () => {
 			const h = antigravityContinuationFixture();
 			try {
@@ -899,18 +761,14 @@ describe("Antigravity Harness Conformance", () => {
 					requestConfirmation: async () => ({ decision: "deny", reason: "User cancelled" }),
 				});
 
-				// Privileged operation startUnattendedBatch without entry token requires confirmation
+				// Enrollment always opens its own native gate; a refused gate is a NativeAuthorityError.
 				await expect(
-					runtime.startUnattendedBatch(
-						"task-01",
-						{
-							sessionId: "s1",
-							toolCallId: "tc1",
-							taskId: "task-01",
-							interactive: true,
-						},
-						{ plan_source: "single_task" },
-					),
+					runtime.authorize("task-01", "enroll", {
+						sessionId: "s1",
+						toolCallId: "tc1",
+						taskId: "task-01",
+						interactive: true,
+					}),
 				).rejects.toThrow(NativeAuthorityError);
 			} finally {
 				rmSync(tempDir, { recursive: true, force: true });
@@ -938,58 +796,77 @@ describe("Antigravity Harness Conformance", () => {
 		}
 	}
 
+	/** One committed, enrollable TaskIntent in `cwd`, so Enrollment reaches its gate. */
+	function enrollableWorkspace(cwd: string): void {
+		execFileSync("git", ["init", "-q", "-b", "main"], { cwd });
+		execFileSync("git", ["config", "user.name", "Test"], { cwd });
+		execFileSync("git", ["config", "user.email", "test@example.com"], { cwd });
+		mkdirSync(join(cwd, "docs", "plans"), { recursive: true });
+		writeFileSync(join(cwd, "docs", "plans", "probe-task.intent.json"), JSON.stringify({
+			contract: "assurance_kernel/task_intent/v1",
+			task_id: "probe-task",
+			owner: "user",
+			goal: "goal",
+			acceptance: [{ id: "acc-1", assertion: "assert", verification: "bun test" }],
+			scope_hint: ["docs/plans/probe-task.intent.json"],
+			risk: "routine",
+			revision: 1,
+		}));
+		execFileSync("git", ["add", "."], { cwd });
+		execFileSync("git", ["commit", "-q", "-m", "init"], { cwd });
+	}
+
 	/** No confirmation port and no entry token: a passing probe surfaces the interaction gate. */
-	function retireProbe(runtime: ClaudeRuntime) {
-		return runtime.retireStaleBatch("probe-initiative", {
+	function enrollProbe(runtime: ClaudeRuntime | AntigravityRuntime) {
+		return runtime.authorize("probe-task", "enroll", {
 			sessionId: "probe-session",
 			toolCallId: "probe-call",
-			taskId: "probe-initiative",
-			initiativeSlug: "probe-initiative",
+			taskId: "probe-task",
 		});
 	}
 
 	describe("runtime host probe", () => {
 		it("judges an Antigravity runtime with the Antigravity probe", async () => {
 			await withTemp(
-				(cwd) => new AntigravityRuntime({ cwd, env: { ANTIGRAVITY_VERSION: "0.2.0" }, interactive: true }),
+				(cwd) => (enrollableWorkspace(cwd), new AntigravityRuntime({ cwd, env: { ANTIGRAVITY_VERSION: "0.2.0" }, interactive: true })),
 				async (runtime) => {
-					await expect(retireProbe(runtime)).rejects.toThrow("interaction_not_opened");
+					await expect(enrollProbe(runtime)).rejects.toThrow("interaction_not_opened");
 				},
 			);
 		});
 
 		it("judges a Claude runtime with the Claude probe", async () => {
 			await withTemp(
-				(cwd) => new ClaudeRuntime({ cwd, env: { CLAUDE_CODE_VERSION: "2.1.236" }, interactive: true }),
+				(cwd) => (enrollableWorkspace(cwd), new ClaudeRuntime({ cwd, env: { CLAUDE_CODE_VERSION: "2.1.236" }, interactive: true })),
 				async (runtime) => {
-					await expect(retireProbe(runtime)).rejects.toThrow("interaction_not_opened");
+					await expect(enrollProbe(runtime)).rejects.toThrow("interaction_not_opened");
 				},
 			);
 		});
 
 		it("refuses an Antigravity runtime below the Antigravity minimum", async () => {
 			await withTemp(
-				(cwd) => new AntigravityRuntime({ cwd, env: { ANTIGRAVITY_VERSION: "0.0.9" }, interactive: true }),
+				(cwd) => (enrollableWorkspace(cwd), new AntigravityRuntime({ cwd, env: { ANTIGRAVITY_VERSION: "0.0.9" }, interactive: true })),
 				async (runtime) => {
-					await expect(retireProbe(runtime)).rejects.toThrow("unsupported_host: Antigravity version 0.0.9 is older than minimum supported 0.1.0");
+					await expect(enrollProbe(runtime)).rejects.toThrow("unsupported_host: Antigravity version 0.0.9 is older than minimum supported 0.1.0");
 				},
 			);
 		});
 
 		it("refuses an Antigravity runtime that announces only a Claude Code version", async () => {
 			await withTemp(
-				(cwd) => new AntigravityRuntime({ cwd, env: { CLAUDE_CODE_VERSION: "2.1.236" }, interactive: true }),
+				(cwd) => (enrollableWorkspace(cwd), new AntigravityRuntime({ cwd, env: { CLAUDE_CODE_VERSION: "2.1.236" }, interactive: true })),
 				async (runtime) => {
-					await expect(retireProbe(runtime)).rejects.toThrow("unsupported_host: Antigravity version is unavailable");
+					await expect(enrollProbe(runtime)).rejects.toThrow("unsupported_host: Antigravity version is unavailable");
 				},
 			);
 		});
 
 		it("does not pick a probe from parentHost alone", async () => {
 			await withTemp(
-				(cwd) => new ClaudeRuntime({ cwd, parentHost: "antigravity", env: { ANTIGRAVITY_VERSION: "0.2.0" }, interactive: true }),
+				(cwd) => (enrollableWorkspace(cwd), new ClaudeRuntime({ cwd, parentHost: "antigravity", env: { ANTIGRAVITY_VERSION: "0.2.0" }, interactive: true })),
 				async (runtime) => {
-					await expect(retireProbe(runtime)).rejects.toThrow("unsupported_host: Claude Code version is unavailable");
+					await expect(enrollProbe(runtime)).rejects.toThrow("unsupported_host: Claude Code version is unavailable");
 				},
 			);
 		});
@@ -1006,8 +883,7 @@ describe("Antigravity Harness Conformance", () => {
 					return mcp;
 				},
 				async (mcp) => {
-					await expect(mcp.callTool("start_unattended_batch", { initiative_slug: "probe-initiative" })).rejects.toThrow("run_entry_required");
-					await expect(mcp.callTool("retire_stale_batch", { initiative_slug: "probe-initiative" })).rejects.toThrow("run_entry_required");
+					await expect(mcp.callTool("enroll", { task_id: "probe-task" })).rejects.toThrow("run_entry_required");
 					expect(await refusalCode(mcp.callTool("advance_assurance", { task_id: "probe-task" }))).not.toBe("unsupported_host");
 				},
 			);
@@ -1021,8 +897,7 @@ describe("Antigravity Harness Conformance", () => {
 					return mcp;
 				},
 				async (mcp) => {
-					await expect(mcp.callTool("start_unattended_batch", { initiative_slug: "probe-initiative" })).rejects.toThrow("unsupported_host: Antigravity version 0.0.9 is older than minimum supported 0.1.0");
-					await expect(mcp.callTool("retire_stale_batch", { initiative_slug: "probe-initiative" })).rejects.toThrow("unsupported_host: Antigravity version 0.0.9 is older than minimum supported 0.1.0");
+					await expect(mcp.callTool("enroll", { task_id: "probe-task" })).rejects.toThrow("unsupported_host: Antigravity version 0.0.9 is older than minimum supported 0.1.0");
 					await expect(mcp.callTool("advance_assurance", { task_id: "probe-task" })).rejects.toThrow("unsupported_host: Antigravity version 0.0.9 is older than minimum supported 0.1.0");
 				},
 			);
@@ -1038,7 +913,7 @@ describe("Antigravity Harness Conformance", () => {
 						method: "initialize",
 						params: { protocolVersion: "2025-06-18", clientInfo: { name: "antigravity", version: "" }, capabilities: { elicitation: {} } },
 					}, mcp);
-					await expect(mcp.callTool("start_unattended_batch", { initiative_slug: "probe-initiative" })).rejects.toThrow("unsupported_host: Antigravity version is unavailable");
+					await expect(mcp.callTool("enroll", { task_id: "probe-task" })).rejects.toThrow("unsupported_host: Antigravity version is unavailable");
 				},
 			);
 		});
@@ -1051,7 +926,7 @@ describe("Antigravity Harness Conformance", () => {
 					return mcp;
 				},
 				async (mcp) => {
-					await expect(mcp.callTool("start_unattended_batch", { initiative_slug: "probe-initiative" })).rejects.toThrow("unsupported_host: Claude Code 2.1.100 is below the minimum supported 2.1.236");
+					await expect(mcp.callTool("enroll", { task_id: "probe-task" })).rejects.toThrow("unsupported_host: Claude Code 2.1.100 is below the minimum supported 2.1.236");
 				},
 			);
 		});
@@ -1064,7 +939,7 @@ describe("Antigravity Harness Conformance", () => {
 					return mcp;
 				},
 				async (mcp) => {
-					await expect(mcp.callTool("start_unattended_batch", { initiative_slug: "probe-initiative" })).rejects.toThrow("unsupported_host: Claude Code version is unavailable");
+					await expect(mcp.callTool("enroll", { task_id: "probe-task" })).rejects.toThrow("unsupported_host: Claude Code version is unavailable");
 				},
 			);
 		});
@@ -1090,8 +965,7 @@ describe("Antigravity Harness Conformance", () => {
 						}, mcp);
 						expect((reply?.result as { serverInfo: unknown }).serverInfo).toMatchObject({ name: "antigravity", minimumHostVersion: "0.1.0" });
 						expect(await refusalCode(mcp.callTool("advance_assurance", { task_id: "probe-task" }))).not.toBe("unsupported_host");
-						await expect(mcp.callTool("start_unattended_batch", { initiative_slug: "probe-initiative" })).rejects.toThrow("run_entry_required");
-						await expect(mcp.callTool("retire_stale_batch", { initiative_slug: "probe-initiative" })).rejects.toThrow("run_entry_required");
+						await expect(mcp.callTool("enroll", { task_id: "probe-task" })).rejects.toThrow("run_entry_required");
 					},
 				);
 			}
@@ -1108,7 +982,7 @@ describe("Antigravity Harness Conformance", () => {
 							method: "initialize",
 							params: { protocolVersion: "2025-06-18", clientInfo, capabilities: { elicitation: {} } },
 						}, mcp);
-						await expect(mcp.callTool("start_unattended_batch", { initiative_slug: "probe-initiative" })).rejects.toThrow("unsupported_host: Antigravity version is unavailable");
+						await expect(mcp.callTool("enroll", { task_id: "probe-task" })).rejects.toThrow("unsupported_host: Antigravity version is unavailable");
 						await expect(mcp.callTool("advance_assurance", { task_id: "probe-task" })).rejects.toThrow("unsupported_host: Antigravity version is unavailable");
 					},
 				);
@@ -1126,8 +1000,7 @@ describe("Antigravity Harness Conformance", () => {
 						params: { protocolVersion: "2025-06-18", clientInfo: { name: "antigravity-client", version: "v0.0.9" }, capabilities: { elicitation: {} } },
 					}, mcp);
 					const below = "unsupported_host: Antigravity version v0.0.9 is older than minimum supported 0.1.0";
-					await expect(mcp.callTool("start_unattended_batch", { initiative_slug: "probe-initiative" })).rejects.toThrow(below);
-					await expect(mcp.callTool("retire_stale_batch", { initiative_slug: "probe-initiative" })).rejects.toThrow(below);
+					await expect(mcp.callTool("enroll", { task_id: "probe-task" })).rejects.toThrow(below);
 					await expect(mcp.callTool("advance_assurance", { task_id: "probe-task" })).rejects.toThrow(below);
 				},
 			);
@@ -1143,7 +1016,7 @@ describe("Antigravity Harness Conformance", () => {
 						method: "initialize",
 						params: { protocolVersion: "2025-06-18", clientInfo: { name: "antigravity-client", version: "v1.0.0" }, capabilities: { elicitation: {} } },
 					}, mcp);
-					await expect(mcp.callTool("start_unattended_batch", { initiative_slug: "probe-initiative" })).rejects.toThrow("unsupported_host: Claude Code version is unavailable");
+					await expect(mcp.callTool("enroll", { task_id: "probe-task" })).rejects.toThrow("unsupported_host: Claude Code version is unavailable");
 				},
 			);
 		});
@@ -1373,9 +1246,6 @@ describe("Antigravity Harness Conformance", () => {
 	// conversation and the progressToken step, never through Claude metadata.
 	describe("Antigravity privileged MCP correlation", () => {
 		const TASK = "correlation-task";
-		const BATCH_ID = `batch-${TASK}`;
-		const PLAN_DIGEST = `sha256:${"a".repeat(64)}`;
-		const CREATED_AT = "2026-01-01T00:00:00.000Z";
 		const scratch: string[] = [];
 		afterAll(() => {
 			for (const dir of scratch) rmSync(dir, { recursive: true, force: true });
@@ -1395,8 +1265,8 @@ describe("Antigravity Harness Conformance", () => {
 			environment: { prepare: null, writable_paths: [] },
 		});
 
-		/** One workspace: a committed single-task intent, plus an active batch record when asked. */
-		function workspace(withBatch = true): string {
+		/** One workspace: a committed single-task intent. */
+		function workspace(): string {
 			const root = temp("corr");
 			mkdirSync(join(root, "docs/plans"), { recursive: true });
 			writeFileSync(join(root, ".gitignore"), ".imm/state/\n");
@@ -1405,8 +1275,8 @@ describe("Antigravity Harness Conformance", () => {
 				contract: "assurance_kernel/task_intent/v1",
 				task_id: TASK,
 				owner: "user",
-				goal: "one correlated batch call",
-				acceptance: [{ id: "AC1", assertion: "the batch call is correlated", verification: verification() }],
+				goal: "one correlated enroll call",
+				acceptance: [{ id: "AC1", assertion: "the enroll call is correlated", verification: verification() }],
 				scope_hint: ["docs/plans"],
 				risk: "routine",
 				revision: 1,
@@ -1414,24 +1284,6 @@ describe("Antigravity Harness Conformance", () => {
 			git(root, "init", "-q", "-b", "main");
 			git(root, "add", "-A");
 			git(root, "commit", "-qm", "fixture");
-			if (!withBatch) return root;
-			mkdirSync(join(root, ".imm/state/batches"), { recursive: true });
-			writeFileSync(join(root, ".imm/state/batches", `${BATCH_ID}.json`), `${JSON.stringify({
-				contract: "assurance_kernel/batch_run_state/v1",
-				batch_id: BATCH_ID,
-				initiative_slug: TASK,
-				base_head: git(root, "rev-parse", "HEAD"),
-				branch: `imm/${TASK}`,
-				plan_digest: PLAN_DIGEST,
-				confirmation_time: CREATED_AT,
-				batch_state: "running",
-				children: [{ task_id: TASK, slice_id: TASK, state: "pending", commit: null, blocked_by: [], reason: null }],
-				commits: [],
-				consecutive_qa_failures: 0,
-				budget: { max_children: 1, qa_failure_limit: 2 },
-				created_at: CREATED_AT,
-				updated_at: CREATED_AT,
-			}, null, 2)}\n`);
 			return root;
 		}
 
@@ -1456,13 +1308,11 @@ describe("Antigravity Harness Conformance", () => {
 			return reply.error.data?.reason_code ?? reply.error.message;
 		}
 
-		it("admits one batch call per Hook step and refuses every uncorrelated or replayed call", async () => {
-			const retireRoot = workspace();
-			const root = workspace(false);
+		it("admits one enroll call per Hook step and refuses every uncorrelated or replayed call", async () => {
+			const root = workspace();
 			const store = temp("store");
 			const other = temp("elsewhere");
-			const conversationId = "conv-batch-1";
-			const retireConversation = "conv-retire";
+			const conversationId = "conv-enroll-1";
 			const gates: string[] = [];
 			const mcp = createAntigravityMcpRuntime({
 				cwd: root,
@@ -1483,68 +1333,45 @@ describe("Antigravity Harness Conformance", () => {
 				...(step === null ? {} : { progressToken: `antigravity-hook:${step}` }),
 			});
 
-			enter(store, retireConversation, retireRoot);
-			// One admitted retirement: the entry token stands in for its native gate, and the
-			// admitted conversation — not the transport connection — is its Hook session.
-			admit(store, retireConversation, 2, "retire_stale_batch", retireRoot);
-			const retired = await call("rpc-77", "retire_stale_batch", { initiative_slug: TASK }, meta(retireConversation, 2, [retireRoot]));
-			expect(resultOf(retired).state).toBe("retired");
-			expect((resultOf(retired).report as { retirement?: { confirmation_ref?: string; plan_digest?: string } }).retirement).toEqual({
-				confirmation_ref: hostConfirmationRef("antigravity", {
-					connectionId: retireConversation,
-					toolCallId: `${retireConversation}:2`,
-					requestId: entryTokenRequestId(readPhaseEntryState(retireConversation, store)!.token!),
-					operation: "retire_stale_batch",
-					initiativeSlug: TASK,
-					planDigest: PLAN_DIGEST,
-				}),
-				plan_digest: PLAN_DIGEST,
-			});
-			// The admission is single-use: the replay consumes nothing.
-			expect(reasonCode(await call("rpc-78", "retire_stale_batch", { initiative_slug: TASK }, meta(retireConversation, 2, [retireRoot])))).toBe("run_entry_required");
-
 			// Sequential steps receive distinct admissions, and each reaches the native gate.
 			enter(store, conversationId, root);
-			admit(store, conversationId, 4, "start_unattended_batch", root);
-			expect(resultOf(await call("rpc-81", "start_unattended_batch", { task_id: TASK }, meta(conversationId, 4))))
-				.toMatchObject({ state: "rejected", reason: "native interaction declined" });
-			admit(store, conversationId, 6, "start_unattended_batch", root);
-			expect(resultOf(await call("rpc-85", "start_unattended_batch", { task_id: TASK }, meta(conversationId, 6))))
-				.toMatchObject({ state: "rejected", reason: "native interaction declined" });
-			expect(gates).toEqual(["start_unattended_batch", "start_unattended_batch"]);
+			admit(store, conversationId, 4, "enroll", root);
+			expect(reasonCode(await call("rpc-81", "enroll", { task_id: TASK }, meta(conversationId, 4)))).toBe("user_denied");
+			admit(store, conversationId, 6, "enroll", root);
+			expect(reasonCode(await call("rpc-85", "enroll", { task_id: TASK }, meta(conversationId, 6)))).toBe("user_denied");
+			expect(gates).toEqual(["enroll", "enroll"]);
 
 			// Missing and empty Host conversation metadata refuse before any admission.
-			admit(store, conversationId, 8, "start_unattended_batch", root);
-			expect(reasonCode(await call("rpc-88", "start_unattended_batch", { task_id: TASK },
+			admit(store, conversationId, 8, "enroll", root);
+			expect(reasonCode(await call("rpc-88", "enroll", { task_id: TASK },
 				{ "antigravity.google/workspace_paths": [root], progressToken: "antigravity-hook:8" }))).toBe("correlation_missing");
-			expect(reasonCode(await call("rpc-89", "start_unattended_batch", { task_id: TASK }, meta("", 8)))).toBe("correlation_missing");
+			expect(reasonCode(await call("rpc-89", "enroll", { task_id: TASK }, meta("", 8)))).toBe("correlation_missing");
 			// A different conversation cannot consume this conversation's admission.
-			enter(store, "conv-batch-2", root);
-			expect(reasonCode(await call("rpc-90", "start_unattended_batch", { task_id: TASK }, meta("conv-batch-2", 8)))).toBe("run_entry_required");
+			enter(store, "conv-enroll-2", root);
+			expect(reasonCode(await call("rpc-90", "enroll", { task_id: TASK }, meta("conv-enroll-2", 8)))).toBe("run_entry_required");
 			// The step comes from the progressToken: absent, malformed and wrong steps refuse.
-			expect(reasonCode(await call("rpc-91", "start_unattended_batch", { task_id: TASK }, meta(conversationId, null)))).toBe("run_entry_required");
-			expect(reasonCode(await call("rpc-92", "start_unattended_batch", { task_id: TASK },
+			expect(reasonCode(await call("rpc-91", "enroll", { task_id: TASK }, meta(conversationId, null)))).toBe("run_entry_required");
+			expect(reasonCode(await call("rpc-92", "enroll", { task_id: TASK },
 				{ ...meta(conversationId, null), progressToken: "antigravity-hook" }))).toBe("run_entry_required");
-			expect(reasonCode(await call("rpc-93", "start_unattended_batch", { task_id: TASK }, meta(conversationId, 9)))).toBe("run_entry_required");
+			expect(reasonCode(await call("rpc-93", "enroll", { task_id: TASK }, meta(conversationId, 9)))).toBe("run_entry_required");
 			// A call in another workspace is not this admission's workspace.
-			admit(store, conversationId, 10, "start_unattended_batch", root);
-			expect(reasonCode(await call("rpc-94", "start_unattended_batch", { task_id: TASK }, meta(conversationId, 10, [other])))).toBe("run_entry_required");
+			admit(store, conversationId, 10, "enroll", root);
+			expect(reasonCode(await call("rpc-94", "enroll", { task_id: TASK }, meta(conversationId, 10, [other])))).toBe("run_entry_required");
 			// An unrelated lazy server receives the ordinary allow and admits nothing.
 			expect(antigravityPreToolUseHook({ conversationId, stepIdx: 12, workspacePaths: [root],
-				toolCall: { name: "call_mcp_tool", args: { ServerName: "someone-else", ToolName: "start_unattended_batch", Arguments: {} } } }, { root: store }))
+				toolCall: { name: "call_mcp_tool", args: { ServerName: "someone-else", ToolName: "enroll", Arguments: {} } } }, { root: store }))
 				.toEqual({ decision: "allow" });
-			expect(reasonCode(await call("rpc-95", "start_unattended_batch", { task_id: TASK }, meta(conversationId, 12)))).toBe("run_entry_required");
+			expect(reasonCode(await call("rpc-95", "enroll", { task_id: TASK }, meta(conversationId, 12)))).toBe("run_entry_required");
 			// A refusal consumes no admission: step 8 still admits exactly once afterwards.
-			expect(resultOf(await call("rpc-96", "start_unattended_batch", { task_id: TASK }, meta(conversationId, 8))))
-				.toMatchObject({ state: "rejected", reason: "native interaction declined" });
-			expect(reasonCode(await call("rpc-97", "start_unattended_batch", { task_id: TASK }, meta(conversationId, 8)))).toBe("run_entry_required");
+			expect(reasonCode(await call("rpc-96", "enroll", { task_id: TASK }, meta(conversationId, 8)))).toBe("user_denied");
+			expect(reasonCode(await call("rpc-97", "enroll", { task_id: TASK }, meta(conversationId, 8)))).toBe("run_entry_required");
 		}, 60_000);
 
 		// The production server injects no admission port: the Hook and the server
 		// meet only in the default private store under the OS temp directory, and
 		// Antigravity records no `.continuation-call` correlation.
-		it("admits a Hook-recorded batch call through the default admission store", async () => {
-			const root = workspace(false);
+		it("admits a Hook-recorded enroll call through the default admission store", async () => {
+			const root = workspace();
 			const tmp = temp("tmpdir");
 			const home = temp("home");
 			const conversationId = "conv-default-store";
@@ -1568,16 +1395,16 @@ describe("Antigravity Harness Conformance", () => {
 					progressToken: `antigravity-hook:${step}`,
 				});
 				const call = (id: string, step: number) =>
-					handleJsonRpc({ jsonrpc: "2.0", id, method: "tools/call", params: { name: "start_unattended_batch", arguments: { task_id: TASK }, _meta: meta(step) } }, mcp);
+					handleJsonRpc({ jsonrpc: "2.0", id, method: "tools/call", params: { name: "enroll", arguments: { task_id: TASK }, _meta: meta(step) } }, mcp);
 
 				antigravityPreInvocationHook({ conversationId, lastUserInput: `/drive ${TASK}`, workspacePaths: [root] }, { home });
 				expect(antigravityPreToolUseHook({ conversationId, stepIdx: 3, workspacePaths: [root],
-					toolCall: { name: "call_mcp_tool", args: { ServerName: "immune-brain", ToolName: "start_unattended_batch", Arguments: {} } } }))
+					toolCall: { name: "call_mcp_tool", args: { ServerName: "immune-brain", ToolName: "enroll", Arguments: {} } } }))
 					.toEqual({ decision: "allow" });
 				expect(existsSync(join(tmp, "immune-brain-antigravity"))).toBe(true);
 
-				expect(resultOf(await call("rpc-default-1", 3))).toMatchObject({ state: "rejected", reason: "native interaction declined" });
-				expect(gates).toEqual(["start_unattended_batch"]);
+				expect(reasonCode(await call("rpc-default-1", 3))).toBe("user_denied");
+				expect(gates).toEqual(["enroll"]);
 				expect(reasonCode(await call("rpc-default-2", 3))).toBe("run_entry_required");
 			} finally {
 				if (previous === undefined) delete process.env.TMPDIR;
@@ -1672,14 +1499,10 @@ describe("Antigravity Harness Conformance", () => {
 			});
 			const next = () => replies.length ? Promise.resolve(replies.shift()!) : new Promise<Record<string, any>>((resolve) => waiters.push(resolve));
 			const send = (message: unknown) => input.write(`${JSON.stringify(message)}\n`);
-			// A Lane batch opens its Executor session through the port: a Herdr-shaped
-			// env plus an in-memory port, so no `herdr` process or tab is involved.
 			void serveAntigravityStdio({
 				input,
 				output,
 				cwd: root,
-				env: { ...memoryLanePortEnv },
-				sessionPortFactory: memoryLanePort,
 				interactive: true,
 				confirmationStoreRoot: store,
 				exit: () => undefined,
@@ -1807,7 +1630,7 @@ describe("Antigravity Harness Conformance", () => {
 			server.input.end();
 		}, 30_000);
 
-		it("stop opens force_ask without elicitation capability, refuses uncorrelated calls, and never manufactures batch admission", async () => {
+		it("stop opens force_ask without elicitation capability, refuses uncorrelated calls, and never manufactures enroll admission", async () => {
 			const root = await enrolledRoot();
 			const store = temp("store");
 			const server = wire(root, store);
@@ -1818,7 +1641,7 @@ describe("Antigravity Harness Conformance", () => {
 				params: { name: "stop", arguments: { task_id: TASK }, _meta: { "antigravity.google/workspace_paths": [root] } } });
 			expect(await server.next()).toMatchObject({ error: { data: { reason_code: "correlation_missing" } } });
 
-			// Neither empty nor confirmed non-batch privileged hooks manufacture a batch admission.
+			// Neither empty nor confirmed other privileged hooks manufacture an enroll admission.
 			expect(antigravityPreToolUseHook({ conversationId, stepIdx: 3, workspacePaths: [root],
 				toolCall: { name: "call_mcp_tool", args: { ServerName: "immune-brain", ToolName: "request_authorization", Arguments: {} } } }, { root: store }))
 				.toEqual({ decision: "allow" });
@@ -1831,85 +1654,17 @@ describe("Antigravity Harness Conformance", () => {
 			expect(stopHook.decision).toBe("force_ask");
 			expect(stopHook.reason).toContain("Operation: stop");
 
-			server.send({ jsonrpc: "2.0", id: "batch-1", method: "tools/call",
-				params: { name: "start_unattended_batch", arguments: { task_id: TASK }, _meta: meta(root, 4) } });
+			server.send({ jsonrpc: "2.0", id: "enroll-1", method: "tools/call",
+				params: { name: "enroll", arguments: { task_id: TASK }, _meta: meta(root, 4) } });
 			expect(await server.next()).toMatchObject({ error: { data: { reason_code: "run_entry_required" } } });
 
-			// Step 4's stop grant was untouched by the rejected batch call and stops the task once.
+			// Step 4's stop grant was untouched by the rejected enroll call and stops the task once.
 			server.send({ jsonrpc: "2.0", id: "stop-1", method: "tools/call",
 				params: { name: "stop", arguments: { task_id: TASK }, _meta: meta(root, 4) } });
 			expect(JSON.stringify(await server.next())).not.toContain("error");
 			expect(readTaskRecordRaw(root, TASK).record).toBeNull();
 			server.input.end();
 		}, 30_000);
-
-		it("start_unattended_batch opens PreToolUse force_ask for a new batch and skips re-prompting when resuming an intact batch", async () => {
-			const root = temp("batch-gate");
-			const store = temp("batch-store");
-			const SLUG = "loop-initiative";
-			const CHILD = "loop-s0";
-			writeFileSync(join(root, ".gitignore"), ".imm/state/\n");
-			writeIntent(root, "deliver child slice", 1, CHILD);
-			git(root, "init", "-q", "-b", "main");
-			git(root, "add", "-A");
-			git(root, "commit", "-qm", "fixture");
-
-			const readInitiative = async () => ({
-				contract: "immune_brain/github_initiative_observation/v1" as const,
-				initiative_id: SLUG,
-				issue_number: 100,
-				tasks: [{ task_id: CHILD, slice_id: "S0", issue_number: 101, blocked_by: [] }],
-			});
-
-			antigravityPreInvocationHook({ conversationId, lastUserInput: `/drive ${SLUG}`, workspacePaths: [root] }, { root: store, home: store });
-			const batchArgs = { initiative_slug: SLUG, max_parallel: 1, final_verification: ["true"] };
-			const hookRes = await antigravityPreToolUseHookAsync({
-				conversationId,
-				stepIdx: 10,
-				workspacePaths: [root],
-				toolCall: {
-					name: "call_mcp_tool",
-					args: { ServerName: "immune-brain", ToolName: "start_unattended_batch", Arguments: batchArgs },
-				},
-			}, { root: store, home: temp("batch-home"), readInitiative });
-			expect(hookRes.decision).toBe("force_ask");
-			expect(hookRes.reason).toContain(`Authorize this unattended batch run for ${SLUG}?`);
-			expect(hookRes.reason).toContain(`${CHILD} (S0)`);
-			expect(hookRes.reason).toContain("Plan digest: sha256:");
-
-			const server = wire(root, store, {
-				readInitiative,
-				batchKernel: {
-					advanceTask: async () => ({ state: "blocked", reason: "parked for inspection" }),
-				},
-			});
-			await initialize(server);
-			server.send({ jsonrpc: "2.0", id: "batch-start-1", method: "tools/call",
-				params: { name: "start_unattended_batch", arguments: batchArgs, _meta: meta(root, 10) } });
-			const startedReply = await server.next();
-			expect(startedReply.method).toBeUndefined();
-			expect(startedReply.error).toBeUndefined();
-			const started = JSON.parse(startedReply.result.content[0].text);
-			expect(started.state).toBe("started");
-
-			// While the batch remains running with unchanged plan/branch/HEAD, PreToolUse allows resumption without re-prompting.
-			const batchRecordPath = join(root, ".imm/state/batches", `${started.batch_id}.json`);
-			const persisted = JSON.parse(readFileSync(batchRecordPath, "utf8"));
-			writeFileSync(batchRecordPath, `${JSON.stringify({ ...persisted, batch_state: "running" }, null, 2)}\n`);
-			const beforeResumePreview = readFileSync(batchRecordPath, "utf8");
-			const resumeHook = await antigravityPreToolUseHookAsync({
-				conversationId,
-				stepIdx: 11,
-				workspacePaths: [root],
-				toolCall: {
-					name: "call_mcp_tool",
-					args: { ServerName: "immune-brain", ToolName: "start_unattended_batch", Arguments: { initiative_slug: SLUG } },
-				},
-			}, { root: store, readInitiative });
-			expect(resumeHook).toEqual({ decision: "allow" });
-			expect(readFileSync(batchRecordPath, "utf8")).toBe(beforeResumePreview);
-			server.input.end();
-		}, 60_000);
 
 		it("enroll commits in place only through one force_ask grant bound to the live preparation, and a dirty workspace opens none", async () => {
 			const root = temp("enroll-gate");
@@ -1968,49 +1723,6 @@ describe("Antigravity Harness Conformance", () => {
 			server.input.end();
 		}, 60_000);
 
-		// The single-task preparation digest is bound by the PreToolUse hook process
-		// and recomputed later by the MCP call process; the grant must still match.
-		it("start_unattended_batch single-task grant from PreToolUse is consumed by a later MCP call", async () => {
-			const root = temp("single-gate");
-			const store = temp("single-store");
-			const SINGLE = "single-task-gate";
-			writeFileSync(join(root, ".gitignore"), ".imm/state/\n");
-			writeFileSync(join(root, "base.txt"), "base\n");
-			writeIntent(root, "deliver one task", 1, SINGLE);
-			git(root, "init", "-q", "-b", "main");
-			git(root, "add", "-A");
-			git(root, "commit", "-qm", "fixture");
-
-			antigravityPreInvocationHook({ conversationId, lastUserInput: `/drive ${SINGLE}`, workspacePaths: [root] }, { root: store, home: store });
-			const args = { task_id: SINGLE };
-			const hookRes = await antigravityPreToolUseHookAsync({
-				conversationId,
-				stepIdx: 20,
-				workspacePaths: [root],
-				toolCall: {
-					name: "call_mcp_tool",
-					args: { ServerName: "immune-brain", ToolName: "start_unattended_batch", Arguments: args },
-				},
-			}, { root: store, home: temp("single-home") });
-			expect(hookRes.decision).toBe("force_ask");
-			expect(hookRes.reason).toContain("Preparation digest: sha256:");
-
-			// The MCP call observes the workspace at a strictly later instant.
-			await new Promise((resolve) => setTimeout(resolve, 5));
-			const server = wire(root, store, {
-				batchKernel: { advanceTask: async () => ({ state: "blocked", reason: "parked for inspection" }) },
-			});
-			await initialize(server);
-			server.send({ jsonrpc: "2.0", id: "single-start-1", method: "tools/call",
-				params: { name: "start_unattended_batch", arguments: args, _meta: meta(root, 20) } });
-			const reply = await server.next();
-			expect(reply.error).toBeUndefined();
-			const text = reply.result.content[0].text as string;
-			expect(text).not.toContain("workspace_changed");
-			expect(JSON.parse(text).state).toBe("started");
-			server.input.end();
-		}, 60_000);
-
 		it("AC2 (D3; BR-REQ-2): real seams preserve live drive entry, one admitted call and one consumed native grant; replay, truncated grant and tampered files refuse", async () => {
 			const root = temp("ac2-gate");
 			const store = temp("store-ac2");
@@ -2024,7 +1736,7 @@ describe("Antigravity Harness Conformance", () => {
 
 			const conversationId = "conv-ac2-1";
 			const stepIdx = 50;
-			const admissionId = `${conversationId}:${stepIdx}:start_unattended_batch`;
+			const admissionId = `${conversationId}:${stepIdx}:enroll`;
 			const cache = join(store, "immune-brain-antigravity");
 			const entryFile = join(cache, `${sessionHash(conversationId)}.entry`);
 			const admitFile = join(cache, `${sessionHash(admissionId)}.admit`);
@@ -2037,7 +1749,7 @@ describe("Antigravity Harness Conformance", () => {
 				workspacePaths: [root],
 				toolCall: {
 					name: "call_mcp_tool",
-					args: { ServerName: "immune-brain", ToolName: "start_unattended_batch", Arguments: { task_id: TASK_AC2 } },
+					args: { ServerName: "immune-brain", ToolName: "enroll", Arguments: { task_id: TASK_AC2 } },
 				},
 			}, { root: store });
 			expect(missingStep.decision).toBe("deny");
@@ -2052,7 +1764,7 @@ describe("Antigravity Harness Conformance", () => {
 				workspacePaths: [root],
 				toolCall: {
 					name: "call_mcp_tool",
-					args: { ServerName: "immune-brain", ToolName: "start_unattended_batch", Arguments: { task_id: TASK_AC2 } },
+					args: { ServerName: "immune-brain", ToolName: "enroll", Arguments: { task_id: TASK_AC2 } },
 				},
 			}, { root: store });
 			expect(deniedWrongModeEntry.decision).toBe("deny");
@@ -2069,7 +1781,7 @@ describe("Antigravity Harness Conformance", () => {
 				workspacePaths: [root],
 				toolCall: {
 					name: "call_mcp_tool",
-					args: { ServerName: "immune-brain", ToolName: "start_unattended_batch", Arguments: { task_id: TASK_AC2 } },
+					args: { ServerName: "immune-brain", ToolName: "enroll", Arguments: { task_id: TASK_AC2 } },
 				},
 			}, { root: store });
 			expect(deniedSymlinkEntry.decision).toBe("deny");
@@ -2086,7 +1798,7 @@ describe("Antigravity Harness Conformance", () => {
 				workspacePaths: [root],
 				toolCall: {
 					name: "call_mcp_tool",
-					args: { ServerName: "immune-brain", ToolName: "start_unattended_batch", Arguments: { task_id: TASK_AC2 } },
+					args: { ServerName: "immune-brain", ToolName: "enroll", Arguments: { task_id: TASK_AC2 } },
 				},
 			}, { root: store });
 			expect(admitted.decision).toBe("allow");
@@ -2095,19 +1807,19 @@ describe("Antigravity Harness Conformance", () => {
 
 			// 5. Tampered admission file (wrong mode 0644) refuses MCP consumption
 			chmodSync(admitFile, 0o644);
-			expect(consumePhaseAdmission(admissionId, "start_unattended_batch", store)).toBeNull();
+			expect(consumePhaseAdmission(admissionId, "enroll", store)).toBeNull();
 
 			// 6. Truncated admission file refuses MCP consumption
 			chmodSync(admitFile, 0o600);
 			writeFileSync(admitFile, "{ \"broken_json\": ", { mode: 0o600 });
-			expect(consumePhaseAdmission(admissionId, "start_unattended_batch", store)).toBeNull();
+			expect(consumePhaseAdmission(admissionId, "enroll", store)).toBeNull();
 
 			// 7. Planted symlink admission file refuses MCP consumption
 			rmSync(admitFile, { force: true });
 			const outsideAdmit = join(store, "outside-admit.txt");
-			writeFileSync(outsideAdmit, JSON.stringify({ operation: "start_unattended_batch", conversation: conversationId }), { mode: 0o600 });
+			writeFileSync(outsideAdmit, JSON.stringify({ operation: "enroll", conversation: conversationId }), { mode: 0o600 });
 			symlinkSync(outsideAdmit, admitFile);
-			expect(consumePhaseAdmission(admissionId, "start_unattended_batch", store)).toBeNull();
+			expect(consumePhaseAdmission(admissionId, "enroll", store)).toBeNull();
 			rmSync(admitFile, { force: true });
 
 			// 8. Re-record admission and prepare native confirmation grant via PreToolUseHookAsync
@@ -2117,7 +1829,7 @@ describe("Antigravity Harness Conformance", () => {
 				workspacePaths: [root],
 				toolCall: {
 					name: "call_mcp_tool",
-					args: { ServerName: "immune-brain", ToolName: "start_unattended_batch", Arguments: { task_id: TASK_AC2 } },
+					args: { ServerName: "immune-brain", ToolName: "enroll", Arguments: { task_id: TASK_AC2 } },
 				},
 			}, { root: store });
 
@@ -2128,7 +1840,7 @@ describe("Antigravity Harness Conformance", () => {
 				workspacePaths: [root],
 				toolCall: {
 					name: "call_mcp_tool",
-					args: { ServerName: "immune-brain", ToolName: "start_unattended_batch", Arguments: { task_id: TASK_AC2 } },
+					args: { ServerName: "immune-brain", ToolName: "enroll", Arguments: { task_id: TASK_AC2 } },
 				},
 			}, { root: store, home: ac2Home });
 			expect(hookRes.decision).toBe("force_ask");
@@ -2139,7 +1851,7 @@ describe("Antigravity Harness Conformance", () => {
 			const validConfirmBytes = readFileSync(confirmFile, "utf8");
 			chmodSync(confirmFile, 0o644);
 			await expect(consumeNativeConfirmation({
-				operation: "start_unattended_batch",
+				operation: "enroll",
 				admissionId,
 				workspace: root,
 				taskId: TASK_AC2,
@@ -2148,7 +1860,7 @@ describe("Antigravity Harness Conformance", () => {
 			// 10. Truncated confirmation grant refuses
 			writeFileSync(confirmFile, "{\"incomplete\":", { mode: 0o600 });
 			await expect(consumeNativeConfirmation({
-				operation: "start_unattended_batch",
+				operation: "enroll",
 				admissionId,
 				workspace: root,
 				taskId: TASK_AC2,
@@ -2160,7 +1872,7 @@ describe("Antigravity Harness Conformance", () => {
 			writeFileSync(outsideConfirm, validConfirmBytes, { mode: 0o600 });
 			symlinkSync(outsideConfirm, confirmFile);
 			await expect(consumeNativeConfirmation({
-				operation: "start_unattended_batch",
+				operation: "enroll",
 				admissionId,
 				workspace: root,
 				taskId: TASK_AC2,
@@ -2172,7 +1884,7 @@ describe("Antigravity Harness Conformance", () => {
 			const spy = spyOn(process, "getuid").mockReturnValue((process.getuid?.() ?? 0) + 9999);
 			try {
 				await expect(consumeNativeConfirmation({
-					operation: "start_unattended_batch",
+					operation: "enroll",
 					admissionId,
 					workspace: root,
 					taskId: TASK_AC2,
@@ -2188,7 +1900,7 @@ describe("Antigravity Harness Conformance", () => {
 				workspacePaths: [root],
 				toolCall: {
 					name: "call_mcp_tool",
-					args: { ServerName: "immune-brain", ToolName: "start_unattended_batch", Arguments: { task_id: TASK_AC2 } },
+					args: { ServerName: "immune-brain", ToolName: "enroll", Arguments: { task_id: TASK_AC2 } },
 				},
 			}, { root: store });
 			await antigravityPreToolUseHookAsync({
@@ -2197,16 +1909,14 @@ describe("Antigravity Harness Conformance", () => {
 				workspacePaths: [root],
 				toolCall: {
 					name: "call_mcp_tool",
-					args: { ServerName: "immune-brain", ToolName: "start_unattended_batch", Arguments: { task_id: TASK_AC2 } },
+					args: { ServerName: "immune-brain", ToolName: "enroll", Arguments: { task_id: TASK_AC2 } },
 				},
 			}, { root: store, home: ac2Home });
 
-			const server = wire(root, store, {
-				batchKernel: { advanceTask: async () => ({ state: "blocked", reason: "parked for inspection" }) },
-			});
+			const server = wire(root, store);
 			await initialize(server);
 			server.send({ jsonrpc: "2.0", id: "ac2-positive-1", method: "tools/call",
-				params: { name: "start_unattended_batch", arguments: { task_id: TASK_AC2 }, _meta: {
+				params: { name: "enroll", arguments: { task_id: TASK_AC2 }, _meta: {
 					"antigravity.google/conversation_id": conversationId,
 					"antigravity.google/workspace_paths": [root],
 					progressToken: `antigravity-hook:${stepIdx}`,
@@ -2214,11 +1924,11 @@ describe("Antigravity Harness Conformance", () => {
 			const reply = await server.next();
 			expect(reply.error).toBeUndefined();
 			const text = reply.result.content[0].text as string;
-			expect(JSON.parse(text).state).toBe("started");
+			expect(JSON.parse(text).state).toBe("enrolled");
 
 			// 14. Negative: replay of the same step refuses because grants are single-use
 			server.send({ jsonrpc: "2.0", id: "ac2-replay-2", method: "tools/call",
-				params: { name: "start_unattended_batch", arguments: { task_id: TASK_AC2 }, _meta: {
+				params: { name: "enroll", arguments: { task_id: TASK_AC2 }, _meta: {
 					"antigravity.google/conversation_id": conversationId,
 					"antigravity.google/workspace_paths": [root],
 					progressToken: `antigravity-hook:${stepIdx}`,
@@ -2991,7 +2701,7 @@ describe("verifier via real hook dispatch", () => {
 					stepIdx: 2,
 					toolCall: {
 						name: "call_mcp_tool",
-						args: { ServerName: "immune-brain", ToolName: "start_unattended_batch", Arguments: { task_id: "t1" } },
+						args: { ServerName: "immune-brain", ToolName: "enroll", Arguments: { task_id: "t1" } },
 					},
 					workspacePaths: [store],
 				}, { root: store });
@@ -3139,180 +2849,6 @@ describe("verifier via real hook dispatch", () => {
 				rmSync(store, { recursive: true, force: true });
 			}
 		});
-
-		it("batch parent advance_assurance correlates child settlement", async () => {
-			const { root, store } = await setupWorkspace();
-			const conversationId = "conv-mcp-batch-parent";
-			try {
-				const mcp = createAntigravityMcpRuntime({
-					cwd: root,
-					env: {},
-					interactive: true,
-					confirmationStoreRoot: store,
-				});
-				mcp.bindClientHandshake({ version: "1.0.0", interactive: true, protocolVersion: "2025-06-18" });
-
-				// 1. Enter drive as parent
-				antigravityPreInvocationHook({ conversationId, lastUserInput: `/drive --batch ${TASK}`, workspacePaths: [root] }, { root: store, home: store });
-
-				// 2. PreToolUse + PostToolUse for start_unattended_batch to bind the parent
-				await antigravityPreToolUseHookAsync({
-					conversationId,
-					stepIdx: 1,
-					toolCall: { name: "call_mcp_tool", args: { ServerName: "immune-brain", ToolName: "start_unattended_batch", Arguments: { initiative_slug: TASK } } },
-					workspacePaths: [root],
-				}, { root: store });
-				await antigravityPostToolUseHook({
-					conversationId,
-					stepIdx: 1,
-					toolCall: { name: "call_mcp_tool", args: { ServerName: "immune-brain", ToolName: "start_unattended_batch", Arguments: { initiative_slug: TASK } } },
-					workspacePaths: [root],
-					result: JSON.stringify({ state: "native_parent", initiative_slug: TASK, plan_digest: `sha256:${"a".repeat(64)}` }),
-				}, { root: store });
-
-				// 3. PreToolUse for child advance_assurance at step 2
-				await antigravityPreToolUseHookAsync({
-					conversationId,
-					stepIdx: 2,
-					toolCall: { name: "call_mcp_tool", args: { ServerName: "immune-brain", ToolName: "advance_assurance", Arguments: { task_id: TASK } } },
-					workspacePaths: [root],
-				}, { root: store });
-
-				expect(selectedAntigravityParent(`${conversationId}:2`, root, TASK, store)).toBe(true);
-
-				// Pin that profile.selectedParent uses the configured confirmationStoreRoot:
-				// direct call without store parameter passes because profile bound confirmationStoreRoot.
-				expect((mcp as any).runtime.profile.selectedParent(`${conversationId}:2`, root, TASK)).toBe(true);
-
-				// Seed a resumable batch run state record so findResumableBatchSlugForTask finds TASK
-				mkdirSync(join(root, ".imm", "state", "batches"), { recursive: true });
-				writeFileSync(
-					join(root, ".imm", "state", "batches", "batch-1.json"),
-					JSON.stringify({
-						contract: "assurance_kernel/batch_run_state/v1",
-						batch_id: "batch-1",
-						batch_state: "running",
-						initiative_slug: TASK,
-						base_head: "0".repeat(40),
-						children: [{ task_id: TASK, state: "enrolled" }],
-					}),
-				);
-
-				// Mock settlement to completed/done so closeOutBatchChild executes
-				const advanceSpy = spyOn((mcp as any).runtime.coordinator, "advance").mockResolvedValue({
-					state: "completed",
-					record: { lifecycle: "done" },
-				} as any);
-
-				// 4. tools/call for advance_assurance with progressToken step 2
-				const reply = await handleJsonRpc({
-					jsonrpc: "2.0",
-					id: "rpc-advance-1",
-					method: "tools/call",
-					params: {
-						name: "advance_assurance",
-						arguments: { task_id: TASK },
-						_meta: {
-							"antigravity.google/conversation_id": conversationId,
-							"antigravity.google/workspace_paths": [root],
-							progressToken: "antigravity-hook:2",
-						},
-					},
-				}, mcp);
-
-				expect(reply?.error).toBeUndefined();
-				const content = JSON.parse((reply?.result as any).content[0].text);
-				expect(content.state).toBe("completed");
-				expect(content.batch).toBeDefined();
-				advanceSpy.mockRestore();
-			} finally {
-				rmSync(root, { recursive: true, force: true });
-				rmSync(store, { recursive: true, force: true });
-			}
-		});
-
-		it("AC2 (D7): retire_stale_batch correlates toolCallId and confirmation_ref with conversationId:stepIdx", async () => {
-			const { root, store } = await setupWorkspace();
-			const conversationId = "conv-retire-corr";
-			try {
-				const mcp = createAntigravityMcpRuntime({
-					cwd: root,
-					env: {},
-					interactive: true,
-					confirmationStoreRoot: store,
-				});
-				mcp.bindClientHandshake({ version: "1.0.0", interactive: true, protocolVersion: "2025-06-18" });
-
-				antigravityPreInvocationHook({ conversationId, lastUserInput: `/drive ${TASK}`, workspacePaths: [root] }, { root: store, home: store });
-
-				// Write an old batch record that can be retired
-				const batchDir = join(root, ".imm/state/batches");
-				mkdirSync(batchDir, { recursive: true });
-				const planDigest = "sha256:1111111111111111111111111111111111111111111111111111111111111111";
-				writeFileSync(
-					join(batchDir, "batch-stale-1.json"),
-					JSON.stringify({
-						contract: "assurance_kernel/batch_run_state/v1",
-						batch_id: "batch-stale-1",
-						initiative_slug: TASK,
-						base_head: git(root, "rev-parse", "HEAD"),
-						branch: `imm/${TASK}`,
-						plan_digest: planDigest,
-						confirmation_time: "2026-01-01T00:00:00.000Z",
-						batch_state: "running",
-						children: [{ task_id: TASK, slice_id: TASK, state: "pending", commit: null, blocked_by: [], reason: null }],
-						commits: [],
-						consecutive_qa_failures: 0,
-						budget: { max_children: 1, qa_failure_limit: 2 },
-						created_at: "2026-01-01T00:00:00.000Z",
-						updated_at: "2026-01-01T00:00:00.000Z",
-					}),
-				);
-
-				// PreToolUse for retire_stale_batch at stepIdx 2
-				const preRes = await antigravityPreToolUseHookAsync({
-					conversationId,
-					stepIdx: 2,
-					toolCall: { name: "call_mcp_tool", args: { ServerName: "immune-brain", ToolName: "retire_stale_batch", Arguments: { initiative_slug: TASK } } },
-					workspacePaths: [root],
-				}, { root: store });
-				expect(preRes.decision).toBe("allow");
-
-				// PreToolUse wrote continuation-call under `${conversationId}:2`
-				expect(readRunToolSession(`${conversationId}:2`, "retire_stale_batch", root, store)).toBe(conversationId);
-
-				// MCP tools/call for retire_stale_batch with JSON-RPC id "rpc-retire-99" and progressToken step 2
-				const reply = await handleJsonRpc({
-					jsonrpc: "2.0",
-					id: "rpc-retire-99",
-					method: "tools/call",
-					params: {
-						name: "retire_stale_batch",
-						arguments: { initiative_slug: TASK },
-						_meta: {
-							"antigravity.google/conversation_id": conversationId,
-							"antigravity.google/workspace_paths": [root],
-							progressToken: "antigravity-hook:2",
-						},
-					},
-				}, mcp);
-
-				expect(reply?.error).toBeUndefined();
-				const content = JSON.parse(reply?.result?.content?.[0]?.text ?? "{}");
-				expect(content.state).toBe("retired");
-				expect(content.report?.retirement?.confirmation_ref).toBe(hostConfirmationRef("antigravity", {
-					connectionId: conversationId,
-					toolCallId: `${conversationId}:2`,
-					requestId: entryTokenRequestId(readPhaseEntryState(conversationId, store)!.token!),
-					operation: "retire_stale_batch",
-					initiativeSlug: TASK,
-					planDigest,
-				}));
-			} finally {
-				rmSync(root, { recursive: true, force: true });
-				rmSync(store, { recursive: true, force: true });
-			}
-		});
 	});
 
 	describe("AC2 (D7): paused-run enforcement and cache tamper failure", () => {
@@ -3452,7 +2988,7 @@ describe("verifier via real hook dispatch", () => {
 	});
 
 describe("Antigravity native gate delegation (ANGS-A1)", () => {
-	type GateKind = "stop" | "start_unattended_batch" | "retire_stale_batch" | "request_authorization";
+	type GateKind = "stop" | "enroll" | "request_authorization";
 
 	function createTempDir(label: string): string {
 		const raw = mkdtempSync(join(tmpdir(), `ag-angs-${label}-`));
@@ -3558,68 +3094,28 @@ describe("Antigravity native gate delegation (ANGS-A1)", () => {
 		}
 
 		// Record phase entry in the Antigravity hook cache.
-		// For retire_stale_batch, write a v1 entry line (no ADR 0025 entry_token) so the gate uses native confirmation.
-		const batchId = `batch-stale-${suffix}`;
-		if (gate === "retire_stale_batch") {
-			const baseHead = runGit(root, "rev-parse", "HEAD");
-			mkdirSync(join(root, ".imm", "state", "batches"), { recursive: true });
-			const prepared = prepareBatchLaneRunState({
-				batch_id: batchId,
-				initiative_slug: initiativeSlug,
-				children: [
-					{
-						task_id: taskId,
-						slice_id: "S1",
-						blocked_by: [],
-						status: "enrollable",
-						reason: null,
-						intent_path: `docs/plans/${taskId}.intent.json`,
-						intent_revision: 1,
-						intent_content_hash: canonicalIntentHash(parseTaskIntentV1(intent)),
-					},
-				],
-				plan_digest: `sha256:${"0".repeat(64)}`,
-				base_head: baseHead,
-				confirmation_time: "2026-11-13T00:00:00.000Z",
-				budget: { max_children: 10, qa_failure_limit: 2 },
-				max_parallel: 1,
-				now: "2026-11-13T00:00:00.000Z",
-			});
-			writeFileSync(
-				join(root, ".imm", "state", "batches", `${batchId}.json`),
-				JSON.stringify(prepared, null, 2) + "\n",
-				"utf8",
-			);
-			const dir = cacheDir(store, ANTIGRAVITY_CACHE_DIR);
-			ensurePrivateDir(dir);
-			appendPrivate(join(dir, `${sessionHash(conversationId)}.entry`), dir, JSON.stringify({ v: 1, entry: "run" }) + "\n");
-		} else {
-			await dispatchRealHook(
-				{
-					invocationNum: 0,
-					conversationId,
-					lastUserInput: `/drive ${taskId}`,
-					workspacePaths: [root],
-				},
-				{ root: store, home },
-			);
-		}
+		await dispatchRealHook(
+			{
+				invocationNum: 0,
+				conversationId,
+				lastUserInput: `/drive ${taskId}`,
+				workspacePaths: [root],
+			},
+			{ root: store, home },
+		);
 
 		const toolArgs: Record<string, unknown> =
 			gate === "stop"
 				? { task_id: taskId, reason: "operator requested stop" }
-				: gate === "start_unattended_batch"
+				: gate === "enroll"
 					? { task_id: taskId }
-					: gate === "retire_stale_batch"
-						? { initiative_slug: initiativeSlug }
-						: {
+					: {
 								task_id: taskId,
 								choice: "accept_verifier_dispute",
 								exit: "replan",
 								reason: "user chose replan",
 							};
 
-		const batchFilePath = join(root, ".imm", "state", "batches", `${batchId}.json`);
 		const admissionId = `${conversationId}:${stepIdx}:${gate}`;
 		const confirmFilePath = join(
 			cacheDir(store, ANTIGRAVITY_CACHE_DIR),
@@ -3627,10 +3123,6 @@ describe("Antigravity native gate delegation (ANGS-A1)", () => {
 		);
 
 		function snapshotState() {
-			if (gate === "retire_stale_batch") {
-				const raw = existsSync(batchFilePath) ? readFileSync(batchFilePath, "utf8") : "<missing>";
-				return { raw, literalUserCount: 0, lifecycle: null as string | null };
-			}
 			const loaded = readTaskRecordRaw(root, taskId);
 			const settled = readSettledRunEvidence(root, taskId);
 			const raw = JSON.stringify({ record: loaded.record, settled });
@@ -3708,7 +3200,7 @@ describe("Antigravity native gate delegation (ANGS-A1)", () => {
 		};
 	}
 
-	const GATES: GateKind[] = ["stop", "start_unattended_batch", "retire_stale_batch", "request_authorization"];
+	const GATES: GateKind[] = ["stop", "enroll", "request_authorization"];
 
 	for (const gate of GATES) {
 		it(`returns ${gate} force_ask, writes confirmation grant, and lets MCP consume it without any agy settings file`, async () => {
@@ -3732,11 +3224,8 @@ describe("Antigravity native gate delegation (ANGS-A1)", () => {
 					expect((reply as { error?: unknown; result?: { isError?: boolean } })?.error).toBeUndefined();
 					expect((reply as { result?: { isError?: boolean } })?.result?.isError).not.toBe(true);
 					expect(after.literalUserCount).toBeGreaterThan(before.literalUserCount);
-				} else if (gate === "retire_stale_batch") {
-					expect((reply as { error?: unknown; result?: { isError?: boolean } })?.error).toBeUndefined();
-					expect((reply as { result?: { isError?: boolean } })?.result?.isError).not.toBe(true);
 				} else {
-					// Enrollment (`start_unattended_batch` with `task_id`): grant was consumed rather than refused for missing confirmation.
+					// Enrollment: grant was consumed rather than refused for missing confirmation.
 					const text = JSON.stringify(reply);
 					expect(text).not.toContain("confirmation_required");
 					expect(text).not.toContain("admission_required");
@@ -3824,7 +3313,7 @@ describe("Antigravity native gate delegation (ANGS-A1)", () => {
 });
 
 describe("Antigravity allow rule provenance (AARP-A1, AARP-A2)", () => {
-	type GateKind = "stop" | "start_unattended_batch" | "retire_stale_batch" | "request_authorization";
+	type GateKind = "stop" | "enroll" | "request_authorization";
 	type CallShape = "call_mcp_tool" | "direct";
 
 	function createTempDir(label: string): string {
@@ -3953,50 +3442,12 @@ describe("Antigravity allow rule provenance (AARP-A1, AARP-A2)", () => {
 			});
 		}
 
-		const batchId = `batch-stale-${suffix}`;
-		if (gate === "retire_stale_batch") {
-			const baseHead = await runGit(root, "rev-parse", "HEAD");
-			mkdirSync(join(root, ".imm", "state", "batches"), { recursive: true });
-			const prepared = prepareBatchLaneRunState({
-				batch_id: batchId,
-				initiative_slug: initiativeSlug,
-				children: [
-					{
-						task_id: taskId,
-						slice_id: "S1",
-						blocked_by: [],
-						status: "enrollable",
-						reason: null,
-						intent_path: `docs/plans/${taskId}.intent.json`,
-						intent_revision: 1,
-						intent_content_hash: canonicalIntentHash(parseTaskIntentV1(intent)),
-					},
-				],
-				plan_digest: `sha256:${"0".repeat(64)}`,
-				base_head: baseHead,
-				confirmation_time: "2026-11-13T00:00:00.000Z",
-				budget: { max_children: 10, qa_failure_limit: 2 },
-				max_parallel: 1,
-				now: "2026-11-13T00:00:00.000Z",
-			});
-			writeFileSync(
-				join(root, ".imm", "state", "batches", `${batchId}.json`),
-				JSON.stringify(prepared, null, 2) + "\n",
-				"utf8",
-			);
-			const dir = cacheDir(store, ANTIGRAVITY_CACHE_DIR);
-			ensurePrivateDir(dir);
-			appendPrivate(join(dir, `${sessionHash(conversationId)}.entry`), dir, JSON.stringify({ v: 1, entry: "run" }) + "\n");
-		}
-
 		const toolArgs: Record<string, unknown> =
 			gate === "stop"
 				? { task_id: taskId, reason: "operator requested stop" }
-				: gate === "start_unattended_batch"
+				: gate === "enroll"
 					? { task_id: taskId }
-					: gate === "retire_stale_batch"
-						? { initiative_slug: initiativeSlug }
-						: {
+					: {
 								task_id: taskId,
 								choice: "accept_verifier_dispute",
 								exit: "replan",
@@ -4040,7 +3491,7 @@ describe("Antigravity allow rule provenance (AARP-A1, AARP-A2)", () => {
 		async function consumeViaMcp(): Promise<string> {
 			const recordedRefs: string[] = [];
 			let refSpy: ReturnType<typeof spyOn> | null = null;
-			if (gate === "start_unattended_batch") {
+			if (gate === "enroll") {
 				const originalHostConfirmationRef = hostInteraction.hostConfirmationRef;
 				refSpy = spyOn(hostInteraction, "hostConfirmationRef").mockImplementation((host, input) => {
 					const ref = originalHostConfirmationRef(host, input);
@@ -4051,8 +3502,7 @@ describe("Antigravity allow rule provenance (AARP-A1, AARP-A2)", () => {
 			try {
 				const mcp = createAntigravityMcpRuntime({
 					cwd: root,
-					env: { ...memoryLanePortEnv },
-					sessionPortFactory: memoryLanePort,
+					env: {},
 					interactive: true,
 					confirmationStoreRoot: store,
 				});
@@ -4083,21 +3533,8 @@ describe("Antigravity allow rule provenance (AARP-A1, AARP-A2)", () => {
 				expect(existsSync(confirmFilePath)).toBe(false);
 
 				const text = reply?.result?.content?.[0]?.text ?? "{}";
-				const body = JSON.parse(text) as {
-					report?: {
-						retirement?: { confirmation_ref?: string };
-						children?: Array<{ lane?: { path?: string } }>;
-					};
-				};
-				if (gate === "retire_stale_batch") {
-					return body.report?.retirement?.confirmation_ref ?? "";
-				}
-				if (gate === "start_unattended_batch") {
-					// Without `herdr: true` the Lane Executor runs supervised, so the started
-					// Lane is read from the report's child rather than an interactive handoff.
-					const laneWorktree = body.report?.children?.[0]?.lane?.path;
-					expect(typeof laneWorktree, text).toBe("string");
-					expect(readTaskRecordRaw(laneWorktree!, taskId).record?.lifecycle).toBe("active");
+				if (gate === "enroll") {
+					expect(readTaskRecordRaw(root, taskId).record?.lifecycle, text).toBe("active");
 					return recordedRefs.at(-1) ?? "";
 				}
 				const record = readTaskRecordRaw(root, taskId).record ?? readSettledRunEvidence(root, taskId)?.record;
@@ -4134,7 +3571,7 @@ describe("Antigravity allow rule provenance (AARP-A1, AARP-A2)", () => {
 		const scenario = await setupProvenanceScenario(gate, suffix);
 		try {
 			writeSettingsHome(scenario.home, settings);
-			if (gate === "start_unattended_batch") {
+			if (gate === "enroll") {
 				const preInv = await runHookCli(scenario.home, scenario.store, {
 					invocationNum: 0,
 					conversationId: scenario.conversationId,
@@ -4216,7 +3653,7 @@ describe("Antigravity allow rule provenance (AARP-A1, AARP-A2)", () => {
 		return results;
 	}
 
-	const GATES: GateKind[] = ["stop", "start_unattended_batch", "retire_stale_batch", "request_authorization"];
+	const GATES: GateKind[] = ["stop", "enroll", "request_authorization"];
 	const SHAPES: CallShape[] = ["call_mcp_tool", "direct"];
 
 	for (const gate of GATES) {
@@ -4234,7 +3671,7 @@ describe("Antigravity allow rule provenance (AARP-A1, AARP-A2)", () => {
 				expect(res.requestId?.startsWith(ALLOW_RULE_REQUEST_PREFIX), `${gate}:${shape}`).toBe(true);
 				expect(res.confirmationRef, `${gate}:${shape}`).toMatch(/^antigravity-allow-rule-[0-9a-f]{16}$/);
 			};
-			if (gate === "start_unattended_batch") {
+			if (gate === "enroll") {
 				for (const shape of SHAPES) await verifyShape(shape);
 			} else {
 				await Promise.all(SHAPES.map((shape) => verifyShape(shape)));

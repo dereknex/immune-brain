@@ -3,8 +3,8 @@
 // refusal and no verdict (Spec e2e-release-gate D2-D4, S5-AC1, SCN-6).
 // Run with `bun run e2e review`; the pinned claude binary must be installed (absent fails).
 //
-// The Parent and the Lane Executor are driven directly over the plugin's MCP server (the test is
-// the Host's MCP client); the reviewer is a real pinned claude launched through the plugin's own
+// The Parent is driven directly over the plugin's MCP server (the test is the Host's MCP client)
+// and enrolls the task in place in its own checkout (Spec retire-unattended-batch D2); the reviewer is a real pinned claude launched through the plugin's own
 // `imm-session` command against the scripted mock model. Black box: no runtime imports.
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
@@ -197,17 +197,16 @@ async function runJourney(receipt: boolean): Promise<Journey> {
 		const herdrEnv = { FAKE_HERDR_STATE: herdr.stateFile, HERDR_ENV: "1", HERDR_WORKSPACE_ID: WORKSPACE };
 		const env = { ...baseEnv(), HOME: home, TMPDIR: tmp, ...herdrEnv, PATH: `${FIXTURES}${delimiter}${baseEnv().PATH ?? ""}` };
 
-		// Parent: confirm the batch; the runtime enrolls the Lane.
+		// Parent: the drive entry enrolls the task in place after the native gate.
 		const parent = await new McpClient({ pluginDir: install.claudePluginDir, cwd: repo, env, session: "e2e-parent" }).start();
 		clients.push(parent);
 		await parent.hook({ hook_event_name: "UserPromptSubmit", prompt: `/immune-brain:drive ${TASK}` });
-		const started = await parent.call("start_unattended_batch", { task_id: TASK });
-		expect(started.state).toBe("started");
-		const lane = started.report.children[0].lane.path as string;
+		const enrolled = await parent.call("enroll", { task_id: TASK });
+		expect(enrolled).toMatchObject({ state: "enrolled", task_id: TASK });
+		const lane = repo;
 
-		// Executor: deliver the change in the Lane and ask for assurance.
-		const executor = await new McpClient({ pluginDir: install.claudePluginDir, cwd: lane, env, session: "e2e-executor" }).start();
-		clients.push(executor);
+		// The same Parent delivers the change in its checkout and asks for assurance.
+		const executor = parent;
 		writeFileSync(join(lane, "delivery.txt"), "delivered\n");
 		execFileSync("git", ["-C", lane, "add", "delivery.txt"]);
 		// The Kernel's QA scan of the verification process can time out on a loaded host; its own

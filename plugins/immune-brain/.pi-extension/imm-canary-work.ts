@@ -75,7 +75,7 @@ import {
 	type HostContext,
 	PiReviewHost,
 } from "./pi-canary-assurance-progression";
-import { PiRuntime, bindPiSelectedParent, type ToolMeta } from "./pi-host-runtime";
+import { PiRuntime, type ToolMeta } from "./pi-host-runtime";
 import type { InvocationToken } from "./pi-canary-invocations";
 import {
 	NativeAuthorityError,
@@ -83,8 +83,6 @@ import {
 	type NativeConfirmationInput,
 	type NativeConfirmationResult,
 } from "../runtime/host-core/interaction";
-import { mapDialogSelection } from "./imm-unattended-batch";
-import { findLaneRelayTarget } from "../runtime/unattended/lane_decision";
 
 // The Pi adapter imports the host-neutral runtime modules statically, exactly
 // as the Claude adapter does; the retired dynamic-import isolation layer is
@@ -116,7 +114,6 @@ import type { TaskIntentV1, TaskRecord } from "../runtime/kernel/types";
 import type { RoleDelegationContext } from "../runtime/role_prompt_bridge";
 import { buildLoopAction, buildLoopRoleDispatch } from "../runtime/loop_contract";
 import { projectTaskStatus, reviewReworkFindings, type StatusProjectionResult } from "../runtime/assurance/coordinator";
-import { laneEditRefusal } from "../runtime/unattended/lane_workspace";
 import { activeTaskNotice } from "../runtime/assurance/active_task_notice";
 import {
 	admitPhaseOperation,
@@ -136,7 +133,6 @@ const LOOP_TARGETS = [
 	"architecture-exploration",
 	"advisory-review",
 	"compounder",
-	"lane-supply",
 ] as const;
 const LOOP_DIRECT_ROLES = ["qa", "code-review", "ui-review"] as const;
 const KERNEL_OPERATIONS = [
@@ -355,7 +351,7 @@ export function revokePiPhaseEntry(sessionId: string): void {
  * bound to another workspace refuses rather than falling back to a dialog.
  */
 export function piRunEntryRefusal(
-	operation: "enroll" | "start_unattended_batch" | "retire_stale_batch",
+	operation: "enroll",
 	ctx: PhaseEntryContext,
 ): Extract<PhaseAdmission, { ok: false }> | null {
 	const sessionId = piSessionId(ctx);
@@ -424,7 +420,7 @@ export function createPiNativeConfirmation(
 			}
 		};
 		const requestId = randomUUID();
-		const taskId = input.taskId ?? input.initiativeSlug ?? "";
+		const taskId = input.taskId ?? "";
 
 		if (input.reworkExits) {
 			const reworkExits = input.reworkExits;
@@ -538,116 +534,8 @@ export function createPiNativeConfirmation(
 			return { decision: "cancel", requestId };
 		}
 
-		if (input.batchDetails) {
-			const b = input.batchDetails;
-			const isParent = b.parent_final_verification !== undefined;
-			const title = isParent
-				? `Authorize Parent Final Verification: ${b.initiative_slug}`
-				: `Authorize Unattended Batch: ${b.initiative_slug}`;
-			const summary = isParent
-				? [
-					`Initiative: ${b.initiative_slug}`,
-					`Plan digest: ${input.planDigest ?? ""}`,
-					"No batch run is started.",
-					"Final verification commands run in this workspace outside Host permission:",
-					...(b.final_verification ?? []).map((cmd) => `  - ${cmd}`),
-				].join("\n")
-				: [
-					`Initiative: ${b.initiative_slug}`,
-					`Batch branch: ${b.batch_branch}`,
-					`Plan digest: ${input.planDigest ?? ""}`,
-					...(input.intentRevision ? [`TaskIntent revision: ${input.intentRevision}`, `TaskIntent content hash: ${input.intentContentHash ?? ""}`, `Preparation digest: ${input.bindingDigest ?? ""}`] : []),
-					...(b.budget ? [`Budget: max_children=${b.budget.max_children}, qa_failure_limit=${b.budget.qa_failure_limit}`] : []),
-					...(b.lane_mode ? [`Lane mode: max_parallel=${b.lane_mode.max_parallel}`] : []),
-					...(b.final_verification ? [`Final verification: ${b.final_verification.join("; ")}`] : []),
-				].join("\n");
-			const details = isParent
-				? `Parent Tasks (${b.children.length}):\n${b.children.map((c) => `  - ${c.task_id} (${c.slice_id})`).join("\n")}`
-				: [
-					`Ordered children (${b.children.length}):\n${b.children.map((c) => `  - ${c.task_id} (${c.slice_id}) [risk: ${c.risk ?? "unknown"}]`).join("\n")}`,
-					...(b.excluded.length > 0 ? [`\nExcluded children:\n${b.excluded.map((c) => `  - ${c.task_id} (${c.slice_id}): ${c.reason}`).join("\n")}`] : []),
-					...(b.lane_mode ? [
-						`\nParallel groups (${b.lane_mode.parallel_groups.length}):\n${b.lane_mode.parallel_groups.map((g) => `  - ${g.join(", ")}`).join("\n")}`,
-						...(b.lane_mode.serialized.length > 0 ? [`\nSerialized by overlapping scope:\n${b.lane_mode.serialized.map((c) => `  - ${c.task_id} after ${c.overlaps_with.join(", ")}`).join("\n")}`] : []),
-					] : []),
-					...(b.re_confirmation_required?.length ? [`\nRe-confirmation required: ${b.re_confirmation_required.join(", ")}.\nRecovery: confirm to issue a fresh authorization bound to the current plan and HEAD.`] : []),
-				].join("\n");
-
-			presentTaskRail(ctx, {
-				task_id: b.initiative_slug,
-				state: "Approval required",
-				result: title,
-				next: "Review batch plan evidence",
-			});
-			const selected = await requestAuthorityDialog(
-				pi,
-				ctx,
-				{
-					attention_id: randomUUID(),
-					task_id: b.initiative_slug,
-					reason: "enrollment",
-					label: title,
-				},
-				{
-					title,
-					summary,
-					details,
-					signal: ctx.signal,
-					actions: [
-						{ value: "confirm", label: "Authorize batch run", description: "Start the unattended Lane batch run" },
-						{ value: "decline", label: "Decline batch", description: "Reject this batch authorization; repository and authority stay unchanged" },
-						{ value: "cancel", label: "Cancel", description: "Leave repository and authority unchanged" },
-					],
-				},
-			);
-			return { decision: mapDialogSelection(selected), requestId };
-		}
-
-		if (input.batchDisposition) {
-			const d = input.batchDisposition;
-			const title = `Retire Stale Batch Record: ${input.initiativeSlug ?? taskId}`;
-			const summary = [
-				`Initiative: ${input.initiativeSlug ?? taskId}`,
-				`Batch ID: ${d.batch_id}`,
-				`State: ${d.batch_state}`,
-				`Batch branch: ${d.batch_branch}`,
-				`Plan digest: ${d.plan_digest}`,
-				`Recorded commits: ${d.recorded_commits}`,
-			].join("\n");
-			const details = `Children (${d.children.length}):\n${d.children.map((c) => `  - ${c.task_id} (${c.slice_id}): state=${c.state}, commit=${c.commit ?? "none"}, lane=${c.lane_branch ?? "none"}, lifecycle=${c.kernel_lifecycle ?? "none"}`).join("\n")}`;
-
-			presentTaskRail(ctx, {
-				task_id: input.initiativeSlug ?? taskId,
-				state: "Approval required",
-				result: title,
-				next: "Review batch record evidence",
-			});
-			const selected = await requestAuthorityDialog(
-				pi,
-				ctx,
-				{
-					attention_id: randomUUID(),
-					task_id: input.initiativeSlug ?? taskId,
-					reason: "enrollment",
-					label: title,
-				},
-				{
-					title,
-					summary,
-					details,
-					signal: ctx.signal,
-					actions: [
-						{ value: "confirm", label: "Retire batch record", description: "Write the terminal superseded state and its report" },
-						{ value: "decline", label: "Keep batch parked", description: "Leave the batch record and its authorization unchanged" },
-						{ value: "cancel", label: "Cancel", description: "Leave repository and authority unchanged" },
-					],
-				},
-			);
-			return { decision: mapDialogSelection(selected), requestId };
-		}
-
 		if (input.operation === "approve_breaking_intent_revision") {
-			const targetRoot = input.workspace ?? findLaneRelayTarget(ctx.cwd, taskId)?.lane_path ?? ctx.cwd;
+			const targetRoot = input.workspace ?? ctx.cwd;
 			const priorRecord = await readTaskRecordRaw(targetRoot, taskId);
 			const priorIntent = priorRecord.record
 				? { intent: priorRecord.record.intent_snapshot, intent_ref: priorRecord.record.intent_ref }
@@ -718,7 +606,7 @@ export function createPiNativeConfirmation(
 		}
 
 		// Standard operations: request_authorization, stop
-		const targetRoot = input.workspace ?? findLaneRelayTarget(ctx.cwd, taskId)?.lane_path ?? ctx.cwd;
+		const targetRoot = input.workspace ?? ctx.cwd;
 		let openDecision: { id: string; summary: string } | undefined;
 		if (input.operation === "request_authorization" && !input.reviewRetryNotice) {
 			const { record } = await readTaskRecordRaw(targetRoot, taskId);
@@ -859,13 +747,10 @@ export default function (
 	});
 
 	// Validate dispatch before the receipt observer records an Agent call.
-	const continuation = registerPiRunContinuation(pi, {
+	registerPiRunContinuation(pi, {
 		entry: (text, root) => recognizePhaseEntry(text, piLocalNames(root), "pi"),
 		revokeEntry: revokePiPhaseEntry,
 		entryState: (sessionId) => piPhaseEntries().get(sessionId) ?? null,
-	});
-	bindPiSelectedParent((toolCallId, root, slug) => {
-		return continuation.selectedParent(toolCallId, root, slug);
 	});
 	pi.registerCommand("imm-tasks", {
 		handler: async (_args: string, ctx?: ExtensionContext) => {
@@ -904,8 +789,6 @@ export default function (
 			railContext = ctx;
 			runtime.bindWorkspace(ctx.cwd);
 		}
-		const laneRefusal = laneEditRefusal(event, ctx?.cwd ?? process.cwd());
-		if (laneRefusal) return { block: true, reason: laneRefusal };
 		if (event.toolName === "Agent") {
 			// ADR 0017: validate a marker-targeted dispatch before binding the verifier.
 			return (runtime.host as PiReviewHost).observeVerifierDispatch(event.input as Record<string, unknown> | undefined, event.toolCallId);
@@ -956,7 +839,7 @@ export default function (
 				Type.Object({ op: Type.Literal("advance_assurance") }),
 				Type.Object({ op: Type.Literal("submit_review"), verdict: Type.Optional(Type.Unknown()) }),
 				Type.Object({ op: Type.Literal("submit_verification"), result: Type.Optional(Type.String()) }),
-				// record_revision: the Lane record revision read in `lane_decision_required` (Spec drive-always-lanes D11); a Lane that moved since is refused as stale.
+				// record_revision: an optional TaskRecord revision; a record that moved since is refused as stale.
 				Type.Object({ op: Type.Literal("request_authorization"), record_revision: Type.Optional(Type.String()) }),
 				Type.Object({ op: Type.Literal("request_stop"), record_revision: Type.Optional(Type.String()) }),
 				Type.Object({ op: Type.Literal("repair_authority_state") }),
@@ -1105,7 +988,7 @@ export default function (
 							"inspect authority state",
 						);
 					}
-					const authorityRoot = findLaneRelayTarget(ctx.cwd, taskId)?.lane_path ?? ctx.cwd;
+					const authorityRoot = ctx.cwd;
 					const projection = await projectAssuranceForTask(authorityRoot, taskId);
 					if (projection.error || !projection.claim) {
 						return failCanaryTool(taskId, action.op, "blocked", "authority_failed", projection.error ?? "no active backend claim", "inspect authority state");
@@ -1136,9 +1019,7 @@ export default function (
 					signal: effectiveSignal,
 				};
 				let preStopLifecycle: string | undefined;
-				const stopAuthorityRoot = action.op === "request_stop"
-					? (findLaneRelayTarget(ctx.cwd, taskId)?.lane_path ?? ctx.cwd)
-					: ctx.cwd;
+				const stopAuthorityRoot = ctx.cwd;
 				if (action.op === "request_stop") {
 					try {
 						preStopLifecycle = readTaskRecordRaw(stopAuthorityRoot, taskId).record?.lifecycle;
@@ -1247,13 +1128,6 @@ export default function (
 			const projection: StatusProjectionResult = action.op === "status"
 				? await projectTaskStatus(ctx.cwd, taskId)
 				: await projectAssuranceForTask(ctx.cwd, taskId, requested);
-			if (action.op === "status" && projection.error && projection.batch) {
-				const details = { state: "status", operation: "status", plugin_version: PLUGIN_VERSION,
-					batch: projection.batch, task_error: projection.error,
-					next_action: "Inspect batch evidence; this read grants no execution authority." };
-				presentTaskRailResult(ctx, taskId, details);
-				return toolResult(JSON.stringify(details, null, 2), details);
-			}
 			if (projection.error) {
 				const nextAction = recoveryActionForAssuranceFailure(projection.error) ?? "inspect authority state";
 				const details = {
@@ -1274,9 +1148,8 @@ export default function (
 					+ state.replan_required_ids.length;
 				const warnings = projection.warnings ?? [];
 				const gitIntegration = projection.git_integration ? { git_integration: projection.git_integration } : {};
-				const batchEvidence = projection.batch ? { batch: projection.batch } : {};
 				const configEvidence = projection.config ? { config: projection.config } : {};
-				const status = { plugin_version: PLUGIN_VERSION, ...state, ...gitIntegration, ...configEvidence, ...batchEvidence, ...(warnings.length > 0 ? { warnings } : {}) };
+				const status = { plugin_version: PLUGIN_VERSION, ...state, ...gitIntegration, ...configEvidence, ...(warnings.length > 0 ? { warnings } : {}) };
 				const details = {
 					state: "status",
 					operation: "status",
@@ -1286,7 +1159,6 @@ export default function (
 					task_state: state,
 					...gitIntegration,
 					...configEvidence,
-					...batchEvidence,
 					...(warnings.length > 0 ? { warnings } : {}),
 					result: `${fresh}/${total} acceptance items fresh; ${blockers} blocker${blockers === 1 ? "" : "s"}${warnings.map((warning) => `; ${warning.message}`).join("")}`,
 					next_action: state.next_obligation,
@@ -1702,7 +1574,7 @@ async function enrichAssuranceResult(
 		const taskState = { error: typeof result.reason === "string" ? result.reason : "authority projection unavailable" };
 		return { ...result, task_state: taskState, next_action: nextActionForAssuranceResult(result, taskState) };
 	}
-	const targetRoot = findLaneRelayTarget(ctx.cwd, taskId)?.lane_path ?? ctx.cwd;
+	const targetRoot = ctx.cwd;
 	const projection = await projectAssuranceForTask(targetRoot, taskId);
 	const taskState: AssuranceTaskState = projection.error
 		? { error: projection.error }

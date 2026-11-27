@@ -84,9 +84,6 @@ test("canonical Loop contract describes direct QA and Parent-mediated Review ver
 	for (const statement of ["fresh QA", "recovery_action", "attestations[].advisory_findings"]) {
 		expect(contract).toContain(statement);
 	}
-	const batch = read("plugins/immune-brain/dist/drive-batch.md");
-	expect(batch).toContain("batch_lane_unreadable");
-	expect(batch).toContain("Decisions and Recovery");
 });
 
 /**
@@ -103,9 +100,7 @@ describe("authority review cli contract", () => {
 	test("the drive contracts run the Review session and name the missing-profile stop", () => {
 		for (const path of [
 			"plugins/immune-brain/dist/drive.md",
-			"plugins/immune-brain/dist/drive-batch.md",
 			"plugins/immune-brain-antigravity/dist/drive.md",
-			"plugins/immune-brain-antigravity/dist/drive-batch.md",
 		]) {
 			const contract = read(path);
 			expect({ path, statement: contract.includes("review_session") }).toEqual({ path, statement: true });

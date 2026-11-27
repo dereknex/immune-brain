@@ -5,7 +5,7 @@
 // (release.yml). This script, run by the manual promote workflow, is the only writer of the
 // `stable` branch, the `immune-brain-vX-stable` tags and the npm `latest` dist-tag:
 //
-//   release-promote.ts <X>             check the live evidence for X (D6: mode "live", J1, J2 and J4
+//   release-promote.ts <X>             check the live evidence for X (D6: mode "live", J1 and J4
 //                                      passing on every required Host), fast-forward stable to the
 //                                      commit tagged immune-brain-vX, tag immune-brain-vX-stable,
 //                                      run npm dist-tag add ... latest
@@ -107,10 +107,9 @@ interface Evidence {
   record: Record<string, unknown>;
 }
 
-/** Spec D6 live mode: J1 and J2 on claude and pi, J4 on claude, pi and antigravity. */
+/** Spec D6 live mode: J1 on claude, J4 on claude, pi and antigravity (J2 retired with the unattended batch). */
 export const REQUIRED_LIVE_JOURNEYS: ReadonlyArray<readonly [string, readonly string[]]> = [
-  ["J1", ["claude", "pi"]],
-  ["J2", ["claude", "pi"]],
+  ["J1", ["claude"]],
   ["J4", ["claude", "pi", "antigravity"]],
 ];
 const REQUIRED_LIVE_HOSTS = ["claude", "pi", "herdr"];

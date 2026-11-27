@@ -23,13 +23,13 @@ describe("drive Kernel routing contract", () => {
 		expect(readme).toContain("request_stop");
 		expect(readme).toContain("not task termination");
 	});
-	test("the Pi loop surface registers the same route targets as the loop contract, including lane-supply", () => {
+	test("the Pi loop surface registers the same route targets as the loop contract", () => {
 		const piTargets = /const LOOP_TARGETS = \[([^\]]*)\] as const;/.exec(read("plugins/immune-brain/.pi-extension/imm-canary-work.ts"));
 		const contractTargets = /export type LoopRouteTarget =([^;]*);/.exec(read("plugins/immune-brain/runtime/loop_contract.ts"));
 		expect(piTargets).not.toBeNull();
 		expect(contractTargets).not.toBeNull();
 		const quoted = (text: string) => [...text.matchAll(/"([a-z-]+)"/g)].map((m) => m[1]!).sort();
-		expect(quoted(piTargets![1]!)).toContain("lane-supply");
+		expect(quoted(piTargets![1]!)).not.toContain("lane-supply");
 		expect(quoted(piTargets![1]!)).toEqual(quoted(contractTargets![1]!));
 	});
 	test("descriptor validation never executes a descriptor before QA", () => {

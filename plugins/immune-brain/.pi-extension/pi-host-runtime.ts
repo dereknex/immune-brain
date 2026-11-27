@@ -3,8 +3,7 @@
 // `HostRuntime` in `../runtime/host-core/runtime`; this module supplies the Pi
 // profile and keeps the public surface callers and extension tools use.
 //
-// Interface: `PiRuntime`, `PiRuntimeOptions`, `PI_PROFILE`, `selectedPiParent`,
-// `bindPiSelectedParent`, `ToolMeta`.
+// Interface: `PiRuntime`, `PiRuntimeOptions`, `PI_PROFILE`, `ToolMeta`.
 // Invariants: the profile is the only Pi-specific wiring here; one
 // `HostRuntime` carries the behavior; no adapter extends another.
 // Side Effects: through the shared runtime.
@@ -16,24 +15,9 @@ import type { ForegroundToolUpdate, HostContext } from "../runtime/assurance/coo
 import type { VerifierEvent } from "../runtime/host-core/verifier_observation";
 import { PiReviewHost } from "./pi-canary-assurance-progression";
 import { probeHost } from "./pi-capability";
-import { selectedPiParent as selectedPiParentFromContinuation } from "./pi-run-continuation";
-
-export const PI_LANE_WAIT_MS = 5_000;
 
 export type { ToolMeta } from "../runtime/host-core/runtime";
 export type PiRuntimeOptions = HostRuntimeOptions;
-
-let currentSelectedPiParent: ((toolCallId: string, root: string, slug: string) => boolean) | null = null;
-
-export function bindPiSelectedParent(fn: (toolCallId: string, root: string, slug: string) => boolean): void {
-	currentSelectedPiParent = fn;
-}
-
-export function selectedPiParent(toolCallId: string, root: string, slug: string): boolean {
-	return currentSelectedPiParent
-		? currentSelectedPiParent(toolCallId, root, slug)
-		: selectedPiParentFromContinuation(toolCallId, root, slug);
-}
 
 /** The Pi composition root: every Pi-specific fact the shared runtime needs. */
 export const PI_PROFILE: HostRuntimeProfile = {
@@ -42,8 +26,6 @@ export const PI_PROFILE: HostRuntimeProfile = {
 	observe: (host, event) => host.observe(event as VerifierEvent),
 	probeHost,
 	confirmationRef: (input) => hostConfirmationRef("pi", input),
-	laneRuntime: (options) => new HostRuntime(PI_PROFILE, options),
-	selectedParent: selectedPiParent,
 };
 
 export class PiRuntime {
@@ -160,21 +142,5 @@ export class PiRuntime {
 
 	previewAuthorization(...args: Parameters<HostRuntime["previewAuthorization"]>): ReturnType<HostRuntime["previewAuthorization"]> {
 		return this.runtime.previewAuthorization(...args);
-	}
-
-	previewBatchConfirmation(...args: Parameters<HostRuntime["previewBatchConfirmation"]>): ReturnType<HostRuntime["previewBatchConfirmation"]> {
-		return this.runtime.previewBatchConfirmation(...args);
-	}
-
-	previewBatchRetirement(...args: Parameters<HostRuntime["previewBatchRetirement"]>): ReturnType<HostRuntime["previewBatchRetirement"]> {
-		return this.runtime.previewBatchRetirement(...args);
-	}
-
-	startUnattendedBatch(...args: Parameters<HostRuntime["startUnattendedBatch"]>): ReturnType<HostRuntime["startUnattendedBatch"]> {
-		return this.runtime.startUnattendedBatch(...args);
-	}
-
-	retireStaleBatch(...args: Parameters<HostRuntime["retireStaleBatch"]>): ReturnType<HostRuntime["retireStaleBatch"]> {
-		return this.runtime.retireStaleBatch(...args);
 	}
 }

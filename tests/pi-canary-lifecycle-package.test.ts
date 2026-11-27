@@ -100,7 +100,7 @@ describe("pi canary lifecycle package composition", () => {
 		// In-place Enrollment is retired (drive-always-lanes D10): no Pi enrollment tool file or manifest entry ships.
 		expect(existsSync(join(ROOT, "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts"))).toBe(false);
 		const manifest = JSON.parse(readFileSync(join(ROOT, "plugins/immune-brain/.pi-extension/package.json"), "utf8"));
-		expect(manifest.pi.extensions).toEqual(["./imm-canary-work.ts", "./imm-unattended-batch.ts"]);
+		expect(manifest.pi.extensions).toEqual(["./imm-canary-work.ts"]);
 		// The test issuer seam lives outside the shipped files.
 		expect(existsSync(join(ROOT, "tests/fixtures/mutation-authority-test-seam.ts"))).toBe(true);
 	});
@@ -237,10 +237,9 @@ describe("pi canary lifecycle package composition", () => {
 			registerCommand: () => undefined,
 			on: () => undefined,
 		};
-		for (const file of ["imm-canary-work.ts", "imm-unattended-batch.ts"])
-			require(`../plugins/immune-brain/.pi-extension/${file}`).default(pi);
+		require("../plugins/immune-brain/.pi-extension/imm-canary-work.ts").default(pi);
 		expect(names).toContain("imm_kernel_canary");
-		expect(names).toContain("start_unattended_batch");
+		expect(names).not.toContain("start_unattended_batch");
 		expect(names).not.toContain("imm_canary_enrollment");
 	});
 

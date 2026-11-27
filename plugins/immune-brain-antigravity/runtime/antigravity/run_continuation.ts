@@ -2,7 +2,7 @@
 // machine (Spec docs/specs/tri-host-capability-alignment.spec.md D6, D7).
 //
 // Interface: `antigravityContinuationHost`, `readRunToolSession`,
-// `selectedAntigravityParent`, `stopBoundary`, `antigravityRunContinuationHook`,
+// `stopBoundary`, `antigravityRunContinuationHook`,
 // `antigravityRunContinuationPreToolUse`, `antigravityRunContinuationPostToolUse`.
 // Invariants: `conversationId` is the continuation session; `${conversationId}:${stepIdx}`
 // is the correlated tool ID; Stop maps to a boundary only with a usable
@@ -27,7 +27,6 @@ import {
 	PAUSED_GATE_GUIDANCE,
 	readSessionMetadata,
 	readSessionToolCall,
-	selectedParentSession,
 	type RunContinuationEvent,
 	type RunContinuationHost,
 } from "../host-core/run_continuation_session";
@@ -56,10 +55,6 @@ export const antigravityContinuationHost = (root: string): RunContinuationHost =
 /** Exact PreToolUse correlation for Antigravity: toolId is `${conversationId}:${stepIdx}`. */
 export function readRunToolSession(toolId: string, operation: string, workspace: string, root = tmpdir()): string | null {
 	return readSessionToolCall(antigravityContinuationHost(root), root, toolId, operation, workspace);
-}
-
-export function selectedAntigravityParent(toolId: string, workspace: string, slug: string, root = tmpdir()): boolean {
-	return selectedParentSession(antigravityContinuationHost(root), root, toolId, workspace, slug);
 }
 
 /** Check whether a session is paused under the Antigravity cache. */

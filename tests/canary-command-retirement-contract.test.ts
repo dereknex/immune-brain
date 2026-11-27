@@ -23,10 +23,8 @@ describe("Canary Slash Command retirement", () => {
 		const manifest = JSON.parse(readFileSync(join(EXT, "package.json"), "utf8")) as {
 			pi: { extensions: string[] };
 		};
-		expect(manifest.pi.extensions).toEqual([
-			"./imm-canary-work.ts",
-			"./imm-unattended-batch.ts",
-		]);
+		expect(manifest.pi.extensions).toEqual(["./imm-canary-work.ts"]);
+		expect(existsSync(join(EXT, "imm-unattended-batch.ts"))).toBe(false);
 		expect(existsSync(join(EXT, "imm-canary-new.ts"))).toBe(false);
 		expect(existsSync(join(EXT, "imm-canary-succeed.ts"))).toBe(false);
 	});

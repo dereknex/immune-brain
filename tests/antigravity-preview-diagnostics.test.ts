@@ -54,17 +54,18 @@ describe("Antigravity confirmation preview", () => {
 	test("a runtime refuses a second preview while one is running, then recovers", async () => {
 		const workspace = temp("ws");
 		const runtime = new AntigravityRuntime({ cwd: workspace, env: {}, interactive: true, probeHost });
-		const meta = { sessionId: "s", toolCallId: "c", taskId: "init", initiativeSlug: "init", interactive: true };
+		const meta = { sessionId: "s", toolCallId: "c", taskId: "init", interactive: true };
 		try {
 			const settled = await Promise.allSettled([
-				runtime.previewBatchRetirement("init", meta),
-				runtime.previewBatchRetirement("init", meta),
+				runtime.previewEnrollment("init", meta),
+				runtime.previewEnrollment("init", meta),
 			]);
-			expect(settled.map((entry) => entry.status).sort()).toEqual(["fulfilled", "rejected"]);
-			const rejected = settled.find((entry) => entry.status === "rejected") as PromiseRejectedResult;
-			expect(String(rejected.reason)).toContain("already running");
-			// The guard is released: a later preview runs normally.
-			await expect(runtime.previewBatchRetirement("init", meta)).resolves.toBeNull();
+			const reasons = settled.map((entry) => (entry.status === "rejected" ? String(entry.reason) : "fulfilled"));
+			// Exactly one call hits the concurrency guard; the other runs the preview itself.
+			expect(reasons.filter((reason) => reason.includes("already running"))).toHaveLength(1);
+			// The guard is released: a later preview is not refused as concurrent.
+			const later = await runtime.previewEnrollment("init", meta).then(() => "fulfilled", (error) => String(error));
+			expect(later).not.toContain("already running");
 		} finally {
 			await runtime.shutdown();
 		}

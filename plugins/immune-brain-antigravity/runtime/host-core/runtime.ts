@@ -5,21 +5,18 @@
 //
 // Interface: `HostRuntime`, `HostRuntimeOptions`, `HostRuntimeProfile`,
 // `ToolMeta`, `diffSnapshotOf`, `diffHashOf`, `settledKernelResult`,
-// `LANE_WAIT_MS`.
 // Invariants: every Host-specific fact arrives through the profile; this module
 // imports no adapter, and no adapter extends another.
-// Side Effects: through the coordinator, the Kernel store and the Lane supervisor.
+// Side Effects: through the coordinator and the Kernel store.
 // Verification: `bun test tests/dual-host-assurance-conformance.test.ts -t 'runtime composition'`.
 
 import { stagePlanningArtifactTransition, type VerdictAuthority } from "../assurance/verdict_authority";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 
-/** The Lane session poll interval; shorter when the Host's tool timeout is. */
-export const LANE_WAIT_MS = 500;
-import { batchConfigErrors, resolveConfig, type ReviewProfile } from "../config/layered_config";
-import type { ExecutorPreferences, ExecutorHost } from "../unattended/agent_profiles";
+/** The Hosts an adapter runtime serves. */
+export type HostKind = "claude-code" | "pi" | "antigravity";
 import type { AssuranceHostPort } from "../assurance/host_port";
 
 import {
@@ -62,61 +59,18 @@ import { reconcileKernelAuthority, repairKernelAuthority } from "../kernel/stora
 import { withSettleCommit } from "../assurance/workflow_autocommit";
 import { runDeterministicQa } from "../assurance/qa";
 import { taskDeliveryIdentity } from "../workspace_scope";
-import { batchReason } from "../unattended/batch_reasons";
 import { deriveAuthorizationOperation, reviewRetryNotice } from "../authorization_operation";
 import { currentReviewContractHash } from "../role_prompt_bridge";
 import { LITERAL_USER_ACTOR_ID, canonicalActorId } from "../kernel/actor_identity";
-import {
-	captureStagedIntent,
-	restoreStagedIntent as restoreStagedIntentShared,
-} from "../staged_intent";
 import { projectTaskStatus, projectTerminalTrackerState, TRACKER_PROJECTION_FAILURE } from "../assurance/coordinator";
 import { runGithubTrackerOperation } from "../github_issue_tracker";
 import { readTaskTombstone } from "../kernel/backend_claim";
 import {
-	authorizeBatch,
-	prepareBatchPreflight,
-	readConfirmedBatchTopology,
-	findActiveLaneBatchForTask,
-	findResumableBatchSlugForTask,
-	findExistingActiveBatch,
-	findSettledBatchRecord,
-} from "../unattended/batch_preflight";
-import { authorizeBatch as authorizeAgreement } from "../unattended/batch_agreement";
-import { advanceLanes, openBatchSessionPort, startLanes } from "../lane_sessions/index";
-import type { BatchSessionPort } from "../unattended/batch_session_port";
-import { completedParentReport } from "../unattended/batch_lanes";
-import type { BatchRunnerKernelPort, BatchTrackerPort } from "../unattended/batch_kernel_port";
-import type { BatchRunReport } from "../unattended/batch_state";
-import { findLaneRelayTarget, relayLaneDecision, type LaneDecisionOperation } from "../unattended/lane_decision";
-import {
-	LANE_EXECUTOR_ENV,
-	LANE_EXECUTOR_HEADLESS,
-	writeLaneDecisionRequest,
-} from "../unattended/lane_decision_request";
-import { createBatchKernelPort } from "../unattended/batch_kernel_port";
-import { createBatchTrackerPort, laneRuntimeContractRefusal, RUNTIME_CONTRACT_MISMATCH, type LaneInstructionRequest, type LaneOffer, type LaneSessionCloseRequest } from "../unattended/batch_lanes";
-import { retireStaleBatch } from "../unattended/batch_disposition";
-import { runEntryManifest, type RunEntryManifest } from "../unattended/run_entry_manifest";
-import { batchTopologyDigest, isLaneBatchRecord, parkLaneForExecutor, type BatchLaneRunReport } from "../unattended/batch_state";
-import {
-	createBatchAuthorityRegistry,
-} from "../kernel/batch_authority";
-import {
-	type BatchRunnerGitPort,
-	advanceNativeParent,
-	integrateSettledCriticalSlices,
-	nativeParentFinalDecision,
-	observeNativeParent,
-	observeParentCompletion,
-} from "../unattended/batch_git";
-import type {
-	InitiativeObservationReader,
-} from "../unattended/types";
-import { observeInitiative, observeSingleTask } from "../unattended/batch_plan";
+	captureStagedIntent,
+	restoreStagedIntent as restoreStagedIntentShared,
+} from "../staged_intent";
 import {
 	enrollmentNonce,
-	entryTokenRequestId,
 	evaluateNativeGate,
 	isPrivilegedOperation,
 	NativeAuthorityError,
@@ -124,7 +78,6 @@ import {
 	type NativeConfirmationInput,
 	type NativeConfirmationPort,
 	type NativeConfirmationResult,
-	type NativeDecision,
 	type PrivilegedOperation,
 } from "./interaction";
 import { CliReviewHost } from "../assurance/cli_review";
@@ -338,7 +291,7 @@ class ConfirmationPreviewSignal extends Error {
 /** Every Host-specific fact this runtime needs; each adapter's composition root supplies one. */
 export interface HostRuntimeProfile {
 	/** The Kernel host id of this adapter, and its default parent host. */
-	readonly hostId: ExecutorHost;
+	readonly hostId: HostKind;
 	/** The adapter's AssuranceHostPort, built when the runtime needs its default. */
 	createHost(): AssuranceHostPort & { observe(event: any): void };
 	/** Records one raw Host event on that port. */
@@ -347,16 +300,12 @@ export interface HostRuntimeProfile {
 	probeHost: (env: Record<string, string | undefined>, platform: NodeJS.Platform, hostVersion?: string) => HostProbe;
 	/** The Kernel-bound reference this Host records for one native confirmation. */
 	confirmationRef(input: ConfirmationRefInput): string;
-	/** Builds the runtime that answers a Lane decision at the Lane root. */
-	laneRuntime(options: HostRuntimeOptions): HostRuntime;
-	/** Whether this Host's foreground parent session owns the batch (Herdr lane tabs). */
-	selectedParent(toolCallId: string, root: string, slug: string): boolean;
 }
 
 export interface HostRuntimeOptions {
 	cwd: string;
 	env?: Record<string, string | undefined>;
-	parentHost?: ExecutorHost;
+	parentHost?: HostKind;
 	probeHost?: HostRuntimeProfile["probeHost"];
 	host?: AssuranceHostPort & {
 		observe(event: any): void;
@@ -373,38 +322,15 @@ export interface HostRuntimeOptions {
 	interactive?: boolean;
 	permissionMode?: PermissionMode;
 	requestConfirmation?: NativeConfirmationPort;
-	batchKernel?: Partial<BatchRunnerKernelPort>;
-	batchGit?: BatchRunnerGitPort;
-	batchTracker?: BatchTrackerPort;
-	readInitiative?: InitiativeObservationReader;
-	sessionPortFactory?: (provider: string, env: Record<string, string | undefined>) => unknown;
-	/** Set only on the runtime a decision relay builds at a Lane root; it never relays again. */
-	laneRoot?: boolean;
 }
 
-/** ADR 0025: the run-internal authority operations a live entry token authorizes. */
-// ADR 0025: Enrollment and batch start keep their native gate; a token only spares the run-internal steps.
-const ENTRY_TOKEN_OPERATIONS = new Set(["retire_stale_batch"]);
-
 /**
- * The Host failure envelopes for a batch start; the shared authorization flow
- * passes them through untouched.
- */
-type HostBatchStartResult =
-	| NonNullable<Awaited<ReturnType<typeof advanceNativeParent>>>
-	| { state: "started"; batch_id: string; report: BatchRunReport; manifest?: RunEntryManifest }
-	| { state: "retired"; batch_id: string; report: BatchRunReport | BatchLaneRunReport }
-	| { state: "rejected"; reason: string; recovery_action: string }
-	| { state: "cancelled"; reason: string; recovery_action: string }
-	| { state: "blocked"; reason: string; recovery_action: string };
-
-/**
- * One Host's adapter runtime. Every host-neutral step — Kernel operations, batch
- * flow, Lane relay, native gate plumbing — lives here; the adapter supplies a
+ * One Host's adapter runtime. Every host-neutral step — Kernel operations and
+ * native gate plumbing — lives here; the adapter supplies a
  * `HostRuntimeProfile` and composes an instance.
  */
 export class HostRuntime {
-	private readonly parentHost: ExecutorHost;
+	private readonly parentHost: HostKind;
 	readonly host: AssuranceHostPort & {
 		observe(event: any): void;
 	};
@@ -419,13 +345,7 @@ export class HostRuntime {
 	private hostVersion: string | undefined;
 	private mutationRegistry: MutationAuthorityRegistry | null = null;
 	private enrollmentRegistry = createEnrollmentAuthorityRegistry();
-	private batchRegistry = createBatchAuthorityRegistry();
 	private app: ReturnType<typeof createCanaryApplication> | null = null;
-	private readonly batchKernel?: Partial<BatchRunnerKernelPort>;
-	private readonly batchGit?: BatchRunnerGitPort;
-	private readonly batchTracker?: BatchTrackerPort;
-	private readonly readInitiative?: InitiativeObservationReader;
-	private readonly sessionPortFactory?: (provider: string, env: Record<string, string | undefined>) => unknown;
 
 	constructor(readonly profile: HostRuntimeProfile, options: HostRuntimeOptions) {
 		this.cwd = options.cwd;
@@ -434,11 +354,6 @@ export class HostRuntime {
 		this.interactive = options.interactive ?? true;
 		this.parentHost = options.parentHost ?? profile.hostId;
 		this.requestConfirmation = options.requestConfirmation;
-		this.batchKernel = options.batchKernel;
-		this.batchGit = options.batchGit;
-		this.batchTracker = options.batchTracker;
-		this.readInitiative = options.readInitiative;
-		this.sessionPortFactory = options.sessionPortFactory;
 		this.host = options.host ?? profile.createHost();
 		this.reviewHost = new CliReviewHost(this.host, { env: this.env });
 		this.coordinator = new AssuranceCoordinator({
@@ -511,16 +426,10 @@ export class HostRuntime {
 		return { registry: this.mutationRegistry, app: this.app };
 	}
 
-	/**
-	 * ADR 0025: a live entry token is the literal-user act for the run-internal
-	 * authority operations, so they open no dialog. A request that collects a
-	 * user choice (rework exits) still goes to the native gate.
-	 */
+	/** ADR 0025: every privileged operation opens this Host's native gate; no entry token stands in for it. */
 	private async confirm(input: NativeConfirmationInput, meta: ToolMeta): Promise<NativeConfirmationResult> {
-		if (meta.entryToken && ENTRY_TOKEN_OPERATIONS.has(input.operation) && !input.reworkExits)
-			return { decision: "accept", requestId: entryTokenRequestId(meta.entryToken) };
 		if (!this.requestConfirmation)
-			throw new NativeAuthorityError("interaction_not_opened", batchReason("confirmation_port_unavailable").reason);
+			throw new NativeAuthorityError("interaction_not_opened", "native confirmation port is unavailable");
 		return this.requestConfirmation({
 			...input,
 			...(meta.admissionId ? { admissionId: meta.admissionId } : {}),
@@ -625,70 +534,20 @@ export class HostRuntime {
 		return { ...(await this.status(taskId)), state: "enrolled" as const, task_id: taskId };
 	}
 
-	async advance(taskId: string, signal?: AbortSignal, meta?: ToolMeta) {
-		return this.closeOutBatchChild(
-			taskId,
-			withSettleCommit(this.cwd, taskId, await this.withTerminalTracker(taskId, await this.coordinator.advance(taskId, { cwd: this.cwd }, signal)), signal),
-			meta,
-		);
+	async advance(taskId: string, signal?: AbortSignal, _meta?: ToolMeta) {
+		return withSettleCommit(this.cwd, taskId, await this.withTerminalTracker(taskId, await this.coordinator.advance(taskId, { cwd: this.cwd }, signal)), signal);
 	}
 
 	async submitReview(taskId: string, verdictInput: unknown, meta?: ToolMeta) {
-		return this.closeOutBatchChild(
+		return withSettleCommit(this.cwd, taskId, await this.withTerminalTracker(
 			taskId,
-			withSettleCommit(this.cwd, taskId, await this.withTerminalTracker(
-				taskId,
-				await submitHostReview(this.reviewHost, this.coordinator, { cwd: this.cwd }, taskId, verdictInput),
-			), meta?.signal),
-			meta,
-		);
+			await submitHostReview(this.reviewHost, this.coordinator, { cwd: this.cwd }, taskId, verdictInput),
+		), meta?.signal);
 	}
 
 	async submitVerification(taskId: string, result: string | undefined, meta?: ToolMeta) {
-		return this.closeOutBatchChild(taskId,
-			withSettleCommit(this.cwd, taskId, await this.withTerminalTracker(taskId,
-				await this.coordinator.submitVerification(taskId, { cwd: this.cwd }, result)), meta?.signal), meta);
-	}
-
-	/**
-	 * Gate-free closeout: a batch child that reached Kernel `done` in the
-	 * foreground re-enters the batch in the same call, reusing its authorization.
-	 * Only `done` continues; a stopped child, a parked child and a live Review
-	 * obligation end where they do today. The continuation is transport: the
-	 * Kernel result is returned unchanged, and any failure is reported beside it
-	 * with one retry action, never thrown into a path that could read as "the
-	 * mutation did not happen".
-	 */
-	private async closeOutBatchChild<T>(taskId: string, result: T, meta?: ToolMeta): Promise<T> {
-		if (!meta || result === null || typeof result !== "object") return result;
-		const lifecycle = (result as { record?: { lifecycle?: unknown } }).record?.lifecycle;
-		if ((result as { state?: unknown }).state !== "completed" && lifecycle !== "done") return result;
-		let slug: string | null;
-		try {
-			slug = findResumableBatchSlugForTask(this.cwd, taskId);
-		} catch {
-			return result;
-		}
-		if (!slug) return result;
-		try {
-			if (!this.profile.selectedParent(meta.toolCallId, this.cwd, slug)) return result;
-			// The batch commit takes exactly the scope envelope plus this task's own
-			// audit evidence, and its preflight refuses unstaged changes: stage only
-			// that evidence, the step an Executor otherwise does by hand.
-			if (existsSync(join(this.cwd, ".imm", "audit", taskId)))
-				execFileSync("git", ["-C", this.cwd, "add", "--", `.imm/audit/${taskId}`], { stdio: "ignore" });
-			const batch = await this.startUnattendedBatch(slug, meta, { reuseOnly: true });
-			return { ...(result as object), batch, ...(batch.state === "started" && batch.report?.tracker ? { tracker: batch.report.tracker } : {}) } as T;
-		} catch (error) {
-			return {
-				...(result as object),
-				batch: {
-					state: "rejected",
-					reason: `batch continuation failed: ${error instanceof Error ? error.message : String(error)}`,
-					recovery_action: "call start_unattended_batch with the same Initiative to continue the batch",
-				},
-			} as T;
-		}
+		return withSettleCommit(this.cwd, taskId, await this.withTerminalTracker(taskId,
+			await this.coordinator.submitVerification(taskId, { cwd: this.cwd }, result)), meta?.signal);
 	}
 
 	/**
@@ -764,89 +623,10 @@ export class HostRuntime {
 		});
 	}
 
-	/**
-	 * Spec drive-always-lanes D11: a decision for a single-task Lane is answered at
-	 * the Parent's native gate and applied to the Lane store, then the next
-	 * Executor generation starts. Any other task keeps the in-place path.
-	 */
+	/** Enrollment opens its own gate; every other privileged operation runs in this workspace. */
 	async authorize(taskId: string, operation: string, meta: ToolMeta, extra: Record<string, unknown> = {}) {
 		if (operation === "enroll") return this.enroll(taskId, meta);
-		if (operation === "approve_breaking_intent_revision" && this.env[LANE_EXECUTOR_ENV] === LANE_EXECUTOR_HEADLESS)
-			return this.requestLaneDecision(taskId, extra);
-		const relayed = ["request_authorization", "approve_breaking_intent_revision", "stop"].includes(operation) && !this.options.laneRoot
-			? findLaneRelayTarget(this.cwd, taskId) : null;
-		if (!relayed) return this.authorizeInRoot(taskId, operation, meta, extra);
-		const laneRuntime = this.profile.laneRuntime({ ...this.options, cwd: relayed.lane_path, laneRoot: true,
-			requestConfirmation: this.requestConfirmation, batchKernel: undefined, batchGit: undefined, batchTracker: undefined, readInitiative: undefined });
-		if (this.hostVersion) laneRuntime.bindHostVersion(this.hostVersion);
-		// S7 per-child: port-based batches stop only that child's session and resume via advanceLanes.
-		// Corrupt or ambiguous batch matches fail closed instead of falling back to the in-place path.
-		const active = findActiveLaneBatchForTask(this.cwd, taskId);
-		const childSession = active?.record.children.find(child => child.task_id === taskId)?.session;
-		let sessions: BatchSessionPort | undefined;
-		let advance: ((batchId: string) => Promise<unknown>) | undefined;
-		if (active && childSession?.handle) {
-			if (operation !== "stop") {
-				const initiativeSlug = active.record.initiative_slug;
-				const advanceKind = active.record.plan_source ? { plan_source: active.record.plan_source } : {};
-				advance = async () => this.startPreparedBatch(initiativeSlug, meta, { reuseOnly: true, ...advanceKind });
-			} else {
-				// Resolve the batch's recorded provider through the composition
-				// root: production Hosts supply no factory and reach the real
-				// provider; tests inject a fake. A refusal fails the stop closed
-				// instead of leaving the child's session running.
-				const opened = openBatchSessionPort({ root: this.cwd, provider: active.record.session_provider, env: this.env,
-					host: this.parentHost, executor: active.record.executor_preferences,
-					...(this.sessionPortFactory ? { createPort: this.sessionPortFactory as never } : {}) });
-				if (!opened.ok) throw new Error(`${opened.reason}. ${opened.recovery}`);
-				sessions = opened.port;
-			}
-		}
-		try {
-			const outcome = await relayLaneDecision({
-				root: this.cwd, taskId, operation: operation as LaneDecisionOperation,
-				expectedRecordRevision: typeof extra.record_revision === "string" ? extra.record_revision : undefined,
-				project: (lanePath, id) => projectAssurance(lanePath, id, diffSnapshotOf),
-				apply: async () => laneRuntime.authorizeInRoot(taskId, operation, meta, extra),
-				applied: result => !(result && typeof result === "object" && "state" in result && result.state === "replan_selected"),
-				...(sessions ? { sessions } : {}),
-				...(advance ? { advance } : {}),
-			});
-			return outcome.relayed ? { ...outcome.result, lane_relay: outcome.lane_relay } : this.authorizeInRoot(taskId, operation, meta, extra);
-		} finally {
-			await laneRuntime.shutdown();
-		}
-	}
-
-	/**
-	 * #426 F19: a headless Lane Executor has no native gate, so its Host cancels one at once and the Kernel
-	 * records nothing. The revision is checked as the gate would check it, then left in the Lane as a request
-	 * the Parent relays to the literal user. Nothing is staged, written to the sidecar or granted.
-	 */
-	private async requestLaneDecision(taskId: string, extra: Record<string, unknown>) {
-		const nextIntent = extra.next_intent ? parseProjectTaskIntent(this.cwd, extra.next_intent) : undefined;
-		if (!nextIntent) throw new Error("approve_breaking_intent_revision requires next_intent");
-		const prior = await readTaskIntentForRecord(this.cwd, taskId);
-		if (classifyIntentRevision(prior.intent, nextIntent) !== "breaking") {
-			// A later generation resubmitting the revision the Parent already committed is told so, not refused:
-			// the record holds the exact intent and the literal user's approval; the claim keeps the enrolled revision.
-			const record = readTaskRecordRaw(this.cwd, taskId).record;
-			const approval = record?.intent_ref.content_hash === canonicalIntentHash(nextIntent)
-				? [...record.history].reverse().find(event => event.type === "approve_breaking_intent_revision" && event.authority?.authority_kind === "user")
-				: undefined;
-			if (approval)
-				return { state: "intent_revision_committed", task_id: taskId, intent_revision: nextIntent.revision,
-					confirmation_ref: approval.authority!.confirmation_ref, approved_at: approval.at,
-					next: "The literal user already approved this revision at the Parent's gate. status projection.intent_revision is current; the claim keeps the enrolled revision. Do not request it again; continue the Execution Loop from status." };
-			throw new Error("approve_breaking_intent_revision requires a breaking revision");
-		}
-		const projection = await this.project(taskId);
-		if (projection.error || !projection.claim) throw new Error(projection.error ?? "no active backend claim");
-		if (projection.projection.lifecycle !== "active") throw new Error(`cannot request a revision while lifecycle is ${projection.projection.lifecycle}`);
-		const request = writeLaneDecisionRequest(this.cwd, { task_id: taskId, operation: "approve_breaking_intent_revision",
-			record_revision: projection.projection.record_revision, next_intent: nextIntent, requested_at: new Date().toISOString() });
-		return { state: "lane_decision_requested", task_id: taskId, record_revision: request.record_revision,
-			next: "This headless Lane session has no native gate. The Parent shows the revision to the literal user at its own gate. End this session now; do not retry, edit the intent or work around the revision." };
+		return this.authorizeInRoot(taskId, operation, meta, extra);
 	}
 
 	private async authorizeInRoot(taskId: string, operation: string, meta: ToolMeta, extra: Record<string, unknown> = {}) {
@@ -1098,547 +878,6 @@ export class HostRuntime {
 
 	async previewEnrollment(taskId: string, meta: ToolMeta) {
 		return this.previewConfirmation(() => this.enroll(taskId, meta));
-	}
-
-	async previewBatchConfirmation(
-		initiativeSlug: string,
-		meta: ToolMeta,
-		options: { plan_source?: "single_task"; max_parallel?: number; final_verification?: string[] } = {},
-	) {
-		return this.previewConfirmation(() => this.startPreparedBatch(initiativeSlug, meta, { ...options, confirmationPreview: true }));
-	}
-
-	async previewBatchRetirement(initiativeSlug: string, meta: ToolMeta) {
-		return this.previewConfirmation(() => this.retireStaleBatch(initiativeSlug, meta));
-	}
-
-	async startUnattendedBatch(
-		initiativeSlug: string,
-		meta: ToolMeta,
-		options: { plan_source?: "single_task"; stop?: boolean; executor?: ExecutorPreferences; reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[]; final_verification?: string[]; review_profile?: ReviewProfile; lane_instruction?: LaneInstructionRequest; lane_session_close?: LaneSessionCloseRequest } = {},
-	): Promise<HostBatchStartResult> {
-		if (Object.hasOwn(options, "lane_revision")) throw new Error("unknown parameter: lane_revision");
-		return this.startPreparedBatch(initiativeSlug, meta, options);
-	}
-
-	private async startPreparedBatch(
-		initiativeSlug: string, meta: ToolMeta,
-		options: { plan_source?: "single_task"; stop?: boolean; executor?: ExecutorPreferences; reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[]; final_verification?: string[]; review_profile?: ReviewProfile; lane_instruction?: LaneInstructionRequest; lane_session_close?: LaneSessionCloseRequest; confirmationPreview?: boolean },
-	): Promise<HostBatchStartResult> {
-		throwIfCancelled(meta.signal);
-		const reuseOnly = options.reuseOnly === true;
-		const confirmationPreview = options.confirmationPreview === true;
-		const readInitiative = options.plan_source === "single_task" ? observeSingleTask : this.readInitiative ?? observeInitiative;
-		if (options.plan_source === "single_task") options = { ...options, max_parallel: 1 };
-		const probe = this.probeHost();
-		if (!probe.ok) throw new NativeAuthorityError("unsupported_host", probe.reason);
-		if (options.stop) {
-			if (options.plan_source !== "single_task") return { state: "rejected", reason: "lane_stop_requires_task", recovery_action: "Specify a task_id in the current Host." };
-			// Port-based stop (S8): close only this child's session through the
-			// batch's recorded provider, park the child, and retain its Lane.
-			const active = findActiveLaneBatchForTask(this.cwd, initiativeSlug);
-			if (!active) return { state: "blocked", reason: "lane_executor_not_running", recovery_action: "Inspect the task status in the current Host." };
-			const handle = active.record.children.find(child => child.task_id === initiativeSlug)?.session?.handle ?? null;
-			if (handle) {
-				const opened = openBatchSessionPort({ root: this.cwd, provider: active.record.session_provider, env: this.env,
-					host: this.parentHost, executor: active.record.executor_preferences,
-					...(this.sessionPortFactory ? { createPort: this.sessionPortFactory as never } : {}) });
-				if (!opened.ok) return { state: "blocked", reason: opened.reason, recovery_action: opened.recovery };
-				// An unproven stop parks nothing: the child stays enrolled and is reconciled.
-				const stopped = await opened.port.stop(handle);
-				if (!stopped.ok)
-					return { state: "blocked", reason: `lane_stop_rejected: ${stopped.reason} (${stopped.code})`,
-						recovery_action: "The Executor session is still running and the child stays enrolled; retry the stop in the current Host." };
-			}
-			parkLaneForExecutor(this.cwd, active.record.batch_id, initiativeSlug, "lane_executor_stopped");
-			return { state: "blocked", reason: "lane_executor_stopped", recovery_action: "The Lane task is stopped and its Lane retained; resume with a fresh drive entry." };
-		}
-		// ADR 0041: every new batch is refused on a configuration error; a reuse-only continuation runs on its frozen record.
-		if ((options.plan_source || !reuseOnly) && batchConfigErrors(resolveConfig(this.cwd)).length > 0)
-			return batchReason("lane_config_invalid");
-		// A reuse-only continuation never opens a gate, so it needs no confirmation port.
-		const interactive = meta.interactive ?? this.interactive;
-		if (!reuseOnly && !interactive) throw new NativeAuthorityError("unsupported_host", "interactive MCP elicitation is unavailable");
-		// The text is table-owned; only the form (a thrown native error rather than
-		// a returned envelope) is this Host's.
-		if (!reuseOnly && !this.requestConfirmation)
-			throw new NativeAuthorityError("interaction_not_opened", batchReason("confirmation_port_unavailable").reason);
-		let manifestChildren: ReadonlyArray<{ task_id: string; slice_id: string; risk?: string }> | null = null;
-
-		const existing = findExistingActiveBatch(this.cwd, initiativeSlug);
-		if (existing && !existing.corrupt && !isLaneBatchRecord(existing.record)) return batchReason("batch_record_shape_retired");
-		const integrationBatch = existing && !existing.corrupt ? existing.record : existing ? null : findSettledBatchRecord(this.cwd, initiativeSlug);
-		if (integrationBatch && (isLaneBatchRecord(integrationBatch) ? integrationBatch.plan_source : undefined) !== options.plan_source)
-			return batchReason("batch_entry_kind_mismatch");
-		let replayCompleted = true;
-		let replayReader = this.readInitiative;
-		if (!options.plan_source && integrationBatch && isLaneBatchRecord(integrationBatch) && (existing || integrationBatch.batch_state === "completed")) {
-			let confirmed: Awaited<ReturnType<typeof readConfirmedBatchTopology>> | undefined;
-			try {
-				confirmed = await readConfirmedBatchTopology(this.cwd, integrationBatch, this.readInitiative);
-			} catch (error) {
-				if (existing) return batchReason("plan_changed", error instanceof Error ? error.message : String(error));
-				// Terminal history owns no new plan; do not replay its writes or completion.
-				replayCompleted = false;
-			}
-			if (confirmed) {
-				const { observation } = confirmed;
-				replayReader = async () => observation;
-				if (!confirmationPreview && ["running", "completed"].includes(integrationBatch.batch_state))
-					await integrateSettledCriticalSlices(this.cwd, initiativeSlug, replayReader);
-			}
-		}
-		// A preview must prove completion without the report's tracker and file
-		// writes. An already-complete Parent opens no fresh authorization gate.
-		if (confirmationPreview && !options.plan_source && replayCompleted && integrationBatch?.batch_state === "completed" && integrationBatch.final_verification_result?.passed === true) {
-			try {
-				const confirmed = await readConfirmedBatchTopology(this.cwd, integrationBatch, this.readInitiative);
-				const proof = await observeParentCompletion(this.cwd, initiativeSlug, confirmed.observation.tasks.map((child) => child.task_id));
-				if (proof.complete) return batchReason("confirmation_no_decision");
-			} catch {
-				// The real call owns the terminal-history diagnostic.
-			}
-		}
-		const completed = !confirmationPreview && !options.plan_source && replayCompleted ? await completedParentReport(this.cwd, initiativeSlug, replayReader, this.batchTracker) : null;
-		if (completed) return { state: "started", batch_id: completed.batch_id, report: completed };
-		const nativeParentInput = (effects: { initiative_slug: string; plan_digest: string; children: Array<{ task_id: string; slice_id: string }>; final_commands: string[] }): NativeConfirmationInput => ({
-			operation: "start_unattended_batch",
-			initiativeSlug,
-			toolCallId: meta.toolCallId,
-			planDigest: effects.plan_digest,
-			batchDetails: {
-				initiative_slug: effects.initiative_slug,
-				batch_branch: "",
-				children: effects.children,
-				excluded: [],
-				final_verification: effects.final_commands,
-				parent_final_verification: {},
-			},
-			signal: meta.signal,
-		});
-		if (confirmationPreview && !options.plan_source) {
-			const facts = await observeNativeParent(this.cwd, initiativeSlug, this.readInitiative);
-			if (facts) {
-				// Same decision advanceNativeParent makes; only the gate is captured, never run.
-				const decision = nativeParentFinalDecision(facts, options.final_verification);
-				if (decision.run && decision.gate) await this.confirm(nativeParentInput(decision.gate), meta);
-				return batchReason("confirmation_no_decision");
-			}
-		}
-		const native = options.plan_source ? null : await advanceNativeParent(this.cwd, initiativeSlug, options.final_verification, this.readInitiative, this.batchTracker ?? createBatchTrackerPort(this.cwd, initiativeSlug),
-			async (effects) => {
-				// A continuation never opens a gate; unconfirmed commands wait for a fresh explicit entry.
-				if (reuseOnly) return batchReason("confirmation_port_unavailable");
-				try {
-					manifestChildren = effects.children;
-					const confirmation = await this.confirm(nativeParentInput(effects), meta);
-					if (meta.signal?.aborted) return batchReason("cancelled_before_execution");
-					if (confirmation.decision === "accept") return null;
-					if (confirmation.decision === "cancel") return batchReason("confirmation_cancelled");
-					if (confirmation.decision === "decline") return batchReason("confirmation_declined");
-					return batchReason("confirmation_no_decision");
-				} catch (err) {
-					if (err instanceof ConfirmationPreviewSignal) throw err;
-					if (meta.signal?.aborted) return batchReason("cancelled_before_execution");
-					if (err instanceof NativeAuthorityError) {
-						if (err.reasonCode === "unsupported_host") throw err;
-						return { state: err.reasonCode === "user_cancelled" ? "cancelled" : "rejected", reason: err.message, recovery_action: err.recoveryAction };
-					}
-					return batchReason("confirmation_failed", err instanceof Error ? err.message : String(err));
-				}
-			});
-		if (native) return native;
-		// 1. Host-independent batch preflight: claim ownership, branch
-		// availability, working-tree cleanliness against the authorized scope,
-		// recovery children, plan digest, and base HEAD are one shared projection,
-		// so neither Host re-implements a batch decision.
-		let now = new Date().toISOString();
-		const preflight = await prepareBatchPreflight({
-			root: this.cwd,
-			initiative_slug: initiativeSlug,
-			plan_source: options.plan_source,
-			now,
-			readInitiative,
-			max_parallel: options.max_parallel,
-			signal: meta.signal, reuseOnly,
-		});
-		if (!preflight.ok) {
-			return {
-				state: preflight.state,
-				reason: preflight.reason,
-				recovery_action: preflight.recovery_action,
-			};
-		}
-		const isResuming = preflight.projection.is_resuming;
-		// A new single-task start that names no commands takes layered config:
-		// a `critical` task inherits `batch.final_verification`; any other task
-		// uses `batch.single_task_final_verification` (workflow-friction D3.1).
-		// Resuming keeps the commands recorded on the batch; with no commands the
-		// declared derived-file checks still gate checkout delivery.
-		if (options.plan_source === "single_task" && !isResuming && !options.final_verification?.length) {
-			// An unread intent risk leaves no entry and keeps the full suite (conservative).
-			const risks = preflight.projection.risk_by_task ?? {};
-			const critical = Object.keys(risks).length === 0 || Object.values(risks).includes("critical");
-			const batchConfig = resolveConfig(this.cwd).batch;
-			const configured = (batchConfig[critical ? "final_verification" : "single_task_final_verification"] as { value?: unknown }).value;
-			if (Array.isArray(configured) && configured.length > 0) options = { ...options, final_verification: configured.map(String) };
-		}
-		if (!isResuming && !options.plan_source && !options.final_verification?.length) return {
-			state: "rejected",
-			reason: "final_verification_required",
-			recovery_action: "Pass the project's final_verification commands when starting a new batch in the current Host.",
-		};
-		const batchBranch = preflight.projection.batch_branch;
-		const existingBatch = preflight.projection.existing_batch;
-		const budget = preflight.projection.budget;
-		const planDigest = preflight.projection.plan_digest;
-		const recoveryChildren = preflight.projection.recovery_children;
-		// A new lane batch whose Lane runtime cannot read the coordinator's Kernel
-		// contracts is refused before the gate opens; a match adds nothing.
-		if (options.max_parallel !== undefined && !isResuming) {
-			const contractRefusal = laneRuntimeContractRefusal(this.cwd);
-			if (contractRefusal) return batchReason("batch_runtime_contract_mismatch", contractRefusal);
-		}
-		// 5. Literal-user gate plus the shared reuse decision, the post-gate
-		// claim/drift cascade, and the Batch Authorization binding. The Host supplies
-		// only its gate, its confirmation reference, and its binding nonce.
-		const authorization = await authorizeBatch<HostBatchStartResult>({
-			root: this.cwd,
-			initiative_slug: initiativeSlug,
-			now,
-			projection: preflight.projection,
-			readInitiative,
-			nonce: enrollmentNonce(),
-			gate: async (facts) => {
-				// A continuation after a foreground child never opens a gate: when the
-				// authorization cannot be reused, the user re-enters the batch tool.
-				if (reuseOnly)
-					return {
-						kind: "host_rejection",
-						value: {
-							state: "blocked",
-							reason: `batch authorization cannot be reused (${facts.reuse_blockers.join(", ")})`,
-							recovery_action: "call start_unattended_batch with the same Initiative to confirm a fresh authorization",
-						},
-					};
-				// The gate settles only on the literal user's answer or the caller's
-				// cancellation signal.
-				let confirmationResult: { decision: NativeDecision; requestId: string };
-				manifestChildren = facts.children;
-				try {
-					confirmationResult = await this.confirm({
-						operation: "start_unattended_batch",
-						initiativeSlug,
-						toolCallId: meta.toolCallId,
-						planDigest,
-						...(facts.preparation?.intent ? {
-							intentRevision: facts.preparation.intent.revision,
-							intentContentHash: facts.preparation.intent.content_hash,
-							bindingDigest: facts.preparation.digest,
-						} : {}),
-						batchDetails: {
-							initiative_slug: facts.initiative_slug,
-							batch_branch: facts.batch_branch,
-							children: facts.children.map((child) => ({
-								task_id: child.task_id,
-								slice_id: child.slice_id,
-								risk: child.risk,
-							})),
-							excluded: facts.excluded.map((child) => ({
-								task_id: child.task_id,
-								slice_id: child.slice_id,
-								reason: child.reason,
-							})),
-							budget: facts.budget,
-							...(options.final_verification ? { final_verification: options.final_verification } : {}),
-							...(options.max_parallel !== undefined
-								? {
-										lane_mode: {
-											max_parallel: options.max_parallel,
-											parallel_groups: facts.parallel_groups,
-											serialized: facts.scope_conflicts,
-											...(options.final_verification ? { final_verification: options.final_verification } : {}),
-											...(options.review_profile ? { review_profile: options.review_profile } : {}),
-										},
-									}
-								: {}),
-							...(facts.reuse_blockers.length > 0
-								? {
-										re_confirmation_required: facts.reuse_blockers,
-										recovery: "confirm to issue a fresh authorization bound to the current plan and HEAD",
-									}
-								: {}),
-						},
-						signal: meta.signal,
-					}, meta);
-				} catch (err) {
-					if (err instanceof ConfirmationPreviewSignal) throw err;
-					if (meta.signal?.aborted)
-						return { kind: "host_rejection", value: batchReason("cancelled_before_execution") };
-					if (err instanceof NativeAuthorityError) {
-						if (err.reasonCode === "unsupported_host") throw err;
-						if (err.reasonCode === "user_cancelled") {
-							return {
-								kind: "host_rejection",
-								value: { state: "cancelled", reason: err.message, recovery_action: err.recoveryAction },
-							};
-						}
-						return {
-							kind: "host_rejection",
-							value: { state: "rejected", reason: err.message, recovery_action: err.recoveryAction },
-						};
-					}
-					return {
-						kind: "host_rejection",
-						value: batchReason("confirmation_failed", err instanceof Error ? err.message : String(err)),
-					};
-				}
-
-				if (confirmationResult.decision === "cancel" && meta.signal?.aborted)
-					return { kind: "host_rejection", value: batchReason("confirmation_cancelled") };
-				if (meta.signal?.aborted)
-					return { kind: "host_rejection", value: batchReason("cancelled_before_execution") };
-				if (confirmationResult.decision === "decline")
-					return { kind: "host_rejection", value: batchReason("confirmation_declined") };
-				if (confirmationResult.decision === "cancel")
-					return { kind: "host_rejection", value: batchReason("confirmation_cancelled") };
-				if (confirmationResult.decision !== "accept")
-					return { kind: "host_rejection", value: batchReason("confirmation_no_decision") };
-				return {
-					kind: "confirmed",
-					request_id: confirmationResult.requestId,
-				};
-			},
-			// A reused authorization keeps this invocation's Kernel binding without a new
-			// literal-user act, so its confirmation reference names the resumed batch
-			// rather than a requestId no elicitation produced.
-			confirmationRef: ({ batch_id, request_id }) =>
-				this.profile.confirmationRef({
-					connectionId: meta.sessionId,
-					toolCallId: meta.toolCallId,
-					requestId: request_id ?? `resumed-${batch_id}`,
-					operation: "start_unattended_batch",
-					initiativeSlug,
-					planDigest,
-					bindingDigest: preflight.projection.preparation?.digest,
-				}),
-		});
-		if (authorization.outcome === "host_rejection") return authorization.value;
-		if (authorization.outcome === "rejected") return authorization.rejection;
-		// Reused authorization needs no gate; a preview stops before issuance or
-		// any batch execution just as it does after capturing a fresh gate.
-		if (confirmationPreview) return batchReason("confirmation_no_decision");
-		const { binding, batch_id: batchId } = authorization;
-
-		// review-1: verify cancellation signal right before authority issuance and Lane entry
-		if (meta.signal?.aborted) return batchReason("cancelled_before_execution");
-
-		now = new Date().toISOString();
-		const capability = this.batchRegistry.issue(binding, recoveryChildren as any, now);
-
-		// review-batch-partial-port-fabricates-enrollment: the production child
-		// Kernel port is the shared runtime/unattended one; this Host supplies
-		// only its own advanceTask progression seam (D5).
-		const advanceTask: BatchRunnerKernelPort["advanceTask"] = async (root, taskId) => {
-			const result = await this.coordinator.advance(taskId, { cwd: root });
-			const facts = { diagnostics: result.diagnostics, environment_failure: result.environment_failure, recovery: result.recovery };
-			if (result.state === "completed") return { state: "completed", ...facts };
-			if (result.state === "stopped") return { state: "stopped", ...facts };
-			if (result.state === "rework") return { state: "rework", operation: result.operation, summary: result.summary, ...facts };
-			if (result.state === "review_ready") return { state: "review_ready", operation_id: result.operation_id, ...facts };
-			if (result.state === "review_preparation_failed") return { state: result.state, operation: result.operation, operation_id: result.operation_id, reason: result.reason, ...facts };
-			if (result.state === "blocked") return { state: "blocked", reason: result.reason, ...facts };
-			return { state: "failed", reason: (result as { reason?: string }).reason ?? "advance failed", ...facts };
-		};
-		const parent = await readInitiative(this.cwd, initiativeSlug);
-		if (parent.initiative_id !== initiativeSlug || batchTopologyDigest(parent.tasks) !== preflight.projection.topology_digest)
-			return batchReason("plan_changed");
-		const kernelPort = createBatchKernelPort({
-			root: this.cwd,
-			parent,
-			enrollmentRegistry: this.enrollmentRegistry,
-			registry: this.batchRegistry,
-			capability,
-			binding,
-			advanceTask,
-			resume: { isResuming, existingBatch, batchBranch },
-			overrides: this.batchKernel,
-		});
-		const sessionProviders = (() => {
-			// The configured list passes through untouched: `herdr` is admitted
-			// only when this env runs inside Herdr (resolveSessionProvider's
-			// pure env check), so outside Herdr the entry refuses with every
-			// provider's reason and recovery and opens no session. Only an
-			// unreadable config falls back, to the layered-config default.
-			try {
-				const resolved = resolveConfig(this.cwd).session_providers as unknown as { value?: unknown };
-				const value = (resolved as { value?: unknown }).value;
-				return Array.isArray(value) ? (value as string[]) : ["herdr"];
-			} catch {
-				return ["herdr"];
-			}
-		})();
-		const laneDeps = {
-			root: this.cwd,
-			registry: this.batchRegistry,
-			capability,
-			kernel: kernelPort,
-			...(options.plan_source ? { entry_kind: options.plan_source } : {}),
-			...(this.batchGit ? { git: this.batchGit } : {}),
-			...(!options.plan_source ? { tracker: this.batchTracker ?? createBatchTrackerPort(this.cwd, initiativeSlug) } : {}),
-			providers: sessionProviders,
-			host: this.parentHost,
-			env: this.env,
-			...(options.max_parallel !== undefined ? { max_parallel: options.max_parallel } : { max_parallel: options.plan_source ? 1 : (resolveConfig(this.cwd).batch.max_parallel.value as number) }),
-			now,
-			confirmation_time: now,
-			...(!authorization.reuse_authorization ? { literal_user_confirmation: true } : {}),
-			topology_digest: preflight.projection.topology_digest,
-			...(options.lane_instruction ? { lane_instruction: options.lane_instruction } : {}),
-			...(options.lane_session_close ? { lane_session_close: options.lane_session_close } : {}),
-			...(options.lane_offers !== undefined ? { lane_offers: options.lane_offers } : {}),
-			...(options.review_profile ? { review_profile: options.review_profile } : {}),
-			...(options.final_verification ? { final_verification: options.final_verification } : {}),
-			...(options.executor ? { executor: options.executor } : {}),
-			...(this.sessionPortFactory ? { createPort: this.sessionPortFactory as never } : {}),
-		};
-		let report: any;
-		if (isResuming && existingBatch && isLaneBatchRecord(existingBatch)) {
-			const resumed = await advanceLanes(this.cwd, (existingBatch as { batch_id: string }).batch_id, laneDeps as never);
-			if (resumed && typeof resumed === "object" && (resumed as { ok?: unknown }).ok === false) {
-				const refusal = resumed as { code: string; reason: string; recovery: string };
-				return { state: "rejected", reason: refusal.reason, recovery_action: refusal.recovery };
-			}
-			report = resumed;
-		} else {
-			const singleTask = options.plan_source === "single_task";
-			const confirmationRef = binding.confirmation_ref ?? `native_gate:${batchId}`;
-			const agreementInput = {
-				batch_id: batchId,
-				initiative_slug: initiativeSlug,
-				children: recoveryChildren,
-				base_head: binding.base_head,
-				budget,
-				confirmation: { source: "native_gate", ref: confirmationRef },
-				final_verification: {
-					required: (options.final_verification?.length ?? 0) > 0 ? true : singleTask ? false : true,
-					commands: options.final_verification ? [...options.final_verification] : [],
-				},
-				return_policy: singleTask ? "checkout_delivery" : "retain_branch",
-				interaction_mode: "interactive_host",
-			};
-			const agreement = authorizeAgreement(agreementInput as never);
-			if (!agreement.ok) return batchReason("batch_run_rejected", agreement.reason);
-			const started = await startLanes(agreement.agreement, laneDeps as never);
-			if (started && typeof started === "object" && (started as { ok?: unknown }).ok === false) {
-				const refusal = started as { code: string; reason: string; recovery: string };
-				return { state: "rejected", reason: refusal.reason, recovery_action: refusal.recovery };
-			}
-			report = started;
-		}
-
-		// review-3 & review-batch-preflight-recovery-is-diagnostic: map rejected batch state to rejected result with same-Host recovery action
-		if (report.batch_state === "rejected")
-			return batchReason(report.reason?.startsWith(`${RUNTIME_CONTRACT_MISMATCH}: `) ? "batch_runtime_contract_mismatch" : "batch_run_rejected", report.reason ?? "");
-
-		if (!options.plan_source && report.batch_state === "completed" && report.final_verification?.passed)
-			report = await completedParentReport(this.cwd, initiativeSlug, this.readInitiative, this.batchTracker) ?? report;
-		return {
-			state: "started",
-			batch_id: batchId,
-			report,
-			...(manifestChildren ? { manifest: runEntryManifest(manifestChildren, (taskId) => readTaskIntentForRecord(this.cwd, taskId).intent) } : {}),
-		};
-	}
-
-	/**
-	 * The batch disposition. One explicit literal-user decision retires a record
-	 * the plan moved past: the terminal superseded state and its report preserve
-	 * every child state, recorded commit and the batch branch, and no child is
-	 * re-enrolled, handed off, or credited with delivery it never had.
-	 */
-	async retireStaleBatch(initiativeSlug: string, meta: ToolMeta): Promise<HostBatchStartResult> {
-		throwIfCancelled(meta.signal);
-		const probe = this.probeHost();
-		if (!probe.ok) throw new NativeAuthorityError("unsupported_host", probe.reason);
-		// Without an entry token the disposition opens a gate, so it needs a confirmation port.
-		if (!this.requestConfirmation && !meta.entryToken)
-			throw new NativeAuthorityError("interaction_not_opened", batchReason("confirmation_port_unavailable").reason);
-		const outcome = await retireStaleBatch<HostBatchStartResult>({
-			root: this.cwd,
-			initiative_slug: initiativeSlug,
-			now: new Date().toISOString(),
-			gate: async (facts) => {
-				let confirmationResult: { decision: NativeDecision; requestId: string };
-				try {
-					confirmationResult = await this.confirm({
-						operation: "retire_stale_batch",
-						initiativeSlug,
-						toolCallId: meta.toolCallId,
-						batchDisposition: {
-							batch_id: facts.batch_id,
-							batch_state: facts.batch_state,
-							batch_branch: facts.branch,
-							plan_digest: facts.plan_digest,
-							recorded_commits: facts.recorded_commits.length,
-							children: facts.children.map((child) => ({
-								task_id: child.task_id,
-								slice_id: child.slice_id,
-								state: child.state,
-								commit: child.commit,
-								lane_branch: child.lane_branch,
-								kernel_lifecycle: child.kernel_lifecycle,
-							})),
-						},
-						signal: meta.signal,
-					}, meta);
-				} catch (err) {
-					if (err instanceof ConfirmationPreviewSignal) throw err;
-					if (meta.signal?.aborted)
-						return { kind: "host_rejection", value: batchReason("confirmation_cancelled") };
-					if (err instanceof NativeAuthorityError) {
-						if (err.reasonCode === "unsupported_host") throw err;
-						if (err.reasonCode === "user_cancelled") {
-							return {
-								kind: "host_rejection",
-								value: { state: "cancelled", reason: err.message, recovery_action: err.recoveryAction },
-							};
-						}
-						return {
-							kind: "host_rejection",
-							value: { state: "rejected", reason: err.message, recovery_action: err.recoveryAction },
-						};
-					}
-					return {
-						kind: "host_rejection",
-						value: batchReason("confirmation_failed", err instanceof Error ? err.message : String(err)),
-						};
-				}
-				if (confirmationResult.decision === "cancel" && meta.signal?.aborted)
-					return { kind: "host_rejection", value: batchReason("confirmation_cancelled") };
-				if (meta.signal?.aborted)
-					return { kind: "host_rejection", value: batchReason("cancelled_before_execution") };
-				if (confirmationResult.decision === "decline")
-					return { kind: "host_rejection", value: batchReason("confirmation_declined") };
-				if (confirmationResult.decision === "cancel")
-					return { kind: "host_rejection", value: batchReason("confirmation_cancelled") };
-				if (confirmationResult.decision !== "accept")
-					return { kind: "host_rejection", value: batchReason("confirmation_no_decision") };
-				return { kind: "confirmed", request_id: confirmationResult.requestId };
-			},
-			confirmationRef: ({ request_id, plan_digest }) =>
-				this.profile.confirmationRef({
-					connectionId: meta.sessionId,
-					toolCallId: meta.toolCallId,
-					requestId: request_id,
-					operation: "retire_stale_batch",
-					initiativeSlug,
-					planDigest: plan_digest,
-				}),
-		});
-		if (outcome.outcome === "host_rejection") return outcome.value;
-		if (outcome.outcome === "rejected") return outcome.rejection;
-		return { state: "retired", batch_id: outcome.batch_id, report: outcome.report };
 	}
 }
 

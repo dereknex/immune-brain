@@ -1,8 +1,8 @@
 # Supervised Session Port
 
-The capability contract for the session a Parent launches a Lane Executor in. ADR 0038 (`docs/adr/0038-supervised-session-port.md`) records why it exists and where it sits; this reference is its single operational text. The Parent's Loop contract (`dist/drive-batch.md`, Herdr Lane Tabs) consumes it through `imm-session`; the Kernel, the batch runtime, the Host adapters and the `lane-steward` never do.
+The capability contract for the supervised Host session a Parent launches for Herdr Review and findings Verification (ADR 0043 Slice 3 retired the unattended batch and its Lane Executor sessions). ADR 0038 (`docs/adr/0038-supervised-session-port.md`) records why it exists and where it sits; this reference is its single operational text. The Parent's `drive` contract (`dist/drive.md`, Review and Learning) consumes it through `imm-session`; the Kernel and the Host adapters never do.
 
-A supervised session keeps the four guarantees the Loop contract defines: it is a separate Host process rooted in the Lane, it receives one explicit `drive` entry and nothing else, control returns to the Parent without polling when it stops working, and the Parent can stop it. The port states them as verbs. Session state and output are never Kernel progress evidence; Kernel projections in the batch report remain the only progress signal.
+A supervised session keeps the four guarantees the Loop contract defines: it is a separate Host process rooted in its working directory, it receives one explicit entry and nothing else, control returns to the Parent without polling when it stops working, and the Parent can stop it. The port states them as verbs. Session state and output are never Kernel progress evidence; Kernel projections remain the only progress signal.
 
 ## Interface
 
@@ -20,26 +20,20 @@ A provider missing any of these, or implementing another port protocol, is refus
 
 | Capability | Precondition | Postcondition | Fail-closed |
 | --- | --- | --- | --- |
-| `createSession` | Lane `cwd`; one explicit `drive` entry; label ≤ 32 characters | Exactly one live session rooted in the Lane, the entry submitted once, state reported | Refusal and no session; never a detached job, in-process subagent or serial in-place work. A start dialog reports `entry_submitted: false`, `blocked`. With `resume`, the entry is resubmitted in the same session only when it is `idle` or `done`; a provider that can restarts an exited Host in place first (Herdr), and one that cannot refuses (`state_refused`, herdr-core) so the caller creates a new session. `env` sets extra Host environment at creation |
-| `sendInstruction` | Owned handle; the adapter observes `idle` or `done` (a finished turn not yet seen) immediately before sending; the Parent recorded the instruction first (`lane_instruction` accepted) | Delivered, with the state after delivery | Any other state: `state_refused`, nothing sent |
+| `createSession` | Session `cwd`; one explicit entry; label ≤ 32 characters | Exactly one live session rooted in `cwd`, the entry submitted once, state reported | Refusal and no session; never a detached job, in-process subagent or serial in-place work. A start dialog reports `entry_submitted: false`, `blocked`. With `resume`, the entry is resubmitted in the same session only when it is `idle` or `done`; a provider that can restarts an exited Host in place first (Herdr), and one that cannot refuses (`state_refused`, herdr-core) so the caller creates a new session. `env` sets extra Host environment at creation |
+| `sendInstruction` | Owned handle; the adapter observes `idle` or `done` (a finished turn not yet seen) immediately before sending | Delivered, with the state after delivery | Any other state: `state_refused`, nothing sent |
 | `awaitTransition` | Owned handle | Returns once the session is not `working` (at once if it already is not): `changed`, `exited`, `timeout` or `events_lost` | `timeout` and `exited` carry `unknown`; `exited` is a process signal, never a verdict or settlement. An aborted signal ends the wait as `timeout` and terminates any provider process it started |
 | `readOutput` | Owned handle | Text labelled `visible` or `scrollback` | For people only; never progress evidence |
 | `observeState` | Owned handle | State and provenance | No readable state is `unknown`, never an invented `idle` or `done` |
 | `stopSession` | Owned handle | Soft interrupt, then the provider's hard stop | Foreign handle: `not_owned` |
-| `closeSession` | Owned handle (retired batch-record rule, Spec unified-lane-sessions D11: `closeWithProof` owns closure; `session_closes`/`closeRecordUnproven` retired) | Session resources released; the Lane and its branch untouched | Foreign handle: `not_owned` |
+| `closeSession` | Owned handle (`closeWithProof` owns proven closure) | Session resources released; the working directory and its branch untouched | Foreign handle: `not_owned` |
 | `reconcile` | The caller's own handles | The last known state of each | A foreign handle is listed `unknown` with `refused: not_owned`; there is no "all sessions" listing |
 | `findSession` | Caller-chosen `session_key` (`[a-z0-9-]{1,64}`) | Live handle bound to the key, or `not_found` | Unknown key: `not_found` |
-| `closeWithProof` | Owned handle bound to `session_key` | Idempotent proven exit (`exited` bound to `(handle, key)`); owns two-tier per-child Lane cleanup with `lane_removed`/`batch_lane_retained` | Mismatched key or superseded handle: `not_owned`, nothing closed |
-
-Two-tier proof-based cleanup (Spec unified-lane-sessions D11): for every
-integrated child, `advanceBatch` calls `closeWithProof(handle, key)`; only a
-proven `exited` plus clean-Lane Git checks removes the worktree and
-`imm-lane/<slug>/<task_id>` (`lane_removed`), otherwise `batch_lane_retained`.
-The batch branch is deleted only after whole-batch `checkout_delivery` success.
+| `closeWithProof` | Owned handle bound to `session_key` | Idempotent proven exit (`exited` bound to `(handle, key)`) | Mismatched key or superseded handle: `not_owned`, nothing closed |
 
 ### Optional capabilities
 
-A missing optional capability takes its degrade path, and the degrade is stated in the tick or batch report. `admitSessionProvider` names the missing ones.
+A missing optional capability takes its degrade path, and the degrade is stated in the `imm-session` result. `admitSessionProvider` names the missing ones.
 
 | Capability | Degrade when absent |
 | --- | --- |
@@ -47,12 +41,12 @@ A missing optional capability takes its degrade path, and the degrade is stated 
 | `sendKeys` | Hard stop only |
 | `subscribeEvents` | List and get reconciliation; `events_lost` stays part of the port |
 | `snapshot` | `reconcile`; a mismatch is `unknown` and wakes the user |
-| `manageWorktree` | The Lane's own provisioning (`lane-steward`) |
+| `manageWorktree` | None: the session runs in the caller's existing working directory |
 | `reportState` | Provider detection only; a provider whose only state source is self-report must declare it in the admission matrix |
 | `attachSession` | No effect on Parent scheduling; `imm-session attach` refuses with `provider_unavailable` |
 | `runCommand` | A command (not an agent) runs in a new watched session and returns its exit status once finished. Without it, a caller runs the command as a plain process; `imm-session run` refuses with `provider_unavailable` |
 
-The port carries no result. A caller that needs one from a session uses the result slot (`runtime/session_result_slot.ts`, ADR 0038 addendum #565 and its receipt-submission addendum): `<cwd>/.imm/state/sessions/<id>/` inside the session's own working directory, ignored by its own `*` file, holding the caller's brief and one result file. On Claude Code and Antigravity the runtime writes that file through the Immune-Brain MCP tool submit_session_result, because a Lane worktree under `.git/` refuses an agent write; Pi's reviewer writes it with its own tool. The caller reads the result after the session is idle or done and validates it; release removes the slot. The slot is not a port capability and no provider implements it: the Parent runs the session commands, handles are opaque and never persisted, and every provider's session already runs in its `cwd`, so reading a file there needs no provider.
+The port carries no result. A caller that needs one from a session uses the result slot (`runtime/session_result_slot.ts`, ADR 0038 addendum #565 and its receipt-submission addendum): `<cwd>/.imm/state/sessions/<id>/` inside the session's own working directory, ignored by its own `*` file, holding the caller's brief and one result file. On Claude Code and Antigravity the runtime writes that file through the Immune-Brain MCP tool submit_session_result, because a worktree under `.git/` refuses an agent write; Pi's reviewer writes it with its own tool. The caller reads the result after the session is idle or done and validates it; release removes the slot. The slot is not a port capability and no provider implements it: the Parent runs the session commands, handles are opaque and never persisted, and every provider's session already runs in its `cwd`, so reading a file there needs no provider.
 
 ### Refusal codes
 
@@ -75,7 +69,7 @@ imm-session <verb> --provider herdr|herdr-core [options]
   reconcile <handle>...
 ```
 
-Each call admits and probes the provider, runs one verb and prints one JSON object. `await` over several handles returns the first transition with its `handle` (a shared `timeout` names none) and aborts the other waits, terminating their provider processes before it exits; this lets a Parent Host that a background command cannot re-invoke (Pi) wait for all its Lanes in the foreground, in bounded rounds. Exit `0` on success, `1` on a refusal, `2` on a usage error.
+Each call admits and probes the provider, runs one verb and prints one JSON object. `await` over several handles returns the first transition with its `handle` (a shared `timeout` names none) and aborts the other waits, terminating their provider processes before it exits; this lets a Parent Host that a background command cannot re-invoke (Pi) wait for all its sessions in the foreground, in bounded rounds. Exit `0` on success, `1` on a refusal, `2` on a usage error.
 
 ## Provider mapping
 
@@ -146,16 +140,16 @@ On `herdr`, all three Hosts pass G1, G2 and G4. G3 holds for workspace trust (Cl
 
 ## Invariants
 
-- The Kernel, the batch runtime, the Host adapters and the `lane-steward` import nothing from `runtime/session/`; only the CLI router does.
+- The Kernel and the Host adapters import nothing from `runtime/session/`; only the CLI router does.
 - Only `runtime/session/herdr_provider.ts` spawns `herdr`, and no packaged contract spells a `herdr` command.
-- No session handle or heartbeat is written to the batch record.
+- No session handle or heartbeat is written to Kernel state.
 - An instruction reaches only an `idle` or `done` session; a dialog is never answered by the Parent.
 - `unknown` is a wake and ordering signal only, never terminal proof.
-- `error` is never terminal proof either: the batch reconciler closes an `error` session with proof and opens the next generation at most twice per Kernel `record_revision`, then parks the child `lane_executor_error` (workflow-friction-simplification D3.2).
+- `error` is never terminal proof either: the caller closes an `error` session with proof before opening another.
 
 ## Side Effects
 
-The Herdr adapter creates tabs in the Parent's own workspace, starts Host processes there, submits text and keys to panes it owns, and closes panes or tabs it owns. The herdr-core adapter runs each Executor Host's `--version`, starts one labelled terminal per session on the local core, submits text and keys to terminals carrying its token, and kills and removes them. Neither writes a file or any Kernel or batch state.
+The Herdr adapter creates tabs in the Parent's own workspace, starts Host processes there, submits text and keys to panes it owns, and closes panes or tabs it owns. The herdr-core adapter runs each Executor Host's `--version`, starts one labelled terminal per session on the local core, submits text and keys to terminals carrying its token, and kills and removes them. Neither writes a file or any Kernel state.
 
 ## Verification
 
@@ -171,7 +165,7 @@ The Herdr adapter creates tabs in the Parent's own workspace, starts Host proces
 6. Structured results: none means the file protocol (the result slot in the session cwd, written by the session on Pi and by the runtime on Claude Code and Antigravity).
 7. Event durability: how loss is detected and what reconciles it.
 8. Ownership: which sessions it may close; a rule that the user's own sessions are never closed.
-9. Worktrees: none means the Lane's own provisioning.
+9. Worktrees: none means the caller's existing working directory.
 10. Multiple machines: remote sessions, addressing, disconnection.
 11. Versioning: a versioned, self-describing API; unknown methods fail closed.
 12. Conformance: the suite above, then a live run on the real provider.

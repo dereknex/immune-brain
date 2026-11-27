@@ -3,7 +3,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { batchConfigErrors, resolveConfig } from "../plugins/immune-brain/runtime/config/layered_config.ts";
+import { resolveConfig } from "../plugins/immune-brain/runtime/config/layered_config.ts";
 import { migrateConfig } from "../plugins/immune-brain/runtime/config/migrate.ts";
 
 // ADR 0041: two layers (project `.imm/config.json` over the user file) resolve
@@ -28,14 +28,11 @@ const write = (root: string, path: string, data: unknown) => { mkdirSync(join(ro
 const fake = { kind: "fake", answers: {} };
 type Config = ReturnType<typeof resolveConfig>;
 const errorAt = (c: Config, key_path: string) => c.diagnostics.find((d) => d.severity === "error" && d.key_path === key_path);
+const errors = (c: Config) => c.diagnostics.filter((d) => d.severity === "error");
 
 const PLAIN: Array<[string, (v: unknown) => object, unknown, unknown, unknown, (c: Config) => unknown]> = [
 	["initiative_carrier", (v) => ({ initiative_carrier: v }), "local", "github", null, (c) => c.initiative_carrier],
 	["review_verifier", (v) => ({ review_verifier: v }), "on", "off", "off", (c) => c.review_verifier],
-	["session_providers", (v) => ({ session_providers: v }), ["herdr-core"], ["herdr", "herdr-core"], ["herdr"], (c) => c.session_providers],
-	["batch.max_parallel", (v) => ({ batch: { max_parallel: v } }), 3, 5, 1, (c) => c.batch.max_parallel],
-	["batch.final_verification", (v) => ({ batch: { final_verification: v } }), ["bun test"], ["bun run typecheck"], null, (c) => c.batch.final_verification],
-	["batch.single_task_final_verification", (v) => ({ batch: { single_task_final_verification: v } }), ["bun test"], ["bun run typecheck"], null, (c) => c.batch.single_task_final_verification],
 ];
 
 test.each(PLAIN)("%s resolves project over user over default", (_key, set, userValue, projectValue, fallback, get) => {
@@ -51,12 +48,6 @@ test.each(PLAIN)("%s resolves project over user over default", (_key, set, userV
 test.each([
 	["initiative_carrier", { initiative_carrier: "gitlab" }, { initiative_carrier: "local" }, (c: Config) => c.initiative_carrier, { value: "local", source: "user" }],
 	["review_verifier", { review_verifier: true }, {}, (c: Config) => c.review_verifier, { value: "off", source: "default" }],
-	["session_providers", { session_providers: [] }, { session_providers: ["herdr-core"] }, (c: Config) => c.session_providers, { value: ["herdr-core"], source: "user" }],
-	["batch.max_parallel", { batch: { max_parallel: 9 } }, { batch: { max_parallel: 8 } }, (c: Config) => c.batch.max_parallel, { value: 8, source: "user" }],
-	["batch.max_parallel", { batch: { max_parallel: 0 } }, {}, (c: Config) => c.batch.max_parallel, { value: 1, source: "default" }],
-	["batch.final_verification", { batch: { final_verification: [""] } }, {}, (c: Config) => c.batch.final_verification, { value: null, source: "default" }],
-	["batch.single_task_final_verification", { batch: { single_task_final_verification: "bun test" } }, {}, (c: Config) => c.batch.single_task_final_verification, { value: null, source: "default" }],
-	["batch.single_task_final_verification", { batch: { single_task_final_verification: Array(9).fill("bun test") } }, {}, (c: Config) => c.batch.single_task_final_verification, { value: null, source: "default" }],
 ] as const)("an invalid project %s counts as unset and falls to the next layer with an error", (key, project, user, get, expected) => {
 	const f = fixture();
 	f.user(user);
@@ -75,7 +66,6 @@ test.each([["user"], ["project"]] as const)("a retired %s herdr key warns once w
 		expect(warnings).toHaveLength(1);
 		expect(warnings[0]).toMatchObject({ code: "retired_key", severity: "warning", key_path: "herdr" });
 		expect(c.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
-		expect(batchConfigErrors(c)).toEqual([]);
 		expect("herdr" in c).toBe(false);
 	}
 });
@@ -87,13 +77,20 @@ test("an unknown top-level key is still a config_invalid error", () => {
 	expect(errorAt(c, "unknown_top_key")).toMatchObject({ code: "config_invalid", file: f.userPath });
 });
 
-test.each([[[]], [["process"]], [["fake"]], [["herdr", "herdr"]], ["herdr"]] as const)("an invalid session_providers %p is a blocking config_invalid error", (value) => {
+// ADR 0043 Slice 3 retired the unattended batch: a stored `batch` or `session_providers` key
+// is never silently ignored; it is config_invalid in either file until `config migrate --write` strips it.
+test.each([
+	["user", { batch: { max_parallel: 2 } }, "batch"],
+	["project", { batch: { final_verification: ["bun test"] } }, "batch"],
+	["user", { session_providers: ["herdr"] }, "session_providers"],
+	["project", { session_providers: ["herdr-core"] }, "session_providers"],
+] as const)("a retired %s %p key is config_invalid and never resolved", (layer, data, key) => {
 	const f = fixture();
-	f.user({ session_providers: value });
+	if (layer === "user") f.user(data); else f.project(data);
 	const c = f.read();
-	expect(c.session_providers).toEqual({ value: ["herdr"], source: "default" });
-	expect(errorAt(c, "session_providers")).toMatchObject({ code: "config_invalid", file: f.userPath });
-	expect(batchConfigErrors(c).length).toBeGreaterThan(0);
+	expect(errorAt(c, key)).toMatchObject({ code: "config_invalid", file: layer === "user" ? f.userPath : f.projectPath });
+	expect(c).not.toHaveProperty("batch");
+	expect(c).not.toHaveProperty("session_providers");
 });
 
 test.each([
@@ -107,14 +104,14 @@ test.each([
 	const error = errorAt(c, "contract")!;
 	expect(error).toMatchObject({ code: "config_invalid", file: layer === "user" ? f.userPath : f.projectPath });
 	expect(error.message).toContain("imm-kernel config migrate");
-	expect(batchConfigErrors(c)).toContainEqual(error);
 });
 
 test.each([
 	["malformed", "{", "$"], ["wrong contract", '{"contract":"bad"}', "contract"],
 	["retired projects key", JSON.stringify({ contract: USER, projects: { "github.com/O/R": { initiative_carrier: "local" } } }), "projects"],
 	["retired lanes key", JSON.stringify({ contract: USER, lanes: { active: "x" } }), "lanes"],
-	["unknown nested key", JSON.stringify({ contract: USER, batch: { mystery: true } }), "batch.mystery"],
+	["unknown nested key", JSON.stringify({ contract: USER, agents: { mystery: true } }), "agents.mystery"],
+	["retired batch key", JSON.stringify({ contract: USER, batch: { max_parallel: 2 } }), "batch"],
 	// ADR 0043: the retired Loop keys are unknown, and a pasted token inside one is never echoed.
 	["retired decision_models key", JSON.stringify({ contract: USER, decision_models: { profiles: { x: { kind: "clef", token_env: "sk-live-123" } } } }), "decision_models"],
 	["retired loop key", JSON.stringify({ contract: USER, loop: { mode: "off" } }), "loop"],
@@ -170,22 +167,21 @@ test("external_approval defaults to false and takes the stricter value across la
 });
 
 // ADR 0043 retired the Loop daemon: a top-level `loop` or `decision_models` key in either file is
-// config_invalid and blocks the batch, and the effective configuration carries neither.
-test("a retired loop or decision_models key is config_invalid in either file and blocks the batch", () => {
+// config_invalid, and the effective configuration carries neither.
+test("a retired loop or decision_models key is config_invalid in either file", () => {
 	const f = fixture();
 	f.user({ decision_models: {} });
 	f.project({ loop: { mode: "off" } });
 	const c = f.read();
 	expect(errorAt(c, "decision_models")).toMatchObject({ code: "config_invalid", file: f.userPath });
 	expect(errorAt(c, "loop")).toMatchObject({ code: "config_invalid", file: f.projectPath });
-	expect(batchConfigErrors(c).map((d) => d.key_path).sort()).toEqual(["decision_models", "loop"]);
+	expect(errors(c).map((d) => d.key_path).sort()).toEqual(["decision_models", "loop"]);
 	expect(c).not.toHaveProperty("loop");
 	expect(c).not.toHaveProperty("decision_models");
 	f.user({});
 	f.project({});
 	const clean = f.read();
 	expect(clean.diagnostics).toEqual([]);
-	expect(batchConfigErrors(clean)).toEqual([]);
 });
 
 test("the project file is read untracked, and a linked worktree reads the main checkout's file", () => {
@@ -210,37 +206,16 @@ test("retired legacy sources are no longer read", () => {
 	writeFileSync(join(f.root, "AGENTS.md"), "- Git integration: auto\n- Initiative carrier default: local\n");
 	execFileSync("git", ["add", "AGENTS.md", ".imm/decision-bindings.json"], { cwd: f.root });
 	const c = f.read();
-	expect(c.batch.max_parallel).toEqual({ value: 1, source: "default" });
 	expect(c.git_integration).toEqual({ value: "manual", source: "default" });
 	expect(c.initiative_carrier).toEqual({ value: null, source: "default" });
 	expect(c.diagnostics).toEqual([]);
 });
 
-test("batchConfigErrors counts agents, batch, session_providers, unknown top-level and whole-file errors", () => {
-	const f = fixture();
-	for (const [data, blocks] of [
-		[{ agents: { executor: "codex" } }, true],
-		[{ batch: { max_parallel: 9 } }, true],
-		[{ session_providers: [] }, true],
-		[{ session_providers: ["fake"] }, true],
-		[{ herdr: "yes" }, false],
-		[{ herdr: true }, false],
-		[{ loop: { mode: "always" } }, true],
-		[{ initiative_carrier: "gitlab" }, false],
-		[{ decision_models: {} }, true],
-	] as const) {
-		f.user(data);
-		expect({ data, blocks: batchConfigErrors(f.read()).length > 0 }).toEqual({ data, blocks });
-	}
-	writeFileSync(f.userPath, "{");
-	expect(batchConfigErrors(f.read())).toContainEqual(expect.objectContaining({ key_path: "$" }));
-});
-
 test("CLI config --json prints the v2 effective configuration and exits on errors", () => {
 	const f = fixture(), configHome = join(temp, "xdg"); mkdirSync(join(configHome, "immune-brain"), { recursive: true });
-	f.project({ batch: { max_parallel: 2 }, agents: { executor: "pi:project-model" } });
+	f.project({ agents: { executor: "pi:project-model" } });
 	const userPath = join(configHome, "immune-brain/config.json");
-	writeFileSync(userPath, JSON.stringify({ contract: USER, session_providers: ["herdr-core"] }));
+	writeFileSync(userPath, JSON.stringify({ contract: USER, review_verifier: "on" }));
 	const cli = resolve("plugins/immune-brain/bin/imm-kernel");
 	const env = { ...process.env, XDG_CONFIG_HOME: configHome };
 	const run = () => spawnSync(cli, ["config", "--json"], { cwd: f.root, encoding: "utf8", env });
@@ -249,12 +224,16 @@ test("CLI config --json prints the v2 effective configuration and exits on error
 	expect(parsed.contract).toBe("immune_brain/effective_config/v2");
 	expect(parsed).not.toHaveProperty("loop");
 	expect(parsed).not.toHaveProperty("decision_models");
-	expect(parsed.batch.max_parallel).toEqual({ value: 2, source: "project" });
-	expect(parsed.session_providers).toEqual({ value: ["herdr-core"], source: "user" });
+	expect(parsed).not.toHaveProperty("batch");
+	expect(parsed).not.toHaveProperty("session_providers");
+	expect(parsed.review_verifier).toEqual({ value: "on", source: "user" });
 	expect(parsed).not.toHaveProperty("herdr");
 	expect(parsed.agents.roles.executor).toEqual({ host: "pi", model: "project-model", effort: null, source: "project" });
 	expect(parsed).not.toHaveProperty("project_key");
 	expect(parsed).not.toHaveProperty("lanes");
+	f.project({ batch: { max_parallel: 2 } });
+	result = run(); expect(result.status).toBe(1);
+	expect(JSON.parse(result.stdout).diagnostics).toContainEqual(expect.objectContaining({ code: "config_invalid", key_path: "batch" }));
 	f.project({});
 	writeFileSync(userPath, JSON.stringify({ contract: USER, agents: { executor: "constructor" } }));
 	result = run(); expect(result.status).toBe(1); expect(JSON.parse(result.stdout).diagnostics.some((d: { code: string }) => d.code === "unknown_profile")).toBe(true);
@@ -306,13 +285,11 @@ test("config migrate rewrites v1 user and project files as v2: dry run writes no
 			profiles: { opus: { host: "claude-code", model: "opus-5-5", effort: "medium" }, sonnet: { host: "claude-code", model: "sonnet-5-5" } },
 			executor: "sonnet", reviewer: "opus", planner: "opus", triage: "sonnet",
 		},
-		batch: { max_parallel: 2 },
 		git_integration: "manual",
 	};
 	const projectAfter = {
 		contract: PROJECT,
 		agents: { executor: "opus" },
-		batch: { max_parallel: 4, final_verification: ["bun test"] },
 		review_verifier: "on",
 		initiative_carrier: "local",
 	};
@@ -321,7 +298,7 @@ test("config migrate rewrites v1 user and project files as v2: dry run writes no
 	const report = migrateConfig(f.root, { userConfigPath: userPath });
 	expect(report.user).toMatchObject({ path: userPath, before: v1User, after: userAfter, changed: true });
 	// ADR 0043: no v1 decision_models or loop value is synthesized into v2.
-	for (const after of [report.user.after, report.project.after]) for (const retired of ["herdr", "loop", "decision_models"]) expect(after).not.toHaveProperty(retired);
+	for (const after of [report.user.after, report.project.after]) for (const retired of ["herdr", "loop", "decision_models", "batch", "session_providers"]) expect(after).not.toHaveProperty(retired);
 	expect(report.project).toMatchObject({ before: v1Project, after: projectAfter, changed: true });
 	expect(report.written).toBe(false);
 	expect(report.notes.some((n) => n.includes("projects.github.com/X/Y"))).toBe(true);
@@ -356,25 +333,25 @@ test("config migrate rewrites v1 user and project files as v2: dry run writes no
 	expect({ status: usage.status, stderr: usage.stderr }).toEqual({ status: 2, stderr: "usage: imm-kernel config migrate [--write]\n" });
 });
 
-test("config migrate --write deletes stored herdr, loop and decision_models keys from v2 files and preserves every other key", () => {
+test("config migrate --write deletes stored herdr, loop, decision_models, batch and session_providers keys from v2 files and preserves every other key", () => {
 	const f = fixture();
 	const configHome = join(temp, `xdg-retired-${counter}`), userPath = join(configHome, "immune-brain/config.json");
 	mkdirSync(join(configHome, "immune-brain"), { recursive: true });
-	const userBefore = { contract: USER, herdr: true, decision_models: {}, initiative_carrier: "local", agents: { executor: "pi" }, external_approval: true };
+	const userBefore = { contract: USER, herdr: true, decision_models: {}, session_providers: ["herdr"], initiative_carrier: "local", agents: { executor: "pi" }, external_approval: true };
 	const projectBefore = { contract: PROJECT, herdr: false, loop: { mode: "off" }, batch: { max_parallel: 3 }, review_verifier: "on" };
 	writeFileSync(userPath, JSON.stringify(userBefore));
 	writeFileSync(f.projectPath, JSON.stringify(projectBefore));
 	const dry = migrateConfig(f.root, { userConfigPath: userPath });
 	// A v2 external_approval value is kept as written, with no key material added beside it.
 	expect(dry.user.after).toEqual({ contract: USER, initiative_carrier: "local", agents: { executor: "pi" }, external_approval: true });
-	expect(dry.project.after).toEqual({ contract: PROJECT, batch: { max_parallel: 3 }, review_verifier: "on" });
+	expect(dry.project.after).toEqual({ contract: PROJECT, review_verifier: "on" });
 	expect(dry.user.changed).toBe(true);
 	expect(dry.project.changed).toBe(true);
 	expect(readFileSync(userPath, "utf8")).toBe(JSON.stringify(userBefore));
 	const wrote = migrateConfig(f.root, { userConfigPath: userPath, write: true });
 	expect(wrote.written).toBe(true);
 	expect(JSON.parse(readFileSync(userPath, "utf8"))).toEqual({ contract: USER, initiative_carrier: "local", agents: { executor: "pi" }, external_approval: true });
-	expect(JSON.parse(readFileSync(f.projectPath, "utf8"))).toEqual({ contract: PROJECT, batch: { max_parallel: 3 }, review_verifier: "on" });
+	expect(JSON.parse(readFileSync(f.projectPath, "utf8"))).toEqual({ contract: PROJECT, review_verifier: "on" });
 	expect(resolveConfig(f.root, { userConfigPath: userPath }).diagnostics).toEqual([]);
 });
 
