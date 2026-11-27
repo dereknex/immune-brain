@@ -232,7 +232,7 @@ async function runKernelCli(args: string[], root: string): Promise<{
 	}
 	return {
 		stdout: "",
-		stderr: "invalid_kernel_command: imm-kernel supports intent author|validate, migrate --storage-layout, status --json, inspect [--task <task-id> [--run <run-id>]] --json, approve <task-id> --json, and audit --legacy only\n",
+		stderr: "invalid_kernel_command: imm-kernel supports intent author|validate, migrate --storage-layout [--retire-legacy-batches], status --json, inspect [--task <task-id> [--run <run-id>]] --json, approve <task-id> --json, and audit --legacy only\n",
 		returncode: 2,
 	};
 }

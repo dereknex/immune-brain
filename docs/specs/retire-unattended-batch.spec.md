@@ -1,6 +1,6 @@
 # Spec: Retire Unattended Batch and Restore In-Place Single-Task Drive
 
-- **Initiative**: `retire-unattended-batch` ([docs/initiatives/retire-unattended-batch.md](../initiatives/retire-unattended-batch.md))
+- **Initiative**: `retire-unattended-batch`
 - **Design risk**: `High` (modifies Kernel enrollment/authority seams, Host native confirmation gates across Claude, Antigravity, and Pi, `v2` configuration schema, and deletes the unattended batch / Lane runtime)
 - **Design views**: Architecture layers, Service/component interfaces, Data flow, State transitions
 - **Diagram decision**: `required` (multi-host authority lifecycle and cross-layer dependency cut)

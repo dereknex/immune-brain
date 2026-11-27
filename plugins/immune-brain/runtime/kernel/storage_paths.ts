@@ -55,12 +55,12 @@ export const FILE_STORE_LOCKS_RELATIVE = ".imm/state/locks";
 /** Session observation receipts: inert output, never authority. */
 export const FILE_STORE_OBSERVATIONS_RELATIVE = ".imm/state/observations";
 /**
- * Unattended batch run state (`.imm/state/batches/<batch_id>.json`). It is
- * written by the batch runner, not by the retired file-store writer, so the
- * layout inspector must recognize it instead of failing the worktree closed.
+ * Retired unattended batch run state (`.imm/state/batches/<batch_id>.json`).
+ * Recognized by the layout inspector so surviving ignored files do not fail an
+ * already-migrated worktree closed, and diagnosable/retirable during migration.
  */
 export const BATCH_STATE_RELATIVE = ".imm/state/batches";
-/** Generation records of single-task Lane Executors (Spec drive-always-lanes D4); owned by unattended/batch_state. */
+/** Retired Lane supervisor state directory; kept recognized as non-blocking residue. */
 export const LANE_SUPERVISOR_STATE_RELATIVE = ".imm/state/lane-supervisors";
 /** Session result slots (ADR 0038 addendum #565): transport, never authority. */
 export const SESSION_RESULT_SLOTS_RELATIVE = ".imm/state/sessions";
@@ -188,13 +188,6 @@ export function auditTaskRecordPath(taskId: string): string {
 
 export function auditTerminalProofPath(taskId: string): string {
 	return `${auditTaskDirPath(taskId)}/terminal-proof.json`;
-}
-
-/** Unattended batch run state: `.imm/state/batches/<batch-id>.json`. */
-export function batchStatePath(batchId: string): string {
-	if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(batchId))
-		throw new Error(`invalid batch identity: ${batchId}`);
-	return `${BATCH_STATE_RELATIVE}/${batchId}.json`;
 }
 
 /** Historical v3 machine evidence root under the tracked audit store. */

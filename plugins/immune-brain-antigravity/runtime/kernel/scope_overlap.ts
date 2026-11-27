@@ -4,7 +4,7 @@
 // Interface: `scopesOverlap`, `overlappingScopeEntries`, `projectScopeOverlap`,
 // `dependencyWaves`, `projectParallelGroups`.
 // Side Effects: none.
-// Verification: `bun test tests/unattended-batch-schedule.test.ts`.
+// Verification: `bun test tests/kernel-scope-overlap.test.ts`.
 
 /** Task ids grouped into start waves of the declared dependency graph. */
 type ParallelGroups = string[][];
@@ -87,9 +87,8 @@ export interface ScopeOverlapReport {
 }
 
 /**
- * Compare the `scope_hint` of every pair of Intents of one Initiative. The
- * groups use the same projection the Batch Plan uses, so the Planner's review
- * table and the batch confirmation agree on what runs together.
+ * Compare the `scope_hint` of every pair of Intents of one Initiative and
+ * project declared dependency waves for `imm-kernel intent overlap`.
  */
 export function projectScopeOverlap(children: readonly PlanScheduleChild[]): ScopeOverlapReport {
 	const overlaps: ScopeOverlapReport["overlaps"] = [];
@@ -134,7 +133,7 @@ export function dependencyWaves<T extends { task_id: string; blocked_by: string[
 	return waves;
 }
 
-/** Project the declared dependency graph into start waves for the batch gate. */
+/** Project the declared dependency graph into Initiative dependency waves. */
 export function projectParallelGroups(children: readonly PlanScheduleChild[]): {
 	parallel_groups: ParallelGroups;
 	scope_conflicts: ScopeOverlapConflict[];

@@ -1387,11 +1387,19 @@ function executeKernelCommand(args: string[], root: string): KernelExecution {
 		return runInspect(root, target);
 	}
 	if (command === "migrate") {
-		if (flags.length !== 1 || flags[0] !== "--storage-layout")
+		const validFlags = new Set(["--storage-layout", "--retire-legacy-batches"]);
+		const hasPositional = args.slice(1).some((arg) => !arg.startsWith("-"));
+		const uniqueFlags = new Set(flags);
+		if (
+			hasPositional ||
+			uniqueFlags.size !== flags.length ||
+			!uniqueFlags.has("--storage-layout") ||
+			flags.some((flag) => !validFlags.has(flag))
+		)
 			return {
 				result: errorResult(
 					"invalid_command",
-					"migrate accepts only --storage-layout",
+					"migrate accepts only --storage-layout [--retire-legacy-batches]",
 					2,
 				),
 				journal: journalFor(
@@ -1400,10 +1408,12 @@ function executeKernelCommand(args: string[], root: string): KernelExecution {
 					"rejected",
 					"invalid_command",
 					null,
-					"Run imm-kernel migrate --storage-layout.",
+					"Run imm-kernel migrate --storage-layout [--retire-legacy-batches].",
 				),
 			};
-		return runStorageLayoutMigration(root);
+		return runStorageLayoutMigration(root, {
+			retireLegacyBatches: uniqueFlags.has("--retire-legacy-batches"),
+		});
 	}
 	if (command === "audit") {
 		if (args.length !== 2 || args[1] !== "--legacy")
@@ -1511,7 +1521,10 @@ function executeKernelCommand(args: string[], root: string): KernelExecution {
  * Mutating commands keep their fail-closed gate; this is the command that
  * resolves it.
  */
-function runStorageLayoutMigration(root: string): KernelExecution {
+function runStorageLayoutMigration(
+	root: string,
+	options?: { retireLegacyBatches?: boolean },
+): KernelExecution {
 	const inspection = inspectStorageLayout(root);
 	// Only a live owner blocks the command. Every other diagnosis is handed to
 	// the migrator, which owns the recovery decisions: an interrupted
@@ -1532,7 +1545,7 @@ function runStorageLayoutMigration(root: string): KernelExecution {
 				"Resolve the reported layout condition, then rerun imm-kernel migrate --storage-layout.",
 			),
 		};
-	const migration = migrateAndCommitLegacyLayout(root);
+	const migration = migrateAndCommitLegacyLayout(root, undefined, options);
 	if (migration.outcome === "migrated" || migration.outcome === "already_migrated")
 		return {
 			result: jsonResult({

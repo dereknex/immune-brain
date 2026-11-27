@@ -126,19 +126,31 @@ describe("current Pi-only contracts", () => {
     expect(chinese).not.toContain("按模型排名");
   });
 
-  it("keeps both READMEs on the runtime-created Lane batch model", () => {
+  it("keeps both READMEs on in-place single-task drive and retired unattended batches", () => {
     for (const path of ["README.md", "README.zh-CN.md"]) {
       const content = readFileSync(resolve(ROOT, path), "utf8");
-      for (const token of ["imm-batch/", "single-branch serial", "serially on one batch branch", "Runs serially by default"]) {
+      for (const token of [
+        "imm-batch/",
+        "single-branch serial",
+        "serially on one batch branch",
+        "Runs serially by default",
+        "start_unattended_batch",
+        "retire_stale_batch",
+        "imm/worktrees/",
+        "imm-lane/",
+        "refs/heads/imm/",
+        "lane-steward",
+        "batch.max_parallel",
+      ]) {
         expect({ path, token, present: content.includes(token) }).toEqual({ path, token, present: false });
       }
+      expect(content).toContain("## Initiatives");
+      expect(content).toContain("docs/adr/0043-loop-daemon-freeze-and-extraction.md");
     }
     const chinese = readFileSync(resolve(ROOT, "README.zh-CN.md"), "utf8");
     for (const token of ["串行批次", "单分支串行", "单工作区串行", "在一个 batch 分支上串行", "在同一 Host 串行执行"]) {
       expect(chinese).not.toContain(token);
     }
-    expect(chinese).toContain("imm/worktrees/<slug>/<task_id>");
-    expect(chinese).toContain("refs/heads/imm/<slug>");
   });
 
   it("documents valid Pi native research subagent invocations", () => {

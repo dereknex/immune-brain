@@ -29,7 +29,7 @@ import {
 	auditTerminalProofPath,
 	inspectStorageLayout,
 } from "./storage_paths";
-import { hasMigrationReceipt, importLegacyWorkspace } from "./sqlite_migration";
+import { hasMigrationReceipt, importLegacyWorkspace, type SqliteImportOptions } from "./sqlite_migration";
 import { commitWorkflowPaths, type WorkflowCommitResult } from "../assurance/workflow_autocommit";
 import { readGitIntegrationPreference } from "../git_integration_preference";
 
@@ -55,7 +55,7 @@ const CONTRACT = "immune_brain/storage_layout_migration_result/v1";
  * layout returns its stable diagnosis with the concrete reason an operator must
  * resolve first.
  */
-export function migrateLegacyLayout(root: string): MigrationOutcome {
+export function migrateLegacyLayout(root: string, options?: SqliteImportOptions): MigrationOutcome {
 	const inspection = inspectStorageLayout(root);
 	const affected = inspection.dirty_affected_paths;
 	/**
@@ -82,7 +82,7 @@ export function migrateLegacyLayout(root: string): MigrationOutcome {
 	 */
 	const finishPublishedImport = (): MigrationOutcome | null => {
 		if (!existsSync(join(root, KERNEL_DB_RELATIVE)) || !hasMigrationReceipt(root)) return null;
-		const finished = importLegacyWorkspace(root);
+		const finished = importLegacyWorkspace(root, undefined, options);
 		if (finished.outcome === "already_imported")
 			return confirmRetired({
 				contract: CONTRACT,
@@ -144,7 +144,7 @@ export function migrateLegacyLayout(root: string): MigrationOutcome {
 			reason: inspection.reason ?? `unsupported storage layout: ${inspection.layout}`,
 		};
 	}
-	const imported = importLegacyWorkspace(root);
+	const imported = importLegacyWorkspace(root, undefined, options);
 	if (imported.uncommitted_evidence.length > 0)
 		return {
 			contract: CONTRACT,
@@ -220,7 +220,11 @@ export function commitPendingMigrationDiff(root: string, signal?: AbortSignal): 
  * no commit: its first pending diff is left in the working tree and reported
  * as `migration_uncommitted` with the affected paths for the user to commit.
  */
-export function migrateAndCommitLegacyLayout(root: string, signal?: AbortSignal): MigrationOutcome & { commits: string[] } {
+export function migrateAndCommitLegacyLayout(
+	root: string,
+	signal?: AbortSignal,
+	options?: SqliteImportOptions,
+): MigrationOutcome & { commits: string[] } {
 	const commits: string[] = [];
 	const affected = new Set<string>();
 	const manual = readGitIntegrationPreference(root).mode === "manual";
@@ -236,7 +240,7 @@ export function migrateAndCommitLegacyLayout(root: string, signal?: AbortSignal)
 		// At most two pending phases: original source dirt, then preserved evidence.
 		for (let phase = 0; phase < 3; phase++) {
 			signal?.throwIfAborted();
-			const migration = migrateLegacyLayout(root);
+			const migration = migrateLegacyLayout(root, options);
 			if (migration.outcome === "migration_uncommitted") {
 				if (manual) return { ...migration, reason: `${migration.reason ?? "the migration diff is uncommitted"}; ${MANUAL_MIGRATION_REASON}`, commits };
 				const tracked = execFileSync("git", ["-C", root, "ls-files", "-z", "--", ".imm"],

@@ -614,8 +614,39 @@ describe("explicit SQLite import of the retired file store (A1)", () => {
 		const outcome = await runMigration(root);
 		expect(outcome.outcome).toBe("invalid");
 		expect(outcome.reason).toMatch(/recoverable batch/);
+		expect(outcome.reason).toContain("--retire-legacy-batches");
+		expect(outcome.reason).not.toContain("settle or stop");
 		expect(existsSync(join(root, ".imm/state/kernel.sqlite"))).toBe(false);
 		expect(existsSync(join(root, ".imm/tasks/2026-08-14-005-old-task.json"))).toBe(true);
+	});
+
+	it("retires nonterminal legacy batches only when --retire-legacy-batches is passed explicitly, and never before core owner checks", async () => {
+		const root = tempRoot();
+		writeLegacyTerminalPair(root, "2026-08-14-005-retire-batch");
+		mkdirSync(join(root, ".imm/state/batches"), { recursive: true });
+		const batchPath = join(root, ".imm/state/batches/batch-1.json");
+		writeFileSync(batchPath, `${JSON.stringify({ contract: "assurance_kernel/batch_run_state/v1", batch_state: "running" }, null, 2)}\n`);
+		commit(root, "legacy evidence and nonterminal batch");
+
+		// A live legacy claim must still block before any batch file is mutated.
+		writeLegacyClaim(root, "task-live");
+		const blockedByClaim = runKernelCommand(["migrate", "--storage-layout", "--retire-legacy-batches"], root);
+		expect(blockedByClaim.returncode).toBe(1);
+		expect(JSON.parse(batchPath ? readFileSync(batchPath, "utf8") : "{}").batch_state).toBe("running");
+		rmSync(join(root, ".imm/tasks/.backend-claim.json"), { force: true });
+
+		// With no live core owner, --retire-legacy-batches supersedes the batch and writes audit evidence.
+		const first = runKernelCommand(["migrate", "--storage-layout", "--retire-legacy-batches"], root);
+		expect(first.returncode).toBe(1);
+		expect(JSON.parse(first.stdout).layout).toBe("migration_uncommitted");
+		const retired = JSON.parse(readFileSync(batchPath, "utf8")) as Record<string, unknown>;
+		expect(retired.batch_state).toBe("superseded");
+		expect(retired.retired_by).toBe("storage_layout_migration");
+
+		commit(root, "preserve evidence");
+		const second = runKernelCommand(["migrate", "--storage-layout"], root);
+		expect(second.returncode).toBe(0);
+		expect(JSON.parse(second.stdout)).toMatchObject({ layout: "ready" });
 	});
 
 	it("keeps the legacy authority untouched when affected paths are dirty", async () => {

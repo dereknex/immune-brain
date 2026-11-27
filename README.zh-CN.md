@@ -14,7 +14,7 @@ Immune-Brain 为 AI 编程工具（**Pi**、**Claude Code** 与 **Antigravity**�
 - **需要严谨时显式启用** — 遇到复杂功能开发或高保证任务时，显式调用 `clarify`、`draw-up` 或 `drive`。
 - **计划变为可追踪的任务**（`TaskIntent` + `TaskRecord`） — 进度落盘持久化（Git + `.imm/`），会话重启或上下文清理后仍可无缝恢复。
 - **质量由代码强制保障** — 自动化 QA 验收与隔离式 Reviewer 审查必须通过，任务才会结算完成。
-- **已就绪的 Initiative 可以通过 Lane 整批运行** — 一次确认的 Batch Authorization 即可无人值守推进整批子任务；容量为 1 时一次运行一个 Lane，更大容量允许 scope 互不重叠的 child 在独立 Git worktree 中并发执行，并通过集成守卫验证。每个 child 依然保持独立的 Enrollment、QA、Review 与结算。
+- **Initiative 按单个 Child 原地逐个推进** — 每个 Child 都在当前 worktree 中经由各自的宿主原生确认完成准入、QA、Review 与结算；无人值守批次运行已退役。
 
 Pi、Claude Code 与 Antigravity（`plugins/immune-brain-antigravity/`）是支持的宿主。未声明的适配器仍不受支持。Claude Code 最低版本为 `2.1.236`（已通过交互式 server-initiated MCP elicitation 验证；`herdr-core` OSC 7501 状态要求 `2.1.295`；CI L1 E2E 锁定版本见 [`tests/e2e/hosts.json`](tests/e2e/hosts.json)）。当前真实 Host 证据见 `docs/verification/claude-native-elicitation-authority-conformance.md`；历史报告归档于 `docs/verification/archive/`；Antigravity 的 Review 边界与原生 gate 行为见 [Antigravity 插件 README](plugins/immune-brain-antigravity/README.md)。
 
@@ -30,7 +30,7 @@ Pi、Claude Code 与 Antigravity（`plugins/immune-brain-antigravity/`）是支�
 - [核心设计哲学：把“判断”变成“查表”](#核心设计哲学把判断变成查表用确定性工程驾驭多模型)
 - [9 个 Skills](#9-个-skills)
 - [生命周期](#生命周期)
-- [无人值守批次运行](#无人值守批次运行)
+- [Initiatives](#initiatives)
 - [配置](#配置)
 - [项目结构](#项目结构)
 - [常见问题](#常见问题)
@@ -151,7 +151,7 @@ Immune-Brain 提供两种清晰的工作模式：日常轻量编码走 **Host-na
 | 目标明确，需要正规计划与规格 | `/draw-up` "规划一下深色模式功能" | → `draw-up` 产出 `TaskIntent` + Spec，包含可执行验收条件 |
 | 计划已确认，准备执行与验证 | `/drive` | → Executor 在范围内实现 → 确定性 QA 验收 → 隔离 Review 审查 → 任务结算 |
 | 会话中断或需恢复未完成任务 | `/drive` | → 从磁盘状态（`.imm/`）无缝恢复，以 Kernel projection 为准 |
-| 已发布的 Initiative 通过 Lane 批次推进 | "无人值守跑完 initiative `<slug>`"（可指定 `--max-parallel 4` 或使用 `~/.config/immune-brain/config.json` 中的 Lane profile） | → Host 的 `start_unattended_batch`：一次原生确认绑定 plan digest。容量为 1 时一次运行一个 Lane；更大的 `max_parallel` 允许 scope 互不重叠的 child 在独立 Git worktree 中并发执行 |
+| 多任务 Initiative 已就绪待实现 | 按顺序逐个执行 `/drive <Child Issue>` | → 在前置任务结算后于当前 worktree 原地准入并推进单个 Child；不再提供无人值守批次 |
 | 跨 Host 协作（Claude 规划 + Pi 编码） | 在 Claude Code 中调 `/draw-up`，切到 Pi 输入 `/drive` | → Spec 与 TaskIntent 共享于 Git，Pi 原生弹窗准入并执行 QA/Review 闭环 |
 | PR 被评论 / CI 挂了 | 对该 PR 使用 `/fix-pr` | → 独立修复：在当前 PR 内针对性修复，不创建新 managed 任务 |
 | 文档过时需要清理 | `/prune-docs` | → 只读审计过时文档，仅删除经哈希审批的条目 |
@@ -585,7 +585,6 @@ flowchart TD
    - **按险定级与确定性兜底**：`routine` 仅需 QA；`material`/`critical` 必须追加独立只读 Reviewer 产出结构化裁决。触碰核心权威路径强制定级为 `material`。
    - **反证机制 (Live Refutation)**：主观 Review finding 可由真实通过的新鲜 QA 证据反证驳回；代码发生改动后反证自动失效并重新阻塞。
    - **不可变审计落盘**：任务结项时，完整的 `TaskRecord`、Git blob 打包的 `ReviewBundle`、QA Attestation 凭证原子沉淀至 `.imm/audit/<task-id>/` 并受 Git 追踪。
-   - **批处理与多 Lane 并行 (Unattended Batch & Parallel Lanes)**：基于 GitHub Issue / `plan_digest` 推进。所有批次都使用 runtime 创建的 Lane：容量为 1 时一次运行一个 Lane，更大容量允许 scope 互不重叠的 child 在独立 Git worktree 中并发执行。集成守卫（Integration Guard）在候选提交上重跑确定性验收命令，通过后再 fast-forward Parent ref。
 
 核心不变量：
 
@@ -593,78 +592,15 @@ flowchart TD
 - **范围（`scope_hint`）在 enrollment 时冻结**，范围外文件被物理忽略与拦截。
 - **先记录证据再关闭** — 只有 QA 能关闭步骤。
 - **Finding 必须携带证据** — 被反证的 Review finding 只在绑定它的 QA 证据对当前 revision、intent hash 与 diff 仍然新鲜时压制工作；证据过期后 finding 重新阻塞，且这个失效过程不重写任何已存状态。
-- **批次必须显式授权且有边界** — 只有你确认 Host 的 `start_unattended_batch` 之后才存在无人值守批次；每个 child 仍各自 Enrollment、QA、Review 与结算。
 - **Advisory 不实现，执行不自审。**
 
 ---
 
-## 无人值守批次运行
+## Initiatives
 
-输入 `drive <Parent Issue>`，会自动选择完整已批准计划，通过 Host 的 `start_unattended_batch` 和 native 授权执行。输入 `drive <Slice/Child Issue>` 则先检查前置交付，只执行该 Slice，不启动前置或兄弟任务。
+无人值守批次运行及其 Lane 已退役（[ADR 0043](docs/adr/0043-loop-daemon-freeze-and-extraction.md) Slice 3）。每一次新的单任务 `drive` 均通过当前 Host 的原生确认在当前 worktree 原地完成准入（Enrollment）。多任务 Initiative 一次推进一个 Child：待前置任务结算并合入后输入 `drive <Child Issue>`（或该 Child 的 TaskIntent）；不会自动启动兄弟或前置任务。Parent Issue 不是执行入口。
 
-所有新批次都使用 **runtime 创建的 Lane**。省略 `max_parallel` 或显式设置 `max_parallel: 1` 都一次运行一个 Lane；更大的值允许 scope 互不重叠的 child 并发执行。Parent 在确认前根据依赖、scope 冲突及受监督 Host 能力选择容量。缺少受监督的 Executor 时，Parent 会报告阻塞。状态询问保留运行绑定，显式取消解除续接。
-
-### 1. 批次运行模式概览
-
-- **开启方式：** 调用 `start_unattended_batch(slug)` 使用容量 1，或传入 `max_parallel` / 在用户配置文件的 Lane profile 中设定 `max_parallel`。
-- **工作区拓扑：** runtime 在 Git common directory 下的 `imm/worktrees/<slug>/<task_id>` 为每个 child 创建 worktree，使用 `imm-lane/<slug>/<task_id>` 分支；Parent 进度保存在 `refs/heads/imm/<slug>`，不切换协调者的 checkout。
-- **Authority 边界：** 每个 Lane 都有自己的 Authority Store、Enrollment、QA、Review 与结算。
-- **集成机制：** runtime 提交 scope 内的交付，重跑 Integration Guard 验收命令，并在准入依赖任务前 fast-forward Parent ref。
-- **退役记录：** 以 Parent slug 作为 `task_id` 查询 status，可以读取 `batch.record` 中持久化的批次身份、状态及 child 进度，包括 v1 串行记录。这些只是只读证据；缺少 Parent TaskRecord 不会隐藏记录，也不会授予执行权限。`retire_stale_batch` 显式退役 active 记录。恢复旧记录会以 `batch_record_shape_retired` 拒绝；旧串行运行器与计划重新确认路径已移除。
-
-### 2. 批次授权与运行红线
-
-- **入口显式且单一授权：** Parent 入口直接调用 `start_unattended_batch`；独立 Task 和 Child 走单任务 Enrollment。critical-only 和 delivered-only Parent 使用单任务 native gate 和最终验证观察，不制造空批次授权。调用时由原生 gate（Pi TUI 弹窗或 Claude MCP elicitation）一次性展示有序任务清单与全局 `plan_digest`，用户的单次确认即为整批执行提供完备授权。
-- **Child Authority 守恒：** 批次仅代表授权范围的聚合，绝非降低工程标准。每个 child 依然由 Kernel 单独执行 Enrollment、物理 Scope 冻结、真实子进程 QA、隔离 Review 与独立的 `TaskRecord` 结算。批次只是一次授权的覆盖范围，不是新的授权层级。
-- **确定性执行边界：** 普通 child 使用批次授权，已就绪的 `critical` child 单独 native Enrollment。普通失败自动进行有界修复；阻塞只停放其依赖分支，独立任务继续。所有必需交付集成、最终 HEAD 验证通过后才报告 Parent 成功并关闭 Issue；结算后发现的代码缺陷先生成、验证修复候选，再打开新的 native Enrollment。批次运行器不擅自 push、不开 PR、不代替用户结算决策。
-
-### 3. 多 Lane 并行流水线与架构（Parallel Batch Lanes）
-
-在所有容量下，Coordinator（Parent Host）、runtime 与 Lane Executor Host（执行宿主）共同协调隔离执行：
-
-```mermaid
-sequenceDiagram
-    participant P as Coordinator (Parent Host)
-    participant B as Batch Runtime
-    participant S as lane-steward 角色
-    participant L as Lane Executor Host (Pi / Claude)
-    participant K as Lane Kernel (独立 Store)
-
-    Note over P,B: 1. 拓扑分析与并发调度 (Schedule)
-    P->>B: start_unattended_batch(slug, max_parallel)
-    B-->>P: handoffs: 调度准备 (provision Lane A, Lane B)
-
-    Note over P,S: 2. 物理隔离 Worktree 分配 (Provision & Admit)
-    P->>S: 调度创建 worktree (分支 imm-lane/..., 基线 batch base)
-    S-->>P: 返回独立 worktree 路径
-    P->>B: 提交 lane_offers 准入校验 (无重叠/干净度/基线校验)
-
-    Note over P,L: 3. 监督式并行执行 (Supervised Execution)
-    B-->>P: handoffs: 启动 Executor A, Executor B
-    P->>L: 拉起独立后台会话执行 drive (支持配置不同 Host/模型)
-    L->>K: 独立运行: Scope 冻结 -> 确定性 QA -> 隔离 Review -> 结算
-
-    Note over P,B: 4. 集成守卫与主分支快进 (Integration Guard & Fast-Forward)
-    L-->>P: 某个 Lane 结束通知
-    P->>B: 协调者推进 (reconcile)
-    B->>K: 读取 Lane 结算凭证与 commit
-    B->>B: 构建候选 commit + 重跑集成守卫 (自身与已集成兄弟描述符)
-    B->>B: Fast-forward 主批次分支 (1 child 1 commit)
-    B-->>P: handoffs: release Lane A / provision 新就绪 Lane C
-```
-
-#### 并行执行的核心机制：
-
-1. **按 Scope 互斥拓扑调度 (Scope-Disjoint Scheduling)**：
-   Coordinator 实时计算任务依赖图与路径重叠度。仅当任务的前置依赖已全部集成，且其 `scope_hint` 与当前所有进行中（in-flight）Lane 的路径集合**在物理上完全无交集**时，才允许并发派发；存在路径重叠的任务自动排队，直到前序冲突 Lane 集成完毕。
-2. **监督式会话生命周期 (Supervised Host Sessions)**：
-   Parent Host 为每个 Lane 拉起独立的 Executor Host 进程（支持跨 Host 与模型档位配置，如 Pi 或 Claude Code）。Parent 监控会话退出事件，会话结束即触发下一轮协调；Parent 不轮询、不猜测终端输出。当 Parent 运行在 Herdr 内时，会为每个 Lane 的 Executor Host 开一个独立 tab，且绝不会替开发者回答其中的信任、登录或权限对话框。
-3. **集成守卫与候选验证 (Integration Guard)**：
-   为防止并发修改产生隐式冲突，Lane 结算后不会盲目合入主分支。Coordinator 在 Git plumbing 层面构建候选提交，并在候选树上**重跑当前任务以及自其分叉以来所有已合入兄弟任务的确定性验收描述符**。只有全部再次跑通，才通过 fast-forward 原子合入主批次分支。
-4. **强故障隔离 (Fault Isolation)**：
-   若某个 Lane 出现测试失败、评审驳回或集成冲突，主批次分支保持零写入（Zero-write），仅该任务被置为 `needs_human`，其后续依赖标记为 `skipped_blocked`；其他无冲突的并行 Lane 继续正常推进。
-5. **安全回收纪律 (Agents Only Create)**：
-   Parent 与 `lane-steward` 角色仅负责创建 Lane（worktree）和终端 tab，绝不擅自关闭 tab、不终止外部会话、不自动删除用户磁盘上的 worktree。任务集成完成后，系统明确告知开发者哪些 Lane 已可安全回收，由开发者自主清理。
+每个 Child 依然保有独立的 Enrollment、物理 Scope 冻结、QA、Review 与结算；系统绝不会替你自动 push、创建 PR 或结算用户决策。
 
 
 ---
@@ -685,26 +621,23 @@ Immune-Brain 读取两个 JSON 文件，Pi 与 Claude Code 共用（[ADR 0041](d
     "profiles": { "deepseek": { "host": "pi", "model": "auto/deepseek-v4.1-flash", "effort": "high" } },
     "executor": "deepseek",
     "reviewer": "claude-code:<model id>@medium"
-  },
-  "batch": { "max_parallel": 3 }
+  }
 }
 ```
 
 ```json
-{ "contract": "immune_brain/project_config/v2", "agents": { "executor": "claude-code:<model id>" }, "git_integration": "manual", "initiative_carrier": "github" }
+{ "contract": "immune_brain/project_config/v2", "agents": { "reviewer": "claude-code:<model id>" }, "git_integration": "manual", "initiative_carrier": "github" }
 ```
 
 | 偏好 | 位置 | 默认 | 说明 |
 |---|---|---|---|
 | 回复语言 | agent 指令文件（`AGENTS.md` / `CLAUDE.md`） | 仓库 `AGENTS.md` | 机器契约/路径/标识符保持原文 |
-| Agent（`executor`、`reviewer`） | 任一文件；profile 只在用户文件 | executor：Parent 自己的 Host；reviewer：无 | profile 名、简写 `host[:model][@effort]` 或 `{ host, model?, effort? }` |
-| Lane 并行数 | 任一文件的 `batch.max_parallel` | 1 | 请求中的 `max_parallel` 优先 |
-| Herdr tab | 顶层 `herdr` | `false` | 为 `true` 且 Parent 运行在 Herdr 中时，Lane Executor 在 Herdr tab 中运行 |
+| Agent（`reviewer`） | 任一文件；profile 只在用户文件 | 无 | profile 名、简写 `host[:model][@effort]` 或 `{ host, model?, effort? }`；`executor`、`planner` 与 `triage` 仍接收但不再读取 |
 | Initiative 载体 | 任一文件 | 无默认，Planner 询问 | 仅当提案拆分为多个 TaskIntent 时生效 |
 | Git integration | 任一文件 | `manual` | `auto` 会提交已结算的交付；任一处设为 `manual` 即生效 |
 | Advisory subagent | agent 指令文件 | 允许 | 受 Pi host 策略与用户显式指令约束 |
 
-批次会冻结解析出的 Executor 与 Review profile；`start_unattended_batch` 通过 `agents: { executor?, reviewer? }` 接收请求中的选择。`imm-kernel config --json` 打印每个生效值及其来源，两个 Host 的 status Tool 也以 `config` 字段返回。非法值视为未设置并报告错误；`agents`、`batch` 或 `herdr` 有错误时拒绝启动批次。`v1` 文件报告为 `config_invalid`：运行 `imm-kernel config migrate` 预览 v2 形式，加 `--write` 写入。
+`imm-kernel config --json` 打印每个生效值及其来源，各 Host 的 status Tool 也以 `config` 字段返回。非法值视为未设置并报告错误。已退役的 `batch` 与 `session_providers` 键报告 `config_invalid`；`herdr` 仅发出告警。`v1` 文件报告为 `config_invalid`：运行 `imm-kernel config migrate` 预览 v2 形式，加 `--write` 写入。
 
 详见 [`docs/reference/immune-brain-config.md`](docs/reference/immune-brain-config.md)。
 
@@ -744,7 +677,7 @@ docs/specs/                           # Living specs（原地更新）
 
 **Review finding 突然不再阻塞了？** 它被反证了：新鲜的确定性 QA 证据表明它声称的 acceptance 是通过的。反证绑定到那份具体证据，所以证据一旦对当前 revision、intent hash 或 diff 失效，该 finding 会重新阻塞。
 
-**能不能整个 Initiative 不用我盯着？** 只能在你授权范围内。用 Initiative slug 确认 `start_unattended_batch` 后，runner 会通过 runtime 创建的 Lane 推进已发布且非 `critical` 的 child，容量为 1 时一次运行一个 Lane，并在集成验证通过后 fast-forward Parent ref — 一旦某个 child 需要人决策，或遇到预算、授权或提交失败就暂停。停放的运行会无限期等你：确认对话框及其授予的授权都不会超时。它不会替你 push、开 PR 或结算用户决策。
+**能不能整个 Initiative 不用我盯着？** 不能。无人值守批次运行已退役；请按顺序逐个 `drive` 每个 Child，每个任务均经各自的原生确认准入。系统绝不会替你自动 push、创建 PR 或结算用户决策。
 
 **可以在不同 Host 之间切换吗（例如 Claude Code 规划、Pi 编码）？** 可以。Immune-Brain 的契约与状态完全落盘于代码仓库，解耦了会话上下文。你可以用 Claude Code 进行深度推理与制定 Spec，再切换到 Pi 跑 `drive` 编码并完成 QA 闭环；中途随时可以用 `/drive` 双向恢复。
 
@@ -752,7 +685,7 @@ docs/specs/                           # Living specs（原地更新）
 
 **任务结算后的审计凭证（Audit Trail）保存在哪里？** 保存在仓库的 `.imm/audit/<task-id>/` 目录下，并作为 Git-tracked 资产提交。其中包含最终的 `TaskRecord`、绑定的代码 `diff_hash`、真实执行的 QA 退出码/输出 Attestation、以及 Reviewer 签署的验证凭据，保证交付全流程可追溯、可审计。
 
-**为什么用两个配置文件，而不是 AGENTS.md / CLAUDE.md 里的指令行？** 配置属于插件，不属于某个 Host 的指令文件。个人选择（Lane 与 agent profile）写在 `~/.config/immune-brain/config.json`，跨 clone、跨 Host 生效；仓库策略（`git_integration`、载体）写在受 Git 跟踪的 `.imm/config.json`，可审阅、与协作者共享。交互语言等沟通指令仍写在 agent 指令文件里。
+**为什么用两个配置文件，而不是 AGENTS.md / CLAUDE.md 里的指令行？** 配置属于插件，不属于某个 Host 的指令文件。个人选择（agent profile）写在 `~/.config/immune-brain/config.json`，跨 clone、跨 Host 生效；仓库策略（`git_integration`、载体）写在受 Git 跟踪的 `.imm/config.json`，可审阅、与协作者共享。交互语言等沟通指令仍写在 agent 指令文件里。
 
 **为什么在复杂任务中推荐用 `grill-me` 替代 `clarify` 进行决策确认？** `clarify` 是轻量内置的免安装工具，用于快速对齐顶层问题框架。而来自 `mattpocock/skills` 的 `grill-me` 则具备极具侵略性的苏格拉底式发问机制，能够沿着设计树分支主动提供带偏好的推荐方案并穷追猛打，促使开发者做出明确抉择。对于非平凡功能开发、重大架构重构或安全门禁边界，在上游先用 `grill-me` 彻底敲定决策树再输入给 `draw-up`，能产出颗粒度极高、无后顾之忧的 Living Spec，从根源上杜绝下游返工。
 
@@ -772,7 +705,7 @@ docs/specs/                           # Living specs（原地更新）
 | 升级版本 | `bun run changeset:version` — 更新 `package.json` + `CHANGELOG.md`，重建 Claude 与 Antigravity 插件并校验 manifest |
 | 发布前校验 | `bun run verify:release` — 校验版本、插件构建、dist 文档同步、typecheck、`bun test` 与 `npm pack --dry-run` |
 | 发布到 `next` | `bun run changeset:publish` — 执行 `verify:release` 后以 `--tag next` 发布到 npm |
-| 运行 L2 live 冒烟 | `bun run e2e:live` — 在 tag `immune-brain-v<version>` 上用真实 `claude`/`pi` + API（`ANTHROPIC_API_KEY`）跑 J1/J2/J4 并生成 `docs/evidence/e2e-live/<version>.json` |
+| 运行 L2 live 冒烟 | `bun run e2e:live` — 在 tag `immune-brain-v<version>` 上针对真实 Host + API（`ANTHROPIC_API_KEY`）运行 J1（claude）与 J4（claude/pi/antigravity）并生成 `docs/evidence/e2e-live/<version>.json` |
 | 晋升 / 回滚 | `bun run release:promote <version>` / `bun run release:promote -- --rollback` — 校验 live 证据、fast-forward `stable`、打 `immune-brain-v<version>-stable` tag 并更新 npm `latest` |
 
 **两段式自动化流程：**

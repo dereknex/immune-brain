@@ -31,6 +31,7 @@ import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import {
+	BATCH_STATE_RELATIVE,
 	FILE_STORE_CLAIM_RELATIVE,
 	FILE_STORE_TASKS_RELATIVE,
 	FILE_STORE_WORKSPACE_RELATIVE,
@@ -144,6 +145,10 @@ function withImportLock<T>(root: string, operation: () => T): T {
 export const MIGRATION_STORE_RELATIVE = `${KERNEL_DB_RELATIVE}.importing`;
 /** Import identity of a published migration, used to make retry idempotent. */
 export const MIGRATION_RECEIPT_RELATIVE = `${STATE_RELATIVE}/migration-receipt.json`;
+
+export interface SqliteImportOptions {
+	retireLegacyBatches?: boolean;
+}
 
 export interface SqliteImportOutcome {
 	contract: "assurance_kernel/sqlite_import_result/v1";
@@ -284,7 +289,7 @@ const TERMINAL_BATCH_STATES: ReadonlySet<string> = new Set([
 
 /** Any batch state that is not terminal still owns work, so the layout is live. */
 function recoverableBatch(root: string): string | null {
-	const directory = join(root, STATE_RELATIVE, "batches");
+	const directory = join(root, BATCH_STATE_RELATIVE);
 	if (!existsSync(directory)) return null;
 	for (const entry of readdirSync(directory).sort()) {
 		// Reports describe a state that the state file already carries.
@@ -293,12 +298,53 @@ function recoverableBatch(root: string): string | null {
 			const parsed = JSON.parse(readFileSync(join(directory, entry), "utf8")) as Record<string, unknown>;
 			const state = typeof parsed.batch_state === "string" ? parsed.batch_state : null;
 			if (state !== null && TERMINAL_BATCH_STATES.has(state)) continue;
-			return `batch ${entry} is not terminal (${state ?? "unknown"})`;
+			return `recoverable batch ${entry} is not terminal (${state ?? "unknown"})`;
 		} catch {
-			return `batch ${entry} is unreadable`;
+			return `recoverable batch ${entry} is unreadable`;
 		}
 	}
 	return null;
+}
+
+/**
+ * Retire nonterminal or unreadable legacy batch files in `.imm/state/batches/`
+ * when explicitly authorized by `--retire-legacy-batches`. Terminal records
+ * stay untouched; symlinked segments or non-regular entries fail closed.
+ */
+function retireLegacyBatchesInPlace(root: string, now: string): void {
+	const directory = join(root, BATCH_STATE_RELATIVE);
+	if (!existsSync(directory)) return;
+	assertNoSymlinkSegments(root, BATCH_STATE_RELATIVE);
+	if (!lstatSync(directory).isDirectory()) throw new Error(`${BATCH_STATE_RELATIVE} is not a regular directory`);
+	for (const entry of readdirSync(directory).sort()) {
+		if (!entry.endsWith(".json") || entry.endsWith(".report.json")) continue;
+		const relative = `${BATCH_STATE_RELATIVE}/${entry}`;
+		assertNoSymlinkSegments(root, relative);
+		const entryPath = join(root, relative);
+		if (!lstatSync(entryPath).isFile()) throw new Error(`${relative} is not a regular file`);
+		let parsed: unknown;
+		try {
+			parsed = JSON.parse(readFileSync(entryPath, "utf8"));
+		} catch {
+			rmSync(entryPath, { force: true });
+			continue;
+		}
+		if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+			rmSync(entryPath, { force: true });
+			continue;
+		}
+		const record = parsed as Record<string, unknown>;
+		if (typeof record.batch_state === "string" && TERMINAL_BATCH_STATES.has(record.batch_state)) continue;
+		writeFileSync(
+			entryPath,
+			`${JSON.stringify({
+				...record,
+				batch_state: "superseded",
+				retired_by: "storage_layout_migration",
+				retired_at: now,
+			}, null, 2)}\n`,
+		);
+	}
 }
 /**
  * Read every legacy terminal task from both retired layouts: `.imm/tasks`
@@ -652,11 +698,12 @@ function importIdentity(tasks: LegacyTask[]): string {
 }
 
 /**
- * Reasons a retired layout still owns live work. Retirement deletes the owner
- * signals, so this runs before any deletion — including on the recovery path,
- * where the layout is reported as a store conflict rather than an active owner.
+ * Reasons a retired layout still owns live Kernel or file-store work. Retirement
+ * deletes the owner signals, so this runs before any deletion — including on
+ * the recovery path, where the layout is reported as a store conflict rather
+ * than an active owner.
  */
-function liveLegacyOwnerReason(root: string): string | null {
+function coreLiveLegacyOwnerReason(root: string): string | null {
 	for (const claim of [FILE_STORE_CLAIM_RELATIVE, `${LEGACY_TASKS_RELATIVE}/.backend-claim.json`]) {
 		if (existsSync(join(root, claim))) return `a legacy owner claim is present at ${claim}`;
 	}
@@ -692,7 +739,7 @@ function liveLegacyOwnerReason(root: string): string | null {
 			return `${workspace} is unreadable`;
 		}
 	}
-	return recoverableBatch(root);
+	return null;
 }
 
 /** Open the published store read-only for a recovery check. */
@@ -797,10 +844,14 @@ function retireOrphanProofs(root: string, canonical: string, orphans: OrphanProo
  * Import the retired file store into the SQLite authority. `now` stamps the
  * store's creation metadata; it never rewrites historical evidence.
  */
-export function importLegacyWorkspace(rootInput: string, now = new Date().toISOString()): SqliteImportOutcome {
+export function importLegacyWorkspace(
+	rootInput: string,
+	now = new Date().toISOString(),
+	options?: SqliteImportOptions,
+): SqliteImportOutcome {
 	const canonicalInput = realpathSync(rootInput);
 	try {
-		return withImportLock(canonicalInput, () => importLegacyWorkspaceLocked(canonicalInput, now));
+		return withImportLock(canonicalInput, () => importLegacyWorkspaceLocked(canonicalInput, now, options));
 	} catch (error) {
 		return {
 			contract: "assurance_kernel/sqlite_import_result/v1",
@@ -812,7 +863,11 @@ export function importLegacyWorkspace(rootInput: string, now = new Date().toISOS
 	}
 }
 
-function importLegacyWorkspaceLocked(rootInput: string, now: string): SqliteImportOutcome {
+function importLegacyWorkspaceLocked(
+	rootInput: string,
+	now: string,
+	options?: SqliteImportOptions,
+): SqliteImportOutcome {
 	// Bind one canonical root: a temp-directory root on macOS reaches the same
 	// files through /var and /private/var, and mixing them would look like a
 	// traversal attempt to the store's path safety checks.
@@ -834,10 +889,16 @@ function importLegacyWorkspaceLocked(rootInput: string, now: string): SqliteImpo
 		try {
 			// The published branch owns deletions too, so a live legacy owner that
 			// reappeared after the import refuses the cleanup instead of losing it.
-			const live = liveLegacyOwnerReason(root);
+			const live = coreLiveLegacyOwnerReason(root);
 			if (live) return refusal(`${live}; settle or stop the live legacy owner before retiring it`);
 			const pending = readLegacyTasks(root);
 			if (pending.reason) return refusal(pending.reason);
+			if (options?.retireLegacyBatches) retireLegacyBatchesInPlace(root, now);
+			const batch = recoverableBatch(root);
+			if (batch)
+				return refusal(
+					`${batch}; unattended batch execution is retired — verify no legacy batch process is running, then rerun imm-kernel migrate --storage-layout --retire-legacy-batches to retire this recoverable batch record`,
+				);
 			// A partially finished cleanup leaves only the tasks whose files were not
 			// removed yet, so the remaining subset never matches the full receipt
 			// identity. Each survivor is verified against its published row instead,
@@ -879,10 +940,28 @@ function importLegacyWorkspaceLocked(rootInput: string, now: string): SqliteImpo
 			uncommitted_evidence: [],
 		};
 	}
-	const live = liveLegacyOwnerReason(root);
-	if (live) return refusal(`${live}; a live legacy owner or recoverable batch must be settled or stopped before import`);
+	const live = coreLiveLegacyOwnerReason(root);
+	if (live) return refusal(`${live}; a live legacy owner must be settled or stopped before import`);
 	const { tasks, reason } = readLegacyTasks(root);
 	if (reason) return refusal(reason);
+	if (options?.retireLegacyBatches) {
+		try {
+			retireLegacyBatchesInPlace(root, now);
+		} catch (error) {
+			return {
+				contract: "assurance_kernel/sqlite_import_result/v1",
+				outcome: "failed",
+				reason: error instanceof Error ? error.message : String(error),
+				imported_task_ids: [],
+				uncommitted_evidence: [],
+			};
+		}
+	}
+	const batch = recoverableBatch(root);
+	if (batch)
+		return refusal(
+			`${batch}; unattended batch execution is retired — verify no legacy batch process is running, then rerun imm-kernel migrate --storage-layout --retire-legacy-batches to retire this recoverable batch record before import`,
+		);
 	// A workspace can be on the retired layout with no task at all — only an
 	// owner-free workspace file or an idle Ledger. Migrating it still publishes
 	// the store, preserves the historical evidence, and retires the old paths,

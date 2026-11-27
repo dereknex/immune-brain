@@ -1,10 +1,10 @@
 // Supervised Session Port (ADR 0038, docs/reference/supervised-session-port.md).
 //
-// A capability contract for the session a Parent launches a Lane Executor in.
-// It speaks only of session, handle, state and instruction; a provider's own
-// vocabulary (tabs, panes, workspaces, sockets) stays inside its adapter. The
-// Kernel and the batch runtime never import this module: the Parent's Loop
-// contract consumes it through `imm-session`.
+// A capability contract for supervised Host sessions (used by Herdr Authority
+// Review and findings Verification). It speaks only of session, handle, state
+// and instruction; a provider's own vocabulary (tabs, panes, workspaces,
+// sockets) stays inside its adapter. The Kernel never imports this module:
+// callers consume it through `imm-session`.
 
 export const SUPERVISED_SESSION_PROTOCOL = 1 as const;
 
@@ -17,7 +17,7 @@ export type StateProvenance = "detected" | "reported" | "none";
 export type SessionProviderName = "herdr" | "herdr-core" | "fake";
 /** Opaque to every caller. Only the adapter that minted a handle decodes it. */
 export type SessionHandle = string;
-/** The Executor Hosts the Lane configuration accepts (`executor_host`); tests/supervised-session-herdr.test.ts checks each against it. */
+/** The Host kinds accepted by the supervised session port; tests/supervised-session-herdr.test.ts checks each against it. */
 export const EXECUTOR_HOSTS = ["claude-code", "pi", "antigravity"] as const;
 export type ExecutorHostKind = (typeof EXECUTOR_HOSTS)[number];
 export type OutputSource = "visible" | "scrollback";
@@ -50,14 +50,14 @@ export const SESSION_KEY_PATTERN = /^[a-z0-9-]{1,64}$/;
 export type SessionKey = string;
 
 export interface CreateSessionInput {
-	/** The Lane path; the session's working directory, so its Kernel root is the Lane's store. */
+	/** The session's working directory, so its Kernel root is that worktree's store. */
 	cwd: string;
 	/** A short human label, at most 32 characters. */
 	label: string;
 	host: ExecutorHostKind;
 	/** Only the arguments that load the plugin and the resolved model and effort. */
 	hostArgs: string[];
-	/** The single explicit `drive` entry for the Lane's task, and nothing else. */
+	/** The single explicit entry prompt for the supervised session, and nothing else. */
 	entry: string;
 	/** Optional caller key bound into session identity; omitting keeps random-token behavior. */
 	session_key?: SessionKey;
@@ -118,16 +118,13 @@ export type ReconcileEntry = { handle: SessionHandle } & Observation & { refused
 export type ReconcileResult = { ok: true; sessions: ReconcileEntry[] } | Refusal;
 
 /**
- * The Executor close rule's record. The batch runner decides the rule from
- * Kernel and batch facts (the child is integrated, its audit pair is reachable
- * from the batch head) and records the close in `session_closes` at the tick
- * that integrates the child. `imm-session close` checks these two fields
- * against that record before calling the provider; the provider adds the third
- * fact: the handle is its own, so only a session the Parent created closes.
+ * Protocol v1 close proof for `closeSession`: a caller-recorded task identity
+ * and canonical ISO-8601 timestamp checked before closing a session handle (the
+ * `imm-session close` CLI itself uses `closeWithProof` instead).
  */
 export interface CloseRecord {
 	task_id: string;
-	/** `session_closes[].at` from the batch record. */
+	/** Canonical ISO-8601 timestamp (`toISOString()`). */
 	recorded_at: string;
 }
 
@@ -237,14 +234,14 @@ export function resumeRefusal(handle: SessionHandle, observed: Observation): Ref
 	return refuse("state_refused", `session is ${observed.state}; the entry is resubmitted only to an idle or done session and nothing was sent`, handle);
 }
 
-/** The close record must be the runner's: a task id and a canonical timestamp. */
+/** The close record must carry a valid task id and a canonical ISO-8601 timestamp. */
 export function closeRecordRefusal(handle: SessionHandle, record: CloseRecord | undefined): Refusal | null {
 	const unmet: string[] = [];
 	if (typeof record?.task_id !== "string" || !/^[a-z0-9][a-z0-9._-]*$/i.test(record.task_id)) unmet.push("task_id");
 	const at = record?.recorded_at;
 	if (typeof at !== "string" || !Number.isFinite(Date.parse(at)) || new Date(Date.parse(at)).toISOString() !== at) unmet.push("recorded_at");
 	if (unmet.length === 0) return null;
-	return refuse("close_unproven", `no recorded session close: ${unmet.join(", ")}; take task_id and at from the batch report's session_closes`, handle);
+	return refuse("close_unproven", `no recorded session close: ${unmet.join(", ")}; provide a valid task_id and canonical ISO-8601 recorded_at timestamp`, handle);
 }
 
 export function validateSessionKey(key: string): Refusal | null {
