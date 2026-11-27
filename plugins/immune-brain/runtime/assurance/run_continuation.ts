@@ -7,7 +7,7 @@ import { readAnyBatchRunState, isLaneBatchRecord, isSingleTaskRecord, type AnyBa
 import { observeInitiative, observeSingleTask } from "../unattended/batch_plan";
 import { observeParentCompletion, observeNativeParent } from "../unattended/batch_git";
 import { projectTaskStatus } from "./coordinator";
-import { readActiveClaimTaskId } from "../unattended/batch_preflight";
+import { readActiveClaimTaskId } from "../kernel/backend_claim";
 import { readTaskIntent } from "../kernel/intent";
 import { readSettledTaskEvidence, readTaskRecordRaw } from "../kernel/storage";
 

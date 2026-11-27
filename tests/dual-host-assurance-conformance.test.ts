@@ -25,6 +25,7 @@ import {
 	type SnapshotDescriptor,
 } from "../plugins/immune-brain/runtime/assurance/coordinator";
 import { readSettledTaskEvidence, revisionForContent } from "../plugins/immune-brain/runtime/kernel/storage";
+import { readBackendClaim } from "../plugins/immune-brain/runtime/kernel/backend_claim";
 import { PassThrough } from "node:stream";
 import { ClaudeReviewHost, claudeHookEventLog } from "../plugins/immune-brain/runtime/claude/review_host";
 import { AntigravityReviewHost, antigravityHookEventLog, type AntigravityHookEvent } from "../plugins/immune-brain/runtime/antigravity/review_host";
@@ -283,6 +284,55 @@ function piCanaryCtx(root: string) {
 		},
 	};
 }
+
+test.each(["claude", "pi"] as const)("%s in-place enroll refuses a dirty workspace before its native gate, then commits in this workspace through one confirmation", async (host) => {
+	const taskId = `inplace-enroll-${host}`;
+	const root = mkdtempSync(join(tmpdir(), "imm-inplace-enroll-"));
+	const git = (...args: string[]) => execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
+	try {
+		mkdirSync(join(root, "docs/plans"), { recursive: true });
+		writeFileSync(join(root, ".gitignore"), ".imm/state/\n");
+		writeFileSync(join(root, "docs/plans", `${taskId}.intent.json`), `${JSON.stringify({
+			contract: "assurance_kernel/task_intent/v1", task_id: taskId, owner: "user", goal: "enroll in place",
+			acceptance: [{ id: "acc-1", assertion: "enrolled", verification: "bun test" }],
+			scope_hint: [`docs/plans/${taskId}.intent.json`], risk: "routine", revision: 1,
+		})}\n`);
+		git("init", "-q");
+		git("add", "-A");
+		git("-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-qm", "fixture");
+
+		let gates = 0;
+		let enroll: () => Promise<string>;
+		if (host === "claude") {
+			const mcp = createMcpRuntime({ cwd: root, env: HOST_ENV, interactive: true,
+				requestConfirmation: async () => ({ decision: "accept", requestId: `gate-${++gates}` }) });
+			mcp.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });
+			enroll = () => mcp.callTool("enroll", { task_id: taskId }, { toolCallId: "toolu_enroll" })
+				.then(JSON.stringify, (error: Error) => error.message);
+		} else {
+			const ctx = piCanaryCtx(root);
+			const dialog = ctx.ui.custom;
+			ctx.ui.custom = async (factory: any) => { gates++; return dialog(factory); };
+			Object.assign(ctx, { sessionManager: { getSessionId: () => taskId } });
+			require("../plugins/immune-brain/.pi-extension/imm-canary-work.ts")
+				.recordPiPhaseInput({ text: "/skill:drive", source: "interactive" }, ctx);
+			const tool = piCanaryTool({});
+			enroll = () => tool.execute("enroll-call", { task_id: taskId, action: { op: "enroll" } }, undefined, undefined, ctx)
+				.then(JSON.stringify, (error: Error) => error.message);
+		}
+
+		writeFileSync(join(root, "stray.txt"), "unrelated\n");
+		expect(await enroll()).toContain("workspace_not_clean: stray.txt");
+		expect(gates).toBe(0);
+		expect(readBackendClaim(root)).toBeNull();
+
+		rmSync(join(root, "stray.txt"));
+		expect(await enroll()).toContain("enrolled");
+		expect(gates).toBe(1);
+		expect(readBackendClaim(root)?.task_id).toBe(taskId);
+		expect(git("worktree", "list").split("\n")).toHaveLength(1);
+	} finally { rmSync(root, { recursive: true, force: true }); }
+});
 
 test("layered config is identical on Claude and Pi status and errors appear as warnings", async () => {
 	const taskId = "layered-config-status", root = enrolledHostFixture(taskId);

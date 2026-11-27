@@ -16,7 +16,7 @@ import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
 
 import { LITERAL_USER_ACTOR_ID } from "../kernel/actor_identity";
-import { readBackendClaim } from "../kernel/backend_claim";
+import { readActiveClaimTaskId, readBackendClaim } from "../kernel/backend_claim";
 import { computeBatchPlanDigest, type BatchAuthorizationBinding } from "../kernel/batch_authority";
 import { preparePiCanary, readGitHead, type PiCanaryPreparation } from "../kernel/pi_canary_prepare";
 import { intentAuthorityHash, readTaskIntent, observeEnrollmentTaskIntent } from "../kernel/intent";
@@ -79,6 +79,8 @@ export type BatchPreflightOutcome =
 	| { ok: true; projection: BatchPreflightProjection }
 	| { ok: false; state: "blocked" | "rejected"; reason: string; recovery_action: string };
 
+export { readActiveClaimTaskId };
+
 export interface BatchPreflightRejection {
 	state: "blocked" | "rejected";
 	reason: string;
@@ -99,17 +101,6 @@ function reject(
 	detail = "",
 ): { ok: false } & BatchPreflightRejection {
 	return { ok: false, ...batchRejection(key, detail) };
-}
-
-/**
- * The live claim's task id, or null: the workspace owner first, then an active
- * backend claim. Read-only and lock-free, so a preflight or a drift check can
- * call it before any literal-user approval without writing anything.
- */
-export function readActiveClaimTaskId(root: string): string | null {
-	const workspace = readWorkspaceStateRaw(root);
-	const claim = readBackendClaim(root);
-	return workspace.state.current_working || (claim?.lifecycle_status === "active" ? claim.task_id : null);
 }
 
 /**

@@ -1419,6 +1419,7 @@ describe("claude host resolve_finding", () => {
 				"advance_assurance",
 				"submit_review",
 				"submit_verification",
+				"enroll",
 				"request_authorization",
 				"revise_intent",
 				"approve_breaking_intent_revision",
@@ -1432,6 +1433,7 @@ describe("claude host resolve_finding", () => {
 				"submit_session_result",
 			]);
 			expect([...PRIVILEGED_OPERATIONS]).toEqual([
+				"enroll",
 				"request_authorization",
 				"approve_breaking_intent_revision",
 				"stop",

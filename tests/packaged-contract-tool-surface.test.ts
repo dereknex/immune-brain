@@ -136,8 +136,9 @@ describe("packaged contract tool surface", () => {
 		expect(markdownContracts().length).toBeGreaterThan(0);
 	});
 
-	test("neither Host registers an in-place Enrollment tool (drive-always-lanes D10)", () => {
-		expect(CLAUDE_TOOLS.has("enroll")).toBe(false);
+	test("both Hosts serve in-place enroll without a separate Enrollment tool (retire-unattended-batch D1)", () => {
+		expect(CLAUDE_TOOLS.has("enroll")).toBe(true);
+		expect(piOperationNames().has("enroll")).toBe(true);
 		expect(PI_TOOLS.has("imm_canary_enrollment")).toBe(false);
 		expect(CLAUDE_TOOLS.has("start_unattended_batch")).toBe(true);
 		expect(PI_TOOLS.has("start_unattended_batch")).toBe(true);

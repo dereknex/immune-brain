@@ -175,7 +175,7 @@ describe("Antigravity Harness Conformance", () => {
 
 	describe("Lane Guard & Native Gate", () => {
 		it("recognizes privileged operations", () => {
-			expect(isPrivilegedOperation("enroll")).toBe(false);
+			expect(isPrivilegedOperation("enroll")).toBe(true);
 			expect(isPrivilegedOperation("start_unattended_batch")).toBe(true);
 			expect(isPrivilegedOperation("retire_stale_batch")).toBe(true);
 			expect(isPrivilegedOperation("advance_assurance")).toBe(false);
@@ -1908,6 +1908,63 @@ describe("Antigravity Harness Conformance", () => {
 			}, { root: store, readInitiative });
 			expect(resumeHook).toEqual({ decision: "allow" });
 			expect(readFileSync(batchRecordPath, "utf8")).toBe(beforeResumePreview);
+			server.input.end();
+		}, 60_000);
+
+		it("enroll commits in place only through one force_ask grant bound to the live preparation, and a dirty workspace opens none", async () => {
+			const root = temp("enroll-gate");
+			const store = temp("enroll-store");
+			const home = temp("enroll-home");
+			writeFileSync(join(root, ".gitignore"), ".imm/state/\n");
+			writeFileSync(join(root, "base.txt"), "base\n");
+			writeIntent(root, "enroll in place", 1);
+			git(root, "init", "-q", "-b", "main");
+			git(root, "add", "-A");
+			git(root, "commit", "-qm", "fixture");
+			const server = wire(root, store);
+			await initialize(server);
+			antigravityPreInvocationHook({ conversationId, lastUserInput: `/drive ${TASK}`, workspacePaths: [root] }, { root: store, home: store });
+			// Both call shapes reach the same gate: the lazy call_mcp_tool form and the direct name.
+			const preToolUse = (stepIdx: number, direct = false) => antigravityPreToolUseHookAsync({
+				conversationId, stepIdx, workspacePaths: [root],
+				toolCall: direct
+					? { name: "mcp__immune-brain__enroll", args: { task_id: TASK } }
+					: { name: "call_mcp_tool", args: { ServerName: "immune-brain", ToolName: "enroll", Arguments: { task_id: TASK } } },
+			}, { root: store, home });
+			const enroll = async (id: string, step: number) => {
+				server.send({ jsonrpc: "2.0", id, method: "tools/call",
+					params: { name: "enroll", arguments: { task_id: TASK }, _meta: meta(root, step) } });
+				return server.next();
+			};
+
+			// An unrelated dirty path: no confirmation is prepared and nothing is written.
+			writeFileSync(join(root, "stray.txt"), "unrelated\n");
+			expect((await preToolUse(30)).decision).toBe("allow");
+			const dirty = await enroll("enroll-dirty", 30);
+			expect(dirty.error.message).toContain("workspace_not_clean: stray.txt");
+			expect(readTaskRecordRaw(root, TASK).record).toBeNull();
+			rmSync(join(root, "stray.txt"));
+
+			// A grant confirmed for other TaskIntent bytes fails closed.
+			expect((await preToolUse(31)).decision).toBe("force_ask");
+			writeIntent(root, "edited after the confirmation", 1);
+			expect(await enroll("enroll-stale", 31)).toMatchObject({ error: { data: { reason_code: "workspace_changed" } } });
+			expect(readTaskRecordRaw(root, TASK).record).toBeNull();
+
+			const asked = await preToolUse(32, true);
+			expect(asked.decision).toBe("force_ask");
+			expect(asked.reason).toContain(`Task: ${TASK}`);
+			expect(asked.reason).toContain("Binding digest: sha256:");
+			// A call whose step has no confirmed grant never commits.
+			expect((await enroll("enroll-uncorrelated", 33)).error).toBeDefined();
+			expect(readTaskRecordRaw(root, TASK).record).toBeNull();
+
+			expect((await preToolUse(34)).decision).toBe("force_ask");
+			const accepted = await enroll("enroll-ok", 34);
+			expect(accepted.error).toBeUndefined();
+			expect(JSON.parse(accepted.result.content[0].text)).toMatchObject({ state: "enrolled", task_id: TASK });
+			expect(readTaskRecordRaw(root, TASK).record?.lifecycle).toBe("active");
+			expect(git(root, "worktree", "list").split("\n")).toHaveLength(1);
 			server.input.end();
 		}, 60_000);
 

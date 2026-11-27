@@ -177,6 +177,7 @@ function session(root: string, identity: { getSessionId?: () => unknown } | null
 			context: { canContinue, pendingMessages: [] } }),
 		batch: () => failureOf(tool("start_unattended_batch").execute(randomUUID(), { initiative_slug: SLUG, final_verification: ["bun test"] }, undefined, undefined, ctx)),
 		retire: () => failureOf(tool("retire_stale_batch").execute("toolu_retire", { initiative_slug: SLUG }, undefined, undefined, ctx)),
+		enroll: () => failureOf(tool("imm_kernel_canary").execute(randomUUID(), { task_id: TASK, action: { op: "enroll" } }, undefined, undefined, ctx)),
 		authorize: () => failureOf(tool("imm_kernel_canary").execute(randomUUID(), { task_id: TASK, action: { op: "request_authorization" } }, undefined, undefined, ctx)),
 	};
 }
@@ -240,6 +241,27 @@ describe("Pi phase entry gate", () => {
 			expect(await pi.batch()).toMatchObject(REFUSED);
 		}
 		expect(pi.dialogs.count).toBe(0);
+	});
+
+	test("in-place enroll needs the run entry, opens one dialog under it, and a decline claims nothing", async () => {
+		const root = fixtureRoot();
+		const pi = session(root);
+		for (const text of [null, "go ahead and drive it", "/skill:draw-up"]) {
+			if (text) await pi.input(text);
+			expect(await pi.enroll()).toMatchObject({ ...REFUSED, message: "enroll needs a literal-user drive entry in this session" });
+		}
+		expect(pi.dialogs.count).toBe(0);
+
+		await pi.input("/skill:drive");
+		await pi.enroll();
+		expect(pi.dialogs.count).toBe(1);
+		expect(readBackendClaim(root)).toBeNull();
+
+		pi.dialogs.answers.push("authorize");
+		await pi.enroll();
+		expect(pi.dialogs.count).toBe(2);
+		expect(readBackendClaim(root)?.task_id).toBe(TASK);
+		expect(git(root, "worktree", "list").split("\n")).toHaveLength(1);
 	});
 
 	test("a same-named user or project skill blocks both /drive and /skill:drive (ADR 0025)", async () => {

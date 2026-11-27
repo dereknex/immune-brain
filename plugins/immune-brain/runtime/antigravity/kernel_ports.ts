@@ -116,6 +116,10 @@ export class AntigravityRuntime {
 		return this.runtime.previewAuthorization(...args);
 	}
 
+	previewEnrollment(...args: Parameters<HostRuntime["previewEnrollment"]>): ReturnType<HostRuntime["previewEnrollment"]> {
+		return this.runtime.previewEnrollment(...args);
+	}
+
 	previewBatchConfirmation(...args: Parameters<HostRuntime["previewBatchConfirmation"]>): ReturnType<HostRuntime["previewBatchConfirmation"]> {
 		return this.runtime.previewBatchConfirmation(...args);
 	}

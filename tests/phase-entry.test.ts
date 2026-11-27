@@ -206,10 +206,11 @@ describe("phase entry state", () => {
 describe("phase entry admission", () => {
 	const batch = { kind: "tool", name: "start_unattended_batch" } as const;
 	const retire = { kind: "tool", name: "retire_stale_batch" } as const;
+	const enroll = { kind: "tool", name: "enroll" } as const;
 	const skill = (name: "drive" | "draw-up" | "clarify") => ({ kind: "skill", skill: name }) as const;
 
-	test("batch start and batch retirement need a live run entry", () => {
-		for (const operation of [batch, retire]) {
+	test("enrollment, batch start and batch retirement need a live run entry", () => {
+		for (const operation of [enroll, batch, retire]) {
 			expect(admitPhaseOperation(operation, after("run"))).toEqual({ ok: true });
 			expect(admitPhaseOperation(operation, after("run", null, null))).toEqual({ ok: true });
 			for (const state of [NO_PHASE_ENTRY, after(null), after("plan"), after("run", "plan"), null]) {
@@ -246,9 +247,9 @@ describe("phase entry admission", () => {
 		}
 	});
 
-	test("a resolved cwd equal to the bound workspace or absent admits both batch tools", () => {
+	test("a resolved cwd equal to the bound workspace or absent admits every gated tool", () => {
 		const bound = applyPrompt(NO_PHASE_ENTRY, "run", MINT);
-		for (const operation of [batch, retire]) {
+		for (const operation of [enroll, batch, retire]) {
 			expect(admitPhaseOperation(operation, bound, MINT.workspace)).toEqual({ ok: true });
 			// An unbound workspace and a 2-argument call keep admitting.
 			expect(admitPhaseOperation(operation, bound)).toEqual({ ok: true });
@@ -259,7 +260,7 @@ describe("phase entry admission", () => {
 	test("a resolved cwd that drifted from the bound workspace is refused with cd recovery", () => {
 		const bound = applyPrompt(NO_PHASE_ENTRY, "run", MINT);
 		const drifted = `${MINT.workspace}/.git/imm/worktrees/slug/task`;
-		for (const operation of [batch, retire]) {
+		for (const operation of [enroll, batch, retire]) {
 			const refusal = admitPhaseOperation(operation, bound, drifted);
 			expect(refusal).toMatchObject({ ok: false, reason_code: RUN_ENTRY_REQUIRED });
 			const refused = refusal as Extract<typeof refusal, { ok: false }>;

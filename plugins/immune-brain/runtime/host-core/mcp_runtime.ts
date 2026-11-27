@@ -47,8 +47,8 @@ import { parseReworkChoice, reworkExitLines, type ReworkChoice } from "../kernel
 
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
 
-/** The two MCP tools whose PreToolUse admission decides the call. */
-export type GatedTool = "start_unattended_batch" | "retire_stale_batch";
+/** The MCP tools whose PreToolUse admission decides the call. */
+export type GatedTool = "enroll" | "start_unattended_batch" | "retire_stale_batch";
 
 /** A consumed admission, with the entry token the hook saw and the workspace it was minted for. */
 export interface PhaseAdmissionGrant {
@@ -141,6 +141,7 @@ export const TOOLS = [
 	{ name: "advance_assurance", description: "Advance frozen Assurance through deterministic QA and Review reservation.", privileged: false },
 	{ name: "submit_review", description: "Submit the Review verdict; omit the verdict to apply the correlated reviewer receipt, or relay the reviewer's structured verdict for fingerprint comparison.", privileged: false },
 	{ name: "submit_verification", description: "Submit the reserved verifier result; omit result to use the Host-observed receipt.", privileged: false },
+	{ name: "enroll", description: "Enroll one validated TaskIntent in place in this workspace under the literal-user drive entry.", privileged: true },
 	{ name: "request_authorization", description: "Apply exact literal-user authorization.", privileged: true },
 	{ name: "revise_intent", description: "Apply a compatible TaskIntent revision.", privileged: false },
 	{ name: "approve_breaking_intent_revision", description: "Approve a breaking TaskIntent revision.", privileged: true },
@@ -263,7 +264,7 @@ export interface McpRuntimeOptions {
 	sessionPortFactory?: (provider: string, env: Record<string, string | undefined>) => unknown;
 	/**
 	 * Takes the admission the PreToolUse hook wrote for one
-	 * `start_unattended_batch` or `retire_stale_batch` call. Defaults to the
+	 * `enroll`, `start_unattended_batch` or `retire_stale_batch` call. Defaults to the
 	 * profile's private file store.
 	 */
 	consumePhaseAdmission?: (toolCallId: string, operation: GatedTool) => PhaseAdmissionGrant | false | null;
@@ -393,7 +394,7 @@ export function createMcpRuntime(profile: McpHostProfile, options: McpRuntimeOpt
 			throw new NativeAuthorityError("run_entry_required", `${operation} runs in a workspace other than the one drive was entered in`);
 		return grant.entry_token;
 	};
-	/** The shared gate of `start_unattended_batch` and `retire_stale_batch`: Host evidence, then the run entry. */
+	/** The shared gate of `enroll`, `start_unattended_batch` and `retire_stale_batch`: Host evidence, then the run entry. */
 	const gatedToolMeta = (name: GatedTool, initiativeSlug: string, workspace: string, meta: Partial<ToolMeta>): ToolMeta => {
 		requireTrustedHost(true);
 		const toolCallId = meta.toolCallId ?? `call-${name}`;
@@ -494,6 +495,8 @@ export function createMcpRuntime(profile: McpHostProfile, options: McpRuntimeOpt
 			const taskId = String(args.task_id ?? "");
 			if (!taskId) throw new Error("task_id is required");
 			refuseSuppliedAuthority(args);
+			// Enrollment is admitted by the literal drive entry and still opens its own native gate (ADR 0025).
+			if (name === "enroll") return runtime.enroll(taskId, gatedToolMeta(name, taskId, workspace, meta));
 			// Read-only status must stay usable without trusted Host evidence, so it
 			// is dispatched before the capability probe rejects unversioned hosts.
 			if (name === "status") {

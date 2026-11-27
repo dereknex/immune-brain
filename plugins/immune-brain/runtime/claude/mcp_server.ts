@@ -15,7 +15,7 @@ import { createInterface } from "node:readline";
 import { join } from "node:path";
 import { stdin } from "node:process";
 import { fileURLToPath } from "node:url";
-import { readActiveClaimTaskId } from "../unattended/batch_preflight";
+import { readActiveClaimTaskId } from "../kernel/backend_claim";
 import { BatchRuntimeTooOldError, isTerminalBatchState, readAnyBatchRunState } from "../unattended/batch_state";
 import {
 	createMcpRuntime as createHostMcpRuntime,

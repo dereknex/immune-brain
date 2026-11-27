@@ -13,7 +13,8 @@ selection is the batch opt-in; it needs no separate chat question. An explicit
 `drive <Slice/Child Issue>` executes only that TaskIntent after its entrypoint
 verifies predecessor settlement and Git integration. Reading Parent context
 grants no authority to start predecessors or siblings. A standalone task id, and
-every Child entry, uses the [Single-Task Lane](#single-task-lane).
+every Child entry, enrolls in place through `enroll`
+([routing](drive.md#kernel-canary-routing-and-authority)).
 
 Every new batch uses runtime-created Lanes. Fixed Parent/Lane names do not prove
 ownership: a same-tip Parent can be reused only with a validated matching batch
@@ -104,7 +105,7 @@ needs a rerun. The integration Slice
 owns cross-Slice verification and repair scope before its settlement. On a later
 final failure, restore a recoverable local environment and retry the recorded
 commands; otherwise diagnose, author and validate the smallest repair TaskIntent
-for the original goal, then start it through the [Single-Task Lane](#single-task-lane)
+for the original goal, then enroll it in place through `enroll`
 with its own `task_id` and native gate, without chat pre-confirmation. Settled Slices retain their evidence. Track only an observed
 repair run and rerun final verification once it settles. Parent
 Issue closure waits for this whole-plan proof; a tracker failure reports the local
@@ -290,7 +291,7 @@ them from:
 The Parent never invents a command the repository does not name unless the
 request or project config supplies it.
 
-A new single-task start (`start_unattended_batch` with `task_id`) passes only
+A single-task Lane start (`start_unattended_batch` with `task_id`) passes only
 commands the current request states literally (step 1) and otherwise passes none;
 it does not apply steps 3-4. The Host then fills the commands from layered config
 before the gate: a `critical` task takes `batch.final_verification`, any other
@@ -347,7 +348,7 @@ user and never advance past the user.
 ##### Herdr Lane Tabs
 
 This facility applies to Initiative batches and single-task Lanes inside Herdr.
-For a single task, call `start_unattended_batch` with the same `task_id` on every
+For a single-task Lane record, call `start_unattended_batch` with the same `task_id` on every
 re-entry; keep `initiative_slug` absent. The runtime creates the Lane, opens
 its Executor session through `runtime/lane_sessions/` below, and reconciles it
 on every `advanceLanes`; a re-entry never opens a second session for the same
@@ -536,8 +537,10 @@ and tab, as ready for the user to close and remove.
 
 ### Single-Task Lane
 
-Every new single-task `drive` entry, including a GitHub Initiative Child entry,
-calls `start_unattended_batch` with `task_id` and no `initiative_slug` (both, or
+A new single-task `drive` entry never opens one: it enrolls in place through
+`enroll` (Spec retire-unattended-batch D2). A single-task Lane batch record
+opened earlier stays resumable until terminal (drain-only, owner: runtime), and
+its re-entry calls `start_unattended_batch` with `task_id` and no `initiative_slug` (both, or
 neither, refuses `batch_entry_ambiguous`; an Initiative record and a
 single-task record never match each other's entry, `batch_entry_kind_mismatch`).
 The runtime turns the one validated standalone TaskIntent into a one-child Lane
@@ -635,5 +638,5 @@ Spec drive-always-lanes D1 to D11 and ADR 0027 own the details below.
   as `lane_decision_stale`, and a cancelled or failed gate applies nothing. The
   Parent never decides for the user.
 
-An in-place TaskRecord enrolled before this change stays resumable through the
-Execution Loop in [`drive.md`](drive.md#execution-loop) until terminal.
+An in-place TaskRecord resumes through the Execution Loop in
+[`drive.md`](drive.md#execution-loop) until terminal.

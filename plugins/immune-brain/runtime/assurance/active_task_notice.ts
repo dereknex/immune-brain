@@ -4,7 +4,7 @@
 // inside that task's scope blind. It never resumes the task: ordinary input
 // stays host-native, and only an explicit `drive` entry continues it.
 import { readTaskRecordRaw } from "../kernel/storage";
-import { readActiveClaimTaskId } from "../unattended/batch_preflight";
+import { readActiveClaimTaskId } from "../kernel/backend_claim";
 
 const MAX_SCOPE_ENTRIES = 12;
 

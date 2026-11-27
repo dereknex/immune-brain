@@ -254,18 +254,6 @@ if (!adopted || adopted.commit !== commit) throw new Error("commit lookup did no
 describe("single-task Lane contract text (Spec drive-always-lanes S6)", () => {
 	const flatText = (text: string): string => text.replace(/\s+/g, " ");
 
-	it("routes a new single-task entry to start_unattended_batch with task_id", () => {
-		const loop = flatText(LOOP_CONTRACT);
-		expect(loop).toContain("Its first step is `start_unattended_batch` with `task_id`");
-		expect(loop).toContain("A TaskRecord enrolled in place before this change stays resumable until terminal");
-		expect(loop).toContain("The Executor role runs inside the Lane process, never in the Parent conversation");
-		expect(loop).not.toContain("Enrollment is the first step of a single-task explicit `drive` entry");
-		expect(loop).not.toContain("native Enrollment gate once");
-		expect(loop).not.toContain("a standalone validated candidate opens native Enrollment");
-		expect(flatText(LOOP_LOADER)).not.toContain("opens single-task Enrollment");
-		expect(flatText(BATCH_CONTRACT)).not.toContain("A standalone task id uses single-task Enrollment");
-	});
-
 	it("states that a single-task start takes final_verification from the request or risk-selected config (LEL-AC3, workflow-friction D3.1)", () => {
 		const batch = flatText(BATCH_CONTRACT);
 		for (const claim of [
@@ -281,6 +269,8 @@ describe("single-task Lane contract text (Spec drive-always-lanes S6)", () => {
 	it("drives single-task Lanes through the session port on every Host", () => {
 		const lane = flatText(section(BATCH_CONTRACT, "### Single-Task Lane"));
 		for (const claim of [
+			"A new single-task `drive` entry never opens one: it enrolls in place through `enroll`",
+			"stays resumable until terminal (drain-only, owner: runtime)",
 			"calls `start_unattended_batch` with `task_id` and no `initiative_slug`",
 			"under exactly one native gate",
 			"No runtime child process is ever spawned",
@@ -317,39 +307,6 @@ describe("single-task Lane contract text (Spec drive-always-lanes S6)", () => {
 		expect(herdr).toContain("This facility applies to Initiative batches and single-task Lanes inside Herdr");
 		expect(herdr).toContain("with the same `task_id` on every re-entry");
 		expect(herdr).toContain("Existing tasks with a runtime-owned Executor session keep that session");
-	});
-});
-
-describe("in-place Enrollment retired (Spec drive-always-lanes S7)", () => {
-	const shipped = [
-		"plugins/immune-brain/BASELINE.md",
-		"plugins/immune-brain/USER_GUIDE.md",
-		"plugins/immune-brain/skills/drive/SKILL.md",
-		"plugins/immune-brain/dist/drive.md",
-		"plugins/immune-brain/dist/drive-batch.md",
-		"plugins/immune-brain/dist/BASELINE.md",
-		"plugins/immune-brain/dist/role-prompts/executor.md",
-		"plugins/immune-brain/runtime/prompts/executor.md",
-		"CONTEXT.md",
-	].filter(rel => existsSync(resolve(REPO_ROOT, rel)));
-
-	it("names no Host enrollment tool in shipped contract text", () => {
-		for (const rel of shipped) {
-			const text = read(rel);
-			expect({ rel, retired: /imm_canary_enrollment|`enroll`(?: tool| or)/.test(text) }).toEqual({ rel, retired: false });
-		}
-	});
-
-	it("keeps only the drain-only sentence for a record enrolled in place earlier", () => {
-		const loop = normalized(LOOP_CONTRACT);
-		expect(loop).toContain("A TaskRecord enrolled in place before this change stays resumable until terminal (drain-only, owner: runtime)");
-		expect(loop).toContain("a new entry never starts one");
-		expect(normalized(BATCH_CONTRACT)).toContain("An in-place TaskRecord enrolled before this change stays resumable");
-	});
-
-	it("never tells the Parent to implement a new entry in the current conversation", () => {
-		expect(normalized(LOOP_CONTRACT)).toContain("The Parent neither enrolls the task itself nor implements it in its own conversation");
-		expect(normalized(BATCH_CONTRACT)).toContain("Parent enrolls nothing itself and implements nothing");
 	});
 });
 

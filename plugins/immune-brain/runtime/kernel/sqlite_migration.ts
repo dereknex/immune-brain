@@ -56,7 +56,6 @@ import {
 	updateRunTerminal,
 	verifyStoreFile,
 } from "./sqlite_store";
-import { isTerminalBatchState, type BatchRunState } from "../unattended/batch_state";
 import { parseTaskRecord } from "./validation";
 import { parseTaskRecordV3 } from "./legacy_task_record";
 import { canonicalRecordHash } from "./reducer";
@@ -270,10 +269,20 @@ function readReceipt(root: string): { identity: string; task_ids: string[] } | n
 }
 
 /**
- * Any batch state that is not terminal still owns work, so the layout is live.
- * Terminality is decided by the batch state owner's own predicate rather than a
- * local list, so a state added by that module cannot silently block migration.
+ * The terminal states a persisted batch record can carry; `needs_human` is a
+ * park, not terminal. Listed here because migration reads these legacy records
+ * without depending on the runtime that wrote them.
  */
+const TERMINAL_BATCH_STATES: ReadonlySet<string> = new Set([
+	"completed",
+	"budget_stopped",
+	"failed",
+	"rejected",
+	"superseded",
+	"discarded",
+]);
+
+/** Any batch state that is not terminal still owns work, so the layout is live. */
 function recoverableBatch(root: string): string | null {
 	const directory = join(root, STATE_RELATIVE, "batches");
 	if (!existsSync(directory)) return null;
@@ -283,7 +292,7 @@ function recoverableBatch(root: string): string | null {
 		try {
 			const parsed = JSON.parse(readFileSync(join(directory, entry), "utf8")) as Record<string, unknown>;
 			const state = typeof parsed.batch_state === "string" ? parsed.batch_state : null;
-			if (state !== null && isTerminalBatchState(state as BatchRunState)) continue;
+			if (state !== null && TERMINAL_BATCH_STATES.has(state)) continue;
 			return `batch ${entry} is not terminal (${state ?? "unknown"})`;
 		} catch {
 			return `batch ${entry} is unreadable`;

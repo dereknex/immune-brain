@@ -26,38 +26,32 @@ candidate TaskIntent is not Enrollment authority. For a Parent Issue, route to
 read. A Child entry verifies prerequisite settlement and integration before its
 single-task native gate; it starts no other Slice.
 
-Every new single-task `drive` entry goes through the single-task Lane path
-(Spec drive-always-lanes D10), including a GitHub Initiative Child entry. Its
-first step is `start_unattended_batch` with `task_id`, which belongs to no other
-Skill. When the entry finds no active claim and no single-task batch record,
-resolve the validated candidate the user named (or the Planner's recommended
-first Task when the entry names none and exactly one candidate fits), then call
-`start_unattended_batch` with that `task_id` once and without `initiative_slug`.
-The current Host opens exactly one native gate, without chat pre-confirmation;
-the runtime then creates the Lane and enrolls the child there through
-`runtime/lane_sessions/` (`startLanes`/`advanceLanes`). The Parent neither enrolls the
-task itself nor implements it in its own conversation. The Executor role runs inside the Lane
-process, never in the Parent conversation. The Parent waits read-only with
-`imm-session await --batch <batch_id>` and follows the returned `next_action`
-(`advance`, `relay_dialog`, `ask_user`, `wait`, `complete`) under
-[Single-Task Lane](drive-batch.md#single-task-lane) and [Herdr Lane Tabs](drive-batch.md#herdr-lane-tabs). Per-child decisions, native-gated stop, and `lane_rebinds` relay to the matching child of any single-task or Initiative batch via `findActiveLaneBatchForTask` and `rebindBatchChildIdentity`, then `advanceLanes`; see [Single-Task Lane](drive-batch.md#single-task-lane). Planner and Brainstorm never open that
-gate; a confirmation given to either is not this entry. A gate failure preserves
-the candidate and reports its stable reason plus exactly one same-Host recovery
-action; never recommend another Host, worktree, Direct Path, unmanaged
-implementation, or automatic retry.
+Every new single-task `drive` entry runs in place in the current worktree
+(Spec retire-unattended-batch D2), including a GitHub Initiative Child entry.
+When `status` shows no active claim, resolve the validated candidate the user
+named (or the Planner's recommended first Task when the entry names none and
+exactly one candidate fits), then call `enroll` with that `task_id` once. The
+current Host opens exactly one native gate, without chat pre-confirmation, and
+enrolls the task in this workspace: no Lane worktree and no Executor tab is
+created. `enroll` is admitted only under this live `drive` entry in the bound
+workspace. Enrollment requires a clean workspace: apart from the task's own
+TaskIntent and bound Spec, any tracked or untracked non-ignored dirty path
+refuses with `workspace_not_clean: <paths>` before the gate opens, and nothing
+is written. Never stash, discard or commit the user's changes to clear it. The
+task's diff, attribution and changed paths are taken from its Enrollment HEAD.
+Files beyond `scope_hint` are disclosed in Review evidence, not refused. A
+batch child keeps its Lane's confirmed scope disclosure. Then
+continue with the [Execution Loop](#execution-loop) below. Planner and
+Brainstorm never open that gate; a confirmation given to either is not this
+entry. A gate failure preserves the candidate and reports its stable reason plus
+exactly one same-Host recovery action; never recommend another Host, worktree,
+Direct Path, unmanaged implementation, or automatic retry.
 
-A TaskRecord enrolled in place before this change stays resumable until
-terminal (drain-only, owner: runtime). When `status` shows such an active claim
-with no single-task batch record, continue it with the Execution Loop below on
-the existing tools; a new entry never starts one. That record's enrollment
-required a clean workspace: apart from its own TaskIntent and bound Spec, any
-tracked or untracked non-ignored dirty path refused with
-`workspace_not_clean: <paths>` before the gate opened, and its diff, attribution
-and changed paths are taken from its Enrollment HEAD. The Lane path starts at
-the user's HEAD and does not require a clean checkout; user changes are checked
-only at delivery. Files beyond `scope_hint` are disclosed in Review evidence, not
-refused, on both paths. A batch child keeps its Lane's confirmed scope
-disclosure.
+An active claim resumes from its Kernel facts and is never enrolled again. A
+single-task Lane batch record opened before this change stays resumable until
+terminal (drain-only, owner: runtime): re-enter it through
+[Single-Task Lane](drive-batch.md#single-task-lane). A new entry never starts
+one.
 
 `status` is a read, not a freeze. It stays readable while the scope holds
 unstaged or untracked paths and returns them as a `warnings` entry beside the
@@ -76,9 +70,8 @@ retry action instead of enrolling. A carrier command the Host refused, cancelled
 or never ran is not a completed batch, and a later `drive` entry does not
 clear it. This pre-Enrollment gate is distinct from the post-settlement tracker
 projection below.
-For a new single-task entry this check runs before `start_unattended_batch`
-with `task_id` (Child entry included); the Enrollment it guards is the Lane
-child's, derived under that call's one native gate.
+For a new single-task entry this check runs before `enroll` (Child entry
+included).
 
 TaskIntent defines the goal, acceptance, and `scope_hint`.
 Historical prose Plans and State Ledgers are read-only history, not execution
@@ -120,9 +113,8 @@ action; status, formatting and repeated failed commands do not reset the count.
 A single Slice ends at its own terminal proof; a Parent uses whole-plan completion
 from the [batch contract](drive-batch.md#unattended-batch-opt-in).
 
-1. For an active in-place record (enrolled before the Lane default; a new
-   single-task entry runs this step inside its Lane's Executor instead),
-   implement the enrolled acceptance in the current
+1. For an active single-task record (a Lane batch's record runs this step
+   inside its Lane's Executor instead), implement the enrolled acceptance in the current
    conversation, applying `docs/reference/layering-rules.md` when the repository
    declares layers. On a fresh enrollment, `submit_assurance` means implement first,
    not call `advance_assurance` immediately: implement, run focused checks, stage,
@@ -172,7 +164,7 @@ from the [batch contract](drive-batch.md#unattended-batch-opt-in).
    `reason` names the file and key path to fix, `recovery_action` names the same
    value, and QA settlement is retained.
    `review_transport_unavailable`
-   means this Host is not inside Herdr: run the Lane inside Herdr, then call
+   means this Host is not inside Herdr: run the task's session inside Herdr, then call
    `advance_assurance`, which reuses the retained QA. On `verification_ready`
    run its `verification_session` through the same create, await, submit and
    stop sequence; a `verification result pending` answer means it has not
@@ -253,7 +245,7 @@ is recorded as a separate follow-up rather than resolved here.
   design, or decomposition, and returns any other proposal to the executing
   session. No Host refuses a file edit because of the session's entry.
 - Run entry decision hosting (ADR 0025). The literal-user `drive` entry needs
-  no chat confirmation; the single-task Lane entry and unattended batch start each keep one native
+  no chat confirmation; single-task `enroll` and unattended batch start each keep one native
   gate, and the entry token spares only retirement and same-Host recovery.
   Within one entry, only a side-effect-free rejection is retried, at most twice,
   and preflight is rerun before each retry; judge retryability from the

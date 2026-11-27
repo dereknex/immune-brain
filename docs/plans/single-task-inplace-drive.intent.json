@@ -1,0 +1,82 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "single-task-inplace-drive",
+  "goal": "Restore single-task in-place enroll under literal-user drive entry and native confirmation across Claude, Antigravity, and Pi, update single-task /drive to execute in place, and extract minimal pure helpers out of runtime/unattended so S2 can delete unattended batch cleanly.",
+  "acceptance": [
+    {
+      "id": "A1",
+      "assertion": "In-place enroll commits directly in the current worktree across Claude MCP, Antigravity MCP, and Pi under single native confirmation with no Lane worktree or Herdr Executor tab, and refuses with workspace_not_clean before any Kernel write when an unrelated dirty path exists outside the TaskIntent and bound Spec.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/dual-host-assurance-conformance.test.ts\",\n      \"tests/antigravity-assurance-conformance.test.ts\",\n      \"tests/enrollment-dirty-scope.test.ts\",\n      \"tests/pi-canary-work-extension.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 600000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "A2",
+      "assertion": "Literal-user phase-entry gates across Claude, Antigravity, and Pi admit enroll only under a live drive entry in the bound workspace and deny enroll after plan or ordinary prompts or in a drifted workspace.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/phase-entry.test.ts\",\n      \"tests/claude-phase-entry-gate.test.ts\",\n      \"tests/pi-phase-entry-gate.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "A3",
+      "assertion": "Extracted pure helpers (projectScopeOverlap in runtime/kernel/scope_overlap.ts, readActiveClaimTaskId in runtime/kernel/backend_claim.ts, observeSettledParentCompletion in runtime/assurance/parent_completion.ts, and inline terminal batch check in sqlite_migration.ts) preserve imm-kernel intent overlap, imm-tracker parent completion, and SQLite migration with zero imports from runtime/unattended/ while preserving runtime layering rules.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-schedule.test.ts\",\n      \"tests/github-initiative-recovery.test.ts\",\n      \"tests/kernel-migrate.test.ts\",\n      \"tests/runtime-layering-boundary.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "A4",
+      "assertion": "/drive skill and dist/drive.md direct single tasks to in-place enroll and match packaged tool and skill consistency contracts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/packaged-contract-tool-surface.test.ts\",\n      \"tests/skill-dist-consistency.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "A5",
+      "assertion": "TypeScript typecheck passes cleanly after S1 changes.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"run\",\n      \"typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "A6",
+      "assertion": "Built Claude plugin bundle matches runtime sources.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"scripts/build-claude-plugin.ts\",\n      \"--check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "A7",
+      "assertion": "Built Antigravity plugin bundle matches runtime sources.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"scripts/build-antigravity-plugin.ts\",\n      \"--check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/agents/derived-files.json",
+    "docs/specs/retire-unattended-batch.spec.md",
+    "plugins/immune-brain-antigravity/**",
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/drive.md",
+    "plugins/immune-brain/runtime/antigravity/lane_guard.ts",
+    "plugins/immune-brain/runtime/assurance/active_task_notice.ts",
+    "plugins/immune-brain/runtime/assurance/parent_completion.ts",
+    "plugins/immune-brain/runtime/assurance/phase_entry.ts",
+    "plugins/immune-brain/runtime/assurance/run_continuation.ts",
+    "plugins/immune-brain/runtime/claude/lane_guard.ts",
+    "plugins/immune-brain/runtime/claude/mcp_server.ts",
+    "plugins/immune-brain/runtime/commands/kernel.ts",
+    "plugins/immune-brain/runtime/github_issue_tracker.ts",
+    "plugins/immune-brain/runtime/host-core/interaction.ts",
+    "plugins/immune-brain/runtime/host-core/mcp_runtime.ts",
+    "plugins/immune-brain/runtime/host-core/runtime.ts",
+    "plugins/immune-brain/runtime/kernel/backend_claim.ts",
+    "plugins/immune-brain/runtime/kernel/scope_overlap.ts",
+    "plugins/immune-brain/runtime/kernel/sqlite_migration.ts",
+    "plugins/immune-brain/skills/drive/SKILL.md",
+    "tests/antigravity-assurance-conformance.test.ts",
+    "tests/claude-phase-entry-gate.test.ts",
+    "tests/dual-host-assurance-conformance.test.ts",
+    "tests/enrollment-dirty-scope.test.ts",
+    "tests/github-initiative-recovery.test.ts",
+    "tests/kernel-migrate.test.ts",
+    "tests/packaged-contract-tool-surface.test.ts",
+    "tests/phase-entry.test.ts",
+    "tests/pi-canary-work-extension.test.ts",
+    "tests/pi-phase-entry-gate.test.ts",
+    "tests/runtime-layering-boundary.test.ts",
+    "tests/unattended-batch-schedule.test.ts"
+  ],
+  "scope_size_reason": "Restoring native-gated in-place enroll requires touching shared host-core/phase_entry seams, all three Host adapters (Claude, Antigravity, Pi), the /drive contract, four pure helper extractions decoupling runtime/unattended before S2 deletion, derived bundle sync, and focused conformance tests.",
+  "risk": "material",
+  "revision": 2,
+  "owner": "user"
+}

@@ -916,155 +916,6 @@ var init_sqlite_store = __esm(() => {
   openStores = new Map;
 });
 
-// plugins/immune-brain/runtime/kernel/backend_claim.ts
-import { lstatSync as lstatSync3, readFileSync as readFileSync2 } from "node:fs";
-import { join, resolve as resolve3 } from "node:path";
-function validateTaskId2(taskId) {
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(taskId))
-    throw new KernelBackendClaimError("task_id is not a safe file identity");
-}
-function readJsonOrNull(path) {
-  try {
-    const stat = lstatSync3(path);
-    if (stat.isSymbolicLink())
-      throw new KernelBackendClaimError("owner file must not be a symlink");
-    if (!stat.isFile())
-      throw new KernelBackendClaimError("owner file is not a regular file");
-  } catch (error) {
-    if (error.code === "ENOENT")
-      return null;
-    throw error;
-  }
-  return JSON.parse(readFileSync2(path, "utf8"));
-}
-function parseBackendClaim(raw) {
-  const unknown = Object.keys(raw).filter((key) => !ALLOWED.includes(key));
-  if (unknown.length > 0)
-    throw new KernelBackendClaimError(`backend claim has unknown field: ${unknown[0]}`);
-  if (raw.contract !== "assurance_kernel/backend_claim/v2")
-    throw new KernelBackendClaimError("backend claim contract is invalid");
-  if (raw.backend !== "kernel")
-    throw new KernelBackendClaimError("backend claim backend must be kernel");
-  if (typeof raw.task_id !== "string" || !raw.task_id.trim())
-    throw new KernelBackendClaimError("backend claim task_id is invalid");
-  validateTaskId2(raw.task_id);
-  if (typeof raw.intent_revision !== "number" || !Number.isInteger(raw.intent_revision) || raw.intent_revision < 1)
-    throw new KernelBackendClaimError("backend claim intent_revision is invalid");
-  for (const field of ["intent_content_hash", "enrollment_event_id", "created_at", "updated_at"]) {
-    if (typeof raw[field] !== "string" || !String(raw[field]).trim())
-      throw new KernelBackendClaimError(`backend claim ${field} is invalid`);
-  }
-  if (raw.lifecycle_status !== "active" && raw.lifecycle_status !== "draining")
-    throw new KernelBackendClaimError(`backend claim lifecycle_status must be active or draining; terminal state lives only in the task tombstone`);
-  return raw;
-}
-function readBackendClaim(root) {
-  return withKernelRead(root, (db) => {
-    const run = readRunRowById(db, activeRunId(db) ?? "");
-    if (!run || run.state !== "active" || run.claim_status === null)
-      return null;
-    return claimFromRunRow(run);
-  }) ?? null;
-}
-function claimFromRunRow(run) {
-  return parseBackendClaim({
-    contract: "assurance_kernel/backend_claim/v2",
-    backend: "kernel",
-    task_id: run.task_id,
-    intent_revision: run.intent_revision,
-    intent_content_hash: run.intent_content_hash,
-    enrollment_event_id: run.enrollment_event_id,
-    lifecycle_status: run.claim_status ?? "active",
-    created_at: run.created_at,
-    updated_at: run.updated_at
-  });
-}
-function serializeBackendClaim(claim) {
-  parseBackendClaim(claim);
-  return `${JSON.stringify(claim, null, 2)}
-`;
-}
-function parseTaskTombstone(raw) {
-  const legacy = raw.contract === LEGACY_TASK_TOMBSTONE_CONTRACT;
-  const allowed = legacy ? TOMBSTONE_ALLOWED.map((field) => field === "terminal_lifecycle" ? "terminal_phase" : field) : TOMBSTONE_ALLOWED;
-  const unknown = Object.keys(raw).filter((key) => !allowed.includes(key));
-  if (unknown.length > 0)
-    throw new KernelBackendClaimError(`task tombstone has unknown field: ${unknown[0]}`);
-  if (!legacy && raw.contract !== TASK_TOMBSTONE_CONTRACT)
-    throw new KernelBackendClaimError("task tombstone contract is invalid");
-  if (typeof raw.task_id !== "string" || !raw.task_id.trim())
-    throw new KernelBackendClaimError("task tombstone task_id is invalid");
-  validateTaskId2(raw.task_id);
-  if (raw.lifecycle_status !== "terminal")
-    throw new KernelBackendClaimError("task tombstone lifecycle_status must be terminal");
-  const terminalLifecycle = legacy ? raw.terminal_phase : raw.terminal_lifecycle;
-  if (terminalLifecycle !== "done" && terminalLifecycle !== "stopped")
-    throw new KernelBackendClaimError("task tombstone terminal_lifecycle must be done or stopped");
-  for (const field of ["terminal_event_id", "final_record_hash", "terminalized_at"]) {
-    if (typeof raw[field] !== "string" || !String(raw[field]).trim())
-      throw new KernelBackendClaimError(`task tombstone ${field} is invalid`);
-  }
-  if (!/^sha256:[a-f0-9]{64}$/.test(raw.final_record_hash))
-    throw new KernelBackendClaimError("task tombstone final_record_hash must be a canonical sha256 hash");
-  return {
-    contract: TASK_TOMBSTONE_CONTRACT,
-    task_id: raw.task_id,
-    lifecycle_status: "terminal",
-    terminal_lifecycle: terminalLifecycle,
-    terminal_event_id: raw.terminal_event_id,
-    final_record_hash: raw.final_record_hash,
-    terminalized_at: raw.terminalized_at
-  };
-}
-function readTaskTombstone(root, taskId) {
-  validateTaskId2(taskId);
-  const localRun = withKernelRead(root, (db) => readRunRowByTask(db, taskId));
-  const proofPath = localRun ? auditRunTerminalProofPath(taskId, localRun.run_id) : auditEvidencePaths(root, taskId).proof;
-  const raw = readJsonOrNull(join(resolve3(root), proofPath));
-  if (!raw)
-    return null;
-  const tombstone = parseTaskTombstone(raw);
-  if (tombstone.task_id !== taskId)
-    throw new KernelBackendClaimError("task tombstone identity is inconsistent");
-  return tombstone;
-}
-function serializeTaskTombstone(tombstone) {
-  parseTaskTombstone(tombstone);
-  return `${JSON.stringify(tombstone, null, 2)}
-`;
-}
-var ALLOWED, TASK_TOMBSTONE_CONTRACT = "assurance_kernel/task_tombstone/v2", LEGACY_TASK_TOMBSTONE_CONTRACT = "assurance_kernel/task_tombstone/v1", TOMBSTONE_ALLOWED, KernelBackendClaimError;
-var init_backend_claim = __esm(() => {
-  init_storage_paths();
-  init_sqlite_store();
-  ALLOWED = [
-    "contract",
-    "backend",
-    "task_id",
-    "intent_revision",
-    "intent_content_hash",
-    "enrollment_event_id",
-    "lifecycle_status",
-    "created_at",
-    "updated_at"
-  ];
-  TOMBSTONE_ALLOWED = [
-    "contract",
-    "task_id",
-    "lifecycle_status",
-    "terminal_lifecycle",
-    "terminal_event_id",
-    "final_record_hash",
-    "terminalized_at"
-  ];
-  KernelBackendClaimError = class KernelBackendClaimError extends Error {
-    constructor(message) {
-      super(message);
-      this.name = "KernelBackendClaimError";
-    }
-  };
-});
-
 // plugins/immune-brain/runtime/canonical_json.ts
 function stableStringify(value) {
   if (value === null || value === undefined)
@@ -1092,8 +943,8 @@ var init_types = __esm(() => {
 
 // plugins/immune-brain/runtime/kernel/tracked_declaration.ts
 import { execFileSync } from "node:child_process";
-import { lstatSync as lstatSync4, readFileSync as readFileSync3, realpathSync as realpathSync3 } from "node:fs";
-import { join as join2 } from "node:path";
+import { lstatSync as lstatSync3, readFileSync as readFileSync2, realpathSync as realpathSync3 } from "node:fs";
+import { join } from "node:path";
 function readTrackedDeclaration(root, path, maxBytes) {
   const invalid = (reason) => ({ kind: "invalid", reason });
   let canonicalRoot;
@@ -1102,10 +953,10 @@ function readTrackedDeclaration(root, path, maxBytes) {
   } catch {
     return { kind: "absent" };
   }
-  const target = join2(canonicalRoot, path);
+  const target = join(canonicalRoot, path);
   let present = false;
   try {
-    const stat = lstatSync4(target);
+    const stat = lstatSync3(target);
     if (!stat.isFile())
       return invalid(`${path} is not a regular file`);
     if (stat.size > maxBytes)
@@ -1121,7 +972,7 @@ function readTrackedDeclaration(root, path, maxBytes) {
       return present ? invalid(`${path} is not committed`) : { kind: "absent" };
     if (!present || !/^100(?:644|755) blob /.test(entry))
       return invalid(`${path} does not match a committed regular file`);
-    const bytes = readFileSync3(target);
+    const bytes = readFileSync2(target);
     const committed = execFileSync("git", ["show", `HEAD:${path}`], { cwd: canonicalRoot, maxBuffer: maxBytes, stdio: ["ignore", "pipe", "pipe"] });
     if (!bytes.equals(committed))
       return invalid(`${path} differs from its committed bytes`);
@@ -1550,13 +1401,13 @@ import {
   closeSync as closeSync3,
   constants as fsConstants,
   fstatSync as fstatSync2,
-  lstatSync as lstatSync5,
+  lstatSync as lstatSync4,
   openSync as openSync3,
-  readFileSync as readFileSync4,
+  readFileSync as readFileSync3,
   realpathSync as realpathSync4
 } from "node:fs";
 import { execFileSync as execFileSync2 } from "node:child_process";
-import { join as join3, resolve as resolve4, sep as sep2 } from "node:path";
+import { join as join2, resolve as resolve3, sep as sep2 } from "node:path";
 function sha256Hex(bytes) {
   return createHash3("sha256").update(bytes).digest("hex");
 }
@@ -1741,7 +1592,7 @@ function withNextScope(record, nextScope) {
     intent_snapshot: { ...record.intent_snapshot, scope_hint: [...nextScope] }
   };
 }
-function validateTaskId3(taskId) {
+function validateTaskId2(taskId) {
   if (!TASK_ID_PATTERN.test(taskId))
     throw new Error("task id must match [A-Za-z0-9][A-Za-z0-9._-]{0,127}");
 }
@@ -1761,8 +1612,8 @@ function assertSameIdentity(before, after, what) {
     throw new Error(`${what} changed while being read`);
 }
 function resolveCanonicalRoot(root) {
-  const resolved = resolve4(root);
-  const rootStat = lstatSync5(resolved);
+  const resolved = resolve3(root);
+  const rootStat = lstatSync4(resolved);
   if (rootStat.isSymbolicLink() || !rootStat.isDirectory())
     throw new Error("project root must be a real directory, not a symlink");
   return realpathSync4(resolved);
@@ -1776,7 +1627,7 @@ function resolveSidecarPath(canonicalRoot, activePath, archivedPath) {
 }
 function sidecarPresent(canonicalRoot, relativePath) {
   try {
-    lstatSync5(join3(canonicalRoot, relativePath));
+    lstatSync4(join2(canonicalRoot, relativePath));
     return true;
   } catch {
     return false;
@@ -1786,8 +1637,8 @@ function collectPathIdentities(canonicalRoot, relativePath) {
   const identities = [];
   let current = canonicalRoot;
   for (const part of relativePath.split("/")) {
-    current = join3(current, part);
-    const stat = lstatSync5(current);
+    current = join2(current, part);
+    const stat = lstatSync4(current);
     if (stat.isSymbolicLink())
       throw new Error("intent sidecar path contains a symlink");
     identities.push({ dev: stat.dev, ino: stat.ino });
@@ -1798,21 +1649,21 @@ function assertIdentitiesUnchanged(expected, canonicalRoot, relativePath) {
   let current = canonicalRoot;
   const parts = relativePath.split("/");
   for (let index = 0;index < parts.length; index += 1) {
-    current = join3(current, parts[index]);
-    const stat = lstatSync5(current);
+    current = join2(current, parts[index]);
+    const stat = lstatSync4(current);
     if (stat.dev !== expected[index].dev || stat.ino !== expected[index].ino)
       throw new Error(`path component changed while being read: ${parts.slice(0, index + 1).join("/")}`);
   }
 }
 function readTaskIntentSource(root, taskId, requestedPath, requireTracked = true, recordedIntent) {
-  validateTaskId3(taskId);
+  validateTaskId2(taskId);
   const canonicalRoot = resolveCanonicalRoot(root);
   const activePath = `${INTENT_SIDECAR_RELATIVE_PREFIX}${taskId}.intent.json`;
   const archivedPath = `${INTENT_SIDECAR_RELATIVE_PREFIX}archive/${taskId}.intent.json`;
   const sidecarPath = requestedPath ?? resolveSidecarPath(canonicalRoot, activePath, archivedPath);
   if (sidecarPath !== activePath && sidecarPath !== archivedPath)
     throw new Error("intent sidecar path is not the active or archived task path");
-  const target = join3(canonicalRoot, sidecarPath);
+  const target = join2(canonicalRoot, sidecarPath);
   if (!target.startsWith(canonicalRoot + sep2))
     throw new Error("intent sidecar escapes project root");
   if (!sidecarPresent(canonicalRoot, sidecarPath))
@@ -1827,7 +1678,7 @@ function readTaskIntentSource(root, taskId, requestedPath, requireTracked = true
         throw new TaskIntentObservationError("invalid", "TaskIntent sidecar is not Git-tracked");
       throw error;
     }
-  const before = lstatSync5(target);
+  const before = lstatSync4(target);
   if (!before.isFile() || before.size > INTENT_MAX_BYTES)
     throw new TaskIntentObservationError("invalid", "TaskIntent sidecar must be a regular file no larger than 64 KiB");
   const fd = openSync3(target, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
@@ -1836,19 +1687,19 @@ function readTaskIntentSource(root, taskId, requestedPath, requireTracked = true
     const fdStat = fstatSync2(fd);
     assertSameIdentity(statIdentity(before), fdStat, "intent sidecar descriptor");
     intentReaderTestHook?.onBeforeDescriptorRead?.();
-    bytes = readFileSync4(fd);
+    bytes = readFileSync3(fd);
   } finally {
     closeSync3(fd);
   }
   if (bytes.byteLength > INTENT_MAX_BYTES)
     throw new TaskIntentObservationError("invalid", "TaskIntent sidecar exceeds 64 KiB");
-  const after = lstatSync5(target);
+  const after = lstatSync4(target);
   assertSameIdentity(statIdentity(before), after, "intent sidecar");
   assertIdentitiesUnchanged(pathIdentities, canonicalRoot, sidecarPath);
   const canonicalAgain = realpathSync4(root);
   if (canonicalAgain !== canonicalRoot)
     throw new Error("canonical project root drifted while being read");
-  if (lstatSync5(canonicalAgain).isSymbolicLink())
+  if (lstatSync4(canonicalAgain).isSymbolicLink())
     throw new Error("canonical project root became a symlink while being read");
   const sourceBytesSha256 = sha256Hex(bytes);
   let intent;
@@ -4119,17 +3970,17 @@ import {
   existsSync as existsSync2,
   fstatSync as fstatSync3,
   fsyncSync as fsyncSync2,
-  lstatSync as lstatSync6,
+  lstatSync as lstatSync5,
   mkdirSync as mkdirSync2,
   openSync as openSync4,
-  readFileSync as readFileSync5,
+  readFileSync as readFileSync4,
   readdirSync as readdirSync2,
   realpathSync as realpathSync5,
   renameSync as renameSync2,
   rmSync as rmSync2,
   writeFileSync as writeFileSync2
 } from "node:fs";
-import { dirname as dirname2, isAbsolute as isAbsolute3, relative as relative2, resolve as resolve5, sep as sep3 } from "node:path";
+import { dirname as dirname2, isAbsolute as isAbsolute3, relative as relative2, resolve as resolve4, sep as sep3 } from "node:path";
 function revisionFor(content) {
   return `sha256:${createHash7("sha256").update(content).digest("hex")}`;
 }
@@ -4142,7 +3993,7 @@ function recordRevision(revision) {
 function nowIso() {
   return new Date().toISOString();
 }
-function validateTaskId4(taskId) {
+function validateTaskId3(taskId) {
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(taskId))
     throw new KernelStoreSecurityError("task_id is not a safe file identity");
 }
@@ -4156,7 +4007,7 @@ function canonicalRoot2(root) {
 function retireSupersededRetiredFiles(root, db, taskId) {
   const canonical = canonicalRoot2(root);
   for (const path of [FILE_STORE_CLAIM_RELATIVE, FILE_STORE_WORKSPACE_RELATIVE]) {
-    const full = resolve5(canonical, path);
+    const full = resolve4(canonical, path);
     if (!existsSync2(full))
       continue;
     if (isRetiredFileProvablySuperseded(full, db, taskId))
@@ -4169,7 +4020,7 @@ function isRetiredFileProvablySuperseded(path, db, taskId) {
     return false;
   let raw;
   try {
-    raw = JSON.parse(readFileSync5(path, "utf8"));
+    raw = JSON.parse(readFileSync4(path, "utf8"));
   } catch {
     return false;
   }
@@ -4202,7 +4053,7 @@ function assertNoRetiredFileStore(root, db, taskId) {
     ...residue.task_entries.length > 0 ? [[".imm/state/tasks", "task records"]] : []
   ];
   for (const [path, label] of retired) {
-    if (existsSync2(resolve5(canonical, path)))
+    if (existsSync2(resolve4(canonical, path)))
       throw new KernelStoreSecurityError(`retired file-store authority is present (${label}: ${path}); import it with the supported migration before mutating this worktree`);
   }
   const derived = [
@@ -4210,7 +4061,7 @@ function assertNoRetiredFileStore(root, db, taskId) {
     [FILE_STORE_WORKSPACE_RELATIVE, "workspace owner"]
   ];
   for (const [path, label] of derived) {
-    const full = resolve5(canonical, path);
+    const full = resolve4(canonical, path);
     if (path === FILE_STORE_WORKSPACE_RELATIVE && residue.workspace_owner === null)
       continue;
     if (!existsSync2(full))
@@ -4220,8 +4071,8 @@ function assertNoRetiredFileStore(root, db, taskId) {
     if (!isRetiredFileProvablySuperseded(full, db, taskId))
       throw new KernelStoreSecurityError(`retired file-store authority is present (${label}: ${path}) and does not belong to this task; import it with the supported migration before mutating this worktree`);
   }
-  if (existsSync2(resolve5(canonical, FILE_STORE_TRANSACTIONS_RELATIVE))) {
-    const entries = readdirNames(resolve5(canonical, FILE_STORE_TRANSACTIONS_RELATIVE));
+  if (existsSync2(resolve4(canonical, FILE_STORE_TRANSACTIONS_RELATIVE))) {
+    const entries = readdirNames(resolve4(canonical, FILE_STORE_TRANSACTIONS_RELATIVE));
     const pending = entries.filter((entry) => entry.endsWith(".json") && entry !== "storage-layout-migration.json");
     if (pending.length > 0)
       throw new KernelStoreSecurityError(`retired file-store transaction marker is present (${pending[0]}); settle it with the runtime that wrote it before mutating this worktree`);
@@ -4241,7 +4092,7 @@ function retiredFileStoreConflict(root, db, taskId) {
     ...residue.task_entries.length > 0 ? [[".imm/state/tasks", "task records"]] : []
   ];
   for (const [path, label] of authority)
-    if (existsSync2(resolve5(canonical, path)))
+    if (existsSync2(resolve4(canonical, path)))
       return `retired file-store authority is present (${label}: ${path}); import it with the supported migration before mutating this worktree`;
   const storeHasTask = db !== null && taskId !== null && readRunRowByTask(db, taskId) !== null;
   if (!storeHasTask) {
@@ -4250,10 +4101,10 @@ function retiredFileStoreConflict(root, db, taskId) {
       [FILE_STORE_WORKSPACE_RELATIVE, "workspace owner"]
     ];
     for (const [path, label] of derived)
-      if ((path !== FILE_STORE_WORKSPACE_RELATIVE || residue.workspace_owner !== null) && existsSync2(resolve5(canonical, path)))
+      if ((path !== FILE_STORE_WORKSPACE_RELATIVE || residue.workspace_owner !== null) && existsSync2(resolve4(canonical, path)))
         return `retired file-store authority is present (${label}: ${path}); import it with the supported migration before mutating this worktree`;
   }
-  const transactions = resolve5(canonical, FILE_STORE_TRANSACTIONS_RELATIVE);
+  const transactions = resolve4(canonical, FILE_STORE_TRANSACTIONS_RELATIVE);
   if (existsSync2(transactions)) {
     const pending = readdirNames(transactions).filter((entry) => entry.endsWith(".json") && entry !== "storage-layout-migration.json");
     if (pending.length > 0)
@@ -4279,14 +4130,14 @@ function safeCandidate(root, relativePath) {
   if (!relativePath || relativePath.includes("\x00") || isAbsolute3(relativePath) || relativePath.includes("\\"))
     throw new KernelStoreSecurityError("project-relative path is invalid");
   const canonical = canonicalRoot2(root);
-  const candidate = resolve5(canonical, relativePath);
+  const candidate = resolve4(canonical, relativePath);
   if (!withinRoot(canonical, candidate))
     throw new KernelStoreSecurityError("path escapes the project root");
   return { root: canonical, path: candidate };
 }
 function pathStatOrNull(path) {
   try {
-    return lstatSync6(path);
+    return lstatSync5(path);
   } catch (error) {
     const code = error.code;
     if (code === "ENOENT" || code === "ENOTDIR")
@@ -4298,7 +4149,7 @@ function assertNoSymlinkSegments(root, candidate) {
   const rel = relative2(root, candidate);
   let current = root;
   for (const segment of rel.split(sep3).filter(Boolean)) {
-    current = resolve5(current, segment);
+    current = resolve4(current, segment);
     const stat = pathStatOrNull(current);
     if (!stat)
       continue;
@@ -4310,11 +4161,11 @@ function capturePathIdentities(root, candidate) {
   const paths = [root];
   let current = root;
   for (const segment of relative2(root, candidate).split(sep3).filter(Boolean)) {
-    current = resolve5(current, segment);
+    current = resolve4(current, segment);
     paths.push(current);
   }
   return paths.map((path) => {
-    const stat = lstatSync6(path);
+    const stat = lstatSync5(path);
     if (stat.isSymbolicLink())
       throw new KernelStoreSecurityError(`symlink storage segment is forbidden: ${relative2(root, path)}`);
     return { path, dev: stat.dev, ino: stat.ino };
@@ -4322,7 +4173,7 @@ function capturePathIdentities(root, candidate) {
 }
 function assertPathIdentitiesUnchanged(before) {
   for (const identity of before) {
-    const after = lstatSync6(identity.path);
+    const after = lstatSync5(identity.path);
     if (after.isSymbolicLink() || after.dev !== identity.dev || after.ino !== identity.ino)
       throw new KernelStoreSecurityError(`path identity changed during access: ${identity.path}`);
   }
@@ -4332,7 +4183,7 @@ function ensureSecureDirectory(root, relativePath) {
   const rel = relative2(target.root, target.path);
   let current = target.root;
   for (const segment of rel.split(sep3).filter(Boolean)) {
-    current = resolve5(current, segment);
+    current = resolve4(current, segment);
     const stat = pathStatOrNull(current);
     if (stat) {
       if (stat.isSymbolicLink())
@@ -4364,8 +4215,8 @@ function readSecureProjectBytes(root, relativePath) {
     const opened = fstatSync3(fd);
     if (opened.dev !== before.dev || opened.ino !== before.ino)
       throw new KernelStoreSecurityError(`source identity changed: ${relativePath}`);
-    const content = readFileSync5(fd);
-    const after = lstatSync6(candidate.path);
+    const content = readFileSync4(fd);
+    const after = lstatSync5(candidate.path);
     if (after.dev !== opened.dev || after.ino !== opened.ino)
       throw new KernelStoreSecurityError(`source identity changed: ${relativePath}`);
     assertPathIdentitiesUnchanged(identities);
@@ -4402,7 +4253,7 @@ function clearStaleLock(lockPath) {
   let fd = null;
   try {
     fd = openSync4(lockPath, constants2.O_RDONLY | (constants2.O_NOFOLLOW ?? 0));
-    const raw = JSON.parse(readFileSync5(fd, "utf8"));
+    const raw = JSON.parse(readFileSync4(fd, "utf8"));
     stale = Number.isInteger(raw.pid) && Number(raw.pid) > 0 && !processIsAlive(Number(raw.pid));
   } catch {
     stale = Date.now() - Number(before.mtimeMs) > 30000;
@@ -4412,7 +4263,7 @@ function clearStaleLock(lockPath) {
   }
   if (!stale)
     return false;
-  const after = lstatSync6(lockPath);
+  const after = lstatSync5(lockPath);
   if (after.isSymbolicLink() || after.dev !== before.dev || after.ino !== before.ino)
     throw new KernelStoreSecurityError("kernel store lock identity changed during recovery");
   rmSync2(lockPath);
@@ -4534,7 +4385,7 @@ function parseWorkspaceContent(content) {
   if (raw.current_working !== null && (typeof raw.current_working !== "string" || !raw.current_working.trim()))
     throw new KernelStoreSecurityError("workspace current_working is invalid");
   if (typeof raw.current_working === "string")
-    validateTaskId4(raw.current_working);
+    validateTaskId3(raw.current_working);
   return raw;
 }
 function serializeWorkspace(state) {
@@ -4551,7 +4402,7 @@ function workspaceStateFromRow(db, runId) {
   };
 }
 function readCommittedTerminalResult(root, taskId, eventId, requestDigest) {
-  validateTaskId4(taskId);
+  validateTaskId3(taskId);
   const read = withKernelRead(root, (db) => {
     const row = readOperationRow(db, terminalOperationId(taskId, eventId));
     if (!row)
@@ -4564,7 +4415,7 @@ function readCommittedTerminalResult(root, taskId, eventId, requestDigest) {
   return read ?? null;
 }
 function readCommittedEnrollmentResult(root, taskId, eventId, requestDigest) {
-  validateTaskId4(taskId);
+  validateTaskId3(taskId);
   const read = withKernelRead(root, (db) => {
     const row = readOperationRow(db, enrollmentOperationId(taskId, eventId));
     if (!row)
@@ -4583,12 +4434,12 @@ function readCommittedEnrollmentResult(root, taskId, eventId, requestDigest) {
   return read ?? null;
 }
 function localRunId(root, taskId) {
-  validateTaskId4(taskId);
+  validateTaskId3(taskId);
   const row = withKernelRead(root, (db) => readRunRowByTask(db, taskId));
   return row?.run_id ?? null;
 }
 function currentRunId(root, taskId) {
-  validateTaskId4(taskId);
+  validateTaskId3(taskId);
   const read = withKernelRead(root, (db) => {
     const run = readRunRowByTask(db, taskId);
     return run && run.state === "active" ? run.run_id : null;
@@ -4628,7 +4479,7 @@ function recordFromRun(run) {
   return record;
 }
 function readTaskRecordRaw(root, taskId) {
-  validateTaskId4(taskId);
+  validateTaskId3(taskId);
   const read = withKernelRead(root, (db) => {
     const run = readRunRowByTask(db, taskId);
     if (!run)
@@ -4641,7 +4492,7 @@ function readTaskRecordRaw(root, taskId) {
   return read ?? { revision: MISSING_REVISION, record: null };
 }
 function readCommittedRecord(root, taskId) {
-  validateTaskId4(taskId);
+  validateTaskId3(taskId);
   const read = withKernelRead(root, (db) => {
     const run = readRunRowByTask(db, taskId);
     if (!run)
@@ -4654,11 +4505,11 @@ function readCommittedRecord(root, taskId) {
   return read ?? null;
 }
 function enrollmentEventIdFor(taskId, createdAt) {
-  validateTaskId4(taskId);
+  validateTaskId3(taskId);
   return `enroll-${taskId}-${createdAt}`;
 }
 function readSettledRunEvidence(root, taskId) {
-  validateTaskId4(taskId);
+  validateTaskId3(taskId);
   const read = withKernelRead(root, (db) => {
     const run = readRunRowByTask(db, taskId);
     if (!run || run.state === "active")
@@ -4694,7 +4545,7 @@ function readSettledRunEvidence(root, taskId) {
   return read ?? null;
 }
 function readAuditTaskPair(root, taskId, runId) {
-  validateTaskId4(taskId);
+  validateTaskId3(taskId);
   let recordPath;
   let proofPath;
   if (runId !== undefined) {
@@ -4759,7 +4610,7 @@ function convergePendingRelocations(root, db) {
   }
 }
 function readSettledTaskEvidence(root, taskId) {
-  validateTaskId4(taskId);
+  validateTaskId3(taskId);
   const localRun = withKernelRead(root, (db) => readRunRowByTask(db, taskId));
   if (!localRun) {
     const legacy = readAuditTaskPair(root, taskId);
@@ -4785,7 +4636,7 @@ function readSettledTaskEvidence(root, taskId) {
   };
 }
 function withKernelStoreLockForTask(root, taskId, operation) {
-  validateTaskId4(taskId);
+  validateTaskId3(taskId);
   return withKernelTransaction(root, (db) => {
     assertNoRetiredFileStore(root, db, taskId);
     convergePendingRelocations(root, db);
@@ -4846,7 +4697,7 @@ function requireActiveRun(db, taskId) {
   return run;
 }
 function commitTaskRecordLocked(root, taskId, expectedRecordHash, nextRecord, expectedWorkspaceHash, nextWorkspace, artifactRelocations = [], capabilityRunId, preserveWorkspace = false) {
-  validateTaskId4(taskId);
+  validateTaskId3(taskId);
   const nextRecordContent = `${JSON.stringify(nextRecord, null, 2)}
 `;
   const timestamp = nowIso();
@@ -4890,7 +4741,7 @@ function claimBytesFromRun(run) {
   return serializeBackendClaim(claimFromRunRow(run));
 }
 function commitEnrollmentLocked(root, taskId, transaction, claim, requestDigest) {
-  validateTaskId4(taskId);
+  validateTaskId3(taskId);
   if (transaction.task_id !== taskId)
     throw new KernelStoreSecurityError("enrollment transaction task identity is inconsistent");
   const parsedClaim = parseBackendClaim(claim);
@@ -4961,7 +4812,7 @@ function commitEnrollmentLocked(root, taskId, transaction, claim, requestDigest)
   });
 }
 function commitDrainLocked(root, taskId, expectedClaimContent, nextClaimContent, at, capabilityRunId) {
-  validateTaskId4(taskId);
+  validateTaskId3(taskId);
   const expected = parseBackendClaim(JSON.parse(expectedClaimContent));
   const next = parseBackendClaim(JSON.parse(nextClaimContent));
   if (expected.task_id !== taskId || next.task_id !== taskId)
@@ -4999,7 +4850,7 @@ function commitDrainLocked(root, taskId, expectedClaimContent, nextClaimContent,
   });
 }
 function commitTerminalLocked(root, taskId, transaction, tombstone, capabilityRunId, requestDigest) {
-  validateTaskId4(taskId);
+  validateTaskId3(taskId);
   if (transaction.task_id !== taskId)
     throw new KernelStoreSecurityError("terminal transaction task identity is inconsistent");
   if (tombstone.task_id !== taskId)
@@ -5155,7 +5006,7 @@ function conflictProjection(taskId, diagnostic) {
   };
 }
 function reconcileKernelAuthority(root, taskId) {
-  validateTaskId4(taskId);
+  validateTaskId3(taskId);
   const projected = withKernelRead(root, (db) => {
     const conflict = retiredFileStoreConflict(root, db, taskId);
     if (conflict)
@@ -5211,7 +5062,7 @@ function retiredFileStoreDiagnostic(root, db = null, taskId = null) {
   return retiredFileStoreConflict(root, db, taskId);
 }
 function repairKernelAuthority(root, taskId, expectedProjectionRevision, _at = nowIso()) {
-  validateTaskId4(taskId);
+  validateTaskId3(taskId);
   return withKernelTransaction(root, (db) => {
     assertNoRetiredFileStore(root, db, taskId);
     retireSupersededRetiredFiles(root, db, taskId);
@@ -5238,6 +5089,161 @@ var init_storage = __esm(() => {
   init_types();
   init_sqlite_store();
   INITIAL_WORKSPACE_REVISION = recordRevision(0);
+});
+
+// plugins/immune-brain/runtime/kernel/backend_claim.ts
+import { lstatSync as lstatSync6, readFileSync as readFileSync5 } from "node:fs";
+import { join as join3, resolve as resolve5 } from "node:path";
+function validateTaskId4(taskId) {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(taskId))
+    throw new KernelBackendClaimError("task_id is not a safe file identity");
+}
+function readJsonOrNull(path) {
+  try {
+    const stat = lstatSync6(path);
+    if (stat.isSymbolicLink())
+      throw new KernelBackendClaimError("owner file must not be a symlink");
+    if (!stat.isFile())
+      throw new KernelBackendClaimError("owner file is not a regular file");
+  } catch (error) {
+    if (error.code === "ENOENT")
+      return null;
+    throw error;
+  }
+  return JSON.parse(readFileSync5(path, "utf8"));
+}
+function parseBackendClaim(raw) {
+  const unknown = Object.keys(raw).filter((key) => !ALLOWED.includes(key));
+  if (unknown.length > 0)
+    throw new KernelBackendClaimError(`backend claim has unknown field: ${unknown[0]}`);
+  if (raw.contract !== "assurance_kernel/backend_claim/v2")
+    throw new KernelBackendClaimError("backend claim contract is invalid");
+  if (raw.backend !== "kernel")
+    throw new KernelBackendClaimError("backend claim backend must be kernel");
+  if (typeof raw.task_id !== "string" || !raw.task_id.trim())
+    throw new KernelBackendClaimError("backend claim task_id is invalid");
+  validateTaskId4(raw.task_id);
+  if (typeof raw.intent_revision !== "number" || !Number.isInteger(raw.intent_revision) || raw.intent_revision < 1)
+    throw new KernelBackendClaimError("backend claim intent_revision is invalid");
+  for (const field of ["intent_content_hash", "enrollment_event_id", "created_at", "updated_at"]) {
+    if (typeof raw[field] !== "string" || !String(raw[field]).trim())
+      throw new KernelBackendClaimError(`backend claim ${field} is invalid`);
+  }
+  if (raw.lifecycle_status !== "active" && raw.lifecycle_status !== "draining")
+    throw new KernelBackendClaimError(`backend claim lifecycle_status must be active or draining; terminal state lives only in the task tombstone`);
+  return raw;
+}
+function readBackendClaim(root) {
+  return withKernelRead(root, (db) => {
+    const run = readRunRowById(db, activeRunId(db) ?? "");
+    if (!run || run.state !== "active" || run.claim_status === null)
+      return null;
+    return claimFromRunRow(run);
+  }) ?? null;
+}
+function readActiveClaimTaskId(root) {
+  const workspace = readWorkspaceStateRaw(root);
+  const claim = readBackendClaim(root);
+  return workspace.state.current_working || (claim?.lifecycle_status === "active" ? claim.task_id : null);
+}
+function claimFromRunRow(run) {
+  return parseBackendClaim({
+    contract: "assurance_kernel/backend_claim/v2",
+    backend: "kernel",
+    task_id: run.task_id,
+    intent_revision: run.intent_revision,
+    intent_content_hash: run.intent_content_hash,
+    enrollment_event_id: run.enrollment_event_id,
+    lifecycle_status: run.claim_status ?? "active",
+    created_at: run.created_at,
+    updated_at: run.updated_at
+  });
+}
+function serializeBackendClaim(claim) {
+  parseBackendClaim(claim);
+  return `${JSON.stringify(claim, null, 2)}
+`;
+}
+function parseTaskTombstone(raw) {
+  const legacy = raw.contract === LEGACY_TASK_TOMBSTONE_CONTRACT;
+  const allowed = legacy ? TOMBSTONE_ALLOWED.map((field) => field === "terminal_lifecycle" ? "terminal_phase" : field) : TOMBSTONE_ALLOWED;
+  const unknown = Object.keys(raw).filter((key) => !allowed.includes(key));
+  if (unknown.length > 0)
+    throw new KernelBackendClaimError(`task tombstone has unknown field: ${unknown[0]}`);
+  if (!legacy && raw.contract !== TASK_TOMBSTONE_CONTRACT)
+    throw new KernelBackendClaimError("task tombstone contract is invalid");
+  if (typeof raw.task_id !== "string" || !raw.task_id.trim())
+    throw new KernelBackendClaimError("task tombstone task_id is invalid");
+  validateTaskId4(raw.task_id);
+  if (raw.lifecycle_status !== "terminal")
+    throw new KernelBackendClaimError("task tombstone lifecycle_status must be terminal");
+  const terminalLifecycle = legacy ? raw.terminal_phase : raw.terminal_lifecycle;
+  if (terminalLifecycle !== "done" && terminalLifecycle !== "stopped")
+    throw new KernelBackendClaimError("task tombstone terminal_lifecycle must be done or stopped");
+  for (const field of ["terminal_event_id", "final_record_hash", "terminalized_at"]) {
+    if (typeof raw[field] !== "string" || !String(raw[field]).trim())
+      throw new KernelBackendClaimError(`task tombstone ${field} is invalid`);
+  }
+  if (!/^sha256:[a-f0-9]{64}$/.test(raw.final_record_hash))
+    throw new KernelBackendClaimError("task tombstone final_record_hash must be a canonical sha256 hash");
+  return {
+    contract: TASK_TOMBSTONE_CONTRACT,
+    task_id: raw.task_id,
+    lifecycle_status: "terminal",
+    terminal_lifecycle: terminalLifecycle,
+    terminal_event_id: raw.terminal_event_id,
+    final_record_hash: raw.final_record_hash,
+    terminalized_at: raw.terminalized_at
+  };
+}
+function readTaskTombstone(root, taskId) {
+  validateTaskId4(taskId);
+  const localRun = withKernelRead(root, (db) => readRunRowByTask(db, taskId));
+  const proofPath = localRun ? auditRunTerminalProofPath(taskId, localRun.run_id) : auditEvidencePaths(root, taskId).proof;
+  const raw = readJsonOrNull(join3(resolve5(root), proofPath));
+  if (!raw)
+    return null;
+  const tombstone = parseTaskTombstone(raw);
+  if (tombstone.task_id !== taskId)
+    throw new KernelBackendClaimError("task tombstone identity is inconsistent");
+  return tombstone;
+}
+function serializeTaskTombstone(tombstone) {
+  parseTaskTombstone(tombstone);
+  return `${JSON.stringify(tombstone, null, 2)}
+`;
+}
+var ALLOWED, TASK_TOMBSTONE_CONTRACT = "assurance_kernel/task_tombstone/v2", LEGACY_TASK_TOMBSTONE_CONTRACT = "assurance_kernel/task_tombstone/v1", TOMBSTONE_ALLOWED, KernelBackendClaimError;
+var init_backend_claim = __esm(() => {
+  init_storage_paths();
+  init_sqlite_store();
+  init_storage();
+  ALLOWED = [
+    "contract",
+    "backend",
+    "task_id",
+    "intent_revision",
+    "intent_content_hash",
+    "enrollment_event_id",
+    "lifecycle_status",
+    "created_at",
+    "updated_at"
+  ];
+  TOMBSTONE_ALLOWED = [
+    "contract",
+    "task_id",
+    "lifecycle_status",
+    "terminal_lifecycle",
+    "terminal_event_id",
+    "final_record_hash",
+    "terminalized_at"
+  ];
+  KernelBackendClaimError = class KernelBackendClaimError extends Error {
+    constructor(message) {
+      super(message);
+      this.name = "KernelBackendClaimError";
+    }
+  };
 });
 
 // plugins/immune-brain/runtime/kernel/pi_canary_prepare.ts
@@ -8132,6 +8138,30 @@ var init_git_integration_preference = __esm(() => {
   init_layered_config();
 });
 
+// plugins/immune-brain/runtime/assurance/parent_completion.ts
+function isDelivered(root, taskId) {
+  const settled = readSettledTaskEvidence(root, taskId);
+  if (!settled || settled.proof.terminal_lifecycle !== "done")
+    return false;
+  return readTaskIntent(root, taskId, settled.record.intent_ref.path).content_hash === settled.record.intent_ref.content_hash;
+}
+function observeSettledParentCompletion(root, requiredTaskIds) {
+  if (!requiredTaskIds.length || new Set(requiredTaskIds).size !== requiredTaskIds.length)
+    throw new Error("Parent completion requires a non-empty, unique required Task list");
+  const delivered = requiredTaskIds.filter((taskId) => isDelivered(root, taskId));
+  const missing = requiredTaskIds.filter((taskId) => !delivered.includes(taskId));
+  return {
+    complete: missing.length === 0,
+    delivered_task_ids: delivered,
+    missing_task_ids: missing,
+    reason: missing.length ? `Required delivery is absent: ${missing.join(", ")}` : null
+  };
+}
+var init_parent_completion = __esm(() => {
+  init_intent();
+  init_storage();
+});
+
 // plugins/immune-brain/runtime/github_issue_tracker.ts
 import { spawn as spawn2 } from "node:child_process";
 import { existsSync as existsSync8, readFileSync as readFileSync10 } from "node:fs";
@@ -9156,8 +9186,7 @@ async function closeParentWhenComplete(root, gh, operation, source, childResult)
   if (taskIds.some((id) => !id))
     return retry("required Slice has no Task identity", "ambiguous_remote_state");
   try {
-    await Promise.resolve().then(() => init_batch_git());
-    const completion = await observeParentCompletion(root, initiativeId, taskIds);
+    const completion = observeSettledParentCompletion(root, taskIds);
     if (!completion.complete)
       return result(operation.op, childResult.status, `${childResult.message}; Parent #${parentNumber} remains open: ${completion.reason}`, child.issue);
   } catch (error) {
@@ -9335,6 +9364,7 @@ function issueTerminalEventId(body) {
 }
 var CONTRACT = "immune_brain/github_issue_tracker_result/v1", PROTOCOL_MARKER = "<!-- immune-brain-tracker:v1 -->", KIND_INITIATIVE_MARKER = "<!-- immune-brain:kind=initiative -->", KIND_TASK_MARKER = "<!-- immune-brain:kind=task -->", ID_PATTERN, MAX_GH_OUTPUT, MAX_DIAGNOSTIC = 512, GH_TIMEOUT_MS = 20000, MAX_SNAPSHOT_PAGES = 100, GITHUB_ISSUE_BODY_LIMIT = 65536, MAX_TERMINAL_EVENT_ID = 500, MAX_TITLE_LENGTH = 80, MAX_DISPLAY_SHORT_NAME = 32, MAX_DISPLAY_TITLE = 60, READY_FOR_AGENT_LABEL = "ready-for-agent", BLOCKED_LABEL = "blocked", MANAGED_ISSUE_LABELS, ISSUE_FOOTER = "---\n\n_Outbound visibility only: GitHub state never authorizes or settles work — Kernel TaskIntent, TaskRecord, QA, Review, and Assurance remain the execution authority. An Open Issue only means the Task still needs attention; only a claimless terminal projection closes it (`done` → Completed, `stopped` → Not planned)._", MAX_TERMINAL_SUFFIX_BYTES;
 var init_github_issue_tracker = __esm(() => {
+  init_parent_completion();
   init_intent();
   ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
   MAX_GH_OUTPUT = 8 * 1024 * 1024;
@@ -9423,6 +9453,29 @@ var init_local_initiative = __esm(() => {
   BULLET = /^[-*]\s+(.*)$/;
 });
 
+// plugins/immune-brain/runtime/kernel/scope_overlap.ts
+function dependencyWaves(nodes, cycleMessage) {
+  const remaining = [...nodes];
+  const placed = new Set;
+  const waves = [];
+  while (remaining.length) {
+    const wave = remaining.filter((node) => node.blocked_by.every((id) => placed.has(id)));
+    if (!wave.length)
+      throw new Error(cycleMessage);
+    waves.push(wave);
+    for (const node of wave) {
+      placed.add(node.task_id);
+      remaining.splice(remaining.indexOf(node), 1);
+    }
+  }
+  return waves;
+}
+function projectParallelGroups(children) {
+  const parallel_groups = dependencyWaves(children, "Initiative Task dependencies must form an acyclic graph").map((wave) => wave.map((child) => child.task_id));
+  return { parallel_groups, scope_conflicts: [] };
+}
+var init_scope_overlap = () => {};
+
 // plugins/immune-brain/runtime/unattended/batch_schedule.ts
 function blockedByParked(children) {
   const blocker = new Map;
@@ -9461,28 +9514,9 @@ function startableChildren(children, maxParallel) {
   }
   return startable;
 }
-function dependencyWaves(nodes, cycleMessage) {
-  const remaining = [...nodes];
-  const placed = new Set;
-  const waves = [];
-  while (remaining.length) {
-    const wave = remaining.filter((node) => node.blocked_by.every((id) => placed.has(id)));
-    if (!wave.length)
-      throw new Error(cycleMessage);
-    waves.push(wave);
-    for (const node of wave) {
-      placed.add(node.task_id);
-      remaining.splice(remaining.indexOf(node), 1);
-    }
-  }
-  return waves;
-}
-function projectParallelGroups(children) {
-  const parallel_groups = dependencyWaves(children, "Initiative Task dependencies must form an acyclic graph").map((wave) => wave.map((child) => child.task_id));
-  return { parallel_groups, scope_conflicts: [] };
-}
 var IN_FLIGHT_STATES, DONE_STATES, PARKED_STATES;
 var init_batch_schedule = __esm(() => {
+  init_scope_overlap();
   IN_FLIGHT_STATES = new Set([
     "lane_admitted",
     "enrolled",
@@ -16005,7 +16039,7 @@ async function retainIntegratedLaneEvidence(input) {
 async function withBatchEvidence(root, branch, head, read) {
   return isParentBranch(branch) ? withParentWorktree(root, head, async (path) => read(path)) : read(root);
 }
-function isDelivered(root, taskId) {
+function isDelivered2(root, taskId) {
   const settled = readSettledTaskEvidence(root, taskId);
   if (!settled || settled.proof.terminal_lifecycle !== "done")
     return false;
@@ -16074,7 +16108,7 @@ async function observeParentCompletion(root, initiativeSlug, requiredTaskIds) {
   if (!deliveryHead)
     throw new Error("Parent evidence requires an existing Parent ref");
   return withBatchEvidence(root, parent?.branch, deliveryHead, (evidenceRoot) => {
-    const delivered = allTaskIds.filter((taskId) => isDelivered(evidenceRoot, taskId));
+    const delivered = allTaskIds.filter((taskId) => isDelivered2(evidenceRoot, taskId));
     const missing = allTaskIds.filter((taskId) => !delivered.includes(taskId));
     let content;
     const holds = (final) => parent || final.content_identity === undefined ? final.head === deliveryHead : missing.length === 0 && final.content_identity === (content ??= scopedContentIdentity(evidenceRoot, deliveryScopes(evidenceRoot, allTaskIds)));
@@ -16460,11 +16494,6 @@ function batchRejection(key, detail = "") {
 }
 function reject(key, detail = "") {
   return { ok: false, ...batchRejection(key, detail) };
-}
-function readActiveClaimTaskId(root) {
-  const workspace = readWorkspaceStateRaw(root);
-  const claim = readBackendClaim(root);
-  return workspace.state.current_working || (claim?.lifecycle_status === "active" ? claim.task_id : null);
 }
 function findResumableBatchSlugForTask(root, taskId) {
   const batchesDir = join26(root, ".imm", "state", "batches");
@@ -17554,6 +17583,7 @@ function phaseRefusalMessage(refusal) {
 
 // plugins/immune-brain/runtime/host-core/interaction.ts
 var PRIVILEGED_OPERATIONS = [
+  "enroll",
   "request_authorization",
   "approve_breaking_intent_revision",
   "stop",
@@ -19713,6 +19743,7 @@ var TOOLS = [
   { name: "advance_assurance", description: "Advance frozen Assurance through deterministic QA and Review reservation.", privileged: false },
   { name: "submit_review", description: "Submit the Review verdict; omit the verdict to apply the correlated reviewer receipt, or relay the reviewer's structured verdict for fingerprint comparison.", privileged: false },
   { name: "submit_verification", description: "Submit the reserved verifier result; omit result to use the Host-observed receipt.", privileged: false },
+  { name: "enroll", description: "Enroll one validated TaskIntent in place in this workspace under the literal-user drive entry.", privileged: true },
   { name: "request_authorization", description: "Apply exact literal-user authorization.", privileged: true },
   { name: "revise_intent", description: "Apply a compatible TaskIntent revision.", privileged: false },
   { name: "approve_breaking_intent_revision", description: "Approve a breaking TaskIntent revision.", privileged: true },
@@ -19989,6 +20020,8 @@ function createMcpRuntime(profile, options = {}) {
       if (!taskId)
         throw new Error("task_id is required");
       refuseSuppliedAuthority(args);
+      if (name === "enroll")
+        return runtime.enroll(taskId, gatedToolMeta(name, taskId, workspace, meta));
       if (name === "status") {
         const result = { plugin_version: PLUGIN_VERSION, ...await runtime.status(taskId), loaded_bundle: { path: bundle.path, sha256_prefix: bundle.sha256?.slice(0, 12) ?? null } };
         if (!bundle.stale())
@@ -21319,7 +21352,7 @@ init_assurance_projection();
 
 // plugins/immune-brain/runtime/assurance/active_task_notice.ts
 init_storage();
-init_batch_preflight();
+init_backend_claim();
 var MAX_SCOPE_ENTRIES = 12;
 async function activeTaskNotice(root) {
   let taskId;
@@ -21359,7 +21392,7 @@ init_batch_state();
 init_batch_plan();
 init_batch_git();
 init_coordinator();
-init_batch_preflight();
+init_backend_claim();
 init_intent();
 init_storage();
 import { createHash as createHash28 } from "node:crypto";
@@ -21823,7 +21856,7 @@ async function submitMediatedReview(coordinator, ctx, taskId, verdictInput, insp
 }
 
 // plugins/immune-brain/runtime/host-core/run_continuation_session.ts
-var NATIVE_OPERATIONS = new Set(["start_unattended_batch", "retire_stale_batch", "request_authorization", "approve_breaking_intent_revision", "request_stop", "stop"]);
+var NATIVE_OPERATIONS = new Set(["enroll", "start_unattended_batch", "retire_stale_batch", "request_authorization", "approve_breaking_intent_revision", "request_stop", "stop"]);
 var PARENT_IDENTITY_LOST = "no matching persisted batch identity";
 var SUSPENDED_REVIEW_OPERATIONS = new Set(["advance_assurance", "submit_review"]);
 var MAX_METADATA_BYTES = 256 * 1024;
@@ -22025,7 +22058,7 @@ async function applyRunContinuationEvent(host, root, session, event) {
       else if (binding.batch_id === batch.batch_id && binding.initiative_slug === batch.initiative_slug && hasContiguousLaneRebind(batch, binding.plan_digest))
         metadata.state = { ...metadata.state, binding: { ...binding, plan_digest: batch.plan_digest } };
     }
-    if (!metadata.state && correlated.task_id && event.operation === "status") {
+    if (!metadata.state && correlated.task_id && (event.operation === "status" || event.operation === "enroll")) {
       const status = await projectTaskStatus(workspace, correlated.task_id);
       if (!status.error && status.claim?.task_id === correlated.task_id && status.projection.lifecycle === "active" && status.projection.run_id)
         metadata.state = bindRun({ kind: "task", workspace, session_id: sessionId, task_id: correlated.task_id, run_id: status.projection.run_id });
@@ -22227,6 +22260,315 @@ function createEnrollmentAuthorityRegistry() {
     }
   }, "enrollment");
 }
+
+// plugins/immune-brain/runtime/kernel/enrollment.ts
+init_sqlite_store();
+init_intent();
+init_spec_binding();
+init_batch_authority();
+init_pi_canary_prepare();
+init_workspace_scope();
+init_run_identity();
+init_storage();
+function singleTaskEnrollmentDirt(root, intentPath, intent) {
+  const binding = inspectSpecBinding(intent);
+  return dirtyWorkspacePaths(root, [intentPath, ...binding.ok && binding.binding ? [binding.binding.active] : []]);
+}
+
+class EnrollmentRehearsalError extends Error {
+  blockers;
+  constructor(blockers) {
+    super(`Kernel enrollment rehearsal failed: ${blockers.join("; ")}`);
+    this.name = "EnrollmentRehearsalError";
+    this.blockers = blockers;
+  }
+}
+function runEnrollmentPreconditionChecks(root, input, capability, registry, mode, beforeLock, onReady) {
+  const blockers = [];
+  let validated = null;
+  try {
+    validated = registry.inspect(capability, input.capability_binding);
+    if (mode === "fail_fast" && validated.task_id !== input.task_id)
+      throw new Error("enrollment capability task mismatch");
+  } catch (error) {
+    if (mode === "fail_fast")
+      throw error;
+    blockers.push(`capability: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  beforeLock(validated);
+  return withKernelStoreLock(root, () => {
+    let current = null;
+    let workspace = null;
+    let intent = null;
+    let gitBaseHead = null;
+    let claimedScopePaths = [];
+    const fail = (report, error) => {
+      if (mode === "fail_fast")
+        throw error instanceof Error ? error : new Error(String(error));
+      blockers.push(report);
+    };
+    const localRun = reconcileKernelAuthority(root, input.task_id);
+    const localTerminal = localRun.state === "terminal_owner" && withKernelRead(root, (db) => readRunRowByTask(db, input.task_id)) !== null;
+    if (localTerminal) {
+      fail("local run is terminal; same-task re-enrollment is forbidden", new Error(`task ${input.task_id} is terminal; same-task re-enrollment is forbidden`));
+    } else {
+      current = readTaskRecordRaw(root, input.task_id);
+      if (current.record)
+        fail("task record already exists", new Error(`task ${input.task_id} already has a TaskRecord`));
+    }
+    workspace = readWorkspaceStateRaw(root);
+    if (workspace.state.current_working !== null)
+      fail(`workspace already owned by ${workspace.state.current_working}`, new Error(`workspace is already owned by ${workspace.state.current_working}`));
+    try {
+      intent = readTaskIntent(root, input.task_id);
+    } catch (error) {
+      fail(`intent: ${error instanceof Error ? error.message : String(error)}`, error);
+    }
+    if (intent) {
+      const binding = inspectSpecBinding(intent.intent);
+      if (!binding.ok)
+        fail(binding.message, new Error(binding.message));
+      if (input.confirmation) {
+        const verdict = verifyEnrollmentConfirmation(root, input.confirmation, {
+          risk: intent.intent.risk,
+          scope_hint: intent.intent.scope_hint
+        });
+        if (!verdict.ok) {
+          const message = `confirmation: ${verdict.reason}`;
+          fail(message, new Error(message));
+        }
+      }
+    }
+    try {
+      gitBaseHead = readGitHead(root);
+    } catch (error) {
+      fail(`git base: ${error instanceof Error ? error.message : String(error)}`, error);
+    }
+    if (intent && gitBaseHead) {
+      try {
+        if (!input.batch) {
+          const binding = inspectSpecBinding(intent.intent);
+          claimedScopePaths = [input.intent_path, ...binding.ok && binding.binding ? [binding.binding.active] : []];
+          const dirty = singleTaskEnrollmentDirt(root, input.intent_path, intent.intent);
+          if (dirty.length > 0) {
+            const message = `workspace_not_clean: ${dirty.join(", ")}`;
+            fail(message, new Error(message));
+          }
+        } else {
+          const disclosed = new Set(input.disclosed_scope_paths ?? []);
+          const dirty = dirtyScopePaths(root, intent.intent.scope_hint, input.task_id);
+          const unlisted = dirty.filter((path) => !disclosed.has(path));
+          if (unlisted.length > 0) {
+            const message = `task scope is already dirty before Enrollment: ${unlisted.join(", ")}; the confirmed Enrollment gate did not list these paths, so enroll again from the Host to review them`;
+            fail(message, new Error(message));
+          } else
+            claimedScopePaths = dirty;
+        }
+      } catch (error) {
+        fail(`scope: ${error instanceof Error ? error.message : String(error)}`, error);
+      }
+    }
+    const state = {
+      validated,
+      current,
+      workspace,
+      intent,
+      gitBaseHead,
+      claimedScopePaths
+    };
+    return onReady ? onReady(state) : { ...state, blockers };
+  });
+}
+function buildTaskRecordV4(input, intent, gitBaseHead) {
+  return {
+    contract: "assurance_kernel/task_record/v4",
+    task_id: input.task_id,
+    intent_snapshot: intent.intent,
+    intent_ref: {
+      path: input.intent_path,
+      content_hash: intent.content_hash
+    },
+    lifecycle: "active",
+    artifact_state: "active",
+    baseline: intent.content_hash,
+    git_base_head: gitBaseHead,
+    attestations: [],
+    findings: [],
+    history: [],
+    ...input.confirmation?.source === "external_approval" ? { confirmation_source: "external_approval" } : {}
+  };
+}
+function runEnrollmentRehearsal(root, input, capability, registry) {
+  const preconditions = runEnrollmentPreconditionChecks(root, input, capability, registry, "report", () => {
+    return;
+  });
+  return {
+    rehearsed: true,
+    writes_performed: false,
+    evidence: {
+      contract: "assurance_kernel/enrollment_rehearsal/v1",
+      task_id: input.task_id,
+      outcome: preconditions.blockers.length === 0 ? "ready" : "not_ready",
+      blockers: preconditions.blockers,
+      claimed_scope_paths: preconditions.claimedScopePaths,
+      generated_at: input.now
+    }
+  };
+}
+function enrollmentEventId(taskId, now) {
+  return enrollmentEventIdFor(taskId, now);
+}
+var CANCELLATION_BOUNDARY = Promise.resolve();
+async function enrollTask(root, registry, request) {
+  const { binding, batch, now, checkpoint, disclosed_scope_paths, confirmation } = request;
+  const capability = registry.issue(binding);
+  const input = {
+    task_id: binding.task_id,
+    intent_path: binding.intent_path,
+    intent_revision: binding.intent_revision,
+    preparation_digest: binding.preparation_digest,
+    capability,
+    capability_binding: binding,
+    ...batch ? { batch } : {},
+    ...disclosed_scope_paths ? { disclosed_scope_paths } : {},
+    ...confirmation ? { confirmation } : {},
+    now
+  };
+  const { eventId, digest } = digestForEnrollment(input);
+  const committed = readCommittedEnrollmentResult(root, input.task_id, eventId, digest);
+  if (committed) {
+    const result = {
+      record: committed.record,
+      backend_claim: committed.claim,
+      workspace: { revision: "", state: committed.workspace }
+    };
+    return checkpoint ? { outcome: "enrolled", result } : result;
+  }
+  const rehearsal = runEnrollmentRehearsal(root, input, capability, registry);
+  if (!rehearsal.rehearsed || rehearsal.evidence.outcome !== "ready")
+    throw new EnrollmentRehearsalError(rehearsal.evidence.blockers);
+  await CANCELLATION_BOUNDARY;
+  if (checkpoint && !checkpoint())
+    return { outcome: "cancelled" };
+  const result = enrollCanaryTask(root, input, registry);
+  return checkpoint ? { outcome: "enrolled", result } : result;
+}
+function digestForEnrollment(input) {
+  const eventId = enrollmentEventId(input.task_id, input.now);
+  return {
+    eventId,
+    digest: enrollmentRequestDigest({
+      task_id: input.task_id,
+      intent_path: input.intent_path,
+      intent_revision: input.intent_revision,
+      intent_content_hash: input.capability_binding.intent_content_hash,
+      preparation_digest: input.preparation_digest,
+      enrollment_event_id: eventId,
+      actor_id: input.capability_binding.actor_id,
+      confirmation_ref: input.capability_binding.confirmation_ref,
+      nonce: input.capability_binding.nonce
+    })
+  };
+}
+function enrollCanaryTask(root, input, registry) {
+  const { eventId, digest } = digestForEnrollment(input);
+  const replayed = readCommittedEnrollmentResult(root, input.task_id, eventId, digest);
+  if (replayed)
+    return {
+      record: replayed.record,
+      backend_claim: replayed.claim,
+      workspace: { revision: "", state: replayed.workspace }
+    };
+  let gitBaseHead = null;
+  let consumed = false;
+  try {
+    return runEnrollmentPreconditionChecks(root, input, input.capability, registry, "fail_fast", () => {
+      const recomputed = preparePiCanary(root, { task_id: input.task_id, now: input.now });
+      if (recomputed.digest !== input.preparation_digest)
+        throw new Error("enrollment preparation digest mismatch");
+      gitBaseHead = recomputed.git_base_head;
+      if (!gitBaseHead)
+        throw new Error(recomputed.git_error ?? "enrollment requires a committed Git HEAD");
+    }, (checks) => {
+      if (!checks.validated || !checks.intent || !checks.workspace || !checks.current)
+        throw new Error("enrollment precondition state incomplete");
+      const locked = preparePiCanary(root, { task_id: input.task_id, now: input.now });
+      if (locked.digest !== input.preparation_digest)
+        throw new Error("enrollment preparation digest mismatch");
+      if (checks.intent.intent.revision !== input.intent_revision)
+        throw new Error("intent revision mismatch");
+      if (checks.intent.content_hash !== checks.validated.intent_content_hash)
+        throw new Error("intent content hash mismatch");
+      if (checks.gitBaseHead !== gitBaseHead)
+        throw new Error("Git HEAD moved after the enrollment confirmation");
+      if (input.batch) {
+        const batch = input.batch.registry.inspect(input.batch.capability, input.batch.binding);
+        if (input.batch.registry.consumedChildren(input.batch.capability).length === 0)
+          assertBatchLineageOrigin(root, batch.base_head, input.batch.expected_head);
+        if (checks.gitBaseHead !== input.batch.expected_head)
+          throw new Error(`batch_head_lineage_broken: expected ${input.batch.expected_head}, found ${checks.gitBaseHead}`);
+      }
+      registry.consume(input.capability, input.capability_binding);
+      consumed = true;
+      if (input.batch)
+        input.batch.registry.consumeChild(input.batch.capability, input.batch.binding, input.task_id);
+      if (!gitBaseHead)
+        throw new Error("enrollment requires a committed Git HEAD");
+      const record = buildTaskRecordV4(input, checks.intent, gitBaseHead);
+      const nextWorkspace = {
+        ...checks.workspace.state,
+        current_working: input.task_id
+      };
+      const claim = {
+        contract: "assurance_kernel/backend_claim/v2",
+        backend: "kernel",
+        task_id: input.task_id,
+        intent_revision: input.intent_revision,
+        intent_content_hash: checks.intent.content_hash,
+        enrollment_event_id: eventId,
+        lifecycle_status: "active",
+        created_at: input.now,
+        updated_at: input.now
+      };
+      const mutation = commitEnrollmentLocked(root, input.task_id, {
+        contract: "assurance_kernel/workspace_transaction/v2",
+        task_id: input.task_id,
+        expected_record_hash: checks.current.revision,
+        next_record_content: `${JSON.stringify(record, null, 2)}
+`,
+        expected_workspace_hash: checks.workspace.revision,
+        next_workspace_content: `${JSON.stringify(nextWorkspace, null, 2)}
+`
+      }, claim, digest);
+      writeEnrollmentBaseline(root, checks.claimedScopePaths, !input.batch);
+      return {
+        record: mutation.record,
+        backend_claim: claim,
+        workspace: { revision: "", state: mutation.workspace }
+      };
+    });
+  } catch (error) {
+    const ownership = (() => {
+      try {
+        return {
+          known: true,
+          owned: reconcileKernelAuthority(root, input.task_id).owner_task_id === input.task_id
+        };
+      } catch {
+        return { known: false, owned: false };
+      }
+    })();
+    if (consumed && input.batch && ownership.known && !ownership.owned)
+      input.batch.registry.releaseChild(input.batch.capability, input.task_id);
+    throw error;
+  }
+}
+
+// plugins/immune-brain/runtime/host-core/runtime.ts
+init_spec_binding();
+
+// plugins/immune-brain/runtime/assurance/enrollment.ts
+init_pi_canary_prepare();
 
 // plugins/immune-brain/runtime/host-core/runtime.ts
 init_storage();
@@ -23949,311 +24291,6 @@ async function advanceLanes(root, batchId, deps) {
 init_batch_git();
 init_assurance_projection();
 init_batch_authority();
-
-// plugins/immune-brain/runtime/kernel/enrollment.ts
-init_sqlite_store();
-init_intent();
-init_spec_binding();
-init_batch_authority();
-init_pi_canary_prepare();
-init_workspace_scope();
-init_run_identity();
-init_storage();
-function singleTaskEnrollmentDirt(root, intentPath, intent) {
-  const binding = inspectSpecBinding(intent);
-  return dirtyWorkspacePaths(root, [intentPath, ...binding.ok && binding.binding ? [binding.binding.active] : []]);
-}
-
-class EnrollmentRehearsalError extends Error {
-  blockers;
-  constructor(blockers) {
-    super(`Kernel enrollment rehearsal failed: ${blockers.join("; ")}`);
-    this.name = "EnrollmentRehearsalError";
-    this.blockers = blockers;
-  }
-}
-function runEnrollmentPreconditionChecks(root, input, capability, registry, mode, beforeLock, onReady) {
-  const blockers = [];
-  let validated = null;
-  try {
-    validated = registry.inspect(capability, input.capability_binding);
-    if (mode === "fail_fast" && validated.task_id !== input.task_id)
-      throw new Error("enrollment capability task mismatch");
-  } catch (error) {
-    if (mode === "fail_fast")
-      throw error;
-    blockers.push(`capability: ${error instanceof Error ? error.message : String(error)}`);
-  }
-  beforeLock(validated);
-  return withKernelStoreLock(root, () => {
-    let current = null;
-    let workspace = null;
-    let intent = null;
-    let gitBaseHead = null;
-    let claimedScopePaths = [];
-    const fail = (report, error) => {
-      if (mode === "fail_fast")
-        throw error instanceof Error ? error : new Error(String(error));
-      blockers.push(report);
-    };
-    const localRun = reconcileKernelAuthority(root, input.task_id);
-    const localTerminal = localRun.state === "terminal_owner" && withKernelRead(root, (db) => readRunRowByTask(db, input.task_id)) !== null;
-    if (localTerminal) {
-      fail("local run is terminal; same-task re-enrollment is forbidden", new Error(`task ${input.task_id} is terminal; same-task re-enrollment is forbidden`));
-    } else {
-      current = readTaskRecordRaw(root, input.task_id);
-      if (current.record)
-        fail("task record already exists", new Error(`task ${input.task_id} already has a TaskRecord`));
-    }
-    workspace = readWorkspaceStateRaw(root);
-    if (workspace.state.current_working !== null)
-      fail(`workspace already owned by ${workspace.state.current_working}`, new Error(`workspace is already owned by ${workspace.state.current_working}`));
-    try {
-      intent = readTaskIntent(root, input.task_id);
-    } catch (error) {
-      fail(`intent: ${error instanceof Error ? error.message : String(error)}`, error);
-    }
-    if (intent) {
-      const binding = inspectSpecBinding(intent.intent);
-      if (!binding.ok)
-        fail(binding.message, new Error(binding.message));
-      if (input.confirmation) {
-        const verdict = verifyEnrollmentConfirmation(root, input.confirmation, {
-          risk: intent.intent.risk,
-          scope_hint: intent.intent.scope_hint
-        });
-        if (!verdict.ok) {
-          const message = `confirmation: ${verdict.reason}`;
-          fail(message, new Error(message));
-        }
-      }
-    }
-    try {
-      gitBaseHead = readGitHead(root);
-    } catch (error) {
-      fail(`git base: ${error instanceof Error ? error.message : String(error)}`, error);
-    }
-    if (intent && gitBaseHead) {
-      try {
-        if (!input.batch) {
-          const binding = inspectSpecBinding(intent.intent);
-          claimedScopePaths = [input.intent_path, ...binding.ok && binding.binding ? [binding.binding.active] : []];
-          const dirty = singleTaskEnrollmentDirt(root, input.intent_path, intent.intent);
-          if (dirty.length > 0) {
-            const message = `workspace_not_clean: ${dirty.join(", ")}`;
-            fail(message, new Error(message));
-          }
-        } else {
-          const disclosed = new Set(input.disclosed_scope_paths ?? []);
-          const dirty = dirtyScopePaths(root, intent.intent.scope_hint, input.task_id);
-          const unlisted = dirty.filter((path) => !disclosed.has(path));
-          if (unlisted.length > 0) {
-            const message = `task scope is already dirty before Enrollment: ${unlisted.join(", ")}; the confirmed Enrollment gate did not list these paths, so enroll again from the Host to review them`;
-            fail(message, new Error(message));
-          } else
-            claimedScopePaths = dirty;
-        }
-      } catch (error) {
-        fail(`scope: ${error instanceof Error ? error.message : String(error)}`, error);
-      }
-    }
-    const state = {
-      validated,
-      current,
-      workspace,
-      intent,
-      gitBaseHead,
-      claimedScopePaths
-    };
-    return onReady ? onReady(state) : { ...state, blockers };
-  });
-}
-function buildTaskRecordV4(input, intent, gitBaseHead) {
-  return {
-    contract: "assurance_kernel/task_record/v4",
-    task_id: input.task_id,
-    intent_snapshot: intent.intent,
-    intent_ref: {
-      path: input.intent_path,
-      content_hash: intent.content_hash
-    },
-    lifecycle: "active",
-    artifact_state: "active",
-    baseline: intent.content_hash,
-    git_base_head: gitBaseHead,
-    attestations: [],
-    findings: [],
-    history: [],
-    ...input.confirmation?.source === "external_approval" ? { confirmation_source: "external_approval" } : {}
-  };
-}
-function runEnrollmentRehearsal(root, input, capability, registry) {
-  const preconditions = runEnrollmentPreconditionChecks(root, input, capability, registry, "report", () => {
-    return;
-  });
-  return {
-    rehearsed: true,
-    writes_performed: false,
-    evidence: {
-      contract: "assurance_kernel/enrollment_rehearsal/v1",
-      task_id: input.task_id,
-      outcome: preconditions.blockers.length === 0 ? "ready" : "not_ready",
-      blockers: preconditions.blockers,
-      claimed_scope_paths: preconditions.claimedScopePaths,
-      generated_at: input.now
-    }
-  };
-}
-function enrollmentEventId(taskId, now) {
-  return enrollmentEventIdFor(taskId, now);
-}
-var CANCELLATION_BOUNDARY = Promise.resolve();
-async function enrollTask(root, registry, request) {
-  const { binding, batch, now, checkpoint, disclosed_scope_paths, confirmation } = request;
-  const capability = registry.issue(binding);
-  const input = {
-    task_id: binding.task_id,
-    intent_path: binding.intent_path,
-    intent_revision: binding.intent_revision,
-    preparation_digest: binding.preparation_digest,
-    capability,
-    capability_binding: binding,
-    ...batch ? { batch } : {},
-    ...disclosed_scope_paths ? { disclosed_scope_paths } : {},
-    ...confirmation ? { confirmation } : {},
-    now
-  };
-  const { eventId, digest } = digestForEnrollment(input);
-  const committed = readCommittedEnrollmentResult(root, input.task_id, eventId, digest);
-  if (committed) {
-    const result = {
-      record: committed.record,
-      backend_claim: committed.claim,
-      workspace: { revision: "", state: committed.workspace }
-    };
-    return checkpoint ? { outcome: "enrolled", result } : result;
-  }
-  const rehearsal = runEnrollmentRehearsal(root, input, capability, registry);
-  if (!rehearsal.rehearsed || rehearsal.evidence.outcome !== "ready")
-    throw new EnrollmentRehearsalError(rehearsal.evidence.blockers);
-  await CANCELLATION_BOUNDARY;
-  if (checkpoint && !checkpoint())
-    return { outcome: "cancelled" };
-  const result = enrollCanaryTask(root, input, registry);
-  return checkpoint ? { outcome: "enrolled", result } : result;
-}
-function digestForEnrollment(input) {
-  const eventId = enrollmentEventId(input.task_id, input.now);
-  return {
-    eventId,
-    digest: enrollmentRequestDigest({
-      task_id: input.task_id,
-      intent_path: input.intent_path,
-      intent_revision: input.intent_revision,
-      intent_content_hash: input.capability_binding.intent_content_hash,
-      preparation_digest: input.preparation_digest,
-      enrollment_event_id: eventId,
-      actor_id: input.capability_binding.actor_id,
-      confirmation_ref: input.capability_binding.confirmation_ref,
-      nonce: input.capability_binding.nonce
-    })
-  };
-}
-function enrollCanaryTask(root, input, registry) {
-  const { eventId, digest } = digestForEnrollment(input);
-  const replayed = readCommittedEnrollmentResult(root, input.task_id, eventId, digest);
-  if (replayed)
-    return {
-      record: replayed.record,
-      backend_claim: replayed.claim,
-      workspace: { revision: "", state: replayed.workspace }
-    };
-  let gitBaseHead = null;
-  let consumed = false;
-  try {
-    return runEnrollmentPreconditionChecks(root, input, input.capability, registry, "fail_fast", () => {
-      const recomputed = preparePiCanary(root, { task_id: input.task_id, now: input.now });
-      if (recomputed.digest !== input.preparation_digest)
-        throw new Error("enrollment preparation digest mismatch");
-      gitBaseHead = recomputed.git_base_head;
-      if (!gitBaseHead)
-        throw new Error(recomputed.git_error ?? "enrollment requires a committed Git HEAD");
-    }, (checks) => {
-      if (!checks.validated || !checks.intent || !checks.workspace || !checks.current)
-        throw new Error("enrollment precondition state incomplete");
-      const locked = preparePiCanary(root, { task_id: input.task_id, now: input.now });
-      if (locked.digest !== input.preparation_digest)
-        throw new Error("enrollment preparation digest mismatch");
-      if (checks.intent.intent.revision !== input.intent_revision)
-        throw new Error("intent revision mismatch");
-      if (checks.intent.content_hash !== checks.validated.intent_content_hash)
-        throw new Error("intent content hash mismatch");
-      if (checks.gitBaseHead !== gitBaseHead)
-        throw new Error("Git HEAD moved after the enrollment confirmation");
-      if (input.batch) {
-        const batch = input.batch.registry.inspect(input.batch.capability, input.batch.binding);
-        if (input.batch.registry.consumedChildren(input.batch.capability).length === 0)
-          assertBatchLineageOrigin(root, batch.base_head, input.batch.expected_head);
-        if (checks.gitBaseHead !== input.batch.expected_head)
-          throw new Error(`batch_head_lineage_broken: expected ${input.batch.expected_head}, found ${checks.gitBaseHead}`);
-      }
-      registry.consume(input.capability, input.capability_binding);
-      consumed = true;
-      if (input.batch)
-        input.batch.registry.consumeChild(input.batch.capability, input.batch.binding, input.task_id);
-      if (!gitBaseHead)
-        throw new Error("enrollment requires a committed Git HEAD");
-      const record = buildTaskRecordV4(input, checks.intent, gitBaseHead);
-      const nextWorkspace = {
-        ...checks.workspace.state,
-        current_working: input.task_id
-      };
-      const claim = {
-        contract: "assurance_kernel/backend_claim/v2",
-        backend: "kernel",
-        task_id: input.task_id,
-        intent_revision: input.intent_revision,
-        intent_content_hash: checks.intent.content_hash,
-        enrollment_event_id: eventId,
-        lifecycle_status: "active",
-        created_at: input.now,
-        updated_at: input.now
-      };
-      const mutation = commitEnrollmentLocked(root, input.task_id, {
-        contract: "assurance_kernel/workspace_transaction/v2",
-        task_id: input.task_id,
-        expected_record_hash: checks.current.revision,
-        next_record_content: `${JSON.stringify(record, null, 2)}
-`,
-        expected_workspace_hash: checks.workspace.revision,
-        next_workspace_content: `${JSON.stringify(nextWorkspace, null, 2)}
-`
-      }, claim, digest);
-      writeEnrollmentBaseline(root, checks.claimedScopePaths, !input.batch);
-      return {
-        record: mutation.record,
-        backend_claim: claim,
-        workspace: { revision: "", state: mutation.workspace }
-      };
-    });
-  } catch (error) {
-    const ownership = (() => {
-      try {
-        return {
-          known: true,
-          owned: reconcileKernelAuthority(root, input.task_id).owner_task_id === input.task_id
-        };
-      } catch {
-        return { known: false, owned: false };
-      }
-    })();
-    if (consumed && input.batch && ownership.known && !ownership.owned)
-      input.batch.registry.releaseChild(input.batch.capability, input.task_id);
-    throw error;
-  }
-}
-
-// plugins/immune-brain/runtime/unattended/batch_kernel_port.ts
 init_storage();
 init_batch_preflight();
 function batchQaFailureFacts(record) {
@@ -25130,6 +25167,52 @@ class HostRuntime {
   async project(taskId, nextScope) {
     return projectAssurance(this.cwd, taskId, nextScope ? nextScopeDiffProvider(nextScope) : diffSnapshotOf);
   }
+  async enroll(taskId, meta) {
+    const now = new Date().toISOString();
+    const preparation = preparePiCanary(this.cwd, { task_id: taskId, now });
+    const { intent, intent_ref, content_hash } = readTaskIntent(this.cwd, taskId, preparation.intent?.path);
+    if (preparation.task_record_v3?.present || preparation.task_tombstone.present)
+      throw new EnrollmentRehearsalError([`task ${taskId} already has a Kernel record; read its status instead of enrolling`]);
+    if (preparation.workspace.current_working !== null)
+      throw new EnrollmentRehearsalError([`workspace is owned by ${preparation.workspace.current_working}; finish or stop it first`]);
+    if (!preparation.intent || preparation.intent.content_hash !== content_hash)
+      throw new EnrollmentRehearsalError(["TaskIntent changed during preparation; retry enroll"]);
+    if (!preparation.git_base_head)
+      throw new EnrollmentRehearsalError([preparation.git_error ?? "enrollment requires a committed Git HEAD"]);
+    const binding = inspectSpecBinding(intent);
+    if (!binding.ok)
+      throw new EnrollmentRehearsalError([binding.message]);
+    const dirt = singleTaskEnrollmentDirt(this.cwd, intent_ref.path, intent);
+    if (dirt.length > 0)
+      throw new EnrollmentRehearsalError([`workspace_not_clean: ${dirt.join(", ")}`]);
+    const gate = await this.gate("enroll", { ...meta, taskId }, {
+      risk: intent.risk,
+      intentRevision: preparation.intent.revision,
+      intentContentHash: preparation.intent.content_hash,
+      bindingDigest: preparation.digest,
+      gitBaseNotice: `Goal: ${intent.goal}
+Git base: ${preparation.git_base_head} (implemented in this workspace)`
+    });
+    const capabilityBinding = {
+      task_id: taskId,
+      intent_path: preparation.intent.path,
+      intent_revision: preparation.intent.revision,
+      intent_content_hash: preparation.intent.content_hash,
+      preparation_digest: preparation.digest,
+      actor_id: LITERAL_USER_ACTOR_ID,
+      confirmation_ref: gate.confirmation_ref,
+      nonce: enrollmentNonce()
+    };
+    const outcome = await enrollTask(this.cwd, this.enrollmentRegistry, {
+      binding: capabilityBinding,
+      confirmation: { source: "user_session" },
+      now,
+      checkpoint: () => !meta.signal?.aborted
+    });
+    if (outcome.outcome === "cancelled")
+      throw new NativeAuthorityError("user_cancelled", "enrollment cancelled before commit");
+    return { ...await this.status(taskId), state: "enrolled", task_id: taskId };
+  }
   async advance(taskId, signal, meta) {
     return this.closeOutBatchChild(taskId, withSettleCommit(this.cwd, taskId, await this.withTerminalTracker(taskId, await this.coordinator.advance(taskId, { cwd: this.cwd }, signal)), signal), meta);
   }
@@ -25214,6 +25297,8 @@ class HostRuntime {
     });
   }
   async authorize(taskId, operation, meta, extra = {}) {
+    if (operation === "enroll")
+      return this.enroll(taskId, meta);
     if (operation === "approve_breaking_intent_revision" && this.env[LANE_EXECUTOR_ENV] === LANE_EXECUTOR_HEADLESS)
       return this.requestLaneDecision(taskId, extra);
     const relayed = ["request_authorization", "approve_breaking_intent_revision", "stop"].includes(operation) && !this.options.laneRoot ? findLaneRelayTarget(this.cwd, taskId) : null;
@@ -25532,6 +25617,9 @@ class HostRuntime {
   }
   async previewAuthorization(taskId, operation, meta, extra = {}) {
     return this.previewConfirmation(() => this.authorize(taskId, operation, meta, extra));
+  }
+  async previewEnrollment(taskId, meta) {
+    return this.previewConfirmation(() => this.enroll(taskId, meta));
   }
   async previewBatchConfirmation(initiativeSlug, meta, options = {}) {
     return this.previewConfirmation(() => this.startPreparedBatch(initiativeSlug, meta, { ...options, confirmationPreview: true }));
@@ -26503,6 +26591,9 @@ class AntigravityRuntime {
   previewAuthorization(...args) {
     return this.runtime.previewAuthorization(...args);
   }
+  previewEnrollment(...args) {
+    return this.runtime.previewEnrollment(...args);
+  }
   previewBatchConfirmation(...args) {
     return this.runtime.previewBatchConfirmation(...args);
   }
@@ -26576,11 +26667,11 @@ function matchesMcpAllowRule(allowRules, servers, tool) {
 
 // plugins/immune-brain/runtime/antigravity/lane_guard.ts
 var FILE_TOOLS = new Set(["write_file", "edit_file", "Write", "Edit", "MultiEdit"]);
-var PRIVILEGED_MCP_TOOL = /^(?:mcp__.*immune-brain.*__|immune-brain__)?(start_unattended_batch|retire_stale_batch|request_authorization|approve_breaking_intent_revision|stop)$/;
-var LAZY_PRIVILEGED_TOOL = /^(start_unattended_batch|retire_stale_batch|request_authorization|approve_breaking_intent_revision|stop)$/;
+var PRIVILEGED_MCP_TOOL = /^(?:mcp__.*immune-brain.*__|immune-brain__)?(enroll|start_unattended_batch|retire_stale_batch|request_authorization|approve_breaking_intent_revision|stop)$/;
+var LAZY_PRIVILEGED_TOOL = /^(enroll|start_unattended_batch|retire_stale_batch|request_authorization|approve_breaking_intent_revision|stop)$/;
 var IMMUNE_BRAIN_SERVERS2 = new Set(["immune-brain", "immune-brain_immune-brain"]);
 function isGatedTool(operation) {
-  return operation === "start_unattended_batch" || operation === "retire_stale_batch";
+  return operation === "enroll" || operation === "start_unattended_batch" || operation === "retire_stale_batch";
 }
 function extractPrivilegedCall(toolName, args) {
   if (toolName === "call_mcp_tool") {
@@ -27072,6 +27163,33 @@ function issueNativeConfirmationForceAsk(conversation, stepIdx, admissionId, wor
     reason: formatAntigravityConfirmationReason(confirmInput, choices)
   };
 }
+async function prepareEnrollConfirmation(conversationId, sync, locations) {
+  const { call, cwd, root, stepIdx, admissionId } = sync;
+  const taskId = typeof call.opArgs.task_id === "string" ? call.opArgs.task_id : "";
+  if (!taskId || "native_decision" in call.opArgs || "entry_token" in call.opArgs)
+    return { decision: "allow" };
+  let workspaceRealpath;
+  try {
+    workspaceRealpath = realpathSync20(cwd);
+  } catch {
+    return { decision: "allow" };
+  }
+  const previewRuntime = new AntigravityRuntime({
+    cwd,
+    env: {},
+    interactive: true,
+    probeHost: () => ({ ok: true, version: "1.0.0", platform: process.platform })
+  });
+  let confirmInput;
+  try {
+    confirmInput = await previewRuntime.previewEnrollment(taskId, { sessionId: conversationId, toolCallId: admissionId, taskId, interactive: true });
+  } finally {
+    await previewRuntime.shutdown();
+  }
+  if (!confirmInput)
+    return { decision: "allow" };
+  return issueNativeConfirmationForceAsk(conversationId, stepIdx, admissionId, workspaceRealpath, confirmInput, root, locations);
+}
 async function prepareBatchConfirmation(conversationId, sync, locations) {
   const { call, cwd, root, stepIdx, admissionId } = sync;
   const opArgs = call.opArgs;
@@ -27233,7 +27351,9 @@ async function antigravityPreToolUseHookAsync(payload, locations = {}) {
     return sync.result;
   let decision;
   try {
-    if (sync.call.operation === "start_unattended_batch") {
+    if (sync.call.operation === "enroll") {
+      decision = await prepareEnrollConfirmation(payload.conversationId, sync, locations);
+    } else if (sync.call.operation === "start_unattended_batch") {
       decision = await prepareBatchConfirmation(payload.conversationId, sync, locations);
     } else if (sync.call.operation === "retire_stale_batch") {
       decision = await prepareRetireConfirmation(payload.conversationId, sync, locations);

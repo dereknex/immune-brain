@@ -54,7 +54,10 @@ import {
 	type CapabilityBindingV2,
 	type MutationAuthorityRegistry,
 } from "../kernel/authority_port";
-import { createEnrollmentAuthorityRegistry } from "../kernel/enrollment_authority";
+import { createEnrollmentAuthorityRegistry, type EnrollmentCapabilityBinding } from "../kernel/enrollment_authority";
+import { enrollTask, EnrollmentRehearsalError, singleTaskEnrollmentDirt } from "../kernel/enrollment";
+import { inspectSpecBinding } from "../kernel/spec_binding";
+import { preparePiCanary } from "../assurance/enrollment";
 import { reconcileKernelAuthority, repairKernelAuthority } from "../kernel/storage";
 import { withSettleCommit } from "../assurance/workflow_autocommit";
 import { runDeterministicQa } from "../assurance/qa";
@@ -572,6 +575,56 @@ export class HostRuntime {
 		return projectAssurance(this.cwd, taskId, nextScope ? nextScopeDiffProvider(nextScope) : diffSnapshotOf);
 	}
 
+	/**
+	 * In-place Enrollment of one validated TaskIntent in this workspace. Every
+	 * refusal the Kernel can foresee is raised before the native gate opens, so
+	 * the user never confirms a task that cannot commit; the Kernel then
+	 * recomputes the confirmed preparation digest under its store lock.
+	 */
+	async enroll(taskId: string, meta: ToolMeta) {
+		const now = new Date().toISOString();
+		const preparation = preparePiCanary(this.cwd, { task_id: taskId, now });
+		// No TaskRecord exists yet, so the sidecar path comes from the preparation's own read.
+		const { intent, intent_ref, content_hash } = readTaskIntent(this.cwd, taskId, preparation.intent?.path);
+		if (preparation.task_record_v3?.present || preparation.task_tombstone.present)
+			throw new EnrollmentRehearsalError([`task ${taskId} already has a Kernel record; read its status instead of enrolling`]);
+		if (preparation.workspace.current_working !== null)
+			throw new EnrollmentRehearsalError([`workspace is owned by ${preparation.workspace.current_working}; finish or stop it first`]);
+		if (!preparation.intent || preparation.intent.content_hash !== content_hash)
+			throw new EnrollmentRehearsalError(["TaskIntent changed during preparation; retry enroll"]);
+		if (!preparation.git_base_head)
+			throw new EnrollmentRehearsalError([preparation.git_error ?? "enrollment requires a committed Git HEAD"]);
+		const binding = inspectSpecBinding(intent);
+		if (!binding.ok) throw new EnrollmentRehearsalError([binding.message]);
+		const dirt = singleTaskEnrollmentDirt(this.cwd, intent_ref.path, intent);
+		if (dirt.length > 0) throw new EnrollmentRehearsalError([`workspace_not_clean: ${dirt.join(", ")}`]);
+		const gate = await this.gate("enroll", { ...meta, taskId }, {
+			risk: intent.risk,
+			intentRevision: preparation.intent.revision,
+			intentContentHash: preparation.intent.content_hash,
+			bindingDigest: preparation.digest,
+			gitBaseNotice: `Goal: ${intent.goal}\nGit base: ${preparation.git_base_head} (implemented in this workspace)`,
+		});
+		const capabilityBinding: EnrollmentCapabilityBinding = {
+			task_id: taskId,
+			intent_path: preparation.intent.path,
+			intent_revision: preparation.intent.revision,
+			intent_content_hash: preparation.intent.content_hash,
+			preparation_digest: preparation.digest,
+			actor_id: LITERAL_USER_ACTOR_ID,
+			confirmation_ref: gate.confirmation_ref,
+			nonce: enrollmentNonce(),
+		};
+		const outcome = await enrollTask(this.cwd, this.enrollmentRegistry, {
+			binding: capabilityBinding,
+			confirmation: { source: "user_session" },
+			now,
+			checkpoint: () => !meta.signal?.aborted,
+		});
+		if (outcome.outcome === "cancelled") throw new NativeAuthorityError("user_cancelled", "enrollment cancelled before commit");
+		return { ...(await this.status(taskId)), state: "enrolled" as const, task_id: taskId };
+	}
+
 	async advance(taskId: string, signal?: AbortSignal, meta?: ToolMeta) {
 		return this.closeOutBatchChild(
 			taskId,
@@ -717,6 +770,7 @@ export class HostRuntime {
 	 * Executor generation starts. Any other task keeps the in-place path.
 	 */
 	async authorize(taskId: string, operation: string, meta: ToolMeta, extra: Record<string, unknown> = {}) {
+		if (operation === "enroll") return this.enroll(taskId, meta);
 		if (operation === "approve_breaking_intent_revision" && this.env[LANE_EXECUTOR_ENV] === LANE_EXECUTOR_HEADLESS)
 			return this.requestLaneDecision(taskId, extra);
 		const relayed = ["request_authorization", "approve_breaking_intent_revision", "stop"].includes(operation) && !this.options.laneRoot
@@ -1040,6 +1094,10 @@ export class HostRuntime {
 
 	async previewAuthorization(taskId: string, operation: string, meta: ToolMeta, extra: Record<string, unknown> = {}) {
 		return this.previewConfirmation(() => this.authorize(taskId, operation, meta, extra));
+	}
+
+	async previewEnrollment(taskId: string, meta: ToolMeta) {
+		return this.previewConfirmation(() => this.enroll(taskId, meta));
 	}
 
 	async previewBatchConfirmation(

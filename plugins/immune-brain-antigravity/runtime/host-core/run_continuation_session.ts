@@ -27,7 +27,7 @@ import { bindRun, decideRunContinuation, hasContiguousLaneRebind, observeParentR
 import { digestOfReviewerBytes } from "../assurance/review_mediation";
 import { appendPrivate, cacheDir, ensurePrivateDir, ownedByUs, readPrivate, sessionHash } from "./private_file";
 
-const NATIVE_OPERATIONS = new Set(["start_unattended_batch", "retire_stale_batch", "request_authorization", "approve_breaking_intent_revision", "request_stop", "stop"]);
+const NATIVE_OPERATIONS = new Set(["enroll", "start_unattended_batch", "retire_stale_batch", "request_authorization", "approve_breaking_intent_revision", "request_stop", "stop"]);
 const PARENT_IDENTITY_LOST = "no matching persisted batch identity";
 const SUSPENDED_REVIEW_OPERATIONS = new Set(["advance_assurance", "submit_review"]);
 const MAX_METADATA_BYTES = 256 * 1024;
@@ -259,7 +259,7 @@ export async function applyRunContinuationEvent(host: RunContinuationHost, root:
 				hasContiguousLaneRebind(batch, binding.plan_digest))
 				metadata.state = { ...metadata.state!, binding: { ...binding, plan_digest: batch.plan_digest } };
 		}
-		if (!metadata.state && correlated.task_id && event.operation === "status") {
+		if (!metadata.state && correlated.task_id && (event.operation === "status" || event.operation === "enroll")) {
 			const status = await projectTaskStatus(workspace, correlated.task_id);
 			if (!status.error && status.claim?.task_id === correlated.task_id && status.projection.lifecycle === "active" && status.projection.run_id)
 				metadata.state = bindRun({ kind: "task", workspace, session_id: sessionId, task_id: correlated.task_id, run_id: status.projection.run_id });

@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { basename, relative, resolve, sep } from "node:path";
+import { observeSettledParentCompletion } from "./assurance/parent_completion";
 import { readTaskIntent } from "./kernel/intent";
 
 const CONTRACT = "immune_brain/github_issue_tracker_result/v1" as const;
@@ -1680,8 +1681,7 @@ async function closeParentWhenComplete(
 	const taskIds = sliceChildren.map(candidate => ownershipMarkerValue(candidate.body, "task-id"));
 	if (taskIds.some(id => !id)) return retry("required Slice has no Task identity", "ambiguous_remote_state");
 	try {
-		const { observeParentCompletion } = await import("./unattended/batch_git");
-		const completion = await observeParentCompletion(root, initiativeId, taskIds as string[]);
+		const completion = observeSettledParentCompletion(root, taskIds as string[]);
 		if (!completion.complete) return result(operation.op, childResult.status,
 			`${childResult.message}; Parent #${parentNumber} remains open: ${completion.reason}`, child.issue);
 	} catch (error) {

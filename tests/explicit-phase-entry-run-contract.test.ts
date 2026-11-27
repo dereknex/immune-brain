@@ -1,6 +1,6 @@
 // Explicit phase entry, Slice S1 (EPE-S1-A2, ADR 0019): a literal drive entry owns
-// the native gate. Spec drive-always-lanes S6 moves a new single-task entry to the
-// Lane path; the Pi Enrollment tool guidance still agrees for in-place records.
+// the native gate. Spec retire-unattended-batch D2 returns a new single-task entry
+// to in-place Enrollment.
 
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
@@ -11,40 +11,39 @@ const PLUGIN = join(ROOT, "plugins", "immune-brain");
 const flat = (path: string): string => readFileSync(path, "utf8").replace(/\s+/g, " ");
 
 describe("explicit phase entry: drive owns Enrollment", () => {
-	// Spec drive-always-lanes D10, S6-A1.
-	test("drive contract routes every new single-task entry to the Lane path as its first step", () => {
+	// Spec retire-unattended-batch D2.
+	test("drive contract enrolls every new single-task entry in place as its first step", () => {
 		const run = readFileSync(join(PLUGIN, "dist/drive.md"), "utf8");
 		const start = run.indexOf("\n## Kernel Canary Routing and Authority\n");
 		const end = run.indexOf("\n## Execution Loop\n");
 		expect(start).toBeGreaterThanOrEqual(0);
 		expect(end).toBeGreaterThan(start);
 		const entry = run.slice(start, end).replace(/\s+/g, " ");
-		expect(entry).toContain("Every new single-task `drive` entry goes through the single-task Lane path");
+		expect(entry).toContain("Every new single-task `drive` entry runs in place in the current worktree");
 		expect(entry).toContain("including a GitHub Initiative Child entry");
-		expect(entry).toContain("Its first step is `start_unattended_batch` with `task_id`");
-		expect(entry).toContain("The Parent neither enrolls the task itself nor implements it in its own conversation");
-		expect(entry).toContain("The Executor role runs inside the Lane process, never in the Parent conversation");
+		expect(entry).toContain("call `enroll` with that `task_id` once");
+		expect(entry).toContain("no Lane worktree and no Executor tab is created");
 		expect(entry).toContain("For a Parent Issue, route to");
 		expect(entry).toContain("A Child entry verifies prerequisite settlement and integration");
 		expect(entry).toContain("Planner and Brainstorm never open that gate");
 		expect(entry).toContain("exactly one same-Host recovery action");
-		// The retired new-entry instruction must not return.
-		expect(entry).not.toContain("Enrollment is the first step of a single-task explicit `drive` entry");
-		expect(entry).not.toContain("native Enrollment gate once");
+		// The retired Lane default must not return.
+		expect(entry).not.toContain("goes through the single-task Lane path");
+		expect(entry).not.toContain("The Parent neither enrolls the task itself");
 		expect(entry).not.toContain("then enroll again");
 	});
 
-	test("drive contract keeps in-place records resumable and the Child entry tracker prerequisite", () => {
+	test("drive contract states the clean-workspace refusal, the drain-only Lane record and the Child entry tracker prerequisite", () => {
 		const run = readFileSync(join(PLUGIN, "dist/drive.md"), "utf8");
 		const entry = run
 			.slice(run.indexOf("\n## Kernel Canary Routing and Authority\n"), run.indexOf("\n## Execution Loop\n"))
 			.replace(/\s+/g, " ");
-		expect(entry).toContain("A TaskRecord enrolled in place before this change stays resumable until terminal");
-		expect(entry).toContain("a new entry never starts one");
-		expect(entry).toContain("refused with `workspace_not_clean: <paths>` before the gate opened");
-		expect(entry).toContain("The Lane path starts at the user's HEAD and does not require a clean checkout");
+		expect(entry).toContain("refuses with `workspace_not_clean: <paths>` before the gate opens, and nothing is written");
+		expect(entry).toContain("Never stash, discard or commit the user's changes to clear it");
+		expect(entry).toContain("An active claim resumes from its Kernel facts and is never enrolled again");
+		expect(entry).toContain("A single-task Lane batch record opened before this change stays resumable until terminal (drain-only, owner: runtime)");
 		expect(entry).toContain("Before the first Enrollment of a candidate TaskIntent, confirm the Planner returned `tracker_associated`");
-		expect(entry).toContain("this check runs before `start_unattended_batch` with `task_id` (Child entry included)");
+		expect(entry).toContain("this check runs before `enroll` (Child entry included)");
 		expect(entry).toContain("A batch child keeps its Lane's confirmed scope disclosure");
 		expect(entry).toContain("`status` is a read, not a freeze");
 		expect(entry).toContain("returns them as a `warnings` entry beside the projection");
@@ -56,16 +55,17 @@ describe("explicit phase entry: drive owns Enrollment", () => {
 	test("drive contract states the run-entry retry rules, the kept gates and the remaining user stops", () => {
 		const run = readFileSync(join(PLUGIN, "dist/drive.md"), "utf8");
 		const decisions = run.slice(run.indexOf("\n## Decisions and Recovery\n"), run.indexOf("\n## Review and Learning\n")).replace(/\s+/g, " ");
-		expect(decisions).toContain("The literal-user `drive` entry needs no chat confirmation; the single-task Lane entry and unattended batch start each keep one native gate");
+		expect(decisions).toContain("The literal-user `drive` entry needs no chat confirmation; single-task `enroll` and unattended batch start each keep one native gate");
 		expect(decisions).toContain("only a side-effect-free rejection is retried, at most twice, and preflight is rerun before each retry");
 		expect(decisions).toContain("`plan_changed`, `head_moved` and a claim conflict are never retried");
 		expect(decisions).toContain("apply it, commit the fixed files alone in one commit even under `Git integration: manual`, list that commit in the manifest, then retry");
 		expect(decisions).toContain("Push, PR, credentials, breaking intent revision and rework exits still stop for the user");
 	});
 
-	test("drive loader selects Parent batch or the single-task Lane", () => {
+	test("drive loader selects Parent batch or in-place enroll", () => {
 		const loader = flat(join(PLUGIN, "skills/drive/SKILL.md"));
-		expect(loader).toContain("a standalone validated candidate enters the single-task Lane through `start_unattended_batch` with `task_id`");
+		expect(loader).toContain("a standalone validated candidate enrolls in the current worktree through `enroll` with `task_id`");
+		expect(loader).not.toContain("enters the single-task Lane");
 		expect(loader).not.toContain("opens native Enrollment once");
 		expect(loader).not.toContain("opens single-task Enrollment");
 		expect(loader).toContain("A Parent Issue selects its whole planned batch");

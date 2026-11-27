@@ -341,6 +341,52 @@ describe("Claude phase entry gate: start_unattended_batch admission", () => {
 	});
 });
 
+describe("Claude phase entry gate: in-place enroll", () => {
+	const ENROLL = "mcp__plugin_immune-brain_immune-brain__enroll";
+	const TASK = "gate-inplace";
+	const args = { task_id: TASK };
+	const worktrees = (cwd: string) => execFileSync("git", ["worktree", "list"], { cwd, encoding: "utf8" }).trim().split("\n");
+
+	test("a live run entry opens one native gate and claims the task in this workspace", async () => {
+		const s = await session([TASK]);
+		expect(s.prompt(`/immune-brain:drive ${TASK}`)).toBe(true);
+		expect(s.hook(ENROLL, "toolu_1")).toBeNull();
+		const reply = await s.call("enroll", args, "toolu_1");
+		expect(reply?.error).toBeUndefined();
+		expect(s.confirmations()).toEqual(["enroll"]);
+		expect(readActiveClaimTaskId(s.cwd)).toBe(TASK);
+		expect(worktrees(s.cwd)).toHaveLength(1);
+	});
+
+	test("a declined native gate writes no claim", async () => {
+		const s = await session([TASK], {}, "decline");
+		s.prompt("/drive");
+		expect(s.hook(ENROLL, "toolu_1")).toBeNull();
+		expect((await s.call("enroll", args, "toolu_1"))?.error).toBeDefined();
+		expect(s.gateCalls()).toBe(1);
+		expect(readActiveClaimTaskId(s.cwd)).toBeNull();
+	});
+
+	test("ordinary prose, a plan entry and a drifted workspace all refuse", async () => {
+		const s = await session([TASK]);
+		const elsewhere = mkdtempSync(join(tmpdir(), "imm-phase-elsewhere-"));
+		roots.push(elsewhere);
+		const refused = async (id: string) => {
+			expectHookDenial(s.hook(ENROLL, id));
+			expectRunEntryRequired(await s.call("enroll", args, id));
+		};
+		s.prompt("please drive this task");
+		await refused("toolu_prose");
+		s.prompt("/drive");
+		s.prompt("/immune-brain:draw-up more work");
+		await refused("toolu_plan");
+		s.prompt("/drive", { cwd: elsewhere });
+		expect(JSON.parse(s.hook(ENROLL, "toolu_drift")!).hookSpecificOutput.permissionDecision).toBe("deny");
+		expect(s.gateCalls()).toBe(0);
+		expect(readActiveClaimTaskId(s.cwd)).toBeNull();
+	});
+});
+
 describe("Claude entry token confirmation reference", () => {
 	test("a token-backed reference is of kind entry and still binds the plan digest and intent hash", () => {
 		const ref = (requestId: string, extra: { planDigest?: string; intentContentHash?: string } = {}) =>

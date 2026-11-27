@@ -355,7 +355,7 @@ export function revokePiPhaseEntry(sessionId: string): void {
  * bound to another workspace refuses rather than falling back to a dialog.
  */
 export function piRunEntryRefusal(
-	operation: "start_unattended_batch" | "retire_stale_batch",
+	operation: "enroll" | "start_unattended_batch" | "retire_stale_batch",
 	ctx: PhaseEntryContext,
 ): Extract<PhaseAdmission, { ok: false }> | null {
 	const sessionId = piSessionId(ctx);
@@ -739,7 +739,7 @@ export function createPiNativeConfirmation(
 		const attention = {
 			attention_id: randomUUID(),
 			task_id: taskId,
-			reason: "review_authorization" as const,
+			reason: input.operation === "enroll" ? "enrollment" as const : "review_authorization" as const,
 			label: uxText(UX_LANG, `${opName} approval required`, `${opName} 待您批准`),
 		};
 		const dialogSummary = [
@@ -952,6 +952,7 @@ export default function (
 			task_id: Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }),
 			action: Type.Union([
 				Type.Object({ op: Type.Literal("status") }),
+				Type.Object({ op: Type.Literal("enroll") }),
 				Type.Object({ op: Type.Literal("advance_assurance") }),
 				Type.Object({ op: Type.Literal("submit_review"), verdict: Type.Optional(Type.Unknown()) }),
 				Type.Object({ op: Type.Literal("submit_verification"), result: Type.Optional(Type.String()) }),
@@ -1022,6 +1023,35 @@ export default function (
 				}
 				if (inspection.layout !== "ready") {
 					return failCanaryTool(taskId, action.op, "blocked", "layout_not_ready", `Mutation blocked by storage layout (${inspection.layout}): ${inspection.reason ?? ""}`, "resolve the layout condition and retry");
+				}
+			}
+			if (action.op === "enroll") {
+				if (ctx.mode !== "tui") return failCanaryTool(taskId, action.op, "blocked", "tui_required", "literal-user authorization is TUI-only", "invoke the TUI Tool");
+				const entryRefusal = piRunEntryRefusal("enroll", ctx);
+				if (entryRefusal)
+					return failCanaryTool(taskId, action.op, "blocked", entryRefusal.reason_code, entryRefusal.detail, entryRefusal.recovery_action);
+				const effectiveSignal = signal && ctx.signal ? AbortSignal.any([signal, ctx.signal]) : signal ?? ctx.signal;
+				const startGen = runtime.coordinator.sessionGenerationValue();
+				activeAuthorizeCalls.set(toolCallId, { ctx, startGen });
+				try {
+					// Enrollment always opens its own native gate: no entry token stands in for it (ADR 0025).
+					const enrolled = await runtime.enroll(taskId, {
+						sessionId: piSessionId(ctx),
+						toolCallId,
+						workspace: ctx.cwd,
+						taskId,
+						interactive: true,
+						signal: effectiveSignal,
+					});
+					const result = { ...enrolled, operation: action.op, result: `Enrolled ${taskId} in this workspace`, next_action: "implement in this workspace, then advance_assurance" };
+					presentTaskRailResult(ctx, taskId, result);
+					return toolResult(JSON.stringify(result, null, 2), result);
+				} catch (error) {
+					const message = error instanceof Error ? error.message : String(error);
+					const native = error instanceof NativeAuthorityError ? error : null;
+					return failCanaryTool(taskId, action.op, "blocked", native?.reasonCode ?? "enrollment_refused", message, native?.recoveryAction ?? "resolve the reported condition, then enroll again");
+				} finally {
+					activeAuthorizeCalls.delete(toolCallId);
 				}
 			}
 			if (action.op === "repair_authority_state") {

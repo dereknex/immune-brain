@@ -9,7 +9,7 @@ import {
 } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
-import { projectScopeOverlap } from "../unattended/batch_schedule";
+import { projectScopeOverlap } from "../kernel/scope_overlap";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import {

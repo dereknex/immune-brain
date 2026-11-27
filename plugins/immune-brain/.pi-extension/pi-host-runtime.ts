@@ -150,6 +150,10 @@ export class PiRuntime {
 		return this.runtime.refuteFinding(...args);
 	}
 
+	enroll(...args: Parameters<HostRuntime["enroll"]>): ReturnType<HostRuntime["enroll"]> {
+		return this.runtime.enroll(...args);
+	}
+
 	authorize(...args: Parameters<HostRuntime["authorize"]>): ReturnType<HostRuntime["authorize"]> {
 		return this.runtime.authorize(...args);
 	}

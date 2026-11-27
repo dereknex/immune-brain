@@ -58,17 +58,17 @@ import {
 
 const FILE_TOOLS = new Set(["write_file", "edit_file", "Write", "Edit", "MultiEdit"]);
 const PRIVILEGED_MCP_TOOL =
-	/^(?:mcp__.*immune-brain.*__|immune-brain__)?(start_unattended_batch|retire_stale_batch|request_authorization|approve_breaking_intent_revision|stop)$/;
+	/^(?:mcp__.*immune-brain.*__|immune-brain__)?(enroll|start_unattended_batch|retire_stale_batch|request_authorization|approve_breaking_intent_revision|stop)$/;
 /** The lazy `call_mcp_tool` form names its target operation bare, inside `args.ToolName`. */
 const LAZY_PRIVILEGED_TOOL =
-	/^(start_unattended_batch|retire_stale_batch|request_authorization|approve_breaking_intent_revision|stop)$/;
+	/^(enroll|start_unattended_batch|retire_stale_batch|request_authorization|approve_breaking_intent_revision|stop)$/;
 /** The lazy calls this Host may admit: Immune-Brain itself, under either registered server name. */
 const IMMUNE_BRAIN_SERVERS = new Set(["immune-brain", "immune-brain_immune-brain"]);
 
-export type GatedTool = "start_unattended_batch" | "retire_stale_batch";
+export type GatedTool = "enroll" | "start_unattended_batch" | "retire_stale_batch";
 
 function isGatedTool(operation: PrivilegedOperation): operation is GatedTool {
-	return operation === "start_unattended_batch" || operation === "retire_stale_batch";
+	return operation === "enroll" || operation === "start_unattended_batch" || operation === "retire_stale_batch";
 }
 
 function extractPrivilegedCall(
@@ -769,6 +769,35 @@ function issueNativeConfirmationForceAsk(
 	};
 }
 
+async function prepareEnrollConfirmation(
+	conversationId: string,
+	sync: Extract<SyncPreToolUseEvaluation, { done: false }>,
+	locations: PhaseEntryLocations,
+): Promise<PreToolUseHookDecision> {
+	const { call, cwd, root, stepIdx, admissionId } = sync;
+	const taskId = typeof call.opArgs.task_id === "string" ? call.opArgs.task_id : "";
+	if (!taskId || "native_decision" in call.opArgs || "entry_token" in call.opArgs) return { decision: "allow" };
+	let workspaceRealpath: string;
+	try {
+		workspaceRealpath = realpathSync(cwd);
+	} catch {
+		return { decision: "allow" };
+	}
+	const previewRuntime = new AntigravityRuntime({
+		cwd, env: {}, interactive: true,
+		probeHost: () => ({ ok: true, version: "1.0.0", platform: process.platform }),
+	});
+	let confirmInput: NativeConfirmationInput | null;
+	try {
+		confirmInput = await previewRuntime.previewEnrollment(taskId,
+			{ sessionId: conversationId, toolCallId: admissionId, taskId, interactive: true });
+	} finally {
+		await previewRuntime.shutdown();
+	}
+	if (!confirmInput) return { decision: "allow" };
+	return issueNativeConfirmationForceAsk(conversationId, stepIdx, admissionId, workspaceRealpath, confirmInput, root, locations);
+}
+
 async function prepareBatchConfirmation(
 	conversationId: string,
 	sync: Extract<SyncPreToolUseEvaluation, { done: false }>,
@@ -955,7 +984,9 @@ export async function antigravityPreToolUseHookAsync(
 	if (sync.done) return sync.result;
 	let decision: PreToolUseHookDecision;
 	try {
-		if (sync.call.operation === "start_unattended_batch") {
+		if (sync.call.operation === "enroll") {
+			decision = await prepareEnrollConfirmation(payload.conversationId, sync, locations);
+		} else if (sync.call.operation === "start_unattended_batch") {
 			decision = await prepareBatchConfirmation(payload.conversationId, sync, locations);
 		} else if (sync.call.operation === "retire_stale_batch") {
 			decision = await prepareRetireConfirmation(payload.conversationId, sync, locations);

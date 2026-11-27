@@ -6,7 +6,7 @@
 //
 // Phase entry gate: UserPromptSubmit records which literal prompt entered
 // planning or execution, and a run entry mints the session's entry token (ADR
-// 0025); PreToolUse denies `start_unattended_batch`,
+// 0025); PreToolUse denies `enroll`, `start_unattended_batch`,
 // `retire_stale_batch` and the `drive` Skill without a live run entry, and
 // otherwise leaves an admission carrying that token, which the tool handler
 // consumes by tool-use id. A model Skill call for
@@ -39,9 +39,9 @@ import { appendPrivate, cacheDir, dropPrivate, ensurePrivateDir, readPrivate, se
 import { CLAUDE_CACHE_DIR } from "./review_host";
 
 const FILE_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
-const GATED_MCP_TOOL = /^mcp__.*immune-brain.*__(start_unattended_batch|retire_stale_batch)$/;
+const GATED_MCP_TOOL = /^mcp__.*immune-brain.*__(enroll|start_unattended_batch|retire_stale_batch)$/;
 
-export type GatedTool = "start_unattended_batch" | "retire_stale_batch";
+export type GatedTool = "enroll" | "start_unattended_batch" | "retire_stale_batch";
 
 /**
  * A consumed admission. `entry_token` is the live token the hook saw for this
@@ -192,7 +192,7 @@ function gatedOperation(payload: Record<string, unknown>): PhaseOperation | null
 }
 
 /**
- * PreToolUse for a gated tool: deny without a live run entry; for the two MCP
+ * PreToolUse for a gated tool: deny without a live run entry; for the gated MCP
  * tools, otherwise write the admission the handler consumes. A Planner or
  * Brainstorm Skill call is never denied and leaves the entry store untouched.
  * Any other tool answers null and runs as configured.
