@@ -1,5 +1,36 @@
 # Changelog
 
+## 11.0.0
+
+### Major Changes
+
+- [`c9e3625`](https://github.com/dereknex/immune-brain/commit/c9e3625dcba0d6c57968c3ee526324b55103b7ac) - Retire the unattended batch, Lane supervision, and in-repo Loop daemon subsystems under ADR 0043 (Slices 1 and 3), restoring single-task in-place `/drive` as the sole Managed execution loop:
+
+  - Restore single-task in-place `enroll` across `HostRuntime`, Claude Code MCP, Antigravity MCP, and the Pi `.pi-extension` under literal-user `drive` phase entry and native confirmation, enforcing strict `singleTaskEnrollmentDirt` clean-workspace checks (`workspace_not_clean` outside the task's `TaskIntent` and bound `Spec`) before any Kernel write while preserving `imm-session` + `runtime/session/` for Herdr Authority Review, `imm-kernel intent overlap`, and settled parent completion for `imm-tracker`.
+  - Physically delete `runtime/unattended/`, `runtime/lane_sessions/`, `runtime/kernel/batch_authority.ts`, `.pi-extension/imm-unattended-batch.ts`, `dist/drive-batch.md`, and `lane-steward`; remove `start_unattended_batch`, `retire_stale_batch`, and `imm-session --batch` across Hosts, hooks, and CLI routing; and strictly retire `batch` and `session_providers` from `v2` config (`config_invalid`, stripped by `imm-kernel config migrate --write`, while keeping `agents.executor` accepted-but-unused).
+  - Document ADR 0043 Slice 1 breaking retirement (since `v10.0.0`): remove the in-repo Loop daemon (`runtime/loop_daemon/`, `bin/imm-loop`, `skills/imm-loop/`, `runtime/decision_model/`), remove `loop_interactions` / `answer_loop_interaction` / `steer_loop_work_item` and live `tracker_approval` / `policy_auto` confirmation sources, and strictly retire `loop` and `decision_models` from `v2` config (`config_invalid`, stripped by `imm-kernel config migrate --write`).
+
+### Minor Changes
+
+- [#595](https://github.com/dereknex/immune-brain/pull/595) [`84b853d`](https://github.com/dereknex/immune-brain/commit/84b853ddbd09274c4b4ad2efe5f11075f414200b) Thanks [@dereknex](https://github.com/dereknex)! - Add the standalone read-only `design-review` Skill for Claude Code, Pi and Antigravity.
+  It reviews code, diffs, screenshots, live pages or `DESIGN.md` against a 4-layer UI/UX
+  and design-contract rubric: CRAP, Gestalt, Laws of UX, Nielsen heuristics calibrated by
+  surface mode, whole-page and empty-state composition, style and token convergence, and
+  the `DESIGN.md` 46,080-byte budget. Large surfaces are split between two read-only
+  subagent lenses; a failed lens runs inline under `Method: dual-lens (partial: <lens> inline)`.
+  The internal `ui-review` role now reads the same shared checklists with read-only tools,
+  and its delegation prompt names the absolute `shared reference directory` so the
+  checklists resolve from the user's project. The rubric caps visible high-frequency
+  actions at 2 (`LAW-HICK`), treats the 24px pointer target as advisory above the
+  WCAG 2.1 AA floor, blocks repeat activation in `loading` with `aria-disabled` so focus
+  stays, and flags over-explanation: avoid unnecessary secondary labels and descriptions,
+  and let the layout do the explaining.
+
+- [`c9e3625`](https://github.com/dereknex/immune-brain/commit/c9e3625dcba0d6c57968c3ee526324b55103b7ac) - Add the opt-in `external_approval` seam for single-machine headless Kernel driving (ADR 0043 Slice 2):
+
+  - Add strictest-wins boolean `external_approval` (default `false`) to `v2` layered config and admit `external_approval` in Kernel Enrollment confirmation while recording `confirmation_source` on `TaskRecordV4`.
+  - Add `imm-kernel approve <task-id> [--finding <id> --resolution <text> | --stop <reason>] [--actor <id>] --json` for opt-in headless enrollment and decision resolution, and extend `imm-kernel inspect [--task <id> [--run <run-id>]] --json` to surface open user decisions and verify settled `.imm/audit/` proofs.
+
 ## 10.0.0
 
 ### Major Changes
